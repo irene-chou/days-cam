@@ -1,4 +1,4 @@
-name: TallyCam
+name: DaysCam
 options:
   bundleIdPrefix: com.irenechou
   deploymentTarget:
@@ -6,18 +6,18 @@ options:
 settings:
   DEVELOPMENT_TEAM: ""
 targets:
-  TallyCam:
+  DaysCam:
     type: application
     platform: iOS
     sources:
-      - path: TallyCam
+      - path: DaysCam
     info:
-      path: TallyCam/Info.plist
+      path: DaysCam/Info.plist
       properties:
         UILaunchScreen: {}
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.TallyCam
+        PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.DaysCam
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
