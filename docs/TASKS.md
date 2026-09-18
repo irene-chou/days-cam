@@ -23,7 +23,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 **兩個最容易做錯的地方**：
 
-1. **PRD FR-2.10：`dateOnly` 模板永不讀取 `startDate`。** 若用「起始日＝今天」來近似純日期，隔天會變成「第 2 天」。TASK-04（4.16／4.19）有專門的對照測試。
+1. **PRD FR-2.11：`dateOnly` 模板永不讀取 `startDate`。** 若用「起始日＝今天」來近似純日期，隔天會變成「第 2 天」。TASK-04（4.21 跨日對照／4.24 實作檢視）有專門的檢查。
 2. **PRD §4.1 不變條件 2：`startDate` 夾帶 `timeZone` 會繞過時區規則，且 `startOfDay` 救不回來。** TASK-03（3.21／3.27）有專門檢查，且**時區組合不可自行更換**（原因寫在條目裡）。
 
 ---
@@ -87,7 +87,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 5. **分層資料夾**：`DaysCam/Models/`、`DaysCam/Services/`、`DaysCam/Views/`、`DaysCamTests/`
 6. **共用型別**（`Models/`，皆為 `String` raw value 的 `enum`，皆 `Codable`、`CaseIterable`，附英文文件註解）：
    - `CountingRule`：`dayOne`、`dayZero`
-   - `TemplateID`：`dayCount`、`unitConverted`、`dateOnly`、`dateAndDayCount`、`weekCount`
+   - `TemplateID`：`dayCount`、`unitConverted`、`dateOnly`、`weekCount`、`age`
    - `OverlayPosition`：`topLeading`、`topCenter`、`topTrailing`、`middleLeading`、`middleCenter`、`middleTrailing`、`bottomLeading`、`bottomCenter`、`bottomTrailing`
    - `ThemeID`：`classicWhite`、`retroOrange`、`filmStrip`、`minimalDark`、`softPink`
 
@@ -109,7 +109,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 1.10 | `ls DaysCam/Models DaysCam/Services DaysCam/Views DaysCamTests` | 四個資料夾都存在 |
 | 1.11 | `xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' build` | 編譯成功，exit code 0 |
 | 1.12 | `xcodebuild ... test` | 測試 target 可執行（此時 0 個測試亦可），exit code 0 |
-| 1.13 | `grep -c 'case ' DaysCam/Models/TemplateID.swift` | 恰好 **5**（不是 6，`nameAndDayCount` 已被 `showName` 取代） |
+| 1.13 | `grep -c 'case ' DaysCam/Models/TemplateID.swift` | 恰好 **5**。`nameAndDayCount` 已被 `showName` 開關取代、`dateAndDayCount` 已移除、`age` 為新增（PRD §3.2） |
 | 1.14 | `grep -c 'case ' DaysCam/Models/OverlayPosition.swift` | 恰好 9 |
 | 1.15 | `grep -c 'case ' DaysCam/Models/ThemeID.swift` | 恰好 5 |
 | 1.16 | `grep -rn '!' DaysCam/Models/ \| grep -v '!=' \| grep -v '//'` | 無 force-unwrap（`CLAUDE.md` 規定） |
@@ -310,7 +310,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 ## TASK-04：TemplateRenderer（5 模板 × showName）
 
 **目標**
-把「設定檔 ＋ 當下時間」渲染成疊印字串，涵蓋 PRD §3.2 的 5 種模板與 `showName` 開關。
+把「設定檔 ＋ **呼叫端傳入的拍攝時刻**」渲染成疊印字串，涵蓋 PRD §3.2 的 5 種模板與 `showName` 開關。**本型別不得自行讀取系統時鐘**——拍攝時刻一律由參數傳入（PRD §6.5 的接縫）。
 
 **範圍**
 
@@ -325,17 +325,17 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
               capturedAt: Date,
               calendar: Calendar = .current) -> String
   ```
-- **禁止在 `TemplateRenderer` 內呼叫 `Date()`**（PRD §6.5 / FR-2.11）。內部一律以 `DayCountCalculator(calendar: calendar, now: { capturedAt })` 取得計算結果，讓 `capturedAt` 成為**唯一**的時間來源
-- `templateID == .dateOnly` 時走**獨立分支**：以 `capturedAt` 換算出的當地年月日格式化，**不得**讀取 `profile.startDate`、不得呼叫 `dayCount(...)`（PRD FR-2.10）
+- **禁止在 `TemplateRenderer` 內呼叫 `Date()`**（PRD FR-2.12 / §6.5.3）。內部一律以 `DayCountCalculator(calendar: calendar, now: { capturedAt })` 取得計算結果，讓 `capturedAt` 成為**唯一**的時間來源
+- `templateID == .dateOnly` 時走**獨立分支**：以 `capturedAt` 換算出的當地年月日格式化，**不得**讀取 `profile.startDate`、不得呼叫 `dayCount(...)`（PRD FR-2.11）
 - `showName` 開啟時前置 `"\(name) "`（一個半形空格）；關閉時輸出不得有開頭空白
 - 起始日在未來（`raw < 0`）時，除 `dateOnly` 外所有模板回傳 `"尚未開始"`（PRD §7.2）
 - 附 XCTest
 
 **驗收 — A. QA 可自動跑**
 
-基準：`name: "小寶"`、`startDate: 2025-01-15`、`dayOne`、`capturedAt` = `2026-03-20 10:00`（Asia/Taipei）。此時 `n = 430`、breakdown `(1,2,5)`。
+基準：`name: "小寶"`、`startDate: 2025-01-15`、`dayOne`、`capturedAt` = `2026-03-20 10:00`（Asia/Taipei）。此時 `n = 430`、breakdown `(1, 2, 5)`。
 
-> 下表凡寫「注入 now」處，一律指**傳入的 `capturedAt` 參數**，不是系統時鐘。
+> 下表凡寫「now =」處，一律指**傳入的 `capturedAt` 參數**，不是系統時鐘。
 
 **A-1 5 種模板（`showName` 關閉）**
 
@@ -344,8 +344,8 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 4.1 | `dayCount` | `第 430 天` |
 | 4.2 | `unitConverted` | `1 年 2 個月 5 天` |
 | 4.3 | `dateOnly` | `2026.03.20` |
-| 4.4 | `dateAndDayCount` | `2026.03.20　第 430 天`（中間為全形空白 U+3000） |
-| 4.5 | `weekCount` | `第 61 週又 3 天`（430 = 61×7 + 3） |
+| 4.4 | `weekCount` | `61 週又 3 天`（430 = 61×7 + 3） |
+| 4.5 | `age` | `1 歲 2 個月`（不顯示天數） |
 
 **A-2 `showName` 開啟（同一基準）**
 
@@ -354,61 +354,74 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 4.6 | `dayCount` | `小寶 第 430 天` |
 | 4.7 | `unitConverted` | `小寶 1 年 2 個月 5 天` |
 | 4.8 | `dateOnly` | `小寶 2026.03.20` |
-| 4.9 | `dateAndDayCount` | `小寶 2026.03.20　第 430 天` |
-| 4.10 | `weekCount` | `小寶 第 61 週又 3 天` |
+| 4.9 | `weekCount` | `小寶 61 週又 3 天` |
+| 4.10 | `age` | `小寶 1 歲 2 個月` |
 | 4.11 | 承 4.1（`showName` 關閉） | 輸出**不得**以空白開頭；以 `XCTAssertEqual(out, "第 430 天")` 逐字元比對 |
 
-**A-3 單位轉換的省略規則**
+**A-3 `unitConverted` 的省略規則**
 
-| # | 情境（`dayOne`） | 預期輸出 |
-|---|---|---|
-| 4.12 | start 2026-01-01, now 2026-01-01 → (0,0,0) | `0 天` |
-| 4.13 | start 2026-01-01, now 2026-01-10 → (0,0,9) | `9 天` |
-| 4.14 | start 2025-01-01, now 2026-01-01 → (1,0,0) | `1 年` |
-| 4.15 | start 2025-01-01, now 2026-03-01 → (1,2,0) | `1 年 2 個月` |
+| # | 情境（`dayOne`） | 曆法差 | 預期輸出 |
+|---|---|---|---|
+| 4.12 | start 2026-01-01, now 2026-01-01 | (0,0,0) | `0 天` |
+| 4.13 | start 2026-01-01, now 2026-01-10 | (0,0,9) | `9 天` |
+| 4.14 | start 2025-01-01, now 2026-01-01 | (1,0,0) | `1 年` |
+| 4.15 | start 2025-01-01, now 2026-03-01 | (1,2,0) | `1 年 2 個月` |
 
-**A-4 `dateOnly` 永不讀 `startDate`（PRD FR-2.10）**
+**A-4 `age` 的省略規則與 `{D} 天` fallback（PRD FR-2.9）**
+
+下列起始日／拍攝日組合產生的曆法差**已用 Swift 6.0.3 實測確認**。
+
+| # | 情境（`dayOne`） | 曆法差 | 預期輸出 |
+|---|---|---|---|
+| 4.16 | start 2025-01-15, now 2026-03-20 | (1,2,5) | `1 歲 2 個月`（**天數不顯示**，與 `unitConverted` 的 `1 年 2 個月 5 天` 對照） |
+| 4.17 | start 2026-01-01, now 2026-09-04 | (0,8,3) | `8 個月`（歲為 0 省略，天數不顯示） |
+| 4.18 | start 2023-01-01, now 2026-01-01 | (3,0,0) | `3 歲`（月為 0 省略） |
+| 4.19 | start 2026-01-01, now 2026-01-06 | (0,0,5) | `5 天`（歲與月皆 0，**fallback 到天數**，不得回傳空字串） |
+| 4.20 | start 2026-01-01, now 2026-01-01 | (0,0,0) | `0 天`（全零，同 `unitConverted` 的全零規則） |
+
+**A-5 `dateOnly` 永不讀 `startDate`（PRD FR-2.11）**
 
 | # | 步驟 | 預期輸出 |
 |---|---|---|
-| 4.16 | 建立設定檔 A（`dayCount` 模板、start 2026-01-10、`dayOne`）與 B（`dateOnly` 模板、start 也是 2026-01-10）。注入 now = 2026-01-10 → 各渲染一次；再注入 now = 2026-01-11 → 各渲染一次 | now=01-10：A → `第 1 天`，B → `2026.01.10`<br>now=01-11：A → `第 2 天`（**正確**，天數本來就遞增），B → **`2026.01.11`**（**不得**變成 `第 2 天`） |
-| 4.17 | `dateOnly` 設定檔，`startDate` 設成 **1999-01-01**（與今天無關的值），注入 now = 2026-03-20 | 輸出 `2026.03.20`。`startDate` 完全不影響 `dateOnly` 的輸出 |
-| 4.18 | `dateOnly` 設定檔，起始日在未來（start 2026-12-01、now 2026-09-19） | 輸出 `2026.09.19`，**不是** `尚未開始` |
-| 4.19 | 檢視 `.dateOnly` 分支的實作 | 該分支內**沒有**用到 `profile.startDate`、`countingRule`、`dayCount(...)`；只由 `capturedAt` 換算出年月日並格式化 |
+| 4.21 | 建立設定檔 A（`dayCount` 模板、start 2026-01-10、`dayOne`）與 B（`dateOnly` 模板、start 也是 2026-01-10）。now = 2026-01-10 各渲染一次；再以 now = 2026-01-11 各渲染一次 | now=01-10：A → `第 1 天`，B → `2026.01.10`<br>now=01-11：A → `第 2 天`（**正確**，天數本來就遞增），B → **`2026.01.11`**（**不得**變成 `第 2 天`） |
+| 4.22 | `dateOnly` 設定檔，`startDate` 設成 **1999-01-01**（與今天無關的值），now = 2026-03-20 | 輸出 `2026.03.20`。`startDate` 完全不影響 `dateOnly` 的輸出 |
+| 4.23 | `dateOnly` 設定檔，起始日在未來（start 2026-12-01、now 2026-09-19） | 輸出 `2026.09.19`，**不是** `尚未開始` |
+| 4.24 | 檢視 `.dateOnly` 分支的實作 | 該分支內**沒有**用到 `profile.startDate`、`countingRule`、`dayCount(...)`；只由 `capturedAt` 換算出年月日並格式化 |
 
-**A-4b 拍攝時刻是顯式參數（PRD §6.5 的接縫，Phase 4 匯入功能的前提）**
+**A-6 拍攝時刻是顯式參數（PRD §6.5 的接縫，Phase 4 匯入功能的前提）**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 4.19a | **同一個** `dateOnly` 設定檔，以 `capturedAt = 2019-07-04 09:00` 呼叫一次，再以 `capturedAt = 2026-03-20 10:00` 呼叫一次 | 依序得到 **`2019.07.04`** 與 **`2026.03.20`**。證明 `dateOnly` 完全以傳入的參考日期為準，可餵入任意過去日期——這是日後匯入舊照片的前提 |
-| 4.19b | **同一個**天數設定檔（start 2025-01-15、`dayOne`），以 `capturedAt = 2025-01-16` 與 `capturedAt = 2026-03-20` 各呼叫一次 | 依序得到 **`第 2 天`** 與 **`第 430 天`**。天數同樣完全由 `capturedAt` 決定 |
-| 4.19c | `grep -rn "Date()" DaysCam/Services/TemplateRenderer.swift` | **無結果**。渲染層不得自行讀取系統時鐘（PRD FR-2.11 / §6.5.3） |
-| 4.19d | 檢視 `render` 的簽章 | 含 `capturedAt: Date` 參數。**若有人把它移除並改回內部讀時鐘，4.19a/4.19b 會立刻失敗**——這兩條就是這個接縫的防回歸測試 |
+| 4.25 | **同一個** `dateOnly` 設定檔，以 `capturedAt = 2019-07-04 09:00` 呼叫一次，再以 `capturedAt = 2026-03-20 10:00` 呼叫一次 | 依序得到 **`2019.07.04`** 與 **`2026.03.20`**。證明 `dateOnly` 完全以傳入的拍攝時刻為準，可餵入任意過去日期——這是日後匯入舊照片的前提 |
+| 4.26 | **同一個**天數設定檔（start 2025-01-15、`dayOne`），以 `capturedAt = 2025-01-16` 與 `capturedAt = 2026-03-20` 各呼叫一次 | 依序得到 **`第 2 天`** 與 **`第 430 天`**。天數同樣完全由 `capturedAt` 決定 |
+| 4.27 | `grep -rn "Date()" DaysCam/Services/TemplateRenderer.swift` | **無結果**。渲染層不得自行讀取系統時鐘（PRD FR-2.12 / §6.5.3） |
+| 4.28 | 檢視 `render` 的簽章 | 含 `capturedAt: Date` 參數。**若有人把它移除並改回內部讀時鐘，4.25／4.26 會立刻失敗**——這兩條就是這個接縫的防回歸測試 |
 
-**A-5 週數模板**（規則：`q = n/7`、`r = n%7`；`r == 0` 印 `第 q 週`，否則 `第 q 週又 r 天`）
+**A-7 `weekCount`**（規則：`q = n/7`、`r = n%7`，**基數非序數**，並沿用省略規則：`q == 0` 省略週、`r == 0` 省略天、兩者皆 0 輸出 `0 天`）
 
 | # | `n` | 預期輸出 |
 |---|---|---|
-| 4.20 | 0（`dayZero` 同一天） | `第 0 週` |
-| 4.21 | 1 | `第 0 週又 1 天` |
-| 4.22 | 7 | `第 1 週` |
-| 4.23 | 8 | `第 1 週又 1 天` |
-| 4.24 | 14 | `第 2 週` |
-| 4.25 | 430 | `第 61 週又 3 天` |
+| 4.29 | 0（`dayZero` 同一天） | `0 天` |
+| 4.30 | 1 | `1 天`（`q == 0`，省略週） |
+| 4.31 | 7 | `1 週`（`r == 0`，省略天） |
+| 4.32 | 8 | `1 週又 1 天` |
+| 4.33 | 10 | `1 週又 3 天` |
+| 4.34 | 14 | `2 週` |
+| 4.35 | 430 | `61 週又 3 天` |
 
-**A-6 `dayZero` 與未來日期**
+**A-8 `dayZero` 與未來日期**
 
 | # | 情境 | 預期輸出 |
 |---|---|---|
-| 4.26 | start 2026-01-01, now 2026-01-01, **dayZero**, `dayCount` | `第 0 天` |
-| 4.27 | start 2026-12-01, now 2026-09-19，**除 `dateOnly` 外的 4 種模板全測** | 4 種都回傳 `尚未開始` |
-| 4.28 | 承 4.27，`showName` 開啟 | 輸出為 `小寶 尚未開始` |
+| 4.36 | start 2026-01-01, now 2026-01-01, **dayZero**, `dayCount` | `第 0 天` |
+| 4.37 | start 2026-12-01, now 2026-09-19，**除 `dateOnly` 外的 4 種模板全測** | 4 種都回傳 `尚未開始` |
+| 4.38 | 承 4.37，`showName` 開啟 | 輸出為 `小寶 尚未開始` |
 
-**A-7 時區**
+**A-9 時區**
 
 | # | 步驟 | 預期輸出 |
 |---|---|---|
-| 4.29 | `dateOnly` 設定檔，以 `Asia/Taipei` 與 `America/New_York` 注入同一 UTC 時間 `2026-01-09T20:00:00Z` | Taipei → `2026.01.10`；New_York → `2026.01.09` |
+| 4.39 | `dateOnly` 設定檔，以 `Asia/Taipei` 與 `America/New_York` 傳入同一 UTC 時刻 `2026-01-09T20:00:00Z` | Taipei → `2026.01.10`；New_York → `2026.01.09` |
 
 **驗收 — B. 需人類實機**：無。
 
@@ -564,7 +577,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 8.8 | 位置設 `middleCenter` | 水平垂直皆置中 |
 | 8.9 | 依序套用 9 個位置 | 9 個位置文字都完整顯示，**無任何一個被裁切** |
 | 8.10 | 5 組主題各套一次 | 字體、顏色、襯底肉眼可區分，無任何一組是純文字無襯底 |
-| 8.11 | 名稱 20 字 ＋ `showName` 開啟 ＋ 模板「日期＋天數」＋ 位置 `bottomTrailing` | 文字**不超出觀景窗邊界**；字級縮小但不低於基準 60%；不換行、不截斷 |
+| 8.11 | 名稱 20 字 ＋ `showName` 開啟 ＋ 模板「單位轉換」＋ 位置 `bottomTrailing` | 文字**不超出觀景窗邊界**；字級縮小但不低於基準 60%；不換行、不截斷 |
 | 8.12 | 點擊疊字所在位置 | 觸控穿透到底下（疊字不攔截事件） |
 | 8.13 | 建立第二個設定檔，位置/主題設成不同值，來回切換 | 每個設定檔各自保留自己的位置與主題，互不覆蓋 |
 
@@ -664,7 +677,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 10.10 | 把模板改「純日期」，拍一張 | 照片印 **`2026.01.11`**，**不是** `第 2 天` |
 | 10.11 | 開啟 `showName`（名稱「小寶」）、模板「純天數」，拍一張 | 照片印 `小寶 第 2 天` |
 | 10.12 | 設定檔起始日 2025-01-15、裝置日期 2026-03-20、模板「單位轉換」，拍照 | 照片印 `1 年 2 個月 5 天` |
-| 10.13 | 同上改模板「日期＋天數」 | 照片印 `2026.03.20　第 430 天` |
+| 10.13 | 同上改模板「週數」 | 照片印 `61 週又 3 天`（430 = 61×7 + 3） |
 | 10.14 | 起始日 2024-02-28、裝置日期 2024-03-01、`dayOne`，拍照 | 照片印 `第 3 天`（閏年 2/29 有算進去） |
 | 10.15 | 起始日 2025-12-31、裝置日期 2026-01-01、`dayOne`，拍照 | 照片印 `第 2 天`（跨年） |
 | 10.16 | 直向握持拍照 | 照片方向正確，文字**未被轉 90 度** |
@@ -738,7 +751,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 12.3 | 承 12.1 檢查 App 容器的 `Application Support/DaysCam/profiles.json` | **恰好 1 筆**設定檔；`name` 為 `預設`、`startDate` 為 2026-01-10、`showName` 為 `false` |
 | 12.4 | 承 12.1 開啟設定檔清單 | 恰好 1 列 |
 | 12.5 | 改用 `DAYSCAM_FAKE_TODAY=2026-01-11` 重啟 | 疊字為 `第 2 天`（天數遞增，正確） |
-| 12.6 | 承 12.5 把模板改「純日期」，再重啟 | 疊字為 **`2026.01.11`**，**不是** `第 2 天`（PRD FR-2.10） |
+| 12.6 | 承 12.5 把模板改「純日期」，再重啟 | 疊字為 **`2026.01.11`**，**不是** `第 2 天`（PRD FR-2.11） |
 | 12.7 | 建立「小寶 / 2026-01-01 / 當天算第 1 天」 | 自動切到「小寶」並回相機畫面 |
 | 12.8 | 承 12.7 殺掉 App 重開（`DAYSCAM_FAKE_TODAY=2026-01-11`） | 直接進相機畫面，套用「小寶」，疊字 `第 11 天` |
 | 12.9 | 在清單選「預設」→ 殺掉 App 重開 | 套用「預設」 |
