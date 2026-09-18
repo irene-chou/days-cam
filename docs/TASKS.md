@@ -63,11 +63,13 @@
   - `ThemeID`：`classicWhite`、`retroOrange`、`filmStrip`、`minimalDark`、`softPink`
 - 每個型別附英文文件註解（`CLAUDE.md` 規定）
 - 建立 XCTest target `DaysCamTests`（若 `project.yml` 尚未有）
+- **把 `project.yml` 的 `deploymentTarget.iOS` 由目前的 `"17.0"` 改成 `"18.0"`**，並重新產生 Xcode 專案（PRD §9.1 Q-4 已拍板）
 
 **驗收標準**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
+| 1.0 | 執行 `grep -A1 'deploymentTarget' project.yml` | 顯示 `iOS: "18.0"` |
 | 1.1 | 在 repo 根目錄執行 `xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' build` | 編譯成功，exit code 0 |
 | 1.2 | 執行 `xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' test` | 測試 target 可執行（此時可以 0 個測試），exit code 0 |
 | 1.3 | 執行 `ls DaysCam/Models DaysCam/Services DaysCam/Views` | 三個資料夾都存在 |
