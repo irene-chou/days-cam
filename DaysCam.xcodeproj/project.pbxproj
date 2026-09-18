@@ -12,7 +12,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		29CA7BBE9EF6581D8A97F8FC /* DaysCam.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DaysCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		29CA7BBE9EF6581D8A97F8FC /* DaysCam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DaysCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F48879C03A46F1E443FFB4C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		C2CC70E4BFAD6EF2F0CED47E /* DaysCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaysCamApp.swift; sourceTree = "<group>"; };
 		C316F55F8706D874B2D74D1B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -73,11 +73,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-					8A674163CADD8C7163750592 = {
-						DevelopmentTeam = "";
-					};
-				};
 			};
 			buildConfigurationList = 7146B7046655DDF8F7372A8A /* Build configuration list for PBXProject "DaysCam" */;
 			developmentRegion = en;
@@ -117,6 +112,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W5937V2WUF;
 				INFOPLIST_FILE = DaysCam/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -257,6 +253,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W5937V2WUF;
 				INFOPLIST_FILE = DaysCam/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
