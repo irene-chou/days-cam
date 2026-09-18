@@ -178,7 +178,7 @@
 
 **範圍**
 - `Models/CameraProfile.swift`：依 PRD §4.1 定義欄位
-  - `startDate` 型別為 `DateComponents?`（只含 year/month/day），**不是 `Date`**（PRD A-26）
+  - `startDate` 型別為 `DateComponents?`，**不是 `Date`**（PRD A-26，理由與已排除的替代方案見 PRD §9.1「Q-3 的理由」）。必須滿足 PRD §4.1 **不變條件 4**：恰好只含 year/month/day，其餘欄位（`hour`／`minute`／`second`／**`timeZone`**／**`calendar`** 等）皆須為 nil，且日期必須真實存在
   - `name` 為 `String`，**允許空字串**（PRD FR-1.6 / A-10）
   - `templateID` 預設 `.nameAndDayCount`（PRD FR-1.9）
 - `Services/ProfileStore.swift`：
@@ -227,31 +227,46 @@
 | 3.14 | `add` 一筆 `name: ""`（空字串） | 成功（名稱可留空，PRD FR-1.6） |
 | 3.15 | `add` 一筆 `name` 為 21 個字元 | 回傳錯誤（超出 20 字上限） |
 
-**C. 不變條件**
+**C-1. 不變條件：寫入路徑（`add` / `update` 一律拒絕或剝除）**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
 | 3.16 | `add` 一筆 `mode: .dayCount` 但 `startDate: nil` | 回傳錯誤（違反不變條件 1） |
 | 3.17 | `add` 一筆 `mode: .date` 但 `startDate` 非 nil | 回傳錯誤（違反不變條件 2） |
 | 3.18 | `add` 一筆 `mode: .date` 但 `templateID: .dayCountOnly` | 回傳錯誤（違反不變條件 2） |
-| 3.19 | 手動在 `profiles.json` 裡塞一筆 `mode: "date"` 且帶有 `startDate` 的資料 → `load()` | 該筆被**修正**後回傳：`startDate` 為 nil、`templateID` 為 `.dateOnly`；不崩潰（PRD §7.3） |
-| 3.20 | 手動塞一筆 `mode: "dayCount"` 但缺 `startDate` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰（PRD §7.3） |
+| 3.19 | `add` 一筆 `startDate` 含 `hour: 13, minute: 30, second: 45` | 三者被**剝除**後才寫入；`load()` 回來 `hour`/`minute`/`second` 皆為 nil，年月日不變（不變條件 4） |
+| 3.20 | `add` 一筆 `startDate` 同時帶 `timeZone = TimeZone(secondsFromGMT: 14*3600)` 與 `calendar = Calendar(identifier: .japanese)` | 兩者被**剝除**後才寫入；`load()` 回來 `startDate.timeZone == nil` 且 `startDate.calendar == nil`，年月日不變（不變條件 4） |
+| 3.21 | `add` 一筆 `startDate` 為 `month: 13` | 回傳錯誤，不寫入 |
+| 3.22 | `add` 一筆 `startDate` 為 `2026-02-30`（該月不存在的日） | 回傳錯誤，不寫入 |
+| 3.23 | `add` 一筆 `startDate` 只有 `year` 與 `month`（缺 `day`） | 回傳錯誤，不寫入 |
+
+**C-2. 不變條件：讀取路徑（`load` 修復或丟棄）**
+
+| # | 步驟 | 預期結果 |
+|---|---|---|
+| 3.24 | 手動在 `profiles.json` 裡塞一筆 `mode: "date"` 且帶有 `startDate` 的資料 → `load()` | 該筆被**修正**後回傳：`startDate` 為 nil、`templateID` 為 `.dateOnly`；不崩潰（PRD §7.3） |
+| 3.25 | 手動塞一筆 `mode: "dayCount"` 但缺 `startDate` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰（PRD §7.3） |
+| 3.26 | 手動塞一筆 `startDate` 含時分秒的資料 → `load()` | 時分秒被剝除，年月日正確；不崩潰 |
+| 3.27 | **（本段最關鍵的一條）** 手動塞兩筆 `dayCount` 設定檔 P1、P2，兩者 `startDate` 的年月日**都是 2026-01-01**，但 P2 額外帶 `timeZone: TimeZone(secondsFromGMT: 14*3600)`（UTC+14）。calculator 的時區固定為 `Asia/Taipei`（UTC+8）、注入 now = `2026-01-10 12:00`，`load()` 後分別渲染兩筆 | P2 的 `timeZone` 被剝除，**P1 與 P2 都輸出 `第 10 天`**。<br>**若剝除未實作，P2 會輸出 `第 11 天`**——夾帶的 UTC+14 會把起始日解讀成台北當地的 2025-12-31，硬是多算一天。這正是本條要抓的 bug |
+| 3.28 | 手動塞一筆 `startDate` 為 `month: 13` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰 |
+
+> **給 QA 的提醒（3.27 為何要用 UTC+14）**：夾帶的 `timeZone` **不是**每次都會造成差異——天數計算最後會經過 `startOfDay` 正規化，只有當**夾帶的時區 offset 大於裝置時區**時，起始日才會被推回前一個當地日。若改用 `timeZone: UTC`（+0）在台北裝置（+8）上測，**即使剝除邏輯完全沒實作也會通過**。請務必照條目指定的 UTC+14 執行，不要自行換成別的時區。
 
 **D. 損毀與狀態還原**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 3.21 | 手動把 `profiles.json` 內容覆寫成 `"這不是 JSON"` → 建立新 store（注入 now = 2026-03-05）→ `load()` | 回傳**重新種下的 2 筆預設設定檔**（① 的 `startDate == (2026, 3, 5)`），`didRecoverFromCorruption == true`，且同目錄下存在 `profiles.json.corrupt-*`，內容為 `"這不是 JSON"` |
-| 3.22 | 設定 `lastUsedProfileID` 為某筆 id → 重新讀取 | 回傳同一個 id |
-| 3.23 | 把 `lastUsedProfileID` 手動改成一個隨機不存在的 UUID → 讀取 | 回傳**清單第一筆**的 id（不是 nil、不崩潰） |
-| 3.24 | `delete` 掉 `lastUsedProfileID` 指向的設定檔 → 讀取 `lastUsedProfileID` | 回傳清單中仍存在的某一筆 id（不得指向已刪除的 id） |
+| 3.29 | 手動把 `profiles.json` 內容覆寫成 `"這不是 JSON"` → 建立新 store（注入 now = 2026-03-05）→ `load()` | 回傳**重新種下的 2 筆預設設定檔**（① 的 `startDate == (2026, 3, 5)`），`didRecoverFromCorruption == true`，且同目錄下存在 `profiles.json.corrupt-*`，內容為 `"這不是 JSON"` |
+| 3.30 | 設定 `lastUsedProfileID` 為某筆 id → 重新讀取 | 回傳同一個 id |
+| 3.31 | 把 `lastUsedProfileID` 手動改成一個隨機不存在的 UUID → 讀取 | 回傳**清單第一筆**的 id（不是 nil、不崩潰） |
+| 3.32 | `delete` 掉 `lastUsedProfileID` 指向的設定檔 → 讀取 `lastUsedProfileID` | 回傳清單中仍存在的某一筆 id（不得指向已刪除的 id） |
 
 **E. 靜態檢查**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 3.25 | 執行 `grep -rn "dateModePosition\|dateModeTheme" DaysCam/` | **無結果**（位置/主題已改為設定檔欄位，不再有 App 層級鍵） |
-| 3.26 | 執行 `grep -rni "天數相機\|DaysCam\|我的計時器" DaysCam/Services/ProfileStore.swift` | **無結果**（種預設值時不得帶入任何品牌或佔位名稱，PRD A-4） |
+| 3.33 | 執行 `grep -rn "dateModePosition\|dateModeTheme" DaysCam/` | **無結果**（位置/主題已改為設定檔欄位，不再有 App 層級鍵） |
+| 3.34 | 執行 `grep -rni "天數相機\|DaysCam\|我的計時器" DaysCam/Services/ProfileStore.swift` | **無結果**（種預設值時不得帶入任何品牌或佔位名稱，PRD A-4） |
 
 **依賴**：TASK-01
 

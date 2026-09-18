@@ -349,6 +349,19 @@ MVP 提供 **5 組預設主題**。每組主題是「字體 + 顏色 + 陰影／
 1. `mode == .dayCount` ⟹ `startDate != nil`
 2. `mode == .date` ⟹ `startDate == nil` 且 `templateID == .dateOnly`
 3. `name.count <= 20`
+4. `startDate != nil` 時，該 `DateComponents` **恰好只含 `year`、`month`、`day` 三個欄位**，且三者皆非 nil。其餘欄位**全部必須為 nil**，包含但不限於：`hour`、`minute`、`second`、`nanosecond`、**`timeZone`**、**`calendar`**、`era`、`weekday`、`weekOfMonth`、`weekOfYear`、`yearForWeekOfYear`、`quarter`。此外 `(year, month, day)` 必須是 `Calendar.current` 下**真實存在**的日期（`month: 13`、`2026-02-30` 皆非法）。
+
+> **為什麼第 4 條要逐一點名 `timeZone` 與 `calendar`**
+>
+> `DateComponents` 是鬆散容器，`timeZone` 與 `calendar` 是它的合法屬性，而且會被 `Codable` 一起序列化進 JSON。關鍵在於：**`Calendar.date(from:)` 一旦發現 components 自帶 `timeZone` 或 `calendar`，會優先採用它們，而不是該 `Calendar` 自己的設定**。
+>
+> 後果是一筆夾帶 `timeZone` 的 `startDate` 會**繞過 §6.3「一律使用 `Calendar.current`」**，讓那個設定檔的天數計算偏離其他設定檔，重新製造出 §9.1 Q-3 整條理由想防止的時區位移。
+>
+> 這比夾帶時分秒危險得多。時分秒會被 `startOfDay` 正規化掉，通常不會出事；`timeZone` 則只在**夾帶的時區 offset 大於裝置時區**時才把起始日推回前一天（例如夾帶 UTC+14、裝置在 UTC+8 → 起始日從 2026-01-01 變成 2025-12-31，天數整個多一天），症狀只在特定時區組合下出現，極難 debug。
+>
+> 因此「不得夾帶時分秒」這種寫法是不夠的，必須明確要求**除年月日外一律為 nil**。
+
+**違反時的處理**：`add` / `update` 路徑一律**拒絕**（回傳錯誤）；`load` 路徑依 §7.3 處理——可安全剝除的多餘欄位（時分秒、`timeZone`、`calendar` 等）**剝除後採用**，值本身非法或必要欄位缺漏者**丟棄該筆**。選擇剝除而非丟棄，是因為年月日本身是明確的日曆日，剝掉多餘屬性後得到的正是 §6.3 要的語意，不會有歧義；丟棄則會讓使用者平白損失一個設定檔。
 
 ### 4.2 App 層級狀態
 
