@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct TallyCamApp: App {
+struct DaysCamApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -7,187 +7,130 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		4B4050818DFF514F4C0E7AF5 /* TallyCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3C87F463F26B480B5C8D7F9 /* TallyCamApp.swift */; };
-		BDC913E7C000A70898502278 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A4319E9287341B0EB93008 /* ContentView.swift */; };
+		2CFD3C55EF7D4F623556FD35 /* DaysCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2CC70E4BFAD6EF2F0CED47E /* DaysCamApp.swift */; };
+		400C931658F18E9A7D6F2595 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F48879C03A46F1E443FFB4C /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1828B4896280216708C37781 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		2A5E1EB97D3B70300CFB3912 /* TallyCam.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TallyCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		30A4319E9287341B0EB93008 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		C3C87F463F26B480B5C8D7F9 /* TallyCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TallyCamApp.swift; sourceTree = "<group>"; };
+		29CA7BBE9EF6581D8A97F8FC /* DaysCam.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = DaysCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F48879C03A46F1E443FFB4C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		C2CC70E4BFAD6EF2F0CED47E /* DaysCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaysCamApp.swift; sourceTree = "<group>"; };
+		C316F55F8706D874B2D74D1B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		2A3A2FEADC1826C9780EC97D /* TallyCam */ = {
+		2B571E9472E5443E1220B5E6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				30A4319E9287341B0EB93008 /* ContentView.swift */,
-				1828B4896280216708C37781 /* Info.plist */,
-				C3C87F463F26B480B5C8D7F9 /* TallyCamApp.swift */,
-			);
-			path = TallyCam;
-			sourceTree = "<group>";
-		};
-		CF7FD04348B509E3AC06BB34 = {
-			isa = PBXGroup;
-			children = (
-				2A3A2FEADC1826C9780EC97D /* TallyCam */,
-				F77FB62B5695C7570C5D9BCE /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		F77FB62B5695C7570C5D9BCE /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				2A5E1EB97D3B70300CFB3912 /* TallyCam.app */,
+				29CA7BBE9EF6581D8A97F8FC /* DaysCam.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		53A96C09B246F0E53E381DFD /* DaysCam */ = {
+			isa = PBXGroup;
+			children = (
+				7F48879C03A46F1E443FFB4C /* ContentView.swift */,
+				C2CC70E4BFAD6EF2F0CED47E /* DaysCamApp.swift */,
+				C316F55F8706D874B2D74D1B /* Info.plist */,
+			);
+			path = DaysCam;
+			sourceTree = "<group>";
+		};
+		77D565D02DDD8BBBF7E1D9A2 = {
+			isa = PBXGroup;
+			children = (
+				53A96C09B246F0E53E381DFD /* DaysCam */,
+				2B571E9472E5443E1220B5E6 /* Products */,
+			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		C3FC4772100CC279AA3ED3BE /* TallyCam */ = {
+		8A674163CADD8C7163750592 /* DaysCam */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 350C760F28112D9B406CE2AA /* Build configuration list for PBXNativeTarget "TallyCam" */;
+			buildConfigurationList = A7150FDE1642FEF174B522C0 /* Build configuration list for PBXNativeTarget "DaysCam" */;
 			buildPhases = (
-				F5AF7E00AF3CBF1E3664B8C1 /* Sources */,
+				636282A249EAF6CBDB3C0C50 /* Sources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = TallyCam;
+			name = DaysCam;
 			packageProductDependencies = (
 			);
-			productName = TallyCam;
-			productReference = 2A5E1EB97D3B70300CFB3912 /* TallyCam.app */;
+			productName = DaysCam;
+			productReference = 29CA7BBE9EF6581D8A97F8FC /* DaysCam.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		B36982C1DA898CC9E63411F3 /* Project object */ = {
+		556FB1FA93BBD237D1462C86 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					C3FC4772100CC279AA3ED3BE = {
+					8A674163CADD8C7163750592 = {
 						DevelopmentTeam = "";
 					};
 				};
 			};
-			buildConfigurationList = 3C4C0AE7BCC1AFF0B1F02019 /* Build configuration list for PBXProject "TallyCam" */;
+			buildConfigurationList = 7146B7046655DDF8F7372A8A /* Build configuration list for PBXProject "DaysCam" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
 				en,
 			);
-			mainGroup = CF7FD04348B509E3AC06BB34;
+			mainGroup = 77D565D02DDD8BBBF7E1D9A2;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = F77FB62B5695C7570C5D9BCE /* Products */;
+			productRefGroup = 2B571E9472E5443E1220B5E6 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C3FC4772100CC279AA3ED3BE /* TallyCam */,
+				8A674163CADD8C7163750592 /* DaysCam */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		F5AF7E00AF3CBF1E3664B8C1 /* Sources */ = {
+		636282A249EAF6CBDB3C0C50 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BDC913E7C000A70898502278 /* ContentView.swift in Sources */,
-				4B4050818DFF514F4C0E7AF5 /* TallyCamApp.swift in Sources */,
+				400C931658F18E9A7D6F2595 /* ContentView.swift in Sources */,
+				2CFD3C55EF7D4F623556FD35 /* DaysCamApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		0A198267477516E7D8192550 /* Debug */ = {
+		018F3E3AB34A1F29A5064F81 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = TallyCam/Info.plist;
+				INFOPLIST_FILE = DaysCam/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.irenechou.TallyCam;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irenechou.DaysCam;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Debug;
-		};
-		714F6DB2048A93651095EEBC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
-			};
 			name = Release;
 		};
-		AC772B5599E62564FFEA4307 /* Debug */ = {
+		37624F92C8437594C4824EC2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -251,47 +194,104 @@
 			};
 			name = Debug;
 		};
-		C6111FE1057D279727832065 /* Release */ = {
+		5A7B826B3D3F15BA8058BA63 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		CFDC3510B19A239AA5846FDA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = TallyCam/Info.plist;
+				INFOPLIST_FILE = DaysCam/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.irenechou.TallyCam;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irenechou.DaysCam;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Release;
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		350C760F28112D9B406CE2AA /* Build configuration list for PBXNativeTarget "TallyCam" */ = {
+		7146B7046655DDF8F7372A8A /* Build configuration list for PBXProject "DaysCam" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0A198267477516E7D8192550 /* Debug */,
-				C6111FE1057D279727832065 /* Release */,
+				37624F92C8437594C4824EC2 /* Debug */,
+				5A7B826B3D3F15BA8058BA63 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		3C4C0AE7BCC1AFF0B1F02019 /* Build configuration list for PBXProject "TallyCam" */ = {
+		A7150FDE1642FEF174B522C0 /* Build configuration list for PBXNativeTarget "DaysCam" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AC772B5599E62564FFEA4307 /* Debug */,
-				714F6DB2048A93651095EEBC /* Release */,
+				CFDC3510B19A239AA5846FDA /* Debug */,
+				018F3E3AB34A1F29A5064F81 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = B36982C1DA898CC9E63411F3 /* Project object */;
+	rootObject = 556FB1FA93BBD237D1462C86 /* Project object */;
 }

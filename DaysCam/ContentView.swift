@@ -5,7 +5,7 @@ struct ContentView: View {
         VStack(spacing: 16) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 48))
-            Text("TallyCam")
+            Text("Days Cam")
                 .font(.title)
         }
         .padding()
