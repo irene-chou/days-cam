@@ -235,38 +235,43 @@
 | 3.17 | `add` 一筆 `mode: .date` 但 `startDate` 非 nil | 回傳錯誤（違反不變條件 2） |
 | 3.18 | `add` 一筆 `mode: .date` 但 `templateID: .dayCountOnly` | 回傳錯誤（違反不變條件 2） |
 | 3.19 | `add` 一筆 `startDate` 含 `hour: 13, minute: 30, second: 45` | 三者被**剝除**後才寫入；`load()` 回來 `hour`/`minute`/`second` 皆為 nil，年月日不變（不變條件 4） |
-| 3.20 | `add` 一筆 `startDate` 同時帶 `timeZone = TimeZone(secondsFromGMT: 14*3600)` 與 `calendar = Calendar(identifier: .japanese)` | 兩者被**剝除**後才寫入；`load()` 回來 `startDate.timeZone == nil` 且 `startDate.calendar == nil`，年月日不變（不變條件 4） |
-| 3.21 | `add` 一筆 `startDate` 為 `month: 13` | 回傳錯誤，不寫入 |
-| 3.22 | `add` 一筆 `startDate` 為 `2026-02-30`（該月不存在的日） | 回傳錯誤，不寫入 |
-| 3.23 | `add` 一筆 `startDate` 只有 `year` 與 `month`（缺 `day`） | 回傳錯誤，不寫入 |
+| 3.20 | `add` 一筆 `startDate` 帶 `timeZone = TimeZone(identifier: "Asia/Taipei")` | 被**剝除**後才寫入；`load()` 回來 `startDate.timeZone == nil`，年月日不變 |
+| 3.21 | `add` 一筆 `startDate` 帶 `calendar = Calendar(identifier: .buddhist)` | 被**剝除**後才寫入；`load()` 回來 `startDate.calendar == nil`，年月日不變 |
+| 3.22 | `add` 一筆 `startDate` 為 `month: 13` | 回傳錯誤，不寫入 |
+| 3.23 | `add` 一筆 `startDate` 為 `2026-02-30`（該月不存在的日） | 回傳錯誤，不寫入 |
+| 3.24 | `add` 一筆 `startDate` 只有 `year` 與 `month`（缺 `day`） | 回傳錯誤，不寫入 |
 
 **C-2. 不變條件：讀取路徑（`load` 修復或丟棄）**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 3.24 | 手動在 `profiles.json` 裡塞一筆 `mode: "date"` 且帶有 `startDate` 的資料 → `load()` | 該筆被**修正**後回傳：`startDate` 為 nil、`templateID` 為 `.dateOnly`；不崩潰（PRD §7.3） |
-| 3.25 | 手動塞一筆 `mode: "dayCount"` 但缺 `startDate` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰（PRD §7.3） |
-| 3.26 | 手動塞一筆 `startDate` 含時分秒的資料 → `load()` | 時分秒被剝除，年月日正確；不崩潰 |
-| 3.27 | **（本段最關鍵的一條）** 手動塞兩筆 `dayCount` 設定檔 P1、P2，兩者 `startDate` 的年月日**都是 2026-01-01**，但 P2 額外帶 `timeZone: TimeZone(secondsFromGMT: 14*3600)`（UTC+14）。calculator 的時區固定為 `Asia/Taipei`（UTC+8）、注入 now = `2026-01-10 12:00`，`load()` 後分別渲染兩筆 | P2 的 `timeZone` 被剝除，**P1 與 P2 都輸出 `第 10 天`**。<br>**若剝除未實作，P2 會輸出 `第 11 天`**——夾帶的 UTC+14 會把起始日解讀成台北當地的 2025-12-31，硬是多算一天。這正是本條要抓的 bug |
-| 3.28 | 手動塞一筆 `startDate` 為 `month: 13` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰 |
+| 3.25 | 手動在 `profiles.json` 裡塞一筆 `mode: "date"` 且帶有 `startDate` 的資料 → `load()` | 該筆被**修正**後回傳：`startDate` 為 nil、`templateID` 為 `.dateOnly`；不崩潰（PRD §7.3） |
+| 3.26 | 手動塞一筆 `mode: "dayCount"` 但缺 `startDate` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰（PRD §7.3） |
+| 3.27 | 手動塞一筆 `startDate` 含時分秒的資料 → `load()` | 時分秒被剝除，年月日正確；不崩潰 |
+| 3.28 | **（本段最關鍵的一條，驗真正的危害而不只是屬性值）** 手動塞兩筆 `dayCount` 設定檔 P1、P2，`startDate` 年月日**都是 2026-01-15**、規則皆 `dayOne`，但 P2 額外帶 `timeZone: TimeZone(identifier: "Asia/Taipei")`。calculator 的時區設為 **`America/New_York`**、注入 now = `2026-01-20 12:00`，`load()` 後分別渲染 | P2 的 `timeZone` 被剝除，**P1 與 P2 都輸出 `第 6 天`**（rawDayDifference 皆為 5）。<br>**若剝除未實作，P2 會輸出 `第 7 天`**（rawDayDifference 為 6）——夾帶的台北時區把起始日解讀成紐約當地的 2026-01-14，硬是多算一天 |
+| 3.29 | 手動塞一筆 `startDate` 帶 `calendar: Calendar(identifier: .buddhist)` 的資料 → `load()` | `calendar` 被剝除；該筆算出的天數與同年月日但乾淨的設定檔**完全相同**，**不得**出現差 543 年的日期（佛曆 2026 年＝西元 1483 年） |
+| 3.30 | 手動塞一筆 `startDate` 為 `month: 13` 的資料 → `load()` | 該筆被**丟棄**，其餘正常回傳；不崩潰 |
 
-> **給 QA 的提醒（3.27 為何要用 UTC+14）**：夾帶的 `timeZone` **不是**每次都會造成差異——天數計算最後會經過 `startOfDay` 正規化，只有當**夾帶的時區 offset 大於裝置時區**時，起始日才會被推回前一個當地日。若改用 `timeZone: UTC`（+0）在台北裝置（+8）上測，**即使剝除邏輯完全沒實作也會通過**。請務必照條目指定的 UTC+14 執行，不要自行換成別的時區。
+> **給 QA 的提醒（3.28 的時區組合不可自行更換）**：夾帶的 `timeZone` **不是**每次都會造成差異。只有當**夾帶的時區 offset 大於裝置時區**時，起始日才會被推回前一個當地日。本條指定的組合（夾帶 `Asia/Taipei` +8、裝置 `America/New_York` −5）滿足這個條件，所以測得出來；若改成夾帶 `UTC`（+0）而裝置在台北（+8），**即使剝除邏輯完全沒實作也會通過**。請照條目指定的組合執行。
+>
+> **也請注意**：PRD §6.3 規定天數計算會走 `startOfDay` 正規化，但那**救不回**這種污染——日期已整個位移一天，`startOfDay` 只是取出錯誤日期的零點。所以這條必須在持久化層驗，不能寄望計算層擋下來。
 
 **D. 損毀與狀態還原**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 3.29 | 手動把 `profiles.json` 內容覆寫成 `"這不是 JSON"` → 建立新 store（注入 now = 2026-03-05）→ `load()` | 回傳**重新種下的 2 筆預設設定檔**（① 的 `startDate == (2026, 3, 5)`），`didRecoverFromCorruption == true`，且同目錄下存在 `profiles.json.corrupt-*`，內容為 `"這不是 JSON"` |
-| 3.30 | 設定 `lastUsedProfileID` 為某筆 id → 重新讀取 | 回傳同一個 id |
-| 3.31 | 把 `lastUsedProfileID` 手動改成一個隨機不存在的 UUID → 讀取 | 回傳**清單第一筆**的 id（不是 nil、不崩潰） |
-| 3.32 | `delete` 掉 `lastUsedProfileID` 指向的設定檔 → 讀取 `lastUsedProfileID` | 回傳清單中仍存在的某一筆 id（不得指向已刪除的 id） |
+| 3.31 | 手動把 `profiles.json` 內容覆寫成 `"這不是 JSON"` → 建立新 store（注入 now = 2026-03-05）→ `load()` | 回傳**重新種下的 2 筆預設設定檔**（① 的 `startDate == (2026, 3, 5)`），`didRecoverFromCorruption == true`，且同目錄下存在 `profiles.json.corrupt-*`，內容為 `"這不是 JSON"` |
+| 3.32 | 設定 `lastUsedProfileID` 為某筆 id → 重新讀取 | 回傳同一個 id |
+| 3.33 | 把 `lastUsedProfileID` 手動改成一個隨機不存在的 UUID → 讀取 | 回傳**清單第一筆**的 id（不是 nil、不崩潰） |
+| 3.34 | `delete` 掉 `lastUsedProfileID` 指向的設定檔 → 讀取 `lastUsedProfileID` | 回傳清單中仍存在的某一筆 id（不得指向已刪除的 id） |
 
 **E. 靜態檢查**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 3.33 | 執行 `grep -rn "dateModePosition\|dateModeTheme" DaysCam/` | **無結果**（位置/主題已改為設定檔欄位，不再有 App 層級鍵） |
-| 3.34 | 執行 `grep -rni "天數相機\|DaysCam\|我的計時器" DaysCam/Services/ProfileStore.swift` | **無結果**（種預設值時不得帶入任何品牌或佔位名稱，PRD A-4） |
+| 3.35 | 執行 `grep -rn "dateModePosition\|dateModeTheme" DaysCam/` | **無結果**（位置/主題已改為設定檔欄位，不再有 App 層級鍵） |
+| 3.36 | 執行 `grep -rni "天數相機\|DaysCam\|我的計時器" DaysCam/Services/ProfileStore.swift` | **無結果**（種預設值時不得帶入任何品牌或佔位名稱，PRD A-4） |
+| 3.37 | 執行 `grep -rnE "startDate[?!]?\.date\b" DaysCam/` | **無結果**。禁止使用 `DateComponents.date` 計算屬性取日期——它會採用元件自帶的 `calendar`（污染時差 543 年），且在 `calendar` 為 nil 時一律回傳 nil。一律改走注入的 `Calendar`（PRD §4.1 不變條件 4 的說明） |
 
 **依賴**：TASK-01
 

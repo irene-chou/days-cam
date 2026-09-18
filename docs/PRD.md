@@ -353,13 +353,33 @@ MVP 提供 **5 組預設主題**。每組主題是「字體 + 顏色 + 陰影／
 
 > **為什麼第 4 條要逐一點名 `timeZone` 與 `calendar`**
 >
-> `DateComponents` 是鬆散容器，`timeZone` 與 `calendar` 是它的合法屬性，而且會被 `Codable` 一起序列化進 JSON。關鍵在於：**`Calendar.date(from:)` 一旦發現 components 自帶 `timeZone` 或 `calendar`，會優先採用它們，而不是該 `Calendar` 自己的設定**。
+> `DateComponents` 是鬆散容器，`timeZone` 與 `calendar` 是它的合法屬性，而且會被 `Codable` 一起序列化進 JSON。兩者各有一條污染路徑，**機制不同，不可混為一談**。以下數字皆以 Swift 6.0.3 實測。
 >
-> 後果是一筆夾帶 `timeZone` 的 `startDate` 會**繞過 §6.3「一律使用 `Calendar.current`」**，讓那個設定檔的天數計算偏離其他設定檔，重新製造出 §9.1 Q-3 整條理由想防止的時區位移。
+> **路徑一：`timeZone` 污染 `Calendar.date(from:)`，而且 `startOfDay` 救不回來。**
 >
-> 這比夾帶時分秒危險得多。時分秒會被 `startOfDay` 正規化掉，通常不會出事；`timeZone` 則只在**夾帶的時區 offset 大於裝置時區**時才把起始日推回前一天（例如夾帶 UTC+14、裝置在 UTC+8 → 起始日從 2026-01-01 變成 2025-12-31，天數整個多一天），症狀只在特定時區組合下出現，極難 debug。
+> `Calendar.date(from:)` 若發現 components 自帶 `timeZone`，會用它來解析，而不是該 `Calendar` 自己的時區。情境：使用者在台北建檔（元件夾帶 `Asia/Taipei`），人飛到紐約，裝置 calendar 變成 `America/New_York`。
 >
-> 因此「不得夾帶時分秒」這種寫法是不夠的，必須明確要求**除年月日外一律為 nil**。
+> | | 解析結果（紐約當地） | `startOfDay` 後 | 到 2026-01-20 的天數差 |
+> |---|---|---|---|
+> | 乾淨的 y/m/d | 2026-01-15 00:00 | 2026-01-15 | **5** |
+> | 夾帶 `Asia/Taipei` | 2026-01-14 11:00 | 2026-01-14 | **6** |
+>
+> 特別注意：§6.3 規定計算要走 `startOfDay` 正規化，直覺上會以為那能吸收掉污染，**但它不能**——日期已經整個位移一天，`startOfDay` 只是把錯誤日期的零點取出來。**所以不能靠計算層的 `startOfDay` 當防線，必須在持久化層擋掉。**
+>
+> **路徑二：`calendar` 不影響 `Calendar.date(from:)`，但污染 `DateComponents.date` 計算屬性。**
+>
+> 同一組 y/m/d 夾帶 `Calendar(identifier: .buddhist)`：
+>
+> | 取值方式 | 結果 |
+> |---|---|
+> | `Calendar.date(from:)`（**忽略** components.calendar） | 2026-01-15 |
+> | `DateComponents.date`（用自帶的佛曆自行解析） | **1483-01-14** |
+>
+> **差 543 年**（佛曆 2026 年＝西元 1483 年）。危險在於 `.date` 是個看起來人畜無害的屬性，Dev 很可能隨手寫 `profile.startDate?.date`，而不是走注入的 `Calendar`。
+>
+> **補充實測發現**：`DateComponents.date` 在 `calendar` 為 nil 時**回傳 nil**。因此第 4 條一旦被強制，誤用 `.date` 的程式碼在乾淨資料上會直接拿到 nil（會很快被發現）；真正的風險是污染資料漏過驗證時，`.date` 會安靜地回傳一個差 543 年的日期。兩種情況都是 bug，故 TASK-03 另加一條靜態檢查，禁止在專案中使用 `DateComponents.date`。
+>
+> 結論：「不得夾帶時分秒」這種寫法遠遠不夠，必須明確要求**除年月日外一律為 nil**。
 
 **違反時的處理**：`add` / `update` 路徑一律**拒絕**（回傳錯誤）；`load` 路徑依 §7.3 處理——可安全剝除的多餘欄位（時分秒、`timeZone`、`calendar` 等）**剝除後採用**，值本身非法或必要欄位缺漏者**丟棄該筆**。選擇剝除而非丟棄，是因為年月日本身是明確的日曆日，剝掉多餘屬性後得到的正是 §6.3 要的語意，不會有歧義；丟棄則會讓使用者平白損失一個設定檔。
 
