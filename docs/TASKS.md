@@ -163,6 +163,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
       func dayCount(from startDate: DateComponents, rule: CountingRule) -> Int
       /// Calendar year/month/day breakdown for the unit-converted template.
       func calendarBreakdown(from startDate: DateComponents) -> (years: Int, months: Int, days: Int)
+      func monthDayBreakdown(from startDate: DateComponents) -> (months: Int, days: Int)
       /// Today's date in this calculator's calendar and time zone.
       func currentDateComponents() -> DateComponents
   }
@@ -171,6 +172,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
   - `rawDayDifference` = `calendar.dateComponents([.day], from: startOfDay(起始日), to: startOfDay(now())).day`
   - `dayOne` → `raw + 1`；`dayZero` → `raw`
   - `calendarBreakdown` = `calendar.dateComponents([.year,.month,.day], from: startOfDay(起始日), to: startOfDay(now()))`，**不加 1**
+  - `monthDayBreakdown` = `calendar.dateComponents([.month,.day], ...)`，**不加 1**。月軌的「14 個月」**無法**從年軌的 `(1, 2, 5)` 用算術推出來，必須另外向 `Calendar` 要。放在這裡而非 renderer，是為了不讓 `startOfDay` 正規化邏輯在兩處各寫一份
   - `currentDateComponents` = `now()` 在當地時區的 y/m/d（供日期顯示與「新設定檔起始日預設今天」使用）
 - **`#if DEBUG` 時間覆寫**：讀環境變數 `DAYSCAM_FAKE_TODAY`（格式 `yyyy-MM-dd`），有值時 `now()` 回傳當地該日中午 12:00。Release build **不得**包含此程式碼。
 - **禁止**讀取任何 EXIF 或檔案時間（PRD §6.1）
@@ -226,7 +228,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | # | 步驟 | 預期結果 |
 |---|---|---|
 | 2.26 | `grep -rni "exif\|DateTimeOriginal\|creationDate\|fileCreation" DaysCam/` | **無結果**（PRD §6.1 硬約束） |
-| 2.27 | `grep -rn "Date()" DaysCamTests/` | **無結果**（測試不得依賴真實時間） |
+| 2.27 | `grep -rnE '=\s*Date\(\)\|\bDate\(\)\)\|\{ Date\(\) \}' DaysCamTests/` | **無結果**（測試不得依賴真實時間）。**注意**：不要用 `grep -rn "Date()"`——那會抓到測試方法名稱（例如 `testRendersJustTheDate()`）與註解，逼測試作者為了過 grep 去改命名 |
 | 2.28 | 檢視 `DAYSCAM_FAKE_TODAY` 的實作 | 整段包在 `#if DEBUG` 內 |
 
 **驗收 — B. 需人類實機**：無。
