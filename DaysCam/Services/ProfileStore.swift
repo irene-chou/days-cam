@@ -1,0 +1,268 @@
+import Foundation
+
+/// A reason a profile operation could not be completed.
+enum ProfileStoreError: Error, Equatable {
+    /// The profile limit has been reached; nothing was written (PRD FR-1.7).
+    case limitReached(limit: Int)
+    /// The only remaining profile cannot be deleted (PRD FR-1.8).
+    case lastProfile
+    /// No stored profile has this identifier.
+    case profileNotFound(id: UUID)
+    /// The profile violates one of the PRD §4.1 invariants.
+    case invalidProfile(CameraProfileValidationError)
+    /// The file could not be written; the previous contents are intact.
+    case writeFailed(String)
+}
+
+/// Stores the camera profiles as a single JSON file and enforces the PRD §4.1
+/// invariants on the way in and on the way out.
+///
+/// The clock, the calendar, the directory and the defaults are all injected so
+/// the whole thing can be exercised against a temporary directory without
+/// touching the real one (PRD §8).
+///
+/// Validation deliberately lives here rather than in `CameraProfile`'s
+/// initializer: an editing screen needs to hold a half-finished profile, so
+/// this is the layer that decides what may be persisted.
+final class ProfileStore: ObservableObject {
+    /// Maximum number of profiles (PRD FR-1.7).
+    static let profileLimit = 20
+    static let fileName = "profiles.json"
+    /// `UserDefaults` key holding the profile to restore on next launch.
+    static let lastUsedProfileIDKey = "lastUsedProfileID"
+
+    /// Every stored profile, in insertion order.
+    @Published private(set) var profiles: [CameraProfile] = []
+    /// The profile the camera screen is using. Always points at an existing
+    /// profile once `load()` has run and the list is non-empty.
+    @Published private(set) var selectedProfileID: UUID?
+    /// True when the last `load()` found an unreadable file and re-seeded.
+    ///
+    /// The camera screen shows a one-off alert for this (PRD §7.3).
+    @Published private(set) var didRecoverFromCorruption = false
+
+    private let directory: URL
+    private let calendar: Calendar
+    private let now: () -> Date
+    private let defaults: UserDefaults
+    private let fileManager: FileManager
+
+    /// Creates a store.
+    ///
+    /// - Parameter directory: where `profiles.json` lives. Defaults to
+    ///   `Application Support/DaysCam`; tests pass a temporary directory.
+    init(directory: URL? = nil,
+         calendar: Calendar = .current,
+         now: @escaping () -> Date = DayCountCalculator.defaultNow(),
+         defaults: UserDefaults = .standard,
+         fileManager: FileManager = .default) {
+        self.directory = directory ?? Self.defaultDirectory(fileManager: fileManager)
+        self.calendar = calendar
+        self.now = now
+        self.defaults = defaults
+        self.fileManager = fileManager
+    }
+
+    /// The file the profiles are stored in.
+    var fileURL: URL {
+        directory.appendingPathComponent(Self.fileName)
+    }
+
+    private static func defaultDirectory(fileManager: FileManager) -> URL {
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let root = base ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return root.appendingPathComponent("DaysCam", isDirectory: true)
+    }
+}
+
+// MARK: - Loading
+
+extension ProfileStore {
+    /// Reads the profiles, seeding or repairing as needed.
+    ///
+    /// Three outcomes: no file yet seeds one default profile; an unreadable
+    /// file is set aside and re-seeded; a readable file has each record
+    /// validated, with repairable ones cleaned up and hopeless ones dropped
+    /// (PRD §4.1, §7.3).
+    @discardableResult
+    func load() -> [CameraProfile] {
+        didRecoverFromCorruption = false
+
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            seedDefaultProfile()
+            return profiles
+        }
+
+        guard let data = try? Data(contentsOf: fileURL),
+              let decoded = try? JSONDecoder().decode([CameraProfile].self, from: data) else {
+            setAsideCorruptFile()
+            didRecoverFromCorruption = true
+            seedDefaultProfile()
+            return profiles
+        }
+
+        // Strip what can be stripped, drop what cannot be repaired. This is
+        // defence in depth — only the app writes this file — which is why a
+        // dropped record is not surfaced to the user (PRD §7.3).
+        let repaired = decoded.compactMap { try? $0.validatedForPersistence(calendar: calendar) }
+
+        if repaired.isEmpty {
+            // Assumption: a file that decodes but holds no usable record is
+            // treated like an empty install rather than left with no profiles,
+            // because FR-1.8 guarantees the list is never empty.
+            seedDefaultProfile()
+            return profiles
+        }
+
+        profiles = repaired
+        resolveSelection()
+        // Persist the cleaned-up records so the repair happens once, not on
+        // every launch.
+        if repaired != decoded {
+            try? persist(repaired)
+        }
+        return profiles
+    }
+
+    /// Writes the one profile a fresh install starts with (PRD §4.3).
+    private func seedDefaultProfile() {
+        let today = calendar.dateComponents([.year, .month, .day], from: now())
+        let timestamp = now()
+        let seeded = CameraProfile(name: "預設",
+                                   startDate: today,
+                                   createdAt: timestamp,
+                                   updatedAt: timestamp)
+        profiles = [seeded]
+        try? persist(profiles)
+        select(id: seeded.id)
+    }
+
+    /// Renames an unreadable file rather than deleting it, so the user's data
+    /// can still be recovered by hand (PRD §7.3).
+    private func setAsideCorruptFile() {
+        let stamp = Int(now().timeIntervalSince1970)
+        let destination = directory.appendingPathComponent("\(Self.fileName).corrupt-\(stamp)")
+        try? fileManager.removeItem(at: destination)
+        try? fileManager.moveItem(at: fileURL, to: destination)
+    }
+}
+
+// MARK: - Mutating
+
+extension ProfileStore {
+    /// Validates and stores a new profile.
+    ///
+    /// Returns the profile as stored, which may differ from the argument: the
+    /// name is trimmed and the start date is reduced to year/month/day.
+    @discardableResult
+    func add(_ profile: CameraProfile) throws -> CameraProfile {
+        guard profiles.count < Self.profileLimit else {
+            throw ProfileStoreError.limitReached(limit: Self.profileLimit)
+        }
+        var candidate = try validated(profile)
+        let timestamp = now()
+        candidate.createdAt = timestamp
+        candidate.updatedAt = timestamp
+
+        var updated = profiles
+        updated.append(candidate)
+        try persist(updated)
+        profiles = updated
+        // A new profile becomes the active one (PRD FR-1.10).
+        select(id: candidate.id)
+        return candidate
+    }
+
+    /// Validates and overwrites an existing profile, keeping its `createdAt`.
+    @discardableResult
+    func update(_ profile: CameraProfile) throws -> CameraProfile {
+        guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else {
+            throw ProfileStoreError.profileNotFound(id: profile.id)
+        }
+        var candidate = try validated(profile)
+        // `createdAt` belongs to the record, not to whoever is editing it.
+        candidate.createdAt = profiles[index].createdAt
+        candidate.updatedAt = now()
+
+        var updated = profiles
+        updated[index] = candidate
+        try persist(updated)
+        profiles = updated
+        return candidate
+    }
+
+    /// Deletes a profile, refusing to remove the last one (PRD FR-1.8).
+    func delete(id: UUID) throws {
+        guard profiles.contains(where: { $0.id == id }) else {
+            throw ProfileStoreError.profileNotFound(id: id)
+        }
+        guard profiles.count > 1 else {
+            throw ProfileStoreError.lastProfile
+        }
+
+        var updated = profiles
+        updated.removeAll { $0.id == id }
+        try persist(updated)
+        profiles = updated
+        resolveSelection()
+    }
+
+    private func validated(_ profile: CameraProfile) throws -> CameraProfile {
+        do {
+            return try profile.validatedForPersistence(calendar: calendar)
+        } catch let error as CameraProfileValidationError {
+            throw ProfileStoreError.invalidProfile(error)
+        }
+    }
+}
+
+// MARK: - Selection
+
+extension ProfileStore {
+    /// The profile to restore on next launch, falling back to the first one
+    /// when the stored identifier no longer exists (PRD §4.2).
+    var lastUsedProfileID: UUID? {
+        if let raw = defaults.string(forKey: Self.lastUsedProfileIDKey),
+           let stored = UUID(uuidString: raw),
+           profiles.contains(where: { $0.id == stored }) {
+            return stored
+        }
+        return profiles.first?.id
+    }
+
+    /// Makes `id` the active profile and remembers it for next launch.
+    func select(id: UUID) {
+        defaults.set(id.uuidString, forKey: Self.lastUsedProfileIDKey)
+        selectedProfileID = id
+    }
+
+    /// Points the selection at a profile that actually exists.
+    private func resolveSelection() {
+        let resolved = lastUsedProfileID
+        selectedProfileID = resolved
+        if let resolved {
+            defaults.set(resolved.uuidString, forKey: Self.lastUsedProfileIDKey)
+        }
+    }
+}
+
+// MARK: - Writing
+
+private extension ProfileStore {
+    /// Writes the profiles atomically, creating the directory if needed.
+    ///
+    /// `.atomic` writes to a temporary file and swaps it in, so a crash or a
+    /// full disk leaves the previous file intact rather than truncated
+    /// (PRD §4.3).
+    func persist(_ profiles: [CameraProfile]) throws {
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(profiles)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+            throw ProfileStoreError.writeFailed(String(describing: error))
+        }
+    }
+}
