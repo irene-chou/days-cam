@@ -108,7 +108,7 @@ final class ProfileListModelTests: XCTestCase {
         guard case let .create(draft) = model.presentedEditor else {
             return XCTFail("expected a .create presentation")
         }
-        let editModel = model.makeEditModel(for: .create(draft))
+        let editModel = try XCTUnwrap(model.editModel(for: .create(draft)))
         editModel.setName("小寶")
         try editModel.save()
 
@@ -121,12 +121,52 @@ final class ProfileListModelTests: XCTestCase {
         let spy = Spy()
         let existing = profile(name: "小寶")
         let model = makeModel(profiles: [existing], now: try fixedNow(), spy: spy)
-        let editModel = model.makeEditModel(for: .edit(existing))
+        model.beginEditing(existing)
+        let editModel = try XCTUnwrap(model.editModel(for: .edit(existing)))
         editModel.setName("小寶貝")
         try editModel.save()
 
         XCTAssertEqual(spy.updated.map(\.name), ["小寶貝"])
         XCTAssertTrue(spy.selectedIDs.isEmpty)
+    }
+
+    /// Regression test for a reviewed bug: the edit model must be built once
+    /// when the sheet opens and cached, not rebuilt on every access — a
+    /// SwiftUI `.sheet(item:)` content closure re-runs on any unrelated
+    /// `@Published` change while the sheet is up, and rebuilding there would
+    /// silently discard whatever the user had typed.
+    func testEditModelForSamePresentationReturnsTheSameInstance() throws {
+        let spy = Spy()
+        let existing = profile(name: "小寶")
+        let model = makeModel(profiles: [existing], now: try fixedNow(), spy: spy)
+        model.beginEditing(existing)
+
+        let first = try XCTUnwrap(model.editModel(for: .edit(existing)))
+        first.setName("還沒存的改動")
+        let second = try XCTUnwrap(model.editModel(for: .edit(existing)))
+
+        XCTAssertTrue(first === second)
+        XCTAssertEqual(second.profile.name, "還沒存的改動")
+    }
+
+    func testEditModelReturnsNilOnceEditorIsDismissed() throws {
+        let spy = Spy()
+        let existing = profile(name: "小寶")
+        let model = makeModel(profiles: [existing], now: try fixedNow(), spy: spy)
+        model.beginEditing(existing)
+        model.dismissEditor()
+        XCTAssertNil(model.editModel(for: .edit(existing)))
+    }
+
+    func testBeginEditingPresentsTheGivenProfile() throws {
+        let spy = Spy()
+        let existing = profile(name: "小寶")
+        let model = makeModel(profiles: [existing], now: try fixedNow(), spy: spy)
+        model.beginEditing(existing)
+        guard case let .edit(presented) = model.presentedEditor else {
+            return XCTFail("expected an .edit presentation")
+        }
+        XCTAssertEqual(presented.id, existing.id)
     }
 
     // MARK: - Deletion (FR-1.3, FR-1.8)

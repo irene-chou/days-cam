@@ -93,6 +93,28 @@ final class ProfileEditModelTests: XCTestCase {
         XCTAssertEqual(model.startDateUpperBound, now)
     }
 
+    // MARK: - Live preview (FR-3.6)
+
+    func testTodayPreviewTextRendersThroughTemplateRenderer() throws {
+        let now = try fixedNow() // 2026-01-10 08:00 Taipei
+        let model = makeModel(profile: profile(name: "小寶",
+                                               startDate: DateFixture.components(2026, 1, 10),
+                                               showDayCount: true,
+                                               showDate: false),
+                              now: now)
+        // Start date is "today", dayOne, day/day track: day 1, verifying the
+        // preview is the real TemplateRenderer output and not a placeholder.
+        XCTAssertEqual(model.todayPreviewText, "第 1 天")
+    }
+
+    func testTodayPreviewTextReflectsInProgressEditsBeforeSaving() throws {
+        let now = try fixedNow()
+        let model = makeModel(profile: profile(startDate: DateFixture.components(2026, 1, 10)), now: now)
+        XCTAssertEqual(model.todayPreviewText, "第 1 天")
+        model.profile.countingRule = .dayZero
+        XCTAssertEqual(model.todayPreviewText, "第 0 天")
+    }
+
     // MARK: - Save
 
     func testSaveForwardsTheCurrentProfileToOnSave() throws {

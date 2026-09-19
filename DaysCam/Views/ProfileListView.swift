@@ -51,8 +51,14 @@ struct ProfileListView: View {
             }
         }
         .sheet(item: editorBinding) { presentation in
-            NavigationStack {
-                ProfileEditView(model: model.makeEditModel(for: presentation))
+            // `editModel(for:)` returns the instance cached when the sheet
+            // opened, not a fresh one — this closure re-runs on unrelated
+            // `@Published` changes while the sheet is up, and rebuilding
+            // here would silently discard in-progress edits.
+            if let editModel = model.editModel(for: presentation) {
+                NavigationStack {
+                    ProfileEditView(model: editModel)
+                }
             }
         }
         .alert("刪除設定檔？", isPresented: deletionAlertBinding) {
@@ -62,6 +68,11 @@ struct ProfileListView: View {
             if let candidate = model.deletionCandidate {
                 Text("「\(candidate.name)」將被永久刪除。")
             }
+        }
+        .alert("刪除失敗", isPresented: deletionErrorBinding) {
+            Button("好") { model.lastError = nil }
+        } message: {
+            Text("請再試一次。")
         }
     }
 
@@ -85,5 +96,10 @@ struct ProfileListView: View {
     private var deletionAlertBinding: Binding<Bool> {
         Binding(get: { model.deletionCandidate != nil },
                 set: { isPresented in if !isPresented { model.cancelDeletion() } })
+    }
+
+    private var deletionErrorBinding: Binding<Bool> {
+        Binding(get: { model.lastError != nil },
+                set: { isPresented in if !isPresented { model.lastError = nil } })
     }
 }

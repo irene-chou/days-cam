@@ -48,6 +48,17 @@ final class ProfileListModel: ObservableObject {
     @Published var selectedProfileID: UUID?
     /// Non-nil while the create/edit sheet should be shown.
     @Published private(set) var presentedEditor: EditorPresentation?
+    /// The `ProfileEditModel` for `presentedEditor`, built once when the
+    /// sheet opens and held for the sheet's lifetime.
+    ///
+    /// Building it lazily inside the view's `.sheet(item:)` content closure
+    /// looked equivalent but was not: that closure re-runs on *any*
+    /// `@Published` change on this object while the sheet is open — in
+    /// particular the future `profiles` sync from `ProfileStore` — which
+    /// would construct a fresh `ProfileEditModel` from the original snapshot
+    /// and silently discard whatever the user had typed. Caching it here
+    /// ties its lifetime to `presentedEditor` instead of to the view's body.
+    private var activeEditModel: ProfileEditModel?
     /// Non-nil while the delete confirmation alert should be shown.
     @Published private(set) var deletionCandidate: CameraProfile?
     /// The most recent action's failure, if any, for the view to surface.
@@ -117,36 +128,49 @@ final class ProfileListModel: ObservableObject {
     func beginCreatingProfile() {
         guard !isAtProfileLimit else { return }
         let today = calculator.currentDateComponents()
-        presentedEditor = .create(CameraProfile(name: "", startDate: today))
+        let presentation = EditorPresentation.create(CameraProfile(name: "", startDate: today))
+        presentedEditor = presentation
+        activeEditModel = makeEditModel(for: presentation)
     }
 
     /// Opens the sheet to edit an existing profile.
     func beginEditing(_ profile: CameraProfile) {
-        presentedEditor = .edit(profile)
+        let presentation = EditorPresentation.edit(profile)
+        presentedEditor = presentation
+        activeEditModel = makeEditModel(for: presentation)
+    }
+
+    /// The edit model for the currently presented sheet, or nil when no
+    /// sheet is up. The same instance for as long as `presentedEditor` stays
+    /// non-nil, so in-progress edits survive unrelated state changes.
+    func editModel(for presentation: EditorPresentation) -> ProfileEditModel? {
+        guard presentation.id == presentedEditor?.id else { return nil }
+        return activeEditModel
     }
 
     func dismissEditor() {
         presentedEditor = nil
+        activeEditModel = nil
     }
 
-    /// Builds the edit model for whatever `presentedEditor` currently is.
+    /// Builds the edit model for `presentation`.
     ///
     /// A new profile is added then immediately selected, satisfying "building
     /// a profile switches to it" (FR-1.10) without needing the store to hand
     /// the new id back — `CameraProfile.id` is generated client-side at
     /// construction, so it is already known before `addProfile` is called.
-    func makeEditModel(for presentation: EditorPresentation) -> ProfileEditModel {
+    private func makeEditModel(for presentation: EditorPresentation) -> ProfileEditModel {
         switch presentation {
         case let .create(draft):
             return ProfileEditModel(profile: draft, mode: .create, calendar: calendar, calculator: calculator) { [weak self] saved in
                 try self?.addProfile(saved)
                 self?.selectProfile(saved.id)
-                self?.presentedEditor = nil
+                self?.dismissEditor()
             }
         case let .edit(existing):
             return ProfileEditModel(profile: existing, mode: .edit, calendar: calendar, calculator: calculator) { [weak self] saved in
                 try self?.updateProfile(saved)
-                self?.presentedEditor = nil
+                self?.dismissEditor()
             }
         }
     }
