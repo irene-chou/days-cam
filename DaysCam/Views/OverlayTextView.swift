@@ -14,7 +14,9 @@ import SwiftUI
 struct OverlayTextView: View {
     /// The text to draw. An empty string draws nothing.
     let text: String
+    /// The preset look (font, color, decorations) to draw `text` with.
     let theme: OverlayTheme
+    /// Which of the nine anchor points to draw `text` at.
     let position: OverlayPosition
     /// The size of the frame the overlay is positioned within — the
     /// viewfinder's bounds live, the photo's pixel size when baking. Margin
@@ -62,7 +64,14 @@ struct OverlayTextView: View {
     /// Decoration constants (`OverlayTheme`) are expressed at
     /// `OverlayMetrics.referenceFontSize`; `scale` brings them to `fontSize`.
     private func decoratedText(fontSize: CGFloat, scale: CGFloat) -> some View {
-        let plain = Text(text).font(Font(OverlayMetrics.font(for: theme, size: fontSize)))
+        // `.lineLimit(1)` + `.fixedSize` keep this from wrapping: at the 60%
+        // floor a still-too-long string must run past the margin instead
+        // (PRD FR-4.8), and without them the outer `.frame` would constrain
+        // the proposed width and SwiftUI would wrap onto a second line.
+        let plain = Text(text)
+            .font(Font(OverlayMetrics.font(for: theme, size: fontSize)))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         let mainColor = swiftUIColor(theme.textColor)
         var layered = AnyView(plain.foregroundColor(mainColor))
 
@@ -93,11 +102,17 @@ struct OverlayTextView: View {
                 )
             case let .shadow(offset, blur, opacity, color):
                 let shadowColor = swiftUIColor(color).opacity(opacity)
+                // `.compositingGroup()` flattens whatever came before (in
+                // particular the stroke's stack of offset copies) into one
+                // layer first, so the shadow is cast once by the composed
+                // glyph instead of once per stacked copy.
                 layered = AnyView(
-                    layered.shadow(color: shadowColor,
-                                    radius: blur * scale,
-                                    x: offset.width * scale,
-                                    y: offset.height * scale)
+                    layered
+                        .compositingGroup()
+                        .shadow(color: shadowColor,
+                                radius: blur * scale,
+                                x: offset.width * scale,
+                                y: offset.height * scale)
                 )
             }
         }
