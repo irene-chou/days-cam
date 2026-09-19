@@ -68,9 +68,9 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 | 擁有者 | 檔案 |
 |---|---|
-| 邏輯線 Dev | `Models/`（全部）、`Services/DayCountCalculator.swift`、`Services/ProfileStore.swift`、`Services/TemplateRenderer.swift`、`Services/OverlayRenderer.swift` |
-| 相機線 Dev | `Views/CameraScreen.swift`、`Views/CameraPreviewView.swift`、`Views/OverlayTextView.swift`、`Services/CameraService.swift`、`DaysCamApp.swift` |
-| 設定 UI Dev | `Views/ProfileListView.swift`、`Views/ProfileEditView.swift`、`Views/DisplaySettingsSheet.swift`、`Views/ToastView.swift` |
+| core-dev | `Models/`（全部）、`Services/DayCountCalculator.swift`、`Services/ProfileStore.swift`、`Services/TemplateRenderer.swift`、`Services/OverlayRenderer.swift`、`Services/OverlayMetrics.swift`、`Services/PhotoSaver.swift`、`Services/CameraService.swift`、`DaysCamTests/Unit/` |
+| ui-dev | `Views/`（全部，含 `CameraScreen.swift`）、`DaysCamApp.swift` |
+| qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
 | Lead 獨佔 | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`CLAUDE.md` |
 
 > **`Views/CameraScreen.swift` 是六張卡的共同寫入點**
@@ -79,7 +79,9 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 >
 > 這五張卡因此**無法平行**，是專案的序列化瓶頸。這是接受的取捨，不要為了平行化而拆這個檔案。
 
-> **`Services/CameraService.swift` 刻意歸相機線**，雖然它在 `Services/` 底下。它與 `AVCaptureSession` 生命週期、權限狀態機綁死，與觀景窗是同一件事。
+> **測試目錄分兩處**：`DaysCamTests/Unit/` 由 core-dev 隨實作一起寫（TDD，`CLAUDE.md` 要求新功能附測試）；`DaysCamTests/Acceptance/` 由 qa 獨立撰寫，負責比對 TASKS.md 的驗收表是否被完整覆蓋、補齊缺口、並執行全部 A 級驗收。qa **不重寫** core-dev 已覆蓋的案例，但要驗證覆蓋率並獨立複核結果。
+>
+> **UI 相關的 A 級驗收靠 view model 而非 XCUITest。** `xcrun simctl` 沒有任何點擊能力（只有 `ui appearance` 與 `io screenshot`），無法執行互動序列。因此 ui-dev 必須把狀態與文字組裝邏輯放進**可觀察的 view model**（`Views/` 底下，但與 View 分離），讓 qa 用一般單元測試驗證；View 本身只負責畫面。真正需要實機互動的條目歸 B 級。這同時呼應 `CLAUDE.md`「避免所有邏輯塞在單一 View 檔案裡」。
 
 > **`project.yml` 只有 Lead 能改。** 因為 `sources` 是資料夾 glob，新增 `.swift` 檔**不需要**動它。若你認為需要改（例如加依賴），先回報 Lead。
 
@@ -136,7 +138,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 1.13a | `grep -rn 'TemplateID' DaysCam/` | **無結果**。模板列舉已廢除 |
 | 1.14 | `grep -c 'case ' DaysCam/Models/OverlayPosition.swift` | 恰好 9 |
 | 1.15 | `grep -c 'case ' DaysCam/Models/ThemeID.swift` | 恰好 5 |
-| 1.16 | `grep -rn '!' DaysCam/Models/ \| grep -v '!=' \| grep -v '//'` | 無 force-unwrap（`CLAUDE.md` 規定） |
+| 1.16 | `grep -rnE '(try!\|as!\|[A-Za-z0-9_)\]]!)' DaysCam/Models/ \| grep -v '!='` | 無 force-unwrap／force-try／force-cast（`CLAUDE.md` 規定）。**注意**：不要用 `grep -rn '!'`——那會連邏輯否定 `!flag` 一起判失敗，逼程式碼寫成 `flag == false`。本條只抓後綴 `!`（force-unwrap）與 `try!`／`as!` |
 
 **驗收 — B. 需人類實機**：無。
 
@@ -500,7 +502,9 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 **範圍**
 
-- `Models/OverlayTheme.swift`：`struct OverlayTheme` 含 `id`、`displayName`、`fontDesign`、`fontWeight`、`textColor`、`decoration`（enum：`.shadow(offset:blur:opacity:color:)` / `.backgroundBox(color:opacity:cornerRadius:insets:)` / `.stroke(color:width:)`，可組合）
+- `Models/OverlayTheme.swift`：`struct OverlayTheme` 含 `id`、`displayName`、`fontDesign`、`fontWeight`、`textColor`、**`decorations: [OverlayDecoration]`**（`.shadow(offset:blur:opacity:color:)` / `.backgroundBox(color:opacity:cornerRadius:insets:)` / `.stroke(color:width:)`）。用**陣列**是因為單一主題可能同時有描邊與陰影（例如 `softPink`），單數欄位裝不下
+- **`OverlayTheme` 必須是純資料，不得 `import UIKit`／`SwiftUI`**。`textColor` 用自訂的 `OverlayColor { red, green, blue, opacity }`（sRGB 分量，便於斷言）。需要量測文字寬度的字級自動縮小函式**不放這裡**，改放 `Services/OverlayMetrics.swift`（見下）
+- `Services/OverlayMetrics.swift`：字級與邊距的共用計算（`baseFontSize(forShortEdge:)`＝短邊 ×5.5%、`margin(forShortEdge:)`＝短邊 ×4%、以及需要量測實際文字寬度的自動縮小函式，下限 60%）。**`OverlayTextView`（ui-dev）與 `OverlayRenderer`（core-dev）必須共用這一份，不得各刻一份**
 - `static let all: [OverlayTheme]`，順序固定為 PRD §3.4 表格順序
 - `func baseFontSize(forShortEdge: CGFloat) -> CGFloat` 回傳 `shortEdge * 0.055`
 - `func margin(forShortEdge: CGFloat) -> CGFloat` 回傳 `shortEdge * 0.04`
@@ -513,7 +517,8 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 |---|---|---|
 | 5.1 | `OverlayTheme.all.count` | 恰好 **5** |
 | 5.2 | `OverlayTheme.all.map(\.id)` | 依序 `[.classicWhite, .retroOrange, .filmStrip, .minimalDark, .softPink]` |
-| 5.3 | 每個 theme 的 `decoration` | 5 組全部至少有一種 decoration（PRD FR-4.6） |
+| 5.3 | 每個 theme 的 `decorations` | 5 組全部至少有一種 decoration，即 `decorations.isEmpty == false`（PRD FR-4.6） |
+| 5.3a | `grep -rnE 'import (UIKit\|SwiftUI)' DaysCam/Models/OverlayTheme.swift` | **無結果**。`OverlayTheme` 是純資料，量測相關的函式在 `Services/OverlayMetrics.swift` |
 | 5.4 | `classicWhite.textColor` 的 sRGB 分量 | `(1.0, 1.0, 1.0, 1.0)` |
 | 5.5 | `retroOrange.textColor` 的 sRGB 分量 | 對應 `#FF9500` 即 `(1.0, 0.584, 0.0, 1.0)`，容差 ±0.01 |
 | 5.6 | `baseFontSize(forShortEdge: 3024)` | `166.32`，容差 ±0.01 |
