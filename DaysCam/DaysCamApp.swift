@@ -4,7 +4,7 @@ import SwiftUI
 struct DaysCamApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            CameraScreen()
         }
     }
 }

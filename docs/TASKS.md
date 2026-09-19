@@ -62,6 +62,29 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 **建議分工**：Dev A 走邏輯線（02 → 04 → 09），Dev B 走 UI/相機線（07 → 03 → 06）。TASK-01 必須先合併，兩線才能開工。
 
+## 檔案所有權
+
+**一個檔案只有一個擁有者。需要改別人的檔案時，回報 Lead，不要自己動手。**
+
+| 擁有者 | 檔案 |
+|---|---|
+| 邏輯線 Dev | `Models/`（全部）、`Services/DayCountCalculator.swift`、`Services/ProfileStore.swift`、`Services/TemplateRenderer.swift`、`Services/OverlayRenderer.swift` |
+| 相機線 Dev | `Views/CameraScreen.swift`、`Views/CameraPreviewView.swift`、`Views/OverlayTextView.swift`、`Services/CameraService.swift`、`DaysCamApp.swift` |
+| 設定 UI Dev | `Views/ProfileListView.swift`、`Views/ProfileEditView.swift`、`Views/DisplaySettingsSheet.swift`、`Views/ToastView.swift` |
+| Lead 獨佔 | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`CLAUDE.md` |
+
+> **`Views/CameraScreen.swift` 是六張卡的共同寫入點**
+>
+> TASK-08、10、12、13、14 都要改它，TASK-11 也要在它上面加設定入口。TASK-01 已建立骨架。**只有相機線 Dev 能修改這個檔案**——其他人需要在上面加東西時，在 PR 描述裡約定介面並回報 Lead，由相機線 Dev 動手。
+>
+> 這五張卡因此**無法平行**，是專案的序列化瓶頸。這是接受的取捨，不要為了平行化而拆這個檔案。
+
+> **`Services/CameraService.swift` 刻意歸相機線**，雖然它在 `Services/` 底下。它與 `AVCaptureSession` 生命週期、權限狀態機綁死，與觀景窗是同一件事。
+
+> **`project.yml` 只有 Lead 能改。** 因為 `sources` 是資料夾 glob，新增 `.swift` 檔**不需要**動它。若你認為需要改（例如加依賴），先回報 Lead。
+
+---
+
 > **TASK-01 為何必須最先**：目前 `Info.plist` **沒有** `NSCameraUsageDescription`。iOS 規定缺這個鍵時一呼叫 AVFoundation 就直接 crash。相機相關的卡在第 1 層就會用到，所以權限字串必須在 TASK-01 補齊，不能留到最後。
 
 ---
@@ -80,7 +103,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
    - 新增 `DaysCamTests` target（`type: bundle.unit-test`、`platform: iOS`、`sources: [DaysCamTests]`、`dependencies: [target: DaysCam]`）
 2. **`.gitignore`** 加入 `*.xcodeproj`，並執行 `git rm -r --cached DaysCam.xcodeproj` 把它移出版控
 3. **`README.md`** 註明 clone 後必須先跑 `xcodegen generate` 才有 `.xcodeproj`
-4. **`Info.plist`** 補兩個權限字串：
+4. **權限字串**（**寫進 `project.yml` 的 `info.properties`，不是直接改 `Info.plist`**——該檔由 XcodeGen 產生，手改會被覆蓋）：
    - `NSCameraUsageDescription`：`DaysCam 需要使用相機來拍照，並把天數印在照片上。`
    - `NSPhotoLibraryAddUsageDescription`：`DaysCam 需要權限才能把拍好的照片存進你的相簿。`
    - **不得**加入 `NSPhotoLibraryUsageDescription`（讀取權限，MVP 不需要）
