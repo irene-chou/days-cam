@@ -36,7 +36,9 @@ final class ProfileStore: ObservableObject {
     /// The profile the camera screen is using. Always points at an existing
     /// profile once `load()` has run and the list is non-empty.
     @Published private(set) var selectedProfileID: UUID?
-    /// True when the last `load()` found an unreadable file and re-seeded.
+    /// True when the last `load()` left the user with none of their own
+    /// profiles and re-seeded: an unreadable file, or a readable one whose
+    /// every record failed validation.
     ///
     /// The camera screen shows a one-off alert for this (PRD §7.3).
     @Published private(set) var didRecoverFromCorruption = false
@@ -107,9 +109,15 @@ extension ProfileStore {
         let repaired = decoded.compactMap { try? $0.validatedForPersistence(calendar: calendar) }
 
         if repaired.isEmpty {
-            // Assumption: a file that decodes but holds no usable record is
-            // treated like an empty install rather than left with no profiles,
-            // because FR-1.8 guarantees the list is never empty.
+            // A file that decodes but holds no usable record looks exactly like
+            // a lost file from the user's side: every profile of theirs is
+            // gone. So it gets the same one-off alert as an unreadable file.
+            // The test is "is the user left with anything of their own", which
+            // is why a single dropped record stays silent (PRD §7.3).
+            //
+            // Seeding on a fresh install is not a loss and never reaches here:
+            // that case returns above, before the file is read.
+            didRecoverFromCorruption = true
             seedDefaultProfile()
             return profiles
         }
