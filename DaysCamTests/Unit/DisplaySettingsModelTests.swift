@@ -98,6 +98,13 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertFalse(model.isShowDayCountToggleDisabled)
     }
 
+    func testShowDayCountToggleDisabledWhenItIsTheOnlySwitchOn() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isShowDayCountToggleDisabled)
+        XCTAssertFalse(model.isShowDateToggleDisabled)
+    }
+
     func testDayCountFormatSectionDisabledWhenShowDayCountOff() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
