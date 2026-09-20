@@ -124,9 +124,10 @@ struct SystemCaptureDeviceProvider: CaptureDeviceProviding {
 /// does not own an `AVCaptureVideoPreviewLayer` — the view layer builds its own
 /// from `session`, so this type stays free of UI.
 ///
-/// Threading: every published property changes on the main queue, and every
-/// call that configures, starts or stops the session runs on a private serial
-/// queue so it never blocks the main thread.
+/// Threading: call every method from the main thread, which is where a SwiftUI
+/// view already is. Published properties only ever change on the main queue,
+/// and everything that configures, starts or stops the session hops to a
+/// private serial queue so it never blocks the main thread.
 ///
 /// It never crashes where there is no camera: `isCaptureSupported` is false in
 /// the simulator, and in that case the session is never configured or started.
@@ -247,7 +248,8 @@ extension CameraService {
     /// PRD §2.3, last row: granting from Settings and switching back must bring
     /// the viewfinder up without a relaunch. Also wired to
     /// `willEnterForegroundNotification`.
-    /// A revoked permission is handled by the same path: it becomes `.denied`
+    ///
+    /// A revoked permission goes through the same path: it becomes `.denied`
     /// and the guidance screen comes back.
     func refreshPermission() {
         start()
@@ -255,6 +257,11 @@ extension CameraService {
 
     /// Switches to the other camera, keeping `facing` truthful: it only moves
     /// once the new input is actually in the session (PRD FR-5.8).
+    ///
+    /// A tap that lands while a switch is still reconfiguring computes the same
+    /// target as the one in flight, so it is a no-op. That debounce is
+    /// deliberate: alternating half-finished reconfigurations is how a rapidly
+    /// tapped switch button wedges a session.
     func switchCamera() {
         guard isCaptureSupported else { return }
         let target = facing.opposite
@@ -518,10 +525,15 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
-        // Backstop: if processing never reported anything, the capture still
-        // has to end, or the caller's completion would never run.
-        guard let error else { return }
-        deliver(.failure(.failed(error.localizedDescription)))
+        // This is the last callback of a capture, so it is where the completion
+        // is guaranteed to have run exactly once: `deliver` ignores the second
+        // call when processing already answered, and answers here when it
+        // never did. Without this the shutter could stay disabled forever.
+        if let error {
+            deliver(.failure(.failed(error.localizedDescription)))
+        } else {
+            deliver(.failure(.noImageData))
+        }
     }
 
     private func deliver(_ result: Result<UIImage, CameraCaptureError>) {
