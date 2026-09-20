@@ -63,6 +63,22 @@ struct DayCountCalculator {
         return (components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
+    /// Calendar month/day breakdown, with the months **not** rolled up into years.
+    ///
+    /// The month track counts total elapsed months, so the same span that reads
+    /// as 1 year 2 months on the year track reads as 14 months here. That is why
+    /// this cannot be derived from `calendarBreakdown` by arithmetic: asking
+    /// `Calendar` for `[.month, .day]` is what produces the 14 (PRD §3.2).
+    ///
+    /// Like `calendarBreakdown`, the counting rule is not applied.
+    func monthDayBreakdown(from startDate: DateComponents) -> (months: Int, days: Int) {
+        guard let fromMidnight = startOfStartDate(startDate) else { return (0, 0) }
+        let components = calendar.dateComponents([.month, .day],
+                                                 from: fromMidnight,
+                                                 to: calendar.startOfDay(for: now()))
+        return (components.month ?? 0, components.day ?? 0)
+    }
+
     /// Local midnight on `startDate`, or nil when it names no day.
     ///
     /// The `year`/`month`/`day` presence check is not redundant:
