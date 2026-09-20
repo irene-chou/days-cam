@@ -1,0 +1,328 @@
+import XCTest
+@testable import DaysCam
+
+/// Covers `DisplaySettingsModel`'s state transitions (PRD FR-2.1–FR-2.10,
+/// FR-4.1–FR-4.9) without a real `ProfileStore` — the model is driven
+/// entirely through an injected `updateProfile` closure.
+///
+/// Fixture matches TASK-11's acceptance table exactly: start date
+/// 2026-01-01, `.dayOne`, `DAYSCAM_FAKE_TODAY` fixed at 2026-01-10, so
+/// `n = 10`, year track `(0,0,9)`, month track `(0,9)`, week track `(1,3)`
+/// (all already verified in TASKS.md 11.1–11.33).
+@MainActor
+final class DisplaySettingsModelTests: XCTestCase {
+    private func fixedNow() throws -> Date {
+        try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
+    }
+
+    private func baselineProfile(name: String = "小寶",
+                                 startDate: DateComponents = DateFixture.components(2026, 1, 1),
+                                 showDayCount: Bool = true,
+                                 showDate: Bool = false,
+                                 showName: Bool = false,
+                                 largestUnit: DisplayUnit = .day,
+                                 smallestUnit: DisplayUnit = .day,
+                                 useAgeWording: Bool = false) -> CameraProfile {
+        CameraProfile(name: name,
+                     startDate: startDate,
+                     showDayCount: showDayCount,
+                     showDate: showDate,
+                     showName: showName,
+                     largestUnit: largestUnit,
+                     smallestUnit: smallestUnit,
+                     useAgeWording: useAgeWording)
+    }
+
+    private final class Spy {
+        var updated: [CameraProfile] = []
+        var shouldThrow: Error?
+
+        func update(_ profile: CameraProfile) throws {
+            if let error = shouldThrow { throw error }
+            updated.append(profile)
+        }
+    }
+
+    private func makeModel(profile: CameraProfile,
+                           now: Date,
+                           spy: Spy) -> DisplaySettingsModel {
+        DisplaySettingsModel(profile: profile,
+                             calendar: DateFixture.taipei,
+                             calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
+                             renderer: TemplateRenderer(),
+                             updateProfile: spy.update)
+    }
+
+    // MARK: - 11.7 initial overlay
+
+    func testInitialOverlayIsDayCountOnly() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
+    }
+
+    // MARK: - A-2 顯示開關 (11.8–11.14)
+
+    func testTogglingShowNameOnPrependsNameWithHalfWidthSpace() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowName(true)
+        XCTAssertEqual(model.overlayPreviewText, "小寶 第 10 天")
+    }
+
+    func testTogglingShowNameOffLeavesNoLeadingSpace() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showName: true), now: try fixedNow(), spy: spy)
+        model.setShowName(false)
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
+    }
+
+    func testTogglingShowDateOnPrependsDateWithIdeographicSpace() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowDate(true)
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
+    }
+
+    func testTurningOffShowDayCountLeavesOnlyTheDate() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDate: true), now: try fixedNow(), spy: spy)
+        model.setShowDayCount(false)
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10")
+    }
+
+    func testShowDateToggleDisabledWhenItIsTheOnlySwitchOn() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isShowDateToggleDisabled)
+        XCTAssertFalse(model.isShowDayCountToggleDisabled)
+    }
+
+    func testDayCountFormatSectionDisabledWhenShowDayCountOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isDayCountFormatSectionDisabled)
+    }
+
+    func testReenablingShowDayCountRestoresDateToggleAndFormatSection() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        model.setShowDayCount(true)
+        XCTAssertFalse(model.isShowDateToggleDisabled)
+        XCTAssertFalse(model.isDayCountFormatSectionDisabled)
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
+    }
+
+    // MARK: - Defensive backstop for FR-2.4 (mirrors disabled UI state)
+
+    func testSetShowDayCountOffNoOpsWhenDateIsAlsoOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.profile.showDayCount)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    func testSetShowDateOffNoOpsWhenDayCountIsAlsoOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        model.setShowDate(false)
+        XCTAssertTrue(model.profile.showDate)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    // MARK: - A-3 單位區間 (11.15–11.20)
+
+    func testDayDayIsTheDefaultOrdinalForm() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
+    }
+
+    func testLargestWeekKeepsDaySmallestAndReadsWeekAndDay() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.week)
+        XCTAssertEqual(model.profile.smallestUnit, .day)
+        XCTAssertEqual(model.overlayPreviewText, "1 週又 3 天")
+    }
+
+    func testWeekWeekOmitsTheDayRemainder() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.week)
+        model.setSmallestUnit(.week)
+        XCTAssertEqual(model.overlayPreviewText, "1 週")
+    }
+
+    func testMonthDayOmitsAZeroMonth() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.month)
+        XCTAssertEqual(model.profile.smallestUnit, .day)
+        XCTAssertEqual(model.overlayPreviewText, "9 天")
+    }
+
+    func testYearDayOmitsZeroYearAndMonth() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.year)
+        XCTAssertEqual(model.profile.smallestUnit, .day)
+        XCTAssertEqual(model.overlayPreviewText, "9 天")
+    }
+
+    func testYearYearWithAllZeroTrackFallsBackToZeroDays() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.year)
+        model.setSmallestUnit(.year)
+        XCTAssertEqual(model.overlayPreviewText, "0 天")
+    }
+
+    // MARK: - A-4 選項連動與夾取 (11.21–11.27)
+
+    func testAvailableSmallestUnitsForEachLargestUnit() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+
+        model.setLargestUnit(.year)
+        XCTAssertEqual(model.availableSmallestUnits, [.year, .month, .day])
+
+        model.setLargestUnit(.month)
+        XCTAssertEqual(model.availableSmallestUnits, [.month, .day])
+
+        model.setLargestUnit(.week)
+        XCTAssertEqual(model.availableSmallestUnits, [.week, .day])
+
+        model.setLargestUnit(.day)
+        XCTAssertEqual(model.availableSmallestUnits, [.day])
+    }
+
+    func testClampsSmallestToLargestWhenOldSmallestFallsOffTheNewTrack() throws {
+        // year/month -> week: month is not on the week track, clamp to week/week.
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(largestUnit: .year, smallestUnit: .month), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.week)
+        XCTAssertEqual(model.profile.smallestUnit, .week)
+        XCTAssertEqual(model.overlayPreviewText, "1 週")
+    }
+
+    func testKeepsSmallestWhenItIsStillOnTheNewTrack() throws {
+        // year/day -> week: day is on the week track, smallest stays day.
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(largestUnit: .year, smallestUnit: .day), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.week)
+        XCTAssertEqual(model.profile.smallestUnit, .day)
+        XCTAssertEqual(model.overlayPreviewText, "1 週又 3 天")
+    }
+
+    func testSetSmallestUnitNoOpsForAUnitNotOnTheCurrentTrack() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(largestUnit: .week, smallestUnit: .week), now: try fixedNow(), spy: spy)
+        model.setSmallestUnit(.month) // not on the week track
+        XCTAssertEqual(model.profile.smallestUnit, .week)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    // MARK: - A-5 歲措辭 (11.28–11.31)
+
+    func testAgeWordingDisabledWhenLargestUnitIsDay() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isAgeWordingToggleDisabled)
+    }
+
+    func testAgeWordingEnabledOnceLargestUnitIsYear() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.year)
+        XCTAssertFalse(model.isAgeWordingToggleDisabled)
+        XCTAssertFalse(model.profile.useAgeWording)
+    }
+
+    func testAgeWordingOnYearYearPrintsSui() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
+                                                        largestUnit: .year,
+                                                        smallestUnit: .year),
+                              now: try fixedNow(), spy: spy)
+        model.setUseAgeWording(true)
+        XCTAssertEqual(model.overlayPreviewText, "1 歲")
+    }
+
+    func testSwitchingLargestUnitAwayFromYearTurnsAgeWordingOffAndDisablesIt() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
+                                                        largestUnit: .year,
+                                                        smallestUnit: .year,
+                                                        useAgeWording: true),
+                              now: try fixedNow(), spy: spy)
+        model.setLargestUnit(.month)
+        XCTAssertFalse(model.profile.useAgeWording)
+        XCTAssertTrue(model.isAgeWordingToggleDisabled)
+        XCTAssertFalse(model.overlayPreviewText.contains("歲"))
+    }
+
+    func testSetUseAgeWordingNoOpsWhenLargestUnitIsNotYear() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy) // largest = .day
+        model.setUseAgeWording(true)
+        XCTAssertFalse(model.profile.useAgeWording)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    // MARK: - 位置與主題 (FR-4.1, FR-4.9)
+
+    func testSetPositionUpdatesProfile() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setPosition(.topLeading)
+        XCTAssertEqual(model.profile.position, .topLeading)
+    }
+
+    func testSetThemeIDUpdatesProfile() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setThemeID(.retroOrange)
+        XCTAssertEqual(model.profile.themeID, .retroOrange)
+    }
+
+    // MARK: - A-6 持久化 (11.32–11.33)
+
+    func testEveryMutationForwardsTheUpdatedProfileToUpdateProfile() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowName(true)
+        model.setPosition(.topLeading)
+        model.setThemeID(.softPink)
+        XCTAssertEqual(spy.updated.count, 3)
+        XCTAssertEqual(spy.updated.last?.showName, true)
+        XCTAssertEqual(spy.updated.last?.position, .topLeading)
+        XCTAssertEqual(spy.updated.last?.themeID, .softPink)
+    }
+
+    func testDistinctModelsForDifferentProfilesDoNotShareState() throws {
+        let spyA = Spy()
+        let spyB = Spy()
+        let modelA = makeModel(profile: baselineProfile(name: "A"), now: try fixedNow(), spy: spyA)
+        let modelB = makeModel(profile: baselineProfile(name: "B"), now: try fixedNow(), spy: spyB)
+        modelA.setPosition(.topLeading)
+        XCTAssertEqual(modelA.profile.position, .topLeading)
+        XCTAssertEqual(modelB.profile.position, .bottomTrailing)
+    }
+
+    // MARK: - Failure surfaces as lastError
+
+    func testUpdateProfileFailureIsSurfacedAsLastError() throws {
+        struct DummyError: Error {}
+        let spy = Spy()
+        spy.shouldThrow = DummyError()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowName(true)
+        XCTAssertNotNil(model.lastError)
+        // The local copy still reflects the attempted change even though the
+        // write failed, matching ProfileEditModel's "state, not a round trip"
+        // model — there is no server-authoritative copy to roll back to here.
+        XCTAssertTrue(model.profile.showName)
+    }
+}
