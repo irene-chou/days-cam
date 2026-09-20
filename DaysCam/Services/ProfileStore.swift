@@ -117,6 +117,11 @@ extension ProfileStore {
             //
             // Seeding on a fresh install is not a loss and never reaches here:
             // that case returns above, before the file is read.
+            //
+            // The file is set aside for the same reason an unreadable one is:
+            // re-seeding overwrites it, and it holds the only copy of what the
+            // user configured, however invalid this build found it.
+            setAsideCorruptFile()
             didRecoverFromCorruption = true
             seedDefaultProfile()
             return profiles

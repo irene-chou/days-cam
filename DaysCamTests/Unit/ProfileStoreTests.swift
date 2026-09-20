@@ -376,6 +376,11 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(loaded.first?.startDate, DateFixture.components(2026, 3, 5))
         XCTAssertTrue(store.didRecoverFromCorruption,
                       "every profile the user had is gone — the same loss as an unreadable file")
+
+        let saved = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("\(ProfileStore.fileName).corrupt-") }
+        XCTAssertEqual(saved.count, 1,
+                       "re-seeding overwrites the file, so the only copy is kept aside first")
     }
 
     /// The other side of the same rule: losing one record while the others

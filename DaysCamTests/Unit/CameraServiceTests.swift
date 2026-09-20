@@ -100,6 +100,14 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(service.permission, expected, file: file, line: line)
     }
 
+    /// Lets anything already queued on the session queue and the main queue
+    /// drain, for the assertions that something did *not* happen.
+    private func settle() {
+        let drained = expectation(description: "queues drain")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+    }
+
     // MARK: - Initial state
 
     func testStartsIdleOnTheBackCameraWithAnIdleSession() {
@@ -111,12 +119,14 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertFalse(service.session.isRunning)
     }
 
-    func testSessionIsExposedSoTheViewCanBuildItsOwnPreviewLayer() {
-        let (service, _, _) = makeService(status: .authorized)
+    func testEachServiceOwnsItsOwnSessionForTheViewToAttachTo() {
+        let (first, _, _) = makeService(status: .authorized)
+        let (second, _, _) = makeService(status: .authorized)
 
-        // The view layer owns the `AVCaptureVideoPreviewLayer`; the service
-        // only hands out the session it should be attached to.
-        XCTAssertTrue(service.session === service.session)
+        // The view layer owns the `AVCaptureVideoPreviewLayer` and attaches it
+        // to `session`. Two services must not hand out the same one, or two
+        // camera screens would fight over a single session.
+        XCTAssertFalse(first.session === second.session)
     }
 
     // MARK: - Permission state machine (PRD §2.3)
@@ -182,6 +192,35 @@ final class CameraServiceTests: XCTestCase {
         service.refreshPermission()
 
         expect(service, permission: .authorized)
+    }
+
+    /// The counterpart: once the screen has gone, coming back to the
+    /// foreground must not light the camera behind it.
+    func testReturningToTheForegroundDoesNotRestartAStoppedSession() {
+        let (service, _, _) = makeService(status: .authorized)
+        service.start()
+        expect(service, status: .unavailable(.simulator))
+        service.stop()
+        expect(service, status: .idle)
+
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification,
+                                        object: nil)
+        settle()
+
+        XCTAssertEqual(service.status, .idle,
+                       "a stopped session must stay stopped until the screen asks again")
+        XCTAssertEqual(service.permission, .authorized, "permission is still re-read")
+    }
+
+    func testStartAfterStopBringsTheSessionBack() {
+        let (service, _, _) = makeService(status: .authorized)
+        service.start()
+        service.stop()
+        expect(service, status: .idle)
+
+        service.start()
+
+        expect(service, status: .unavailable(.simulator))
     }
 
     func testReturningToTheForegroundRechecksPermission() {
@@ -278,10 +317,7 @@ final class CameraServiceTests: XCTestCase {
         expect(service, status: .unavailable(.noCaptureDevice))
 
         service.switchCamera()
-
-        let settled = expectation(description: "switch attempt finishes")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { settled.fulfill() }
-        wait(for: [settled], timeout: 2)
+        settle()
 
         XCTAssertEqual(service.facing, .back, "a failed switch must not leave a lie in the UI")
         XCTAssertTrue(provider.requestedFacings.contains(.front))
@@ -331,18 +367,58 @@ final class CameraServiceTests: XCTestCase {
         }
     }
 
-    func testCapturePhotoDeliversItsAnswerOnTheMainQueue() {
+    /// Called off the main thread, so the answer has to actually hop queues
+    /// rather than take the already-on-main shortcut.
+    func testCapturePhotoDeliversItsAnswerOnTheMainQueueFromAnyCaller() {
         let (service, _, _) = makeService(status: .authorized, captureSupported: false)
         service.start()
 
         let done = expectation(description: "capture completes")
         var wasOnMain = false
-        service.capturePhoto { _ in
-            wasOnMain = Thread.isMainThread
-            done.fulfill()
+        DispatchQueue.global(qos: .userInitiated).async {
+            service.capturePhoto { _ in
+                wasOnMain = Thread.isMainThread
+                done.fulfill()
+            }
         }
         wait(for: [done], timeout: 2)
 
         XCTAssertTrue(wasOnMain)
     }
+
+    // MARK: - The capture delegate answers exactly once (PRD FR-5.5)
+
+    /// TASK-10 disables the shutter for the duration of a capture, so a
+    /// completion that never runs — or runs twice — is what wedges it.
+    func testCaptureDelegateAnswersAtMostOnce() {
+        var results: [Result<UIImage, CameraCaptureError>] = []
+        let delegate = PhotoCaptureDelegate { result, _ in results.append(result) }
+
+        delegate.cancel()
+        delegate.cancel()
+        delegate.cancel()
+
+        XCTAssertEqual(results.count, 1)
+        switch results.first {
+        case .failure(let error): XCTAssertEqual(error, .notRunning)
+        default: XCTFail("expected a failure, got \(String(describing: results.first))")
+        }
+    }
+
+    func testCaptureDelegateHandsItselfBackSoTheServiceCanReleaseIt() {
+        var handedBack: PhotoCaptureDelegate?
+        let delegate = PhotoCaptureDelegate { _, source in handedBack = source }
+
+        delegate.cancel()
+
+        XCTAssertTrue(handedBack === delegate)
+    }
+
+    // Not covered here: `stop()` draining a capture that is genuinely in
+    // flight. Reaching that path needs a configured, running session, which
+    // needs real hardware — a test written against the simulator would be
+    // answered by `capturePhoto`'s `status == .running` guard long before the
+    // drain ran, and would pass whether or not the drain existed. It is a
+    // device-level check instead; the once-guard above is what the drain
+    // relies on.
 }

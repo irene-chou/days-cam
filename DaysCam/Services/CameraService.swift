@@ -177,6 +177,15 @@ final class CameraService: ObservableObject {
 
     private var observers: [NSObjectProtocol] = []
 
+    /// True between `start()` and `stop()`: the camera screen wants a live
+    /// picture. Touched on the main queue only.
+    ///
+    /// It exists so returning to the foreground cannot start the session
+    /// behind a screen that is no longer showing a viewfinder — that would
+    /// light the camera indicator and drain the battery with nothing on
+    /// screen.
+    private var isActive = false
+
     /// Creates a service.
     ///
     /// - Parameters:
@@ -206,39 +215,33 @@ extension CameraService {
     /// first time, and starts the session when it is granted.
     ///
     /// Safe to call repeatedly — re-entering the screen is the normal case.
+    ///
+    /// Call on the main queue.
     func start() {
-        switch authorizer.authorizationStatus() {
-        case .notDetermined:
-            publish(permission: .notDetermined)
-            authorizer.requestAccess { [weak self] granted in
-                guard let self else { return }
-                self.onMain {
-                    self.publish(permission: granted ? .authorized : .denied)
-                    if granted { self.run() }
-                }
-            }
-        case .authorized:
-            publish(permission: .authorized)
-            run()
-        case .denied:
-            publish(permission: .denied)
-        case .restricted:
-            publish(permission: .restricted)
-        @unknown default:
-            // An unknown case is not a grant, so treat it as the safe branch:
-            // show the guidance screen rather than a blank viewfinder.
-            publish(permission: .denied)
-        }
+        isActive = true
+        resolvePermission(runIfGranted: true)
     }
 
-    /// Stops the session and returns to idle. Called when the camera screen
-    /// goes away or the app leaves the foreground.
+    /// Stops the session and returns to idle. Call when the camera screen goes
+    /// away, and on the main queue.
+    ///
+    /// It also clears the active flag, so a later trip through the foreground
+    /// will not bring the session back on its own. A screen that stops on
+    /// backgrounding therefore has to call `start()` again on the way in.
     func stop() {
+        isActive = false
         sessionQueue.async { [weak self] in
             guard let self else { return }
             if self.session.isRunning {
                 self.session.stopRunning()
             }
+            // A capture that was still in flight will never hear back from
+            // AVFoundation now, so answer for it rather than leaving the
+            // caller's shutter disabled forever.
+            let abandoned = Array(self.captureDelegates.values)
+            self.captureDelegates.removeAll()
+            abandoned.forEach { $0.cancel() }
+
             self.publish(status: .idle)
         }
     }
@@ -251,12 +254,44 @@ extension CameraService {
     ///
     /// A revoked permission goes through the same path: it becomes `.denied`
     /// and the guidance screen comes back.
+    ///
+    /// It never starts a session that `stop()` has since shut down — only one
+    /// the camera screen is still asking for. Call on the main queue.
     func refreshPermission() {
-        start()
+        resolvePermission(runIfGranted: true)
+    }
+
+    /// Reads the current permission, prompting the first time, and publishes
+    /// it. Starts the session too when `runIfGranted` says the screen wants it.
+    private func resolvePermission(runIfGranted: Bool) {
+        switch authorizer.authorizationStatus() {
+        case .notDetermined:
+            publish(permission: .notDetermined)
+            authorizer.requestAccess { [weak self] granted in
+                guard let self else { return }
+                self.onMain {
+                    self.publish(permission: granted ? .authorized : .denied)
+                    if granted, runIfGranted { self.run() }
+                }
+            }
+        case .authorized:
+            publish(permission: .authorized)
+            if runIfGranted { run() }
+        case .denied:
+            publish(permission: .denied)
+        case .restricted:
+            publish(permission: .restricted)
+        @unknown default:
+            // An unknown case is not a grant, so treat it as the safe branch:
+            // show the guidance screen rather than a blank viewfinder.
+            publish(permission: .denied)
+        }
     }
 
     /// Switches to the other camera, keeping `facing` truthful: it only moves
-    /// once the new input is actually in the session (PRD FR-5.8).
+    /// once the switch has been accepted — either the new input is in the
+    /// session, or the session is not up yet and the side has been recorded
+    /// for the next configure (PRD FR-5.8). Call on the main queue.
     ///
     /// A tap that lands while a switch is still reconfiguring computes the same
     /// target as the one in flight, so it is a no-op. That debounce is
@@ -291,12 +326,17 @@ extension CameraService {
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
                 self.publish(facing: target)
-            } else {
+            } else if let previous, self.session.canAddInput(previous) {
                 // Put the working input back rather than leaving a dead session.
-                if let previous, self.session.canAddInput(previous) {
-                    self.session.addInput(previous)
-                }
+                self.session.addInput(previous)
                 self.session.commitConfiguration()
+            } else {
+                // Neither side went in: the session now has no video input at
+                // all. Say so, or the user gets a black viewfinder with a live
+                // shutter and no way back.
+                self.videoInput = nil
+                self.session.commitConfiguration()
+                self.publish(status: .unavailable(.sessionFailure))
             }
         }
     }
@@ -319,6 +359,10 @@ extension CameraService {
     /// Nothing here knows about dates, profiles or overlay text: the shutter
     /// hands the image on, and the caller decides what to print on it
     /// (PRD §6.5.4).
+    ///
+    /// Call on the main queue. The guards reject synchronously, so a rejected
+    /// call runs `completion` *before* this method returns — set any
+    /// "capture in flight" flag before calling, not after (PRD FR-5.5).
     func capturePhoto(completion: @escaping (Result<UIImage, CameraCaptureError>) -> Void) {
         guard isCaptureSupported else {
             onMain { completion(.failure(.captureUnavailable)) }
@@ -345,11 +389,13 @@ extension CameraService {
             }
 
             let delegate = PhotoCaptureDelegate { [weak self] result, delegate in
-                guard let self else { return }
-                self.sessionQueue.async {
-                    self.captureDelegates.removeValue(forKey: ObjectIdentifier(delegate))
+                // The answer does not depend on the service still being
+                // around, so it is delivered first and unconditionally; only
+                // the bookkeeping is skipped when the service has gone.
+                DispatchQueue.main.async { completion(result) }
+                self?.sessionQueue.async {
+                    self?.captureDelegates.removeValue(forKey: ObjectIdentifier(delegate))
                 }
-                self.onMain { completion(result) }
             }
             self.captureDelegates[ObjectIdentifier(delegate)] = delegate
             self.photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: delegate)
@@ -363,6 +409,11 @@ private extension CameraService {
 
     /// Configures the session if needed and starts it, all off the main thread.
     func run() {
+        // The foreground observer refreshes permission on every return to the
+        // app, so without this a session stopped by `stop()` would come back
+        // behind a screen that is no longer showing a viewfinder.
+        guard isActive else { return }
+
         guard isCaptureSupported else {
             publish(status: .unavailable(.simulator))
             return
@@ -498,11 +549,17 @@ private extension CameraService {
 ///
 /// AVFoundation does not retain the delegate, so `CameraService` holds it until
 /// the callback fires and then drops it, using the delegate handed back here.
-private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+///
+/// Internal rather than private only so the "answers exactly once" guard can be
+/// tested directly — that guarantee is what keeps the shutter from staying
+/// disabled forever (PRD FR-5.5). Nothing outside this file constructs one.
+final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
     private let finish: (Result<UIImage, CameraCaptureError>, PhotoCaptureDelegate) -> Void
     private var hasFinished = false
 
+    /// - Parameter finish: called at most once, with the result and this
+    ///   delegate so the caller can release it.
     init(finish: @escaping (Result<UIImage, CameraCaptureError>, PhotoCaptureDelegate) -> Void) {
         self.finish = finish
     }
@@ -536,8 +593,19 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
         }
     }
 
+    /// Answers for a capture that will never come back, e.g. because the
+    /// session was stopped underneath it. Ignored once a real answer has been
+    /// delivered.
+    func cancel() {
+        deliver(.failure(.notRunning))
+    }
+
     private func deliver(_ result: Result<UIImage, CameraCaptureError>) {
-        guard !hasFinished else { return }
+        // `didFinishProcessingPhoto` and `didFinishCaptureFor` both fire for a
+        // successful capture, and `cancel` can race either of them. Without
+        // this guard a success is immediately followed by a `.noImageData`
+        // failure, and TASK-10's shutter acts on the wrong one.
+        guard hasFinished == false else { return }
         hasFinished = true
         finish(result, self)
     }
