@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Drives PRD S-2, the profile list screen: selection, creation, deletion
@@ -70,6 +71,10 @@ final class ProfileListModel: ObservableObject {
     private let updateProfile: (CameraProfile) throws -> Void
     private let deleteProfile: (UUID) throws -> Void
     private let selectProfile: (UUID) -> Void
+    /// Holds the `ProfileStore` bindings set up by `adapting(to:)`. Empty for
+    /// a model built directly (e.g. in tests), which is the point — this
+    /// model never depends on `ProfileStore` to be constructed or tested.
+    var storeSubscriptions = Set<AnyCancellable>()
 
     /// Creates a list model.
     ///
