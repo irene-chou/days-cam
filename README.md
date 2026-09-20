@@ -32,3 +32,17 @@ xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
 xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
   -destination 'platform=iOS Simulator,name=iPhone 16' test
 ```
+
+### 多個 worktree 並行時要指定 DerivedData
+
+平行開發時每個人各有一個 git worktree，但專案名稱都是 `DaysCam`，Xcode 會把它們雜湊到**同一個** DerivedData 目錄。兩邊同時跑 `xcodebuild test` 會互踩，出現 result bundle 的寫入警告。
+
+各自加上 `-derivedDataPath` 即可：
+
+```
+xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -derivedDataPath /tmp/dd-<你的識別> test
+```
+
+單人開發不需要這個參數。
