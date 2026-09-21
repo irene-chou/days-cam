@@ -211,13 +211,22 @@ private struct OverlayLayout {
                                   height: offset.height * decorationScale)
         let shadowBlur = CGFloat(blur) * decorationScale
         let shadowColor = uiColor(color, opacity: color.opacity * opacity).cgColor
+        // Room around the block for everything that spills past its laid-out
+        // size: the blur on every side, the offset, and a stroke or glyph
+        // overhang drawn outside the text box.
+        let spill = shadowBlur * 2 + max(abs(shadowOffset.width), abs(shadowOffset.height)) + fontSize * 0.25
         return DrawingBlock(size: inner.size) { context, origin in
             context.saveGState()
             context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
             // Flatten `inner` into one layer first, so a stroked text casts
             // one shadow rather than one per stroke and fill pass — what
             // `.compositingGroup()` does in the viewfinder.
-            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            //
+            // The layer is bounded to the block: an unbounded one allocates a
+            // second full-photo bitmap and blurs all of it, which made the
+            // shadow themes three times slower on a 12-megapixel photo.
+            let bounds = CGRect(origin: origin, size: inner.size).insetBy(dx: -spill, dy: -spill)
+            context.beginTransparencyLayer(in: bounds, auxiliaryInfo: nil)
             inner.draw(context, origin)
             context.endTransparencyLayer()
             context.restoreGState()

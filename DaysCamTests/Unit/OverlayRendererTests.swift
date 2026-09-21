@@ -183,54 +183,70 @@ final class OverlayRendererTests: XCTestCase {
 
     // MARK: - Shared layout (PRD FR-4.3, FR-4.7)
 
-    /// `filmStrip` draws an opaque-ish box, so its edges can be measured. The
-    /// box must sit exactly one margin (4% of the short edge) in from the
-    /// bottom-right corner, and its insets must be scaled up from their 17pt
-    /// values — unscaled, they would be ~70px too narrow at this size.
-    func test_boxSitsOneMarginFromTheCornerWithScaledInsets() throws {
+    /// `filmStrip` draws an opaque-ish box, so its edges can be measured. For
+    /// every one of the nine positions the box must hug the edges it is
+    /// anchored to at exactly one margin (4% of the short edge) and be centred
+    /// on the axes it is not (PRD FR-4.3). Its insets must also be scaled up
+    /// from their 17pt values — unscaled, they would be ~70px too narrow here.
+    func test_everyPositionPlacesTheBoxOneMarginInAndScalesItsInsets() throws {
         let theme = OverlayTheme.theme(for: .filmStrip)
         let text = "第 10 天"
-        let grid = try pixels(of: bake(makeImage(), text: text, theme: theme, position: .bottomTrailing))
+        let frameWidth = CGFloat(width)
+        let frameHeight = CGFloat(height)
 
-        let shortEdge = CGFloat(width)
-        let margin = OverlayMetrics.margin(forShortEdge: shortEdge)
+        let margin = OverlayMetrics.margin(forShortEdge: frameWidth)
         let fontSize = OverlayMetrics.fittedFontSize(for: text,
                                                      theme: theme,
-                                                     baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: shortEdge),
-                                                     availableWidth: CGFloat(width) - margin * 2)
+                                                     baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: frameWidth),
+                                                     availableWidth: frameWidth - margin * 2)
         let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
         let font = OverlayMetrics.font(for: theme, size: fontSize)
         let textSize = (text as NSString).size(withAttributes: [.font: font])
-        let expectedWidth = textSize.width + 2 * 12 * scale
-        let expectedHeight = textSize.height + 2 * 6 * scale
+        let boxWidth = textSize.width + 2 * 12 * scale
+        let boxHeight = textSize.height + 2 * 6 * scale
 
-        let box = try XCTUnwrap(grid.bounds(in: region(x: 0...(width - 1), y: 0...(height - 1))) {
-            $0.distance(to: .white) > 30
-        })
+        let leading = margin
+        let centerX = (frameWidth - boxWidth) / 2
+        let trailing = frameWidth - margin - boxWidth
+        let top = margin
+        let centerY = (frameHeight - boxHeight) / 2
+        let bottom = frameHeight - margin - boxHeight
+        let expected: [OverlayPosition: CGPoint] = [
+            .topLeading: CGPoint(x: leading, y: top),
+            .topCenter: CGPoint(x: centerX, y: top),
+            .topTrailing: CGPoint(x: trailing, y: top),
+            .middleLeading: CGPoint(x: leading, y: centerY),
+            .middleCenter: CGPoint(x: centerX, y: centerY),
+            .middleTrailing: CGPoint(x: trailing, y: centerY),
+            .bottomLeading: CGPoint(x: leading, y: bottom),
+            .bottomCenter: CGPoint(x: centerX, y: bottom),
+            .bottomTrailing: CGPoint(x: trailing, y: bottom)
+        ]
+        XCTAssertEqual(expected.count, OverlayPosition.allCases.count, "fixture sanity: all nine covered")
 
-        XCTAssertEqual(box.maxX, CGFloat(width) - margin, accuracy: 2, "right edge one margin in")
-        XCTAssertEqual(box.maxY, CGFloat(height) - margin, accuracy: 2, "bottom edge one margin in")
-        XCTAssertEqual(box.width, expectedWidth, accuracy: 3, "horizontal insets scaled by \(scale)")
-        XCTAssertEqual(box.height, expectedHeight, accuracy: 3, "vertical insets scaled by \(scale)")
+        for position in OverlayPosition.allCases {
+            let grid = try pixels(of: bake(makeImage(), text: text, theme: theme, position: position))
+            let box = try XCTUnwrap(grid.bounds(in: region(x: 0...(width - 1), y: 0...(height - 1))) {
+                $0.distance(to: .white) > 30
+            }, "\(position) drew nothing")
+            let corner = try XCTUnwrap(expected[position])
+
+            XCTAssertEqual(box.minX, corner.x, accuracy: 2, "\(position) left edge")
+            XCTAssertEqual(box.minY, corner.y, accuracy: 2, "\(position) top edge")
+            XCTAssertEqual(box.width, boxWidth, accuracy: 3, "\(position) insets scaled by \(scale)")
+            XCTAssertEqual(box.height, boxHeight, accuracy: 3, "\(position) insets scaled by \(scale)")
+        }
     }
 
-    func test_middleCenterIsCentredBothWays() throws {
-        let grid = try pixels(of: bake(makeImage(), text: "第 10 天",
-                                       theme: .theme(for: .filmStrip), position: .middleCenter))
-
-        let box = try XCTUnwrap(grid.bounds(in: region(x: 0...(width - 1), y: 0...(height - 1))) {
-            $0.distance(to: .white) > 30
-        })
-
-        XCTAssertEqual(box.midX, CGFloat(width) / 2, accuracy: 2)
-        XCTAssertEqual(box.midY, CGFloat(height) / 2, accuracy: 2)
-    }
-
-    /// SwiftUI's `.shadow(y: +2)` casts downward. Core Graphics shadow offsets
-    /// are in device space, which is flipped relative to a UIKit context, so a
-    /// naive port casts the shadow upward instead. On mid-grey the white text
-    /// and its black shadow can both be seen and compared.
-    func test_shadowFallsBelowTheTextLikeThePreview() throws {
+    /// SwiftUI's `.shadow(y: +2)` casts downward, and so must the baked one.
+    /// Core Graphics documents shadow offsets in device space (y up), so a
+    /// "corrected" port that negates y casts upward instead. On mid-grey the
+    /// white text and its black shadow can both be seen and compared.
+    ///
+    /// The margin is half the scaled offset, so a shadow with no offset at
+    /// all — which would put both centroids in nearly the same place — fails
+    /// too, rather than scraping through on noise.
+    func test_shadowFallsBelowTheTextByItsScaledOffset() throws {
         let grey = RGB(red: 128, green: 128, blue: 128)
         let grid = try pixels(of: bake(makeImage(fill: grey), text: "第 10 天", position: .bottomTrailing))
         let area = region(x: 0...(width - 1), y: (height / 2)...(height - 1))
@@ -238,7 +254,40 @@ final class OverlayRendererTests: XCTestCase {
         let text = try XCTUnwrap(grid.centroid(in: area) { $0.red > 200 && $0.green > 200 && $0.blue > 200 })
         let shadow = try XCTUnwrap(grid.centroid(in: area) { $0.red < 100 && $0.green < 100 && $0.blue < 100 })
 
-        XCTAssertGreaterThan(shadow.y, text.y, "shadow centroid \(shadow.y) should be below text centroid \(text.y)")
+        let fontSize = OverlayMetrics.baseFontSize(forShortEdge: CGFloat(width))
+        let scaledOffset = 2 * OverlayMetrics.decorationScale(forFontSize: fontSize)   // classicWhite: offset (0, 2)
+        XCTAssertGreaterThan(shadow.y, text.y + scaledOffset * 0.5,
+                             "shadow centroid \(shadow.y) vs text centroid \(text.y), scaled offset \(scaledOffset)")
+    }
+
+    /// `softPink` is the only theme with a stroke, and it is easy to lose
+    /// without noticing: pink text is visible on white and on black anyway,
+    /// so the legibility test cannot tell. On mid-grey the white outline is
+    /// the only near-white thing in the picture.
+    ///
+    /// The outline must also be as wide as the preview's: 2pt at 17pt,
+    /// scaled up, visible outside the glyph. A stroke drawn at the nominal
+    /// width rather than double would show only half that.
+    func test_softPinkStrokeIsDrawnAndAsWideAsThePreviews() throws {
+        let theme = OverlayTheme.theme(for: .softPink)
+        let grey = RGB(red: 128, green: 128, blue: 128)
+        let grid = try pixels(of: bake(makeImage(fill: grey), text: "第 10 天", theme: theme, position: .middleCenter))
+        let everywhere = region(x: 0...(width - 1), y: 0...(height - 1))
+
+        let outline = try XCTUnwrap(grid.bounds(in: everywhere) { $0.red > 230 && $0.green > 230 && $0.blue > 230 },
+                                    "no white outline at all")
+        let glyphs = try XCTUnwrap(grid.bounds(in: everywhere) { $0.red > 230 && $0.green < 150 && $0.blue < 200 },
+                                   "no pink fill")
+
+        let fontSize = OverlayMetrics.fittedFontSize(for: "第 10 天",
+                                                     theme: theme,
+                                                     baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: CGFloat(width)),
+                                                     availableWidth: CGFloat(width) * 0.92)
+        let visibleWidth = 2 * OverlayMetrics.decorationScale(forFontSize: fontSize)
+        XCTAssertEqual(glyphs.minX - outline.minX, visibleWidth, accuracy: 2.5,
+                       "outline visible outside the glyph on the left")
+        XCTAssertEqual(outline.maxX - glyphs.maxX, visibleWidth, accuracy: 2.5,
+                       "outline visible outside the glyph on the right")
     }
 
     // MARK: - Legibility (PRD FR-4.6)
