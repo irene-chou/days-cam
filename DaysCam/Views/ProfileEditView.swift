@@ -46,7 +46,7 @@ struct ProfileEditView: View {
 
             if let error = model.validationError {
                 Section {
-                    Text(message(for: error))
+                    Text(error.displayMessage)
                         .foregroundColor(.red)
                         .font(.footnote)
                 }
@@ -60,7 +60,7 @@ struct ProfileEditView: View {
                         try model.save()
                         dismiss()
                     } catch {
-                        saveErrorMessage = "儲存失敗，請再試一次。"
+                        saveErrorMessage = error.profileStoreDisplayMessage
                     }
                 }
                 .disabled(!model.canSave)
@@ -86,20 +86,4 @@ struct ProfileEditView: View {
         }
     }
 
-    private func message(for error: CameraProfileValidationError) -> String {
-        switch error {
-        case .nameEmpty:
-            return "名稱不能空白"
-        case let .nameTooLong(length):
-            return "名稱過長（\(length) 字），上限 \(CameraProfile.maximumNameLength) 字"
-        case .startDateMissingComponents, .startDateHasExtraComponents, .startDateNotARealDate:
-            return "起始日不正確"
-        case .displaySwitchesAllOff:
-            return "至少需要顯示天數或日期其中一項"
-        case .unitPairNotOnSameTrack:
-            return "天數單位組合不正確"
-        case .ageWordingRequiresYearUnit:
-            return "歲的措辭只能在最大單位為年時使用"
-        }
-    }
 }

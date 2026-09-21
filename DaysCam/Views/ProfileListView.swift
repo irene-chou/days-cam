@@ -72,7 +72,9 @@ struct ProfileListView: View {
         .alert("刪除失敗", isPresented: deletionErrorBinding) {
             Button("好") { model.lastError = nil }
         } message: {
-            Text("請再試一次。")
+            if let error = model.lastError {
+                Text(error.profileStoreDisplayMessage)
+            }
         }
     }
 
