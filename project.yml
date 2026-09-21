@@ -35,3 +35,12 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: "YES"
+schemes:
+  DaysCam:
+    build:
+      targets:
+        DaysCam: all
+        DaysCamTests: [test]
+    test:
+      targets:
+        - DaysCamTests
