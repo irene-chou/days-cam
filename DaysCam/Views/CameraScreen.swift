@@ -3,8 +3,8 @@ import SwiftUI
 /// The app's only launch destination (PRD S-1).
 ///
 /// Composes the viewfinder, the live overlay text, the permission guidance
-/// screen and the shutter. The display-settings entry and the profile
-/// switcher are layered on in later tasks. All state and decisions live in
+/// screen, the display-settings entry and the shutter. The profile switcher
+/// is layered on in a later task. All state and decisions live in
 /// `CameraScreenModel`; this view only lays it out.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
@@ -17,12 +17,49 @@ struct CameraScreen: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .clipped()
+                .overlay(alignment: .top) { topBar }
 
             shutterBar
         }
         .background(Color.black)
         .onAppear { model.onAppear() }
         .onDisappear { model.onDisappear() }
+        .sheet(isPresented: displaySettingsBinding) {
+            // `model.displaySettingsModel` is the instance cached when the
+            // sheet opened, not rebuilt on every access — see its own doc
+            // comment for why that matters.
+            if let displaySettingsModel = model.displaySettingsModel {
+                DisplaySettingsSheet(model: displaySettingsModel)
+            }
+        }
+    }
+
+    /// Settings-gear entry point (PRD S-1 → S-4, TASK-11's acceptance 11.1).
+    /// The leading side is reserved for TASK-13's profile switcher.
+    private var topBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                model.presentDisplaySettings()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    /// `model.isDisplaySettingsPresented` as a `Binding` for `.sheet`:
+    /// dismissing the sheet (swipe-down, tapping outside) must also clear the
+    /// model's state, not just the SwiftUI-owned presentation flag — same
+    /// pattern as `ProfileListView.editorBinding`.
+    private var displaySettingsBinding: Binding<Bool> {
+        Binding(get: { model.isDisplaySettingsPresented },
+                set: { isPresented in if !isPresented { model.dismissDisplaySettings() } })
     }
 
     @ViewBuilder

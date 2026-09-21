@@ -314,4 +314,62 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.profiles.map(\.name), ["預設", "小寶"])
         XCTAssertEqual(model.selectedProfileID, store.selectedProfileID)
     }
+
+    // MARK: - Display settings sheet (TASK-11)
+
+    func testPresentDisplaySettingsBuildsAModelForTheSelectedProfile() throws {
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertFalse(model.isDisplaySettingsPresented)
+
+        model.presentDisplaySettings()
+
+        XCTAssertTrue(model.isDisplaySettingsPresented)
+        XCTAssertEqual(model.displaySettingsModel?.profile.id, model.selectedProfileID)
+    }
+
+    func testDismissDisplaySettingsClearsTheModel() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        model.presentDisplaySettings()
+        XCTAssertTrue(model.isDisplaySettingsPresented)
+
+        model.dismissDisplaySettings()
+
+        XCTAssertFalse(model.isDisplaySettingsPresented)
+        XCTAssertNil(model.displaySettingsModel)
+    }
+
+    func testDisplaySettingsChangesWriteThroughToTheProfileStore() throws {
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        model.presentDisplaySettings()
+        let sheetModel = try XCTUnwrap(model.displaySettingsModel)
+
+        sheetModel.setShowName(true)
+
+        XCTAssertTrue(store.profiles.first?.showName ?? false)
+        // `model.profiles` mirrors the store via a `.receive(on: .main)` sink,
+        // so it needs a pump before the viewfinder's own overlay reflects the
+        // change — same as the other mirroring tests above.
+        waitUntil { model.selectedProfile?.showName == true }
+        XCTAssertTrue(model.overlayText.hasPrefix("預設"))
+    }
+
+    func testPresentDisplaySettingsIsANoOpWithoutASelectedProfile() throws {
+        // Defensive backstop: `selectedProfile` should never actually be nil
+        // once the app has launched (FR-1.8 guarantees a non-empty list), but
+        // the guard exists so this can never force-unwrap.
+        let now = try fixedNow()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        // Deliberately never call `store.load()`, so `profiles` stays empty
+        // and `selectedProfileID` stays nil.
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        model.presentDisplaySettings()
+
+        XCTAssertFalse(model.isDisplaySettingsPresented)
+    }
 }

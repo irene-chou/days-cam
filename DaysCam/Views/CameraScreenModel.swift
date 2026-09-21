@@ -2,11 +2,11 @@ import Combine
 import Foundation
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
-/// interpretation, and the profile-driven overlay (TASK-08). The
-/// display-settings sheet and the profile switcher are layered on in later
-/// tasks. `CameraScreen` only lays out whatever this model currently says —
-/// see `docs/TASKS.md`'s note on why UI-level acceptance criteria live here
-/// rather than in the view.
+/// interpretation, the profile-driven overlay (TASK-08) and the
+/// display-settings sheet entry (TASK-11). The profile switcher is layered on
+/// in a later task. `CameraScreen` only lays out whatever this model
+/// currently says — see `docs/TASKS.md`'s note on why UI-level acceptance
+/// criteria live here rather than in the view.
 ///
 /// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
@@ -28,6 +28,13 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var profiles: [CameraProfile] = []
     /// Mirrors `profileStore.selectedProfileID`.
     @Published private(set) var selectedProfileID: UUID?
+    /// Non-nil while PRD S-4 (the display-settings sheet) should be shown.
+    /// Built once per presentation and held here — same reasoning as
+    /// `ProfileListModel.activeEditModel`: a `.sheet` content closure re-runs
+    /// on unrelated `@Published` changes while the sheet is up (in
+    /// particular `profiles`/`selectedProfileID` ticking from an unrelated
+    /// store write), and rebuilding there would discard in-progress edits.
+    @Published private(set) var displaySettingsModel: DisplaySettingsModel?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -138,5 +145,30 @@ extension CameraScreenModel {
     /// The anchor point `selectedProfile` draws its overlay at.
     var overlayPosition: OverlayPosition {
         selectedProfile?.position ?? .bottomTrailing
+    }
+}
+
+// MARK: - Display settings sheet (TASK-11)
+
+extension CameraScreenModel {
+    /// Whether PRD S-4 should be shown.
+    var isDisplaySettingsPresented: Bool {
+        displaySettingsModel != nil
+    }
+
+    /// Opens the display-settings sheet for the currently selected profile.
+    /// A no-op in the brief window before any profile is selected.
+    func presentDisplaySettings() {
+        guard let selectedProfile else { return }
+        displaySettingsModel = DisplaySettingsModel(profile: selectedProfile,
+                                                    calendar: calendar,
+                                                    calculator: calculator,
+                                                    renderer: renderer) { [weak self] updated in
+            try self?.profileStore.update(updated)
+        }
+    }
+
+    func dismissDisplaySettings() {
+        displaySettingsModel = nil
     }
 }
