@@ -40,11 +40,6 @@ jobs:
           additional_permissions: |
             actions: read
 
-          # Show token usage & cost in the GitHub Actions Step Summary.
-          # Note: this surfaces Claude-authored content in the summary, so only
-          # enable it when the action is triggered by trusted input.
-          display_report: 'true'
-
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
