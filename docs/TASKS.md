@@ -748,6 +748,17 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 - 存檔期間快門 disabled
 - 不建立自訂相簿
 
+> **本卡橫跨兩個人，驗收也分兩半**
+>
+> | 擁有者 | 範圍 | 驗收 |
+> |---|---|---|
+> | core-dev | `Services/PhotoSaver.swift`（`PHPhotoLibrary` 存檔）、`CameraService` 的原生解析度設定 | 10.1、10.2、10.18，以及 `PhotoSaver` 自己的單元測試 |
+> | ui-dev | 快門 UI，以及在 `CameraScreenModel` 把 `capturePhoto` → `TemplateRenderer` → `OverlayRenderer.bake` → `PhotoSaver` 串起來 | **10.3、10.4**，以及其餘需要畫面的條目 |
+>
+> **10.3（當場重算文字）與 10.4（`capturedAt` 在哪裡產生）屬於 ui-dev**，因為它們驗的是串接邏輯，而串接發生在 `CameraScreenModel`。這兩條最容易出現「兩邊都以為對方會寫」——core-dev 開工前主動確認才抓到。
+>
+> **10.18 原生解析度落在 core-dev**：`CameraService` 目前沒有設定 `photoOutput.maxPhotoDimensions`，照片停在系統預設尺寸，實機上不一定是 4032×3024。這在 TASK-07 的 code review 被列為 Minor 後一直沒處理，本卡補上。
+
 **驗收 — A. QA 可自動跑**
 
 | # | 步驟 | 預期結果 |
