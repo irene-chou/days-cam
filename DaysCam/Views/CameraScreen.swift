@@ -3,9 +3,9 @@ import SwiftUI
 /// The app's only launch destination (PRD S-1).
 ///
 /// Composes the viewfinder, the live overlay text, the permission guidance
-/// screen, the display-settings entry and the shutter. The profile switcher
-/// is layered on in a later task. All state and decisions live in
-/// `CameraScreenModel`; this view only lays it out.
+/// screen, the display-settings entry, the profile switcher and the shutter.
+/// All state and decisions live in `CameraScreenModel`; this view only lays
+/// it out.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
@@ -32,12 +32,18 @@ struct CameraScreen: View {
                 DisplaySettingsSheet(model: displaySettingsModel)
             }
         }
+        .sheet(isPresented: $model.isProfileListPresented) {
+            NavigationStack {
+                ProfileListView(model: model.profileListModel)
+            }
+        }
     }
 
-    /// Settings-gear entry point (PRD S-1 → S-4, TASK-11's acceptance 11.1).
-    /// The leading side is reserved for TASK-13's profile switcher.
+    /// Profile switcher (leading, PRD FR-1.4, TASK-13) and settings-gear
+    /// entry point (trailing, PRD S-1 → S-4, TASK-11's acceptance 11.1).
     private var topBar: some View {
         HStack {
+            profileSwitcher
             Spacer()
             Button {
                 model.presentDisplaySettings()
@@ -51,6 +57,40 @@ struct CameraScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+    }
+
+    /// Lists every profile plus a "管理設定檔" entry (PRD FR-1.4). Tapping a
+    /// profile switches to it without leaving the camera screen; the overlay
+    /// updates from the same `model.overlayText` the viewfinder already reads.
+    private var profileSwitcher: some View {
+        Menu {
+            ForEach(model.profiles) { profile in
+                Button {
+                    model.selectProfile(id: profile.id)
+                } label: {
+                    if profile.id == model.selectedProfileID {
+                        Label(profile.name, systemImage: "checkmark")
+                    } else {
+                        Text(profile.name)
+                    }
+                }
+            }
+            Divider()
+            Button("管理設定檔") {
+                model.presentProfileManagement()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(model.currentProfileName)
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.4), in: Capsule())
+        }
     }
 
     /// `model.isDisplaySettingsPresented` as a `Binding` for `.sheet`:

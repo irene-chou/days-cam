@@ -2,11 +2,11 @@ import Combine
 import Foundation
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
-/// interpretation, the profile-driven overlay (TASK-08) and the
-/// display-settings sheet entry (TASK-11). The profile switcher is layered on
-/// in a later task. `CameraScreen` only lays out whatever this model
-/// currently says — see `docs/TASKS.md`'s note on why UI-level acceptance
-/// criteria live here rather than in the view.
+/// interpretation, the profile-driven overlay (TASK-08), the display-settings
+/// sheet entry (TASK-11) and the profile switcher (TASK-13). `CameraScreen`
+/// only lays out whatever this model currently says — see `docs/TASKS.md`'s
+/// note on why UI-level acceptance criteria live here rather than in the
+/// view.
 ///
 /// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
@@ -35,6 +35,16 @@ final class CameraScreenModel: ObservableObject {
     /// particular `profiles`/`selectedProfileID` ticking from an unrelated
     /// store write), and rebuilding there would discard in-progress edits.
     @Published private(set) var displaySettingsModel: DisplaySettingsModel?
+    /// Non-nil while PRD S-2 (the profile management list, reached via the
+    /// switcher's "管理設定檔" entry) should be shown.
+    @Published var isProfileListPresented = false
+
+    /// Drives the management list. Built once and reused — unlike
+    /// `displaySettingsModel`, this does not need to be rebuilt per
+    /// presentation, since `ProfileListModel` already owns its own
+    /// create/edit/delete sheet state independently of whether it is
+    /// currently on screen.
+    let profileListModel: ProfileListModel
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -50,6 +60,7 @@ final class CameraScreenModel: ObservableObject {
         self.renderer = renderer
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
+        self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
     }
 
@@ -170,5 +181,25 @@ extension CameraScreenModel {
 
     func dismissDisplaySettings() {
         displaySettingsModel = nil
+    }
+}
+
+// MARK: - Profile switcher (TASK-13)
+
+extension CameraScreenModel {
+    /// The label the switcher button shows, e.g. "預設" (PRD FR-1.4).
+    var currentProfileName: String {
+        selectedProfile?.name ?? ""
+    }
+
+    /// Switches the camera to `id` without leaving the camera screen
+    /// (PRD FR-1.4). Forwards straight to the store, which also persists
+    /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
+    func selectProfile(id: UUID) {
+        profileStore.select(id: id)
+    }
+
+    func presentProfileManagement() {
+        isProfileListPresented = true
     }
 }

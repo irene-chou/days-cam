@@ -372,4 +372,57 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertFalse(model.isDisplaySettingsPresented)
     }
+
+    // MARK: - Profile switcher (TASK-13)
+
+    func testCurrentProfileNameReflectsTheSelectedProfile() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        XCTAssertEqual(model.currentProfileName, "預設")
+    }
+
+    func testSelectProfileForwardsToTheStoreAndUpdatesTheOverlay() throws {
+        // 13.4/13.5: switching must reach the store (so `lastUsedProfileID`
+        // persists, FR-1.5) and the viewfinder's overlay must follow.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        let defaultProfile = try XCTUnwrap(store.profiles.first { $0.id != second.id })
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(model.selectedProfileID, second.id) // FR-1.10 auto-select on add
+
+        model.selectProfile(id: defaultProfile.id)
+
+        XCTAssertEqual(store.selectedProfileID, defaultProfile.id)
+        XCTAssertEqual(store.lastUsedProfileID, defaultProfile.id)
+        waitUntil { model.currentProfileName == "預設" }
+        // Default profile was seeded with startDate == `now` itself, so under
+        // `.dayOne` this is day 1.
+        XCTAssertEqual(model.overlayText, "第 1 天")
+    }
+
+    func testPresentProfileManagementShowsTheList() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        XCTAssertFalse(model.isProfileListPresented)
+
+        model.presentProfileManagement()
+
+        XCTAssertTrue(model.isProfileListPresented)
+    }
+
+    func testProfileListModelSharesTheSameStoreAsTheScreen() throws {
+        // The management list and the switcher must never fall out of sync —
+        // both are views onto the same `ProfileStore`.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.profileListModel.profiles.map(\.id), store.profiles.map(\.id))
+
+        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        waitUntil { model.profileListModel.profiles.count == 2 }
+        XCTAssertEqual(model.profiles.count, 2)
+    }
 }
