@@ -602,14 +602,31 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 - 模擬器 fallback：`#if targetEnvironment(simulator)` 顯示純色佔位背景，快門 disabled 並標示「模擬器不支援拍照」
 - session 的 start/stop 必須在背景 queue，不得阻塞主執行緒
 
+> **本卡橫跨兩個人，驗收也分兩半**
+>
+> `Services/CameraService.swift` 歸 core-dev、`Views/CameraPreviewView.swift` 與相機畫面接線歸 ui-dev（見檔案所有權表）。
+>
+> **core-dev 半邊**：7.3、7.4a、7.4b（純 Services，不需要 View）
+> **ui-dev 半邊**：7.1、7.2、7.4（都需要畫面跑起來才量得到）
+>
+> 所以 core-dev 交付時只會回報 7.3／7.4a／7.4b，**qa 不要因為 7.1/7.2/7.4 沒結果就判定它漏交**——那三條要等 ui-dev 接好 `CameraScreen` 才跑得動。
+
 **驗收 — A. QA 可自動跑**
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 7.1 | 模擬器執行並進入相機畫面 | 顯示純色佔位背景，快門 disabled，有「模擬器不支援拍照」字樣，不崩潰 |
-| 7.2 | 模擬器上量測觀景窗區域的像素長寬比 | 4:3，誤差 < 2% |
+| 7.1 | 模擬器執行並進入相機畫面 | 顯示純色佔位背景，快門 disabled，有「模擬器不支援拍照」字樣，不崩潰（**ui-dev 半邊**） |
+| 7.2 | 模擬器上量測觀景窗區域的像素長寬比 | 4:3，誤差 < 2%（**ui-dev 半邊**） |
 | 7.3 | `grep -rn "startRunning\|stopRunning" DaysCam/Services/CameraService.swift` | 兩者都不在主執行緒直接呼叫（包在背景 queue 內） |
-| 7.4 | 模擬器上反覆進出相機畫面 10 次 | 不崩潰，console 無 `AVCaptureSession` error |
+| 7.4 | 模擬器上反覆進出相機畫面 10 次 | 不崩潰，console 無 `AVCaptureSession` error（**ui-dev 半邊**） |
+| 7.4a | `xcodebuild ... test -only-testing:DaysCamTests/CameraServiceTests` | 全數通過。必須涵蓋 **PRD §2.3 權限狀態機的每一列**（未決定／已授權／被拒／受限／從設定返回後重檢）與 **§2.4 的中斷與恢復**。實作需把權限查詢與裝置取得做成可注入的介面，否則這些只能在實機驗 |
+| 7.4b | `grep -rn "AVCaptureDevice.authorizationStatus\|AVCaptureDevice.default(" DaysCam/Services/CameraService.swift` | 這兩個呼叫**只能出現在可注入介面的預設實作裡**，不得散落在狀態機邏輯中——否則 7.4a 無法在模擬器執行 |
+
+> **為什麼補 7.4a／7.4b**
+>
+> 本卡原本的 A 級只有四條，權限狀態機（§2.3 五種狀態＋從設定返回）與中斷恢復（§2.4）**全部落在 B 級**，等於 QA 完全無法驗證這張卡最複雜的部分，只能等人類拿實機跑。
+>
+> 但那套狀態機其實**完全可以在模擬器測**——只要把「查詢權限」與「取得擷取裝置」做成注入的介面。core-dev 實作時自行加了這兩個接縫並寫了 22 個測試，證明可行。這兩條把那個做法變成規格要求，而不是靠實作者自發。
 
 **驗收 — B. 需人類實機**
 
