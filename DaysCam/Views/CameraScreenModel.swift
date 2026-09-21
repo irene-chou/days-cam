@@ -1,19 +1,60 @@
+import Combine
 import Foundation
 
-/// Drives PRD S-1, the camera screen.
+/// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
+/// interpretation, and the profile-driven overlay (TASK-08). The
+/// display-settings sheet and the profile switcher are layered on in later
+/// tasks. `CameraScreen` only lays out whatever this model currently says —
+/// see `docs/TASKS.md`'s note on why UI-level acceptance criteria live here
+/// rather than in the view.
 ///
-/// Starts out (TASK-07) owning just the camera lifecycle and how to read
-/// `CameraService`'s published state; TASK-08 onward extend it with the
-/// profile-driven overlay, the display-settings sheet and the profile
-/// switcher. `CameraScreen` only lays out whatever this model currently says
-/// — see `docs/TASKS.md`'s note on why UI-level acceptance criteria live
-/// here rather than in the view.
+/// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
+/// that does depend on `ProfileStore`'s concrete type — a screen-level model
+/// has to be the place real services get wired together. It mirrors the
+/// store's `@Published profiles`/`selectedProfileID` the same way that
+/// adapter does.
 @MainActor
 final class CameraScreenModel: ObservableObject {
     let cameraService: CameraService
+    private let profileStore: ProfileStore
+    private let calendar: Calendar
+    private let calculator: DayCountCalculator
+    private let renderer: TemplateRenderer
 
-    init(cameraService: CameraService) {
+    /// Mirrors `profileStore.profiles`. The caller (`DaysCamApp`) is expected
+    /// to have already called `profileStore.load()` before building this
+    /// model, so this starts non-empty (PRD §2.2/§4.3 guarantee at least one
+    /// profile always exists).
+    @Published private(set) var profiles: [CameraProfile] = []
+    /// Mirrors `profileStore.selectedProfileID`.
+    @Published private(set) var selectedProfileID: UUID?
+
+    private var cancellables = Set<AnyCancellable>()
+
+    init(cameraService: CameraService,
+         profileStore: ProfileStore,
+         calendar: Calendar = .current,
+         calculator: DayCountCalculator = DayCountCalculator(),
+         renderer: TemplateRenderer = TemplateRenderer()) {
         self.cameraService = cameraService
+        self.profileStore = profileStore
+        self.calendar = calendar
+        self.calculator = calculator
+        self.renderer = renderer
+        self.profiles = profileStore.profiles
+        self.selectedProfileID = profileStore.selectedProfileID
+        bindToProfileStore()
+    }
+
+    private func bindToProfileStore() {
+        profileStore.$profiles
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.profiles = $0 }
+            .store(in: &cancellables)
+        profileStore.$selectedProfileID
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.selectedProfileID = $0 }
+            .store(in: &cancellables)
     }
 
     /// Called when the screen appears. Permission is requested here, not at
@@ -65,5 +106,37 @@ final class CameraScreenModel: ObservableObject {
         case .idle, .running, .unavailable(.simulator):
             return nil
         }
+    }
+}
+
+// MARK: - Profile-driven overlay (TASK-08)
+
+extension CameraScreenModel {
+    /// The profile currently applied to the viewfinder, or `nil` only in the
+    /// brief window before `profileStore.load()` has populated `profiles`
+    /// (never observable once the app has actually launched, PRD FR-1.8).
+    var selectedProfile: CameraProfile? {
+        profiles.first { $0.id == selectedProfileID }
+    }
+
+    /// The overlay text for `selectedProfile` as of right now.
+    ///
+    /// Re-rendered on every access rather than cached, using
+    /// `TemplateRenderer` directly — the same renderer TASK-10's shutter must
+    /// call again at capture time (PRD §6.4), so the viewfinder is never the
+    /// source of truth for what gets baked into the photo.
+    var overlayText: String {
+        guard let selectedProfile else { return "" }
+        return renderer.render(profile: selectedProfile, capturedAt: calculator.now(), calendar: calendar)
+    }
+
+    /// The theme `selectedProfile` draws its overlay with.
+    var overlayTheme: OverlayTheme {
+        OverlayTheme.theme(for: selectedProfile?.themeID ?? .classicWhite)
+    }
+
+    /// The anchor point `selectedProfile` draws its overlay at.
+    var overlayPosition: OverlayPosition {
+        selectedProfile?.position ?? .bottomTrailing
     }
 }

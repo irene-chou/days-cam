@@ -3,10 +3,11 @@ import Combine
 import XCTest
 @testable import DaysCam
 
-/// Covers `CameraScreenModel`'s TASK-07 slice: how it turns `CameraService`'s
-/// published state into what the viewfinder should show (placeholder,
-/// shutter-disabled, transient status message) and that it forwards its
-/// lifecycle/action calls to the service.
+/// Covers `CameraScreenModel`: how it turns `CameraService`'s published state
+/// into what the viewfinder should show (placeholder, shutter-disabled,
+/// transient status message), that it forwards its lifecycle/action calls to
+/// the service (TASK-07), and how it turns the selected `CameraProfile` into
+/// overlay text/theme/position via `TemplateRenderer` (TASK-08).
 ///
 /// Like `CameraServiceTests`, every test stubs `CameraAuthorizing` and
 /// `CaptureDeviceProviding` so nothing here touches real hardware or a real
@@ -14,13 +15,31 @@ import XCTest
 /// device is impossible on the simulator, so — matching `CameraServiceTests`'
 /// own documented boundary — the fully-`.running` shutter-enabled state is a
 /// B-level (device) acceptance item, not covered here.
+///
+/// The profile side uses a real `ProfileStore` backed by a temporary
+/// directory and an isolated `UserDefaults` suite, same as
+/// `ProfileListModelProfileStoreAdapterTests`.
 @MainActor
 final class CameraScreenModelTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
+    private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    private var defaults = UserDefaults.standard
+    private var suiteName = ""
 
-    override func tearDown() {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("CameraScreenModelTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = "CameraScreenModelTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
         cancellables.removeAll()
-        super.tearDown()
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        try super.tearDownWithError()
     }
 
     // MARK: - Doubles (mirrors CameraServiceTests' private doubles)
@@ -45,12 +64,35 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - Helpers
 
+    private func fixedNow() throws -> Date {
+        try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
+    }
+
+    private func makeProfileStore(now: Date, seed: [CameraProfile] = []) -> ProfileStore {
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        if seed.isEmpty {
+            store.load() // seeds the one default profile
+        } else {
+            for profile in seed {
+                _ = try? store.add(profile)
+            }
+        }
+        return store
+    }
+
     private func makeModel(status: AVAuthorizationStatus = .notDetermined,
-                           captureSupported: Bool = false) -> (CameraScreenModel, CameraService, EmptyDeviceProvider) {
+                           captureSupported: Bool = false,
+                           profileStore: ProfileStore? = nil,
+                           now: Date = Date()) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer, deviceProvider: provider, isCaptureSupported: captureSupported)
-        return (CameraScreenModel(cameraService: service), service, provider)
+        let store = profileStore ?? makeProfileStore(now: now)
+        let model = CameraScreenModel(cameraService: service,
+                                      profileStore: store,
+                                      calendar: DateFixture.taipei,
+                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }))
+        return (model, service, provider, store)
     }
 
     private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 2) {
@@ -72,19 +114,19 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - showsPlaceholder
 
     func testShowsPlaceholderWhenCaptureNotSupported() {
-        let (model, _, _) = makeModel(captureSupported: false)
+        let (model, _, _, _) = makeModel(captureSupported: false)
         XCTAssertTrue(model.showsPlaceholder)
     }
 
     func testDoesNotShowPlaceholderWhenCaptureSupported() {
-        let (model, _, _) = makeModel(captureSupported: true)
+        let (model, _, _, _) = makeModel(captureSupported: true)
         XCTAssertFalse(model.showsPlaceholder)
     }
 
     // MARK: - isShutterDisabled
 
     func testShutterDisabledWhenCaptureNotSupported() {
-        let (model, _, _) = makeModel(captureSupported: false)
+        let (model, _, _, _) = makeModel(captureSupported: false)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
@@ -92,19 +134,19 @@ final class CameraScreenModelTests: XCTestCase {
         // captureSupported: true, but `onAppear` was never called, so status
         // is still `.idle` — the shutter must not be enabled before a live
         // picture is actually on screen.
-        let (model, _, _) = makeModel(captureSupported: true)
+        let (model, _, _, _) = makeModel(captureSupported: true)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
     func testShutterDisabledWhenPermissionDenied() {
-        let (model, service, _) = makeModel(status: .denied, captureSupported: true)
+        let (model, service, _, _) = makeModel(status: .denied, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .denied }
         XCTAssertTrue(model.isShutterDisabled)
     }
 
     func testShutterDisabledWhenPermissionRestricted() {
-        let (model, service, _) = makeModel(status: .restricted, captureSupported: true)
+        let (model, service, _, _) = makeModel(status: .restricted, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .restricted }
         XCTAssertTrue(model.isShutterDisabled)
@@ -113,14 +155,14 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - statusMessage
 
     func testStatusMessageNilWhenIdle() {
-        let (model, _, _) = makeModel(captureSupported: true)
+        let (model, _, _, _) = makeModel(captureSupported: true)
         XCTAssertNil(model.statusMessage)
     }
 
     func testStatusMessageNilForSimulatorPlaceholder() {
         // The simulator gets its own placeholder + label; the generic
         // "相機暫時無法使用" message would be redundant on top of it.
-        let (model, service, _) = makeModel(status: .authorized, captureSupported: false)
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.status == .unavailable(.simulator) }
         XCTAssertNil(model.statusMessage)
@@ -129,14 +171,14 @@ final class CameraScreenModelTests: XCTestCase {
     func testStatusMessageForNoCaptureDevice() {
         // `EmptyDeviceProvider` always hands back nil, so an authorized,
         // capture-supported session still fails to configure.
-        let (model, service, _) = makeModel(status: .authorized, captureSupported: true)
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: true)
         model.onAppear()
         waitUntil { service.status == .unavailable(.noCaptureDevice) }
         XCTAssertEqual(model.statusMessage, "相機暫時無法使用")
     }
 
     func testStatusMessageForInterruption() {
-        let (model, service, _) = makeModel(captureSupported: true)
+        let (model, service, _, _) = makeModel(captureSupported: true)
         NotificationCenter.default.post(name: AVCaptureSession.wasInterruptedNotification, object: service.session)
         waitUntil { service.status == .interrupted }
         XCTAssertEqual(model.statusMessage, "相機暫時無法使用")
@@ -145,14 +187,14 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - Lifecycle forwarding
 
     func testOnAppearStartsTheService() {
-        let (model, service, _) = makeModel(status: .authorized, captureSupported: false)
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
         XCTAssertEqual(service.permission, .notDetermined)
         model.onAppear()
         waitUntil { service.permission == .authorized }
     }
 
     func testOnDisappearStopsTheService() {
-        let (model, service, _) = makeModel(status: .authorized, captureSupported: false)
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.status == .unavailable(.simulator) }
         model.onDisappear()
@@ -162,7 +204,7 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - switchCamera forwarding
 
     func testSwitchCameraNoOpsWhenCaptureNotSupported() {
-        let (model, _, provider) = makeModel(captureSupported: false)
+        let (model, _, provider, _) = makeModel(captureSupported: false)
         model.switchCamera()
         // The guard in `CameraService.switchCamera()` returns before ever
         // touching the session queue, so this is observable synchronously.
@@ -170,9 +212,106 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testSwitchCameraForwardsToServiceWhenCaptureSupported() {
-        let (model, _, provider) = makeModel(captureSupported: true)
+        let (model, _, provider, _) = makeModel(captureSupported: true)
         model.switchCamera()
         waitUntil { !provider.requestedFacings.isEmpty }
         XCTAssertEqual(provider.requestedFacings, [.front])
+    }
+
+    // MARK: - Profile-driven overlay (TASK-08)
+
+    func testOverlayTextForFreshInstallIsDayOne() throws {
+        // 8.1: a fresh install seeds one default profile with startDate ==
+        // today, so the overlay reads "第 1 天" with no further setup.
+        let now = try fixedNow() // 2026-01-10
+        let (model, _, _, _) = makeModel(now: now)
+        XCTAssertEqual(model.overlayText, "第 1 天")
+    }
+
+    func testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment() throws {
+        // 8.2: re-rendering a day later must read "第 2 天", proving
+        // `overlayText` is computed from the live capture moment on every
+        // access rather than cached from when the profile was seeded
+        // (PRD §6.4) — the store here is untouched between the two models.
+        let seedDay = try fixedNow() // 2026-01-10
+        let store = makeProfileStore(now: seedDay)
+        let (dayOneModel, _, _, _) = makeModel(profileStore: store, now: seedDay)
+        XCTAssertEqual(dayOneModel.overlayText, "第 1 天")
+
+        let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        let (dayTwoModel, _, _, _) = makeModel(profileStore: store, now: nextDay)
+        XCTAssertEqual(dayTwoModel.overlayText, "第 2 天")
+    }
+
+    func testOverlayTextShowsDateInsteadOfDayCountWhenConfiguredTo() throws {
+        // 8.3: date-only display must never read "第 N 天" (PRD FR-2.17).
+        let seedDay = try fixedNow() // 2026-01-10
+        let store = makeProfileStore(now: seedDay)
+        var dateOnly = try XCTUnwrap(store.profiles.first)
+        dateOnly.showDayCount = false
+        dateOnly.showDate = true
+        try store.update(dateOnly)
+
+        let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        let (model, _, _, _) = makeModel(profileStore: store, now: nextDay)
+        XCTAssertEqual(model.overlayText, "2026.01.11")
+    }
+
+    func testOverlayTextPrefixesTheNameWhenShowNameIsOn() throws {
+        // 8.4/8.5: name on prepends "{name} ", name off leaves no stray space.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        var withName = try XCTUnwrap(store.profiles.first) // name defaults to "預設"
+        withName.showName = true
+        try store.update(withName)
+
+        let (shown, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(shown.overlayText, "預設 第 1 天")
+
+        withName.showName = false
+        try store.update(withName)
+        let (hidden, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(hidden.overlayText, "第 1 天")
+    }
+
+    func testOverlayThemeAndPositionFollowTheSelectedProfileAndSwitchingDoesNotLeak() throws {
+        // 8.13: each profile keeps its own position/theme; switching between
+        // them must not overwrite the other's.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let defaultProfile = try XCTUnwrap(store.profiles.first)
+
+        var second = CameraProfile(name: "小寶",
+                                   startDate: DateFixture.components(2026, 1, 1),
+                                   position: .topLeading,
+                                   themeID: .retroOrange)
+        second = try store.add(second) // FR-1.10: add also auto-selects it
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(model.selectedProfileID, second.id)
+        XCTAssertEqual(model.overlayPosition, .topLeading)
+        XCTAssertEqual(model.overlayTheme.id, .retroOrange)
+
+        store.select(id: defaultProfile.id)
+        // The mirroring sink is dispatched via `.receive(on: .main)`, so it
+        // needs a main-queue pump before it is observable, same as
+        // `ProfileListModelProfileStoreAdapterTests`.
+        waitUntil { model.selectedProfileID == defaultProfile.id }
+        XCTAssertEqual(model.overlayPosition, .bottomTrailing)
+        XCTAssertEqual(model.overlayTheme.id, .classicWhite)
+    }
+
+    func testProfilesAndSelectionMirrorTheStoreAfterConstruction() throws {
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        let expectation = expectation(description: "profiles mirrored")
+        DispatchQueue.main.async { expectation.fulfill() }
+        wait(for: [expectation], timeout: 1)
+
+        XCTAssertEqual(model.profiles.map(\.name), ["預設", "小寶"])
+        XCTAssertEqual(model.selectedProfileID, store.selectedProfileID)
     }
 }

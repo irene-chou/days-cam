@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The app's only launch destination (PRD S-1).
 ///
-/// Composes the viewfinder, the permission guidance screen and the shutter.
-/// TASK-08 onward add the overlay text, the display-settings entry and the
-/// profile switcher on top of this. All state and decisions live in
+/// Composes the viewfinder, the live overlay text, the permission guidance
+/// screen and the shutter. The display-settings entry and the profile
+/// switcher are layered on in later tasks. All state and decisions live in
 /// `CameraScreenModel`; this view only lays it out.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
@@ -27,26 +27,37 @@ struct CameraScreen: View {
 
     @ViewBuilder
     private var viewfinder: some View {
-        ZStack {
-            if model.showsPlaceholder {
-                placeholderBackground
-            } else {
-                CameraPreviewView(session: model.cameraService.session)
-                    .ignoresSafeArea()
-            }
+        GeometryReader { proxy in
+            ZStack {
+                if model.showsPlaceholder {
+                    placeholderBackground
+                } else {
+                    CameraPreviewView(session: model.cameraService.session)
+                        .ignoresSafeArea()
+                }
 
-            if let statusMessage = model.statusMessage {
-                Text(statusMessage)
-                    .font(.subheadline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(.black.opacity(0.6), in: Capsule())
-            }
+                // Overlay text tracks the viewfinder's own size (not the
+                // screen's), matching FR-6.1's requirement that the preview
+                // and the eventual baked photo agree.
+                OverlayTextView(text: model.overlayText,
+                                theme: model.overlayTheme,
+                                position: model.overlayPosition,
+                                frameSize: proxy.size)
 
-            if model.cameraService.permission.needsGuidance {
-                PermissionGuidanceView()
+                if let statusMessage = model.statusMessage {
+                    Text(statusMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.6), in: Capsule())
+                }
+
+                if model.cameraService.permission.needsGuidance {
+                    PermissionGuidanceView()
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
@@ -84,5 +95,7 @@ struct CameraScreen: View {
 }
 
 #Preview {
-    CameraScreen(model: CameraScreenModel(cameraService: CameraService()))
+    let store = ProfileStore()
+    store.load()
+    return CameraScreen(model: CameraScreenModel(cameraService: CameraService(), profileStore: store))
 }
