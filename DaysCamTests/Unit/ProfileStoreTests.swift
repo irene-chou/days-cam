@@ -360,6 +360,47 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(contents, garbage, "3.28 kept verbatim")
     }
 
+    /// PRD §7.3: a file that decodes but whose every record is invalid leaves
+    /// the user with nothing of their own, so it is announced like a lost file.
+    func testFileWhereEveryRecordIsInvalidCountsAsCorruption() throws {
+        try writeRawProfiles([
+            profile(name: "  "),
+            profile(name: "小寶", start: DateFixture.components(2026, 13, 1))
+        ])
+
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        let store = makeStore(at: instant)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.count, 1, "reseeded with the one default profile")
+        XCTAssertEqual(loaded.first?.startDate, DateFixture.components(2026, 3, 5))
+        XCTAssertTrue(store.didRecoverFromCorruption,
+                      "every profile the user had is gone — the same loss as an unreadable file")
+
+        let saved = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("\(ProfileStore.fileName).corrupt-") }
+        XCTAssertEqual(saved.count, 1,
+                       "re-seeding overwrites the file, so the only copy is kept aside first")
+    }
+
+    /// The other side of the same rule: losing one record while the others
+    /// survive stays silent. That is a deliberate trade-off, not an oversight
+    /// (PRD §7.3).
+    func testOneInvalidRecordAmongValidOnesStaysSilent() throws {
+        try writeRawProfiles([
+            profile(name: "小寶"),
+            profile(name: "", start: DateFixture.components(2025, 6, 1))
+        ])
+
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        let store = makeStore(at: instant)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded.first?.name, "小寶")
+        XCTAssertFalse(store.didRecoverFromCorruption)
+    }
+
     func testRecoveryFlagIsClearOnAHealthyLoad() throws {
         let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
         let store = makeStore(at: instant)
