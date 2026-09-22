@@ -4,10 +4,11 @@ import UIKit
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
 /// interpretation, the profile-driven overlay (TASK-08), the display-settings
-/// sheet entry (TASK-11), the profile switcher (TASK-13) and the shutter's
-/// capture state machine (TASK-10). `CameraScreen` only lays out whatever
-/// this model currently says — see `docs/TASKS.md`'s note on why UI-level
-/// acceptance criteria live here rather than in the view.
+/// sheet entry (TASK-11), the profile switcher (TASK-13), the shutter's
+/// capture state machine (TASK-10) and the cross-midnight/foreground refresh
+/// (TASK-14). `CameraScreen` only lays out whatever this model currently
+/// says — see `docs/TASKS.md`'s note on why UI-level acceptance criteria
+/// live here rather than in the view.
 ///
 /// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
@@ -63,11 +64,30 @@ final class CameraScreenModel: ObservableObject {
     /// state machine changes when that happens — only what this closure does.
     private let photoPipeline: (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void
 
+    /// Bumped whenever the calendar day changes or the app returns to the
+    /// foreground (TASK-14). `overlayText` already recomputes from the live
+    /// clock on every access, so nothing about *that* was ever stale — the
+    /// bug this fixes is that nothing told SwiftUI to ask again: none of
+    /// this model's other `@Published` properties change just because time
+    /// passed, so without this tick the viewfinder would keep showing
+    /// whatever it last rendered until something unrelated (a profile edit,
+    /// a permission change) happened to trigger a re-render. Nothing reads
+    /// this value; its only job is to be `@Published` (PRD §6.4).
+    @Published private(set) var refreshTick = 0
+
     private var cancellables = Set<AnyCancellable>()
 
+    /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, not
+    ///   `.current`. `.current` is a snapshot taken once, at call time — a
+    ///   user who launches the app in Taipei and later opens it again in New
+    ///   York would still have the overlay compute midnight in Taipei,
+    ///   silently violating PRD §6.3's "the day count follows the device's
+    ///   current time zone" (a review finding; PRD §6.3 was corrected to
+    ///   name `.autoupdatingCurrent` explicitly). Tests still pass a pinned
+    ///   `Calendar` (e.g. `DateFixture.taipei`), which is unaffected.
     init(cameraService: CameraService,
          profileStore: ProfileStore,
-         calendar: Calendar = .current,
+         calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
          photoPipeline: @escaping (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void = { _, _, _, _, completion in completion() }) {
@@ -82,6 +102,7 @@ final class CameraScreenModel: ObservableObject {
         self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
         bindToCameraService()
+        bindToClockNotifications()
     }
 
     private func bindToProfileStore() {
@@ -112,6 +133,41 @@ final class CameraScreenModel: ObservableObject {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+    }
+
+    /// Listens for the two clock-driven events that can make `overlayText`
+    /// stale on screen (PRD §6.4, TASK-14): the calendar day rolling over
+    /// while the app sits on the camera screen, and the app returning to the
+    /// foreground after any amount of time away.
+    ///
+    /// Goes through `NotificationCenter.default.publisher(for:)` rather than
+    /// the closure-based `addObserver(forName:object:queue:using:)` on
+    /// purpose: that API's closure is `nonisolated`, so calling
+    /// `refreshOverlay()` (a main-actor method) from inside it is only a
+    /// warning today but an error under the Swift 6 language mode (review
+    /// finding). The publisher form's `.receive(on:)` keeps the delivery
+    /// hop explicit and lets Combine (not a raw `queue:` argument) do the
+    /// actor hop, and folds the subscriptions into `cancellables` — no
+    /// separate observer bookkeeping or `deinit` needed.
+    private func bindToClockNotifications() {
+        let center = NotificationCenter.default
+        center.publisher(for: .NSCalendarDayChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshOverlay() }
+            .store(in: &cancellables)
+        center.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshOverlay() }
+            .store(in: &cancellables)
+    }
+
+    /// Forces the viewfinder to re-render against the current moment.
+    ///
+    /// Exists as its own method (rather than inlined into the notification
+    /// closures) so tests can call it directly without posting real
+    /// `NotificationCenter` notifications.
+    func refreshOverlay() {
+        refreshTick += 1
     }
 
     /// Called when the screen appears. Permission is requested here, not at

@@ -504,13 +504,18 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - Shutter capture context (TASK-10 acceptance 10.3, 10.4)
 
     func testCaptureContextRecomputesTextForANewCapturedMoment() throws {
-        // 10.3: rendering once at 2026-01-10 then again at 2026-01-11 for the
-        // same profile must produce "第 2 天", not a value stuck at "第 1 天" —
-        // proof the text is recomputed from `capturedAt`, never cached. One
-        // model with a *mutable* clock, not two separately constructed
-        // models each with a fixed clock — same reasoning as
-        // `testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment`
-        // (code review finding).
+        // 10.3/14.1/14.8/14.9: rendering once at 2026-01-10 then again at
+        // 2026-01-11 for the same profile must produce "第 2 天", not a
+        // value stuck at "第 1 天" — proof the text is recomputed from
+        // `capturedAt`, never cached. One model with a *mutable* clock, not
+        // two separately constructed models each with a fixed clock — same
+        // reasoning as `testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment`
+        // (code review finding). This also covers 14.8/14.9 (the two
+        // acceptance items TASK-14's own notes call the easiest to miss):
+        // `refreshOverlay()`/`refreshTick` are never touched anywhere in
+        // this test, so it equally proves a capture is correct whether or
+        // not a viewfinder refresh happened first (an earlier, separate test
+        // for that turned out to be redundant with this one — same review).
         let seedDay = try fixedNow() // 2026-01-10
         let clock = MutableClock(seedDay)
         let store = makeProfileStore(now: seedDay)
@@ -565,4 +570,96 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertFalse(model.isCapturing)
     }
+
+    // MARK: - Cross-midnight / foreground refresh (TASK-14)
+
+    func testRefreshOverlayPublishesAChange() throws {
+        // The viewfinder's re-render trigger, independent of the
+        // notification plumbing below — `refreshOverlay()` is what the
+        // notification observers call, and what these tests call directly.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        var fired = false
+        let cancellable = model.objectWillChange.sink { fired = true }
+        defer { cancellable.cancel() }
+
+        model.refreshOverlay()
+
+        XCTAssertTrue(fired)
+    }
+
+    /// Subscribes to `model.$refreshTick` and captures which thread the
+    /// *first* change after subscribing is delivered on.
+    ///
+    /// Combine delivers to every subscriber of a publisher on whatever
+    /// thread that publisher's value was actually produced on, unless
+    /// something upstream redirects it — so this test subscriber sees
+    /// exactly the same thread `CameraScreenModel`'s own internal sink would
+    /// have mutated `refreshTick` from. Posting from a background queue
+    /// (rather than the main queue an earlier version of this test used) is
+    /// what makes this a real test: `NSCalendarDayChanged` is not
+    /// documented to arrive on the main thread, and posting from main would
+    /// pass even without `bindToClockNotifications`'s `.receive(on: .main)`
+    /// (code review finding).
+    private func threadRefreshTickChangeIsDeliveredOn(_ model: CameraScreenModel,
+                                                       postingFrom queue: DispatchQueue = .global(),
+                                                       post: @escaping () -> Void) -> Bool? {
+        var deliveredOnMain: Bool?
+        let exp = expectation(description: "refreshTick changed")
+        let cancellable = model.$refreshTick.dropFirst().sink { _ in
+            deliveredOnMain = Thread.isMainThread
+            exp.fulfill()
+        }
+        defer { cancellable.cancel() }
+
+        queue.async(execute: post)
+
+        wait(for: [exp], timeout: 2)
+        return deliveredOnMain
+    }
+
+    func testCalendarDayChangedNotificationTriggersARefreshOnTheMainThread() throws {
+        // 14.3/14.4: the calendar rolling over while the app sits on the
+        // camera screen must not require anything else to happen first, and
+        // must land on the main thread even though it was posted from a
+        // background queue (a real possibility for this notification).
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+
+        let deliveredOnMain = threadRefreshTickChangeIsDeliveredOn(model) {
+            NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
+        }
+
+        XCTAssertEqual(deliveredOnMain, true)
+    }
+
+    func testWillEnterForegroundNotificationTriggersARefreshOnTheMainThread() throws {
+        // 14.3/14.7: returning from the background must refresh immediately,
+        // not wait for some other unrelated change, and must land on main.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+
+        let deliveredOnMain = threadRefreshTickChangeIsDeliveredOn(model) {
+            NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        }
+
+        XCTAssertEqual(deliveredOnMain, true)
+    }
+
+    func testCaptureContextTextForDateOnlyReflectsTheNewCapturedDate() throws {
+        // 14.2: the date-only branch must track the capture moment exactly
+        // like the day-count branch does (14.1, same as TASK-10's 10.3 —
+        // see testCaptureContextRecomputesTextForANewCapturedMoment).
+        let seedDay = try fixedNow() // 2026-01-10
+        let clock = MutableClock(seedDay)
+        let store = makeProfileStore(now: seedDay)
+        var dateOnly = try XCTUnwrap(store.profiles.first)
+        dateOnly.showDayCount = false
+        dateOnly.showDate = true
+        try store.update(dateOnly)
+        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
+
+        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.10")
+
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.11")
+    }
+
 }

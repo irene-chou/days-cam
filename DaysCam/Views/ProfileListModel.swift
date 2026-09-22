@@ -88,7 +88,7 @@ final class ProfileListModel: ObservableObject {
     ///     model does not interpret the error, it only surfaces it.
     init(profiles: [CameraProfile],
          selectedProfileID: UUID?,
-         calendar: Calendar = .current,
+         calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          addProfile: @escaping (CameraProfile) throws -> Void,
          updateProfile: @escaping (CameraProfile) throws -> Void,

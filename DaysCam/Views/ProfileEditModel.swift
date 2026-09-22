@@ -42,7 +42,7 @@ final class ProfileEditModel: ObservableObject {
     ///     (a list-level view model) decides what "add" vs "update" means.
     init(profile: CameraProfile,
          mode: Mode,
-         calendar: Calendar = .current,
+         calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
          onSave: @escaping (CameraProfile) throws -> Void) {

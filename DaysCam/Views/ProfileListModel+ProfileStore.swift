@@ -21,7 +21,7 @@ extension ProfileListModel {
     /// lifetime (`storeSubscriptions`), so callers do not need to hold onto
     /// anything beyond the model itself.
     @MainActor
-    static func adapting(to store: ProfileStore, calendar: Calendar = .current) -> ProfileListModel {
+    static func adapting(to store: ProfileStore, calendar: Calendar = .autoupdatingCurrent) -> ProfileListModel {
         let model = ProfileListModel(
             profiles: store.profiles,
             selectedProfileID: store.selectedProfileID,

@@ -40,7 +40,7 @@ final class DisplaySettingsModel: ObservableObject {
     ///     caller, called after every change. Throws to report a failure;
     ///     this model does not interpret the error, it only surfaces it.
     init(profile: CameraProfile,
-         calendar: Calendar = .current,
+         calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
          updateProfile: @escaping (CameraProfile) throws -> Void) {
