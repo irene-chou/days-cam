@@ -565,4 +565,90 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertFalse(model.isCapturing)
     }
+
+    // MARK: - Cross-midnight / foreground refresh (TASK-14)
+
+    func testRefreshOverlayPublishesAChange() throws {
+        // The viewfinder's re-render trigger, independent of the
+        // notification plumbing below — `refreshOverlay()` is what the
+        // notification observers call, and what these tests call directly.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        var fired = false
+        let cancellable = model.objectWillChange.sink { fired = true }
+        defer { cancellable.cancel() }
+
+        model.refreshOverlay()
+
+        XCTAssertTrue(fired)
+    }
+
+    func testCalendarDayChangedNotificationTriggersARefresh() throws {
+        // 14.3/14.4: the calendar rolling over while the app sits on the
+        // camera screen must not require anything else to happen first.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let tickBefore = model.refreshTick
+
+        NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
+
+        waitUntil { model.refreshTick > tickBefore }
+    }
+
+    func testWillEnterForegroundNotificationTriggersARefresh() throws {
+        // 14.3/14.7: returning from the background must refresh immediately,
+        // not wait for some other unrelated change.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let tickBefore = model.refreshTick
+
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+
+        waitUntil { model.refreshTick > tickBefore }
+    }
+
+    func testCaptureContextTextForDateOnlyReflectsTheNewCapturedDate() throws {
+        // 14.2: the date-only branch must track the capture moment exactly
+        // like the day-count branch does (14.1, same as TASK-10's 10.3 —
+        // see testCaptureContextRecomputesTextForANewCapturedMoment).
+        let seedDay = try fixedNow() // 2026-01-10
+        let clock = MutableClock(seedDay)
+        let store = makeProfileStore(now: seedDay)
+        var dateOnly = try XCTUnwrap(store.profiles.first)
+        dateOnly.showDayCount = false
+        dateOnly.showDate = true
+        try store.update(dateOnly)
+        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
+
+        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.10")
+
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.11")
+    }
+
+    func testCaptureContextIsCorrectEvenWithoutARefreshHavingFired() throws {
+        // 14.8/14.9, the two acceptance items the task's own notes call the
+        // easiest to miss: a capture must be correct even if `refreshOverlay()`
+        // was never called (e.g. the day rolled over between a
+        // `NSCalendarDayChanged` notification arriving and the SwiftUI
+        // re-render it triggers actually running). `refreshTick` exists
+        // purely to prompt a re-render — `captureContext` does not read it
+        // and must not start reading it: it goes straight to `calculator.now()`
+        // regardless of whatever last prompted (or didn't prompt) the
+        // viewfinder to redraw. This is a narrower regression pin than
+        // `testCaptureContextRecomputesTextForANewCapturedMoment` above —
+        // that one proves the clock is read live at all; this one pins
+        // "independently of the refresh trigger" specifically, since
+        // `refreshTick` is the one new piece of state TASK-14 adds that a
+        // future change could plausibly (and wrongly) wire `captureContext`
+        // through.
+        let seedDay = try fixedNow() // 2026-01-10
+        let clock = MutableClock(seedDay)
+        let store = makeProfileStore(now: seedDay)
+        let profile = try XCTUnwrap(store.profiles.first)
+        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
+
+        XCTAssertEqual(model.refreshTick, 0) // refreshOverlay() never called
+
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        XCTAssertEqual(model.captureContext(for: profile).text, "第 2 天")
+        XCTAssertEqual(model.refreshTick, 0) // still never called
+    }
 }

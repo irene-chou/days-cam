@@ -4,10 +4,11 @@ import UIKit
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
 /// interpretation, the profile-driven overlay (TASK-08), the display-settings
-/// sheet entry (TASK-11), the profile switcher (TASK-13) and the shutter's
-/// capture state machine (TASK-10). `CameraScreen` only lays out whatever
-/// this model currently says — see `docs/TASKS.md`'s note on why UI-level
-/// acceptance criteria live here rather than in the view.
+/// sheet entry (TASK-11), the profile switcher (TASK-13), the shutter's
+/// capture state machine (TASK-10) and the cross-midnight/foreground refresh
+/// (TASK-14). `CameraScreen` only lays out whatever this model currently
+/// says — see `docs/TASKS.md`'s note on why UI-level acceptance criteria
+/// live here rather than in the view.
 ///
 /// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
@@ -63,7 +64,19 @@ final class CameraScreenModel: ObservableObject {
     /// state machine changes when that happens — only what this closure does.
     private let photoPipeline: (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void
 
+    /// Bumped whenever the calendar day changes or the app returns to the
+    /// foreground (TASK-14). `overlayText` already recomputes from the live
+    /// clock on every access, so nothing about *that* was ever stale — the
+    /// bug this fixes is that nothing told SwiftUI to ask again: none of
+    /// this model's other `@Published` properties change just because time
+    /// passed, so without this tick the viewfinder would keep showing
+    /// whatever it last rendered until something unrelated (a profile edit,
+    /// a permission change) happened to trigger a re-render. Nothing reads
+    /// this value; its only job is to be `@Published` (PRD §6.4).
+    @Published private(set) var refreshTick = 0
+
     private var cancellables = Set<AnyCancellable>()
+    private var notificationObservers: [NSObjectProtocol] = []
 
     init(cameraService: CameraService,
          profileStore: ProfileStore,
@@ -82,6 +95,11 @@ final class CameraScreenModel: ObservableObject {
         self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
         bindToCameraService()
+        bindToClockNotifications()
+    }
+
+    deinit {
+        notificationObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
     private func bindToProfileStore() {
@@ -112,6 +130,33 @@ final class CameraScreenModel: ObservableObject {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+    }
+
+    /// Listens for the two clock-driven events that can make `overlayText`
+    /// stale on screen (PRD §6.4, TASK-14): the calendar day rolling over
+    /// while the app sits on the camera screen, and the app returning to the
+    /// foreground after any amount of time away.
+    private func bindToClockNotifications() {
+        let center = NotificationCenter.default
+        notificationObservers.append(center.addObserver(forName: .NSCalendarDayChanged,
+                                                         object: nil,
+                                                         queue: .main) { [weak self] _ in
+            self?.refreshOverlay()
+        })
+        notificationObservers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification,
+                                                         object: nil,
+                                                         queue: .main) { [weak self] _ in
+            self?.refreshOverlay()
+        })
+    }
+
+    /// Forces the viewfinder to re-render against the current moment.
+    ///
+    /// Exists as its own method (rather than inlined into the notification
+    /// closures) so tests can call it directly without posting real
+    /// `NotificationCenter` notifications.
+    func refreshOverlay() {
+        refreshTick += 1
     }
 
     /// Called when the screen appears. Permission is requested here, not at
