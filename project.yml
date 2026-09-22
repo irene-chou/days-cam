@@ -17,6 +17,11 @@ targets:
         UILaunchScreen: {}
         NSCameraUsageDescription: DaysCam 需要使用相機來拍照，並把天數印在照片上。
         NSPhotoLibraryAddUsageDescription: DaysCam 需要權限才能把拍好的照片存進你的相簿。
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.DaysCam
