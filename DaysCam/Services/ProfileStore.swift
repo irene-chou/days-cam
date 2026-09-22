@@ -54,7 +54,7 @@ final class ProfileStore: ObservableObject {
     /// - Parameter directory: where `profiles.json` lives. Defaults to
     ///   `Application Support/DaysCam`; tests pass a temporary directory.
     init(directory: URL? = nil,
-         calendar: Calendar = .current,
+         calendar: Calendar = .autoupdatingCurrent,
          now: @escaping () -> Date = DayCountCalculator.defaultNow(),
          defaults: UserDefaults = .standard,
          fileManager: FileManager = .default) {

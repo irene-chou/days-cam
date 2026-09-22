@@ -25,7 +25,7 @@ struct TemplateRenderer {
     /// amount are separated by an ideographic space.
     func render(profile: CameraProfile,
                 capturedAt: Date,
-                calendar: Calendar = .current) -> String {
+                calendar: Calendar = .autoupdatingCurrent) -> String {
         // One clock for the whole render, and it is the caller's.
         let calculator = DayCountCalculator(calendar: calendar, now: { capturedAt })
 

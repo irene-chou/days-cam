@@ -125,7 +125,7 @@ extension CameraProfile {
     ///
     /// Does not repair anything: a profile carrying a `timeZone` in `startDate`
     /// fails here. Call `normalized()` first to strip what can be stripped.
-    func validate(calendar: Calendar = .current) throws {
+    func validate(calendar: Calendar = .autoupdatingCurrent) throws {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedName.isEmpty {
             throw CameraProfileValidationError.nameEmpty
@@ -177,7 +177,7 @@ extension CameraProfile {
     ///
     /// This is the single entry point the persistence layer uses on both the
     /// write path (reject the write) and the read path (discard the record).
-    func validatedForPersistence(calendar: Calendar = .current) throws -> CameraProfile {
+    func validatedForPersistence(calendar: Calendar = .autoupdatingCurrent) throws -> CameraProfile {
         let candidate = normalized()
         try candidate.validate(calendar: calendar)
         return candidate
