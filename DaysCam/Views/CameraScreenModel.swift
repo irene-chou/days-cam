@@ -75,6 +75,25 @@ final class CameraScreenModel: ObservableObject {
     /// this value; its only job is to be `@Published` (PRD §6.4).
     @Published private(set) var refreshTick = 0
 
+    /// True for the one launch right after `profileStore.load()` found an
+    /// unreadable `profiles.json` and silently re-seeded (PRD §7.3, TASK-15
+    /// acceptance 15.1). Captured once at `init` rather than mirrored from
+    /// `profileStore.$didRecoverFromCorruption` — the store only ever sets
+    /// this during `load()`, which has already happened by the time this
+    /// model is constructed, so it can't change again during this launch,
+    /// and capturing it once is what keeps the alert from reappearing if
+    /// `profiles` happens to re-publish later for an unrelated reason.
+    @Published private(set) var showsCorruptionRecoveredAlert: Bool
+
+    /// The pending "已儲存" toast, if any (PRD FR-5.4). `nil` when nothing
+    /// should be shown.
+    @Published private(set) var toastState: ToastState?
+
+    /// How `presentSavedToast` schedules the toast's own auto-dismiss.
+    /// Injected so tests don't have to wait a real 1.5 seconds; the default
+    /// is the real delay.
+    private let scheduleToastDismiss: (@escaping () -> Void) -> Void
+
     private var cancellables = Set<AnyCancellable>()
 
     /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, not
@@ -90,15 +109,20 @@ final class CameraScreenModel: ObservableObject {
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
-         photoPipeline: @escaping (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void = { _, _, _, _, completion in completion() }) {
+         photoPipeline: @escaping (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void = { _, _, _, _, completion in completion() },
+         scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+         }) {
         self.cameraService = cameraService
         self.profileStore = profileStore
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
         self.photoPipeline = photoPipeline
+        self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
+        self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
         self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
         bindToCameraService()
@@ -371,11 +395,45 @@ extension CameraScreenModel {
                     self?.isCapturing = false
                 }
             case .failure:
-                // TASK-15 wires the PRD §7.3 error presentation; for now the
-                // shutter simply becomes tappable again rather than staying
-                // disabled forever.
+                // A pre-TASK-9/10 capture-level failure (no hardware, not
+                // running, AVFoundation error). Not one of PRD §7.3's named
+                // scenarios (those are the bake/save failures TASK-10's real
+                // pipeline will report once wired) — the shutter simply
+                // becomes tappable again rather than staying disabled
+                // forever, same as any other completion.
                 self.isCapturing = false
             }
+        }
+    }
+}
+
+// MARK: - Error handling & toast (TASK-15)
+
+extension CameraScreenModel {
+    /// Dismisses the one-time data-recovery alert (PRD §7.3, 15.1). Call
+    /// when the user taps the alert's only button.
+    func dismissCorruptionRecoveredAlert() {
+        showsCorruptionRecoveredAlert = false
+    }
+
+    /// Shows the "已儲存" confirmation toast and schedules it to fade out
+    /// after 1.5 seconds (PRD FR-5.4). TASK-10's real save-success path
+    /// calls this once `OverlayRenderer.bake` and `PhotoSaver` are wired in;
+    /// nothing calls it yet, since the placeholder `photoPipeline` doesn't
+    /// represent an actual save.
+    ///
+    /// Each call gets a fresh `ToastState.id`, so two saves close together
+    /// restart the fade-out rather than comparing equal and no-oping (see
+    /// `ToastState`'s own doc comment) — and the dismiss guards on that same
+    /// `id`, so an older toast's timer firing late can't cut a newer one
+    /// short (PRD acceptance 10.22: rapid shutter presses must not make the
+    /// toast disappear early or stack up).
+    func presentSavedToast(thumbnail: UIImage? = nil) {
+        let state = ToastState(message: "已儲存", thumbnail: thumbnail)
+        toastState = state
+        scheduleToastDismiss { [weak self] in
+            guard self?.toastState?.id == state.id else { return }
+            self?.toastState = nil
         }
     }
 }

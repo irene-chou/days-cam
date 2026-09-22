@@ -3,9 +3,10 @@ import SwiftUI
 /// The app's only launch destination (PRD S-1).
 ///
 /// Composes the viewfinder, the live overlay text, the permission guidance
-/// screen, the display-settings entry, the profile switcher and the shutter.
-/// All state and decisions live in `CameraScreenModel`; this view only lays
-/// it out.
+/// screen, the display-settings entry, the profile switcher, the shutter,
+/// the save-confirmation toast and the data-recovery alert (PRD §7.3). All
+/// state and decisions live in `CameraScreenModel`; this view only lays it
+/// out.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
@@ -37,6 +38,31 @@ struct CameraScreen: View {
                 ProfileListView(model: model.profileListModel)
             }
         }
+        .overlay(alignment: .bottomLeading) { toastOverlay }
+        .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
+            Button("好") { model.dismissCorruptionRecoveredAlert() }
+        }
+    }
+
+    /// "已儲存" confirmation (PRD FR-5.4). Positioned above the shutter bar
+    /// rather than inside the viewfinder, so it never competes with the
+    /// overlay text for the same bottom-leading corner.
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let toastState = model.toastState {
+            ToastView(state: toastState)
+                .padding(.leading, 16)
+                .padding(.bottom, 96)
+                .transition(.opacity)
+                .animation(.easeInOut, value: toastState.id)
+        }
+    }
+
+    /// `model.showsCorruptionRecoveredAlert` as a `Binding` for `.alert`, same
+    /// dismiss-clears-model-state pattern as `displaySettingsBinding`.
+    private var corruptionAlertBinding: Binding<Bool> {
+        Binding(get: { model.showsCorruptionRecoveredAlert },
+                set: { isPresented in if !isPresented { model.dismissCorruptionRecoveredAlert() } })
     }
 
     /// Profile switcher (leading, PRD FR-1.4, TASK-13) and settings-gear
