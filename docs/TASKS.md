@@ -766,7 +766,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 10.1 | `grep -rn "PHAccessLevel" DaysCam/` | 只出現 `.addOnly`，**無** `.readWrite` |
 | 10.2 | `grep -rni "createAssetCollection\|PHAssetCollectionChangeRequest" DaysCam/` | **無結果**（不建立自訂相簿） |
 | 10.3 | 單元測試：以 `capturedAt = 2026-01-10` 渲染一次文字後，改以 `capturedAt = 2026-01-11` 再走烘焙路徑 | 烘焙使用的文字為 `第 2 天`，**不是** `第 1 天`（證明當場重算，PRD §6.4） |
-| 10.4 | 檢視快門 delegate 的實作 | `capturedAt` 是在此處以 `Date()` 產生並往下傳；`TemplateRenderer` 與 `OverlayRenderer` 內都**沒有** `Date()`（PRD §6.5.5） |
+| 10.4 | 檢視快門處理的實作 | **快門處是唯一產生 `capturedAt` 的地方**，產生後往下傳；`TemplateRenderer` 與 `OverlayRenderer` 內都**沒有** `Date()`（PRD §6.5.5）。`capturedAt` 應取自與觀景窗預覽**相同的時鐘**（`DayCountCalculator().now()`），**不要**字面寫 `Date()`——否則 Debug 下設了 `DAYSCAM_FAKE_TODAY` 時，觀景窗顯示的天數與照片印的會不一致。Release build 下兩者相同 |
 
 **驗收 — B. 需人類實機**
 
