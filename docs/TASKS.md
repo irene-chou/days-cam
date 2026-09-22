@@ -21,6 +21,15 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 **時間相關的驗收為何多數落在 A 級**：TASK-02 會建立一個 `#if DEBUG` 的時間覆寫機制（環境變數 `DAYSCAM_FAKE_TODAY`），讓模擬器可在不動主機時鐘的前提下驗證任意日期。沒有它，幾乎所有疊字驗收都會被迫落到 B 級。
 
+**撰寫與執行驗收指令的規則**：表格儲存格裡的 shell 指令**不得含有 `|` 字元**。
+
+Markdown 表格用 `|` 分欄，所以儲存格內的 `|` 必須跳脫成 `\|`。但 agent 讀的是**原始檔**，照原文複製執行時：
+
+- **`grep -E` 裡的 `\|` 是字面的管線字元，不是交替**——檢查永遠找不到東西，**靜默地假通過**。本專案曾有 1.16、2.27、5.3a、9.10 四條驗收因此從來不可能失敗
+- **當 shell 管線用的 `\|` 會變成傳給前一個指令的參數**——管線直接斷掉，例如 `plutil -p file \| grep X` 會吐出整份檔案而 `grep` 根本沒執行
+
+所以一律改寫成不含 `|` 的形式：多個 pattern 用 `grep -e A -e B`，管線改成單一指令的等價寫法。**新增驗收條目時，請先用一個「確實含有違規」的檔案測試它，確認它真的會失敗**——只驗證乾淨程式碼會通過，證明不了檢查有效。
+
 **兩個最容易做錯的地方**：
 
 1. **PRD FR-2.17：日期的渲染路徑永不讀取 `startDate`。** 若用「起始日＝今天」來近似日期顯示，隔天會變成「第 2 天」。TASK-04（4.44 跨日對照／4.47 實作檢視）有專門的檢查。
@@ -132,11 +141,11 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 1.2 | `grep 'DEVELOPMENT_TEAM' project.yml` | 值為 `W5937V2WUF`，**不是空字串** |
 | 1.3 | `grep 'SWIFT_VERSION' project.yml` | 值為 `"5.0"` |
 | 1.4 | `xcodegen generate && grep -c 'W5937V2WUF' DaysCam.xcodeproj/project.pbxproj` | 結果 > 0（證明 Team ID 有被 xcodegen 寫進去，不會被覆蓋掉） |
-| 1.5 | `git ls-files \| grep xcodeproj` | **無結果**（已移出版控） |
+| 1.5 | `git ls-files -- '*xcodeproj*'` | **無結果**（已移出版控） |
 | 1.6 | `grep 'xcodeproj' .gitignore` | 有結果 |
 | 1.7 | `grep -c 'xcodegen' README.md` | 結果 > 0 |
-| 1.8 | `plutil -p DaysCam/Info.plist \| grep Usage` | 恰好兩筆：`NSCameraUsageDescription`、`NSPhotoLibraryAddUsageDescription` |
-| 1.9 | `plutil -p DaysCam/Info.plist \| grep NSPhotoLibraryUsageDescription` | **無結果** |
+| 1.8 | `grep -c 'UsageDescription</key>' DaysCam/Info.plist` | 恰好兩筆：`NSCameraUsageDescription`、`NSPhotoLibraryAddUsageDescription` |
+| 1.9 | `grep 'NSPhotoLibraryUsageDescription</key>' DaysCam/Info.plist` | **無結果** |
 | 1.10 | `ls DaysCam/Models DaysCam/Services DaysCam/Views DaysCamTests` | 四個資料夾都存在 |
 | 1.11 | `xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' build` | 編譯成功，exit code 0 |
 | 1.12 | `xcodebuild ... test` | 測試 target 可執行（此時 0 個測試亦可），exit code 0 |
@@ -144,7 +153,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 1.13a | `grep -rn 'TemplateID' DaysCam/` | **無結果**。模板列舉已廢除 |
 | 1.14 | `grep -c 'case ' DaysCam/Models/OverlayPosition.swift` | 恰好 9 |
 | 1.15 | `grep -c 'case ' DaysCam/Models/ThemeID.swift` | 恰好 5 |
-| 1.16 | `grep -rnE '(try!\|as!\|[A-Za-z0-9_)\]]!)' DaysCam/Models/ \| grep -v '!='` | 無 force-unwrap／force-try／force-cast（`CLAUDE.md` 規定）。**注意**：不要用 `grep -rn '!'`——那會連邏輯否定 `!flag` 一起判失敗，逼程式碼寫成 `flag == false`。本條只抓後綴 `!`（force-unwrap）與 `try!`／`as!` |
+| 1.16 | `grep -rnE -e 'try!' -e 'as!' -e '[A-Za-z0-9_)\]]![^=]' -e '[A-Za-z0-9_)\]]!$' DaysCam/Models/` | 無 force-unwrap／force-try／force-cast（`CLAUDE.md` 規定）。**注意**：不要用 `grep -rn '!'`——那會連邏輯否定 `!flag` 一起判失敗，逼程式碼寫成 `flag == false`。本條只抓後綴 `!`（force-unwrap）與 `try!`／`as!` |
 
 **驗收 — B. 需人類實機**：無。
 
@@ -233,8 +242,8 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 2.26 | `grep -rni "exif\|DateTimeOriginal\|creationDate\|fileCreation" DaysCam/` | **無結果**（PRD §6.1 硬約束） |
-| 2.27 | `grep -rnE '=\s*Date\(\)\|\bDate\(\)\)\|\{ Date\(\) \}' DaysCamTests/` | **無結果**（測試不得依賴真實時間）。**注意**：不要用 `grep -rn "Date()"`——那會抓到測試方法名稱（例如 `testRendersJustTheDate()`）與註解，逼測試作者為了過 grep 去改命名 |
+| 2.26 | `grep -rni -e exif -e DateTimeOriginal -e creationDate -e fileCreation DaysCam/` | **無結果**（PRD §6.1 硬約束） |
+| 2.27 | `grep -rnE -e '=[[:space:]]*Date\(\)' -e '\bDate\(\)\)' -e '\{ Date\(\) \}' DaysCamTests/` | **無結果**（測試不得依賴真實時間）。**注意**：不要用 `grep -rn "Date()"`——那會抓到測試方法名稱（例如 `testRendersJustTheDate()`）與註解，逼測試作者為了過 grep 去改命名 |
 | 2.28 | 檢視 `DAYSCAM_FAKE_TODAY` 的實作 | 整段包在 `#if DEBUG` 內 |
 
 **驗收 — B. 需人類實機**：無。
@@ -526,15 +535,15 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 5.1 | `OverlayTheme.all.count` | 恰好 **5** |
 | 5.2 | `OverlayTheme.all.map(\.id)` | 依序 `[.classicWhite, .retroOrange, .filmStrip, .minimalDark, .softPink]` |
 | 5.3 | 每個 theme 的 `decorations` | 5 組全部至少有一種 decoration，即 `decorations.isEmpty == false`（PRD FR-4.6） |
-| 5.3a | `grep -rnE 'import (UIKit\|SwiftUI)' DaysCam/Models/OverlayTheme.swift` | **無結果**。`OverlayTheme` 是純資料，量測相關的函式在 `Services/OverlayMetrics.swift` |
+| 5.3a | `grep -rn -e 'import UIKit' -e 'import SwiftUI' DaysCam/Models/OverlayTheme.swift` | **無結果**。`OverlayTheme` 是純資料，量測相關的函式在 `Services/OverlayMetrics.swift` |
 | 5.4 | `classicWhite.textColor` 的 sRGB 分量 | `(1.0, 1.0, 1.0, 1.0)` |
 | 5.5 | `retroOrange.textColor` 的 sRGB 分量 | 對應 `#FF9500` 即 `(1.0, 0.584, 0.0, 1.0)`，容差 ±0.01 |
 | 5.6 | `baseFontSize(forShortEdge: 3024)` | `166.32`，容差 ±0.01 |
 | 5.7 | `margin(forShortEdge: 3024)` | `120.96`，容差 ±0.01 |
 | 5.8 | 縮小函式：給一段長到超出可用寬度的文字 | 回傳字級 < 基準，且 **>= 基準 × 0.6** |
 | 5.9 | 縮小函式：給一段很短的文字 | 回傳**恰好**等於基準字級（短文字不縮） |
-| 5.10 | `grep -rn 'Color("\|UIColor(named' DaysCam/Models/OverlayTheme.swift` | 無結果 |
-| 5.11 | `grep -rn '\.custom(\|UIFont(name:' DaysCam/` | 無結果（PRD FR-4.10：只用系統字體） |
+| 5.10 | `grep -rn -e 'Color("' -e 'UIColor(named' DaysCam/Models/OverlayTheme.swift` | 無結果 |
+| 5.11 | `grep -rn -e '\.custom(' -e 'UIFont(name:' DaysCam/` | 無結果（PRD FR-4.10：只用系統字體） |
 
 **驗收 — B. 需人類實機**：無。
 
@@ -617,10 +626,10 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 |---|---|---|
 | 7.1 | 模擬器執行並進入相機畫面 | 顯示純色佔位背景，快門 disabled，有「模擬器不支援拍照」字樣，不崩潰（**ui-dev 半邊**） |
 | 7.2 | 模擬器上量測觀景窗區域的像素長寬比 | 4:3，誤差 < 2%（**ui-dev 半邊**） |
-| 7.3 | `grep -rn "startRunning\|stopRunning" DaysCam/Services/CameraService.swift` | 兩者都不在主執行緒直接呼叫（包在背景 queue 內） |
+| 7.3 | `grep -rn -e startRunning -e stopRunning DaysCam/Services/CameraService.swift` | 兩者都不在主執行緒直接呼叫（包在背景 queue 內） |
 | 7.4 | 模擬器上反覆進出相機畫面 10 次 | 不崩潰，console 無 `AVCaptureSession` error（**ui-dev 半邊**） |
 | 7.4a | `xcodebuild ... test -only-testing:DaysCamTests/CameraServiceTests` | 全數通過。必須涵蓋 **PRD §2.3 權限狀態機的每一列**（未決定／已授權／被拒／受限／從設定返回後重檢）與 **§2.4 的中斷與恢復**。實作需把權限查詢與裝置取得做成可注入的介面，否則這些只能在實機驗 |
-| 7.4b | `grep -rn "AVCaptureDevice.authorizationStatus\|AVCaptureDevice.default(" DaysCam/Services/CameraService.swift` | 這兩個呼叫**只能出現在可注入介面的預設實作裡**，不得散落在狀態機邏輯中——否則 7.4a 無法在模擬器執行 |
+| 7.4b | `grep -rn -e 'AVCaptureDevice.authorizationStatus' -e 'AVCaptureDevice.default(' DaysCam/Services/CameraService.swift` | 這兩個呼叫**只能出現在可注入介面的預設實作裡**，不得散落在狀態機邏輯中——否則 7.4a 無法在模擬器執行 |
 
 > **為什麼補 7.4a／7.4b**
 >
@@ -718,9 +727,9 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 9.5 | 傳入 `imageOrientation == .right` 的圖 | 輸出 `imageOrientation == .up`，尺寸為旋轉後正確尺寸；`bottomTrailing` 的非白像素落在旋轉後圖的右下角（文字未被轉 90 度） |
 | 9.6 | 以空字串 `""` 呼叫 | 輸出與輸入**像素完全相同**（什麼都不畫，不畫空底框） |
 | 9.7 | 同一張圖連續 `bake` 100 次 | 不崩潰，記憶體峰值 < 500MB |
-| 9.8 | `grep -rni "watermark\|originalImage\|CGImageDestinationAddImage" DaysCam/Services/OverlayRenderer.swift` | 無結果 |
+| 9.8 | `grep -rni -e watermark -e originalImage -e CGImageDestinationAddImage DaysCam/Services/OverlayRenderer.swift` | 無結果 |
 | 9.9 | `grep -rn "UIGraphicsImageRenderer" DaysCam/Services/OverlayRenderer.swift` | 有結果（確認是像素繪製而非 view 疊加） |
-| 9.10 | `grep -rnE "CameraProfile\|AVCapture\|Date\b\|DateComponents" DaysCam/Services/OverlayRenderer.swift` | **無結果**。烘焙層不得認識設定檔、相機型別或任何日期概念——它只是「影像＋文字→影像」（PRD §6.5.4） |
+| 9.10 | `grep -rnE -e 'CameraProfile' -e 'AVCapture' -e 'Date\b' -e 'DateComponents' DaysCam/Services/OverlayRenderer.swift` | **無結果**。烘焙層不得認識設定檔、相機型別或任何日期概念——它只是「影像＋文字→影像」（PRD §6.5.4） |
 | 9.11 | 用一張**從檔案載入**的 `UIImage`（非相機產生）呼叫 `bake` | 與 9.1 的行為完全相同。證明介面不綁定影像來源，日後匯入舊照片時本層可直接沿用 |
 
 **驗收 — B. 需人類實機**
@@ -753,7 +762,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | # | 步驟 | 預期結果 |
 |---|---|---|
 | 10.1 | `grep -rn "PHAccessLevel" DaysCam/` | 只出現 `.addOnly`，**無** `.readWrite` |
-| 10.2 | `grep -rni "createAssetCollection\|PHAssetCollectionChangeRequest" DaysCam/` | **無結果**（不建立自訂相簿） |
+| 10.2 | `grep -rni -e createAssetCollection -e PHAssetCollectionChangeRequest DaysCam/` | **無結果**（不建立自訂相簿） |
 | 10.3 | 單元測試：以 `capturedAt = 2026-01-10` 渲染一次文字後，改以 `capturedAt = 2026-01-11` 再走烘焙路徑 | 烘焙使用的文字為 `第 2 天`，**不是** `第 1 天`（證明當場重算，PRD §6.4） |
 | 10.4 | 檢視快門 delegate 的實作 | `capturedAt` 是在此處以 `Date()` 產生並往下傳；`TemplateRenderer` 與 `OverlayRenderer` 內都**沒有** `Date()`（PRD §6.5.5） |
 
@@ -904,7 +913,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 12.9 | 在清單選「預設」→ 殺掉 App 重開 | 套用「預設」 |
 | 12.10 | 刪除目前選取的設定檔 → 殺掉 App 重開 | 套用清單中仍存在的某筆，不崩潰、不停在空白畫面 |
 | 12.11 | 把 `UserDefaults` 的 `lastUsedProfileID` 改成不存在的 UUID → 重開 | 套用**清單第一筆**，不崩潰、不顯示錯誤 |
-| 12.12 | `grep -rn "CameraProfile(" DaysCam/ \| grep -vi test` | 建立 `CameraProfile` 的位置只有兩處：`ProfileStore` 種預設值，以及使用者新增設定檔的儲存動作。**沒有**在渲染或拍照路徑上臨時建立設定檔 |
+| 12.12 | `grep -rn 'CameraProfile(' DaysCam/Services/TemplateRenderer.swift DaysCam/Services/OverlayRenderer.swift DaysCam/Services/CameraService.swift` | **無結果**。渲染與拍照路徑上**不得**臨時建立設定檔。（合法的建立位置有三處：`ProfileStore` 種預設值、新增設定檔、以及 SwiftUI `#Preview` 夾具——原本寫「只有兩處」漏算了 `#Preview`，而且用數處數的方式無法精確表達「不得出現在渲染路徑」這個意圖） |
 
 **驗收 — B. 需人類實機**
 
@@ -965,7 +974,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 |---|---|---|
 | 14.1 | 單元測試：注入 now = 2026-01-10 渲染一次，改注入 2026-01-11 後呼叫烘焙路徑 | 烘焙文字為 `第 2 天`（起始日 2026-01-10），不是 `第 1 天` |
 | 14.2 | 同 14.1 但改成只顯示日期 | 烘焙文字為 `2026.01.11`，不是 `2026.01.10`、不是 `第 2 天` |
-| 14.3 | `grep -rn "NSCalendarDayChanged\|willEnterForegroundNotification" DaysCam/` | 兩者都有被監聽 |
+| 14.3 | `grep -rn -e NSCalendarDayChanged -e willEnterForegroundNotification DaysCam/` | 兩者都有被監聽 |
 | 14.4 | 模擬器：以 `DAYSCAM_FAKE_TODAY=2026-01-10` 啟動 → 切背景 → 改成 `2026-01-11` 重啟 App | 疊字為 `第 2 天` |
 
 **驗收 — B. 需人類實機**
@@ -1005,7 +1014,7 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | 15.3 | 設定檔起始日 2026-01-01，`DAYSCAM_FAKE_TODAY=2025-12-01` 啟動 | 疊字顯示 `尚未開始`；八種單位組合逐一切換皆顯示 `尚未開始` |
 | 15.4 | 承 15.3 關掉「顯示天數」、打開「顯示日期」 | 疊字顯示 `2025.12.01`，**不是** `尚未開始` |
 | 15.5 | 承 15.3 開啟 `showName`（名稱「小寶」） | 疊字顯示 `小寶 尚未開始` |
-| 15.6 | `grep -rn "print(" DaysCam/ \| grep -v "//"` | 無結果，或全部在 `#if DEBUG` 內 |
+| 15.6 | `grep -rnE '^[^/]*print\(' DaysCam/` | 無結果，或全部在 `#if DEBUG` 內 |
 
 **驗收 — B. 需人類實機**
 
@@ -1035,9 +1044,9 @@ QA teammate 沒有手可以拿手機，請**只跑 A 級**，B 級標記為「�
 | # | 步驟 | 預期結果 |
 |---|---|---|
 | 16.1 | `xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' test` | 全數通過，exit code 0 |
-| 16.2 | `grep -rni "exif\|DateTimeOriginal\|creationDate\|fileCreation" DaysCam/` | 無結果（PRD §6.1 最終確認） |
+| 16.2 | `grep -rni -e exif -e DateTimeOriginal -e creationDate -e fileCreation DaysCam/` | 無結果（PRD §6.1 最終確認） |
 | 16.3 | `grep -rnE "startDate[?!]?\.date\b" DaysCam/` | 無結果 |
-| 16.4 | `git ls-files \| grep xcodeproj` | 無結果 |
+| 16.4 | `git ls-files -- '*xcodeproj*'` | 無結果 |
 | 16.5 | 模擬器冒煙：刪除 App 資料 → `DAYSCAM_FAKE_TODAY=2026-01-10` 啟動 → 開顯示設定面板 → 關「顯示天數」開「顯示日期」→ `DAYSCAM_FAKE_TODAY=2026-01-11` 重啟 | 首次顯示 `第 1 天`；改設定並跨日後顯示 `2026.01.11`（不是 `第 2 天`） |
 
 **驗收 — B. 需人類實機**
