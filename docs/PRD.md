@@ -476,7 +476,15 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 
 ### 6.3 時區
 
-- 所有日期比較一律用 `Calendar.current`（跟隨裝置當前時區與曆法）
+- 所有日期比較一律用 **`Calendar.autoupdatingCurrent`**（跟隨裝置當前時區與曆法），**不要**用 `Calendar.current`
+
+> **為什麼不能用 `Calendar.current`**
+>
+> `Calendar.current` 是**取用當下**的時區快照。若把它存進長壽物件的屬性——例如 `init(calendar: Calendar = .current)` 再存起來——時區就凍結在建構那一刻，之後裝置換時區也不會跟著變。`Calendar.autoupdatingCurrent` 則會持續追蹤。
+>
+> 實測（Swift 6.0.3）：在 `Asia/Taipei` 建構、再把行程時區切到 `America/New_York`，存下的 `.current` 仍是台北，`.autoupdatingCurrent` 已是紐約。同一個 UTC 瞬間 `2026-01-10T03:00:00Z`，前者算出 10 號、後者算出 9 號——**差一天**，正好違反下方的台北飛紐約範例。
+>
+> **本條原本就寫著「一律用 `Calendar.current`」，這個 bug 是規格本身教出來的**，由 TASK-14 的 code review 抓到。
 - `startDate` 存年月日整數，計算當下才還原成當地零點
 - 效果：使用者從台北飛到紐約，「2026-01-01 開始」的設定檔在紐約當地的 2026-01-10 仍顯示「第 10 天」
 

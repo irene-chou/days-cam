@@ -245,6 +245,7 @@ Markdown 表格用 `|` 分欄，所以儲存格內的 `|` 必須跳脫成 `\|`�
 | 2.26 | `grep -rni -e exif -e DateTimeOriginal -e creationDate -e fileCreation DaysCam/` | **無結果**（PRD §6.1 硬約束） |
 | 2.27 | `grep -rnE -e '=[[:space:]]*Date\(\)' -e '\bDate\(\)\)' -e '\{ Date\(\) \}' DaysCamTests/` | **無結果**（測試不得依賴真實時間）。**注意**：不要用 `grep -rn "Date()"`——那會抓到測試方法名稱（例如 `testRendersJustTheDate()`）與註解，逼測試作者為了過 grep 去改命名 |
 | 2.28 | 檢視 `DAYSCAM_FAKE_TODAY` 的實作 | 整段包在 `#if DEBUG` 內 |
+| 2.29 | `grep -rnE -e '^[^/]*Calendar = \.current\b' DaysCam/` | **無結果**。所有 `Calendar` 預設參數一律用 `.autoupdatingCurrent`（PRD §6.3）。`.current` 存進屬性後時區會凍結在建構當下，使用者換時區後天數會差一天。本條涵蓋整個 `DaysCam/`（含 `Views/`），不只 `Services/` |
 
 **驗收 — B. 需人類實機**：無。
 
