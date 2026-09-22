@@ -500,4 +500,69 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.profileListModel.profiles.count == 2 }
         XCTAssertEqual(model.profiles.count, 2)
     }
+
+    // MARK: - Shutter capture context (TASK-10 acceptance 10.3, 10.4)
+
+    func testCaptureContextRecomputesTextForANewCapturedMoment() throws {
+        // 10.3: rendering once at 2026-01-10 then again at 2026-01-11 for the
+        // same profile must produce "第 2 天", not a value stuck at "第 1 天" —
+        // proof the text is recomputed from `capturedAt`, never cached. One
+        // model with a *mutable* clock, not two separately constructed
+        // models each with a fixed clock — same reasoning as
+        // `testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment`
+        // (code review finding).
+        let seedDay = try fixedNow() // 2026-01-10
+        let clock = MutableClock(seedDay)
+        let store = makeProfileStore(now: seedDay)
+        let profile = try XCTUnwrap(store.profiles.first) // startDate == seedDay, dayOne
+        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
+
+        XCTAssertEqual(model.captureContext(for: profile).text, "第 1 天")
+
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        XCTAssertEqual(model.captureContext(for: profile).text, "第 2 天")
+    }
+
+    func testCaptureContextCapturedAtOriginatesFromTheInjectedClockOnly() throws {
+        // 10.4: `capturedAt` must come from exactly the clock this model was
+        // given — nothing in the call chain (`TemplateRenderer` included)
+        // reads the system clock on its own. `grep -n "Date()"
+        // DaysCam/Services/TemplateRenderer.swift` finds no matches, which is
+        // what makes this deterministic instead of merely "close enough."
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        let profile = try XCTUnwrap(model.profiles.first)
+
+        XCTAssertEqual(model.captureContext(for: profile).capturedAt, now)
+    }
+
+    func testCaptureContextCarriesTheProfilesThemeAndPosition() throws {
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        var styled = try XCTUnwrap(store.profiles.first)
+        styled.themeID = .filmStrip
+        styled.position = .topLeading
+        try store.update(styled)
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let context = model.captureContext(for: styled)
+        XCTAssertEqual(context.theme.id, .filmStrip)
+        XCTAssertEqual(context.position, .topLeading)
+    }
+
+    func testCapturePhotoIsANoOpWhenTheShutterIsDisabled() throws {
+        // `isShutterDisabled` requires `cameraService.status == .running`,
+        // which never happens without a real capture device (same boundary
+        // `CameraServiceTests` documents — `EmptyDeviceProvider` always
+        // returns nil). `capturePhoto()` must not flip `isCapturing` or crash
+        // when tapped in that state, matching what the disabled shutter
+        // button already prevents in the UI.
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        XCTAssertTrue(model.isShutterDisabled)
+
+        model.capturePhoto()
+
+        XCTAssertFalse(model.isCapturing)
+    }
 }
