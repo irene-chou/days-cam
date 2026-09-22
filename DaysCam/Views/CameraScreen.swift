@@ -166,7 +166,7 @@ struct CameraScreen: View {
             HStack {
                 Spacer()
                 Button {
-                    // TASK-10 wires the actual capture action.
+                    model.capturePhoto()
                 } label: {
                     Circle()
                         .strokeBorder(Color.white, lineWidth: 4)

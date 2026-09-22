@@ -1,12 +1,13 @@
 import Combine
 import Foundation
+import UIKit
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
 /// interpretation, the profile-driven overlay (TASK-08), the display-settings
-/// sheet entry (TASK-11) and the profile switcher (TASK-13). `CameraScreen`
-/// only lays out whatever this model currently says — see `docs/TASKS.md`'s
-/// note on why UI-level acceptance criteria live here rather than in the
-/// view.
+/// sheet entry (TASK-11), the profile switcher (TASK-13) and the shutter's
+/// capture state machine (TASK-10). `CameraScreen` only lays out whatever
+/// this model currently says — see `docs/TASKS.md`'s note on why UI-level
+/// acceptance criteria live here rather than in the view.
 ///
 /// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
@@ -46,18 +47,36 @@ final class CameraScreenModel: ObservableObject {
     /// currently on screen.
     let profileListModel: ProfileListModel
 
+    /// True from the moment the shutter is tapped until the photo pipeline
+    /// finishes, success or failure (PRD FR-5.5: disabled while saving).
+    @Published private(set) var isCapturing = false
+
+    /// Everything from "image captured" through "baked and saved to the
+    /// photo library," injected so this model is testable without the real
+    /// `OverlayRenderer`/`PhotoSaver` — TASK-09's baking and TASK-10's own
+    /// `PhotoSaver` (core-dev's half) are not available on this branch yet.
+    ///
+    /// The default is a placeholder that only calls `completion`, so the
+    /// capture state machine (the debounce, the disabled-while-capturing
+    /// shutter) is real and testable today; a follow-up commit replaces this
+    /// with the real bake → save pipeline once those land. Nothing about the
+    /// state machine changes when that happens — only what this closure does.
+    private let photoPipeline: (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void
+
     private var cancellables = Set<AnyCancellable>()
 
     init(cameraService: CameraService,
          profileStore: ProfileStore,
          calendar: Calendar = .current,
          calculator: DayCountCalculator = DayCountCalculator(),
-         renderer: TemplateRenderer = TemplateRenderer()) {
+         renderer: TemplateRenderer = TemplateRenderer(),
+         photoPipeline: @escaping (UIImage, String, OverlayTheme, OverlayPosition, @escaping () -> Void) -> Void = { _, _, _, _, completion in completion() }) {
         self.cameraService = cameraService
         self.profileStore = profileStore
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
+        self.photoPipeline = photoPipeline
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
         self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
@@ -151,12 +170,12 @@ final class CameraScreenModel: ObservableObject {
 
     /// Whether the shutter should be disabled right now.
     ///
-    /// True whenever a live picture is not actually on screen: no capture
-    /// support, permission not granted, or the session is not `.running`.
-    /// TASK-10 adds a fourth condition (a capture already in flight, FR-5.5)
-    /// on top of this same property.
+    /// True whenever a live picture is not actually on screen (no capture
+    /// support, permission not granted, session not `.running`), or while a
+    /// capture is already in flight (PRD FR-5.5). Single source of truth for
+    /// both the button's `.disabled` state and `capturePhoto()`'s own guard.
     var isShutterDisabled: Bool {
-        isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning
+        isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isCapturing
     }
 
     /// A transient reason the viewfinder cannot show a live picture even
@@ -247,5 +266,60 @@ extension CameraScreenModel {
 
     func presentProfileManagement() {
         isProfileListPresented = true
+    }
+}
+
+// MARK: - Shutter (TASK-10)
+
+extension CameraScreenModel {
+    /// What the shutter would bake into a photo of `profile` taken right now.
+    ///
+    /// `capturedAt` comes from `calculator.now()` — the one place in the
+    /// whole app that reads the clock for the photo pipeline (PRD §6.5.5,
+    /// TASK-10 acceptance 10.4). `TemplateRenderer` never calls `Date()`
+    /// itself, and neither will `OverlayRenderer` once it lands; both only
+    /// ever receive `capturedAt` as a parameter.
+    ///
+    /// The text is rendered fresh on every call — never read from the
+    /// already-computed `overlayText` — so two calls separated by the clock
+    /// moving (a shutter press straddling midnight, PRD §6.4) or the profile
+    /// changing produce different text instead of a stale, baked-in string
+    /// (TASK-10 acceptance 10.3).
+    ///
+    /// Deliberately not `private`: `CameraService.capturePhoto` can only
+    /// reach `.success` with a real capture device, which is unavailable in
+    /// the simulator (same boundary `CameraServiceTests` documents), so this
+    /// is what `CameraScreenModelTests` calls directly to verify 10.3/10.4
+    /// without needing to drive a full capture through real hardware.
+    func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition) {
+        let capturedAt = calculator.now()
+        let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
+        return (capturedAt, text, OverlayTheme.theme(for: profile.themeID), profile.position)
+    }
+
+    /// Triggers a capture.
+    ///
+    /// No-ops while `isShutterDisabled` (which already covers "a capture is
+    /// already in flight," so this doubles as the FR-5.5 debounce) or before
+    /// any profile is selected.
+    func capturePhoto() {
+        guard !isShutterDisabled, let selectedProfile else { return }
+        isCapturing = true
+        let context = captureContext(for: selectedProfile)
+
+        cameraService.capturePhoto { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case let .success(image):
+                self.photoPipeline(image, context.text, context.theme, context.position) { [weak self] in
+                    self?.isCapturing = false
+                }
+            case .failure:
+                // TASK-15 wires the PRD §7.3 error presentation; for now the
+                // shutter simply becomes tappable again rather than staying
+                // disabled forever.
+                self.isCapturing = false
+            }
+        }
     }
 }
