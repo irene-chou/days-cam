@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import UIKit
 import XCTest
 @testable import DaysCam
 
@@ -83,17 +84,28 @@ final class CameraScreenModelTests: XCTestCase {
     private func makeModel(status: AVAuthorizationStatus = .notDetermined,
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
-                           now: Date = Date()) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
-        makeModel(status: status, captureSupported: captureSupported, profileStore: profileStore, nowProvider: { now })
+                           now: Date = Date(),
+                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+        makeModel(status: status,
+                 captureSupported: captureSupported,
+                 profileStore: profileStore,
+                 nowProvider: { now },
+                 scheduleToastDismiss: scheduleToastDismiss)
     }
 
     /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
     /// `Date` — for tests that need to move time *after* construction to
     /// prove a value is recomputed rather than cached (see `MutableClock`).
+    ///
+    /// `scheduleToastDismiss` defaults to never firing, so a toast a test
+    /// presents stays put until the test inspects it; tests that care about
+    /// the dismiss itself (or the ordering between two scheduled dismissals)
+    /// pass their own `SchedulerSpy` and invoke it explicitly.
     private func makeModel(status: AVAuthorizationStatus = .notDetermined,
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
-                           nowProvider: @escaping () -> Date) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           nowProvider: @escaping () -> Date,
+                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer, deviceProvider: provider, isCaptureSupported: captureSupported)
@@ -101,8 +113,19 @@ final class CameraScreenModelTests: XCTestCase {
         let model = CameraScreenModel(cameraService: service,
                                       profileStore: store,
                                       calendar: DateFixture.taipei,
-                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider))
+                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
+                                      scheduleToastDismiss: scheduleToastDismiss)
         return (model, service, provider, store)
+    }
+
+    /// Records scheduled dismiss callbacks without running them, so a test
+    /// can invoke them in whatever order it wants to (e.g. an older toast's
+    /// dismiss firing after a newer toast was presented).
+    private final class SchedulerSpy {
+        private(set) var scheduled: [() -> Void] = []
+        func schedule(_ work: @escaping () -> Void) {
+            scheduled.append(work)
+        }
     }
 
     /// A clock whose reading can be moved after construction, so a test can
@@ -662,4 +685,174 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.11")
     }
 
+    // MARK: - Data-recovery alert (TASK-15 acceptance 15.1)
+
+    /// Writes unreadable bytes straight to `store`'s file, bypassing every
+    /// check the store makes — mirrors `ProfileStoreTests`' own
+    /// `writeRawProfiles` helper, just for garbage instead of valid records.
+    private func corrupt(_ store: ProfileStore) throws {
+        let garbage = try XCTUnwrap("這不是 JSON".data(using: .utf8))
+        try garbage.write(to: store.fileURL)
+    }
+
+    func testShowsCorruptionRecoveredAlertTrueWhenTheStoreJustRecovered() throws {
+        let now = try fixedNow()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        try corrupt(store)
+        store.load()
+        XCTAssertTrue(store.didRecoverFromCorruption) // sanity check on the fixture
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
+    }
+
+    func testShowsCorruptionRecoveredAlertFalseOnANormalLaunch() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow()) // makeProfileStore seeds cleanly
+        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
+    }
+
+    func testDismissCorruptionRecoveredAlertClearsIt() throws {
+        let now = try fixedNow()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        try corrupt(store)
+        store.load()
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
+
+        model.dismissCorruptionRecoveredAlert()
+
+        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
+    }
+
+    // MARK: - Saved toast (TASK-15, PRD FR-5.4)
+
+    func testPresentSavedToastShowsTheConfirmationMessage() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        model.presentSavedToast()
+        XCTAssertEqual(model.toastState?.message, "已儲存")
+    }
+
+    func testPresentSavedToastCarriesTheThumbnail() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let thumbnail = UIImage()
+        model.presentSavedToast(thumbnail: thumbnail)
+        XCTAssertTrue(model.toastState?.thumbnail === thumbnail)
+    }
+
+    func testPresentSavedToastDismissesWhenTheScheduledCallbackFires() throws {
+        let spy = SchedulerSpy()
+        let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
+
+        model.presentSavedToast()
+        XCTAssertNotNil(model.toastState)
+        XCTAssertEqual(spy.scheduled.count, 1)
+
+        spy.scheduled[0]()
+
+        XCTAssertNil(model.toastState)
+    }
+
+    func testANewerToastSurvivesAnOlderDismissTimerFiringLate() throws {
+        // PRD acceptance 10.22 (rapid shutter presses): the toast must not
+        // be cut short by an earlier save's dismiss timer firing after a
+        // second, newer toast has already replaced it — nor must the toasts
+        // stack up.
+        let spy = SchedulerSpy()
+        let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
+
+        model.presentSavedToast()
+        let firstID = model.toastState?.id
+        model.presentSavedToast()
+        let secondID = model.toastState?.id
+        XCTAssertNotEqual(firstID, secondID)
+        XCTAssertEqual(spy.scheduled.count, 2)
+
+        spy.scheduled[0]() // the first toast's stale dismiss, firing late
+
+        XCTAssertEqual(model.toastState?.id, secondID) // second toast untouched
+
+        spy.scheduled[1]() // the second toast's own dismiss
+
+        XCTAssertNil(model.toastState)
+    }
+
+    // MARK: - "尚未開始" for a future start date (TASK-15 acceptance 15.3–15.5)
+
+    private func makeFutureProfile(store: ProfileStore) throws -> CameraProfile {
+        var future = try XCTUnwrap(store.profiles.first)
+        future.startDate = DateFixture.components(2026, 1, 1) // after `now` below
+        try store.update(future)
+        return future
+    }
+
+    func testOverlayTextShowsNotStartedForAFutureStartDate() throws {
+        // 15.3: start date 2026-01-01, "now" 2025-12-01.
+        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
+        let store = makeProfileStore(now: now)
+        _ = try makeFutureProfile(store: store)
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.overlayText, "尚未開始")
+    }
+
+    func testOverlayTextShowsNotStartedForEveryLegalUnitPair() throws {
+        // 15.3: "八種單位組合逐一切換皆顯示尚未開始".
+        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
+        let store = makeProfileStore(now: now)
+        var future = try makeFutureProfile(store: store)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(DisplayUnitTrack.legalPairs.count, 8)
+        for pair in DisplayUnitTrack.legalPairs {
+            future.largestUnit = pair.largest
+            future.smallestUnit = pair.smallest
+            try store.update(future)
+            XCTAssertEqual(model.overlayText, "尚未開始",
+                           "largest=\(pair.largest) smallest=\(pair.smallest)")
+        }
+    }
+
+    func testOverlayTextShowsDateInsteadOfNotStartedWhenDateOnlyIsConfigured() throws {
+        // 15.4: turning off the day count and on the date must show the
+        // date, never "尚未開始" (that text only ever applies to the elapsed
+        // amount).
+        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
+        let store = makeProfileStore(now: now)
+        var future = try makeFutureProfile(store: store)
+        future.showDayCount = false
+        future.showDate = true
+        try store.update(future)
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.overlayText, "2025.12.01")
+    }
+
+    func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {
+        // 15.5: showName still applies on top of "尚未開始".
+        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
+        let store = makeProfileStore(now: now)
+        var future = try makeFutureProfile(store: store)
+        future.name = "小寶"
+        future.showName = true
+        try store.update(future)
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.overlayText, "小寶 尚未開始")
+    }
+
+    func testCaptureContextShowsNotStartedForAFutureStartDate() throws {
+        // The bake path must agree with the viewfinder on this, same as
+        // every other overlayText/captureContext pairing in this file.
+        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
+        let store = makeProfileStore(now: now)
+        let future = try makeFutureProfile(store: store)
+
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.captureContext(for: future).text, "尚未開始")
+    }
 }
