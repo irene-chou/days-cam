@@ -84,15 +84,35 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
                            now: Date = Date()) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+        makeModel(status: status, captureSupported: captureSupported, profileStore: profileStore, nowProvider: { now })
+    }
+
+    /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
+    /// `Date` — for tests that need to move time *after* construction to
+    /// prove a value is recomputed rather than cached (see `MutableClock`).
+    private func makeModel(status: AVAuthorizationStatus = .notDetermined,
+                           captureSupported: Bool = false,
+                           profileStore: ProfileStore? = nil,
+                           nowProvider: @escaping () -> Date) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer, deviceProvider: provider, isCaptureSupported: captureSupported)
-        let store = profileStore ?? makeProfileStore(now: now)
+        let store = profileStore ?? makeProfileStore(now: nowProvider())
         let model = CameraScreenModel(cameraService: service,
                                       profileStore: store,
                                       calendar: DateFixture.taipei,
-                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }))
+                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider))
         return (model, service, provider, store)
+    }
+
+    /// A clock whose reading can be moved after construction, so a test can
+    /// prove a value is recomputed live rather than cached at `init` time —
+    /// two separately-constructed models each with their own *fixed* clock
+    /// cannot tell those apart (code review finding).
+    private final class MutableClock {
+        var current: Date
+        init(_ date: Date) { current = date }
+        func now() -> Date { current }
     }
 
     private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 2) {
@@ -111,45 +131,74 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(condition(), "condition never became true within \(timeout)s")
     }
 
-    // MARK: - showsPlaceholder
+    // MARK: - showsPlaceholder / isCaptureUnsupported
+    //
+    // Code review finding: the original `isShutterDisabled` tests below this
+    // point each asserted the *composite* while only ever driving one
+    // sub-condition — deleting any single clause from the real
+    // implementation would still leave these green, because `status` can
+    // never reach `.running` without a real capture device (same limitation
+    // `CameraServiceTests` documents), so `isSessionNotRunning` is
+    // unconditionally true everywhere in this test target regardless of what
+    // else is true. Testing each sub-property (`isCaptureUnsupported`,
+    // `needsPermissionGuidance`, `isSessionNotRunning`) directly, rather than
+    // only through the OR'd composite, is what actually catches a broken
+    // individual condition.
 
-    func testShowsPlaceholderWhenCaptureNotSupported() {
+    func testIsCaptureUnsupportedTrueWhenCaptureNotSupported() {
         let (model, _, _, _) = makeModel(captureSupported: false)
+        XCTAssertTrue(model.isCaptureUnsupported)
         XCTAssertTrue(model.showsPlaceholder)
+        XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testDoesNotShowPlaceholderWhenCaptureSupported() {
+    func testIsCaptureUnsupportedFalseWhenCaptureSupported() {
         let (model, _, _, _) = makeModel(captureSupported: true)
+        XCTAssertFalse(model.isCaptureUnsupported)
         XCTAssertFalse(model.showsPlaceholder)
     }
 
-    // MARK: - isShutterDisabled
+    // MARK: - needsPermissionGuidance
 
-    func testShutterDisabledWhenCaptureNotSupported() {
-        let (model, _, _, _) = makeModel(captureSupported: false)
-        XCTAssertTrue(model.isShutterDisabled)
-    }
-
-    func testShutterDisabledBeforeSessionStarts() {
-        // captureSupported: true, but `onAppear` was never called, so status
-        // is still `.idle` — the shutter must not be enabled before a live
-        // picture is actually on screen.
-        let (model, _, _, _) = makeModel(captureSupported: true)
-        XCTAssertTrue(model.isShutterDisabled)
-    }
-
-    func testShutterDisabledWhenPermissionDenied() {
+    func testNeedsPermissionGuidanceTrueWhenDenied() {
         let (model, service, _, _) = makeModel(status: .denied, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .denied }
+        XCTAssertTrue(model.needsPermissionGuidance)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testShutterDisabledWhenPermissionRestricted() {
+    func testNeedsPermissionGuidanceTrueWhenRestricted() {
         let (model, service, _, _) = makeModel(status: .restricted, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .restricted }
+        XCTAssertTrue(model.needsPermissionGuidance)
         XCTAssertTrue(model.isShutterDisabled)
+    }
+
+    func testNeedsPermissionGuidanceFalseWhenAuthorized() {
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+        model.onAppear()
+        waitUntil { service.permission == .authorized }
+        XCTAssertFalse(model.needsPermissionGuidance)
+    }
+
+    // MARK: - isSessionNotRunning
+
+    func testIsSessionNotRunningTrueBeforeOnAppear() {
+        let (model, _, _, _) = makeModel(captureSupported: true)
+        XCTAssertTrue(model.isSessionNotRunning)
+        XCTAssertTrue(model.isShutterDisabled)
+    }
+
+    func testIsSessionNotRunningTrueForSimulatorPlaceholderStatus() {
+        // Documents the actual boundary explained above: `.unavailable(.simulator)`
+        // is as close to "not idle" as this test target can reach, and it is
+        // still not `.running`.
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+        model.onAppear()
+        waitUntil { service.status == .unavailable(.simulator) }
+        XCTAssertTrue(model.isSessionNotRunning)
     }
 
     // MARK: - statusMessage
@@ -182,6 +231,27 @@ final class CameraScreenModelTests: XCTestCase {
         NotificationCenter.default.post(name: AVCaptureSession.wasInterruptedNotification, object: service.session)
         waitUntil { service.status == .interrupted }
         XCTAssertEqual(model.statusMessage, "相機暫時無法使用")
+    }
+
+    // MARK: - CameraService change forwarding (Critical, code review finding)
+
+    func testModelPublishesWhenCameraServicePermissionChanges() {
+        // `cameraService` is a nested `ObservableObject` this model reads
+        // directly (`permission`, `status`) but `CameraScreen` only
+        // `@ObservedObject`s this model, not `cameraService` itself — without
+        // forwarding `cameraService.objectWillChange`, SwiftUI never learns a
+        // permission grant/denial or a status change happened, so the
+        // guidance screen would never appear/disappear and the shutter could
+        // stay disabled forever once `.running` is reached on a device.
+        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+        var fired = false
+        let cancellable = model.objectWillChange.sink { fired = true }
+        defer { cancellable.cancel() }
+
+        model.onAppear()
+        waitUntil { service.permission == .authorized }
+
+        XCTAssertTrue(fired)
     }
 
     // MARK: - Lifecycle forwarding
@@ -232,15 +302,20 @@ final class CameraScreenModelTests: XCTestCase {
         // 8.2: re-rendering a day later must read "第 2 天", proving
         // `overlayText` is computed from the live capture moment on every
         // access rather than cached from when the profile was seeded
-        // (PRD §6.4) — the store here is untouched between the two models.
+        // (PRD §6.4). One model with a *mutable* clock, not two separately
+        // constructed models each with a fixed clock — two independent
+        // models each reading a value fixed at construction cannot tell a
+        // cached value apart from a correctly recomputed one; that would
+        // pass even if `overlayText` snapshotted the text once in `init`
+        // (code review finding).
         let seedDay = try fixedNow() // 2026-01-10
+        let clock = MutableClock(seedDay)
         let store = makeProfileStore(now: seedDay)
-        let (dayOneModel, _, _, _) = makeModel(profileStore: store, now: seedDay)
-        XCTAssertEqual(dayOneModel.overlayText, "第 1 天")
+        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
+        XCTAssertEqual(model.overlayText, "第 1 天")
 
-        let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        let (dayTwoModel, _, _, _) = makeModel(profileStore: store, now: nextDay)
-        XCTAssertEqual(dayTwoModel.overlayText, "第 2 天")
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        XCTAssertEqual(model.overlayText, "第 2 天")
     }
 
     func testOverlayTextShowsDateInsteadOfDayCountWhenConfiguredTo() throws {

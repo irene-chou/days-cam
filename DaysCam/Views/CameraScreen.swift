@@ -109,8 +109,14 @@ struct CameraScreen: View {
                 if model.showsPlaceholder {
                     placeholderBackground
                 } else {
+                    // Deliberately not `.ignoresSafeArea()`: the container is
+                    // already sized to exactly the 4:3 viewfinder rectangle,
+                    // and letting the preview layer grow into the safe area
+                    // would make it taller than the `GeometryReader` frame
+                    // `OverlayTextView` below measures — the overlay would
+                    // sit against a boundary the picture doesn't actually
+                    // end at (code review finding, PRD FR-6.1/6.3).
                     CameraPreviewView(session: model.cameraService.session)
-                        .ignoresSafeArea()
                 }
 
                 // Overlay text tracks the viewfinder's own size (not the
@@ -130,7 +136,7 @@ struct CameraScreen: View {
                         .background(.black.opacity(0.6), in: Capsule())
                 }
 
-                if model.cameraService.permission.needsGuidance {
+                if model.needsPermissionGuidance {
                     PermissionGuidanceView()
                 }
             }
@@ -153,21 +159,45 @@ struct CameraScreen: View {
         }
     }
 
+    /// Centers the shutter regardless of `switchCameraButton`'s width, by
+    /// layering rather than sharing one `HStack` with it (PRD FR-5.8).
     private var shutterBar: some View {
-        HStack {
-            Spacer()
-            Button {
-                // TASK-10 wires the actual capture action.
-            } label: {
-                Circle()
-                    .strokeBorder(Color.white, lineWidth: 4)
-                    .frame(width: 72, height: 72)
+        ZStack {
+            HStack {
+                Spacer()
+                Button {
+                    // TASK-10 wires the actual capture action.
+                } label: {
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 4)
+                        .frame(width: 72, height: 72)
+                }
+                .disabled(model.isShutterDisabled)
+                .opacity(model.isShutterDisabled ? 0.4 : 1)
+                Spacer()
             }
-            .disabled(model.isShutterDisabled)
-            .opacity(model.isShutterDisabled ? 0.4 : 1)
-            Spacer()
+            HStack {
+                Spacer()
+                switchCameraButton
+                    .padding(.trailing, 24)
+            }
         }
         .padding(.vertical, 24)
+    }
+
+    /// Front/back camera toggle (PRD FR-5.8, TASK-07's acceptance 7.10/7.11).
+    private var switchCameraButton: some View {
+        Button {
+            model.switchCamera()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(14)
+                .background(.black.opacity(0.4), in: Circle())
+        }
+        .disabled(model.isCaptureUnsupported)
+        .opacity(model.isCaptureUnsupported ? 0.4 : 1)
     }
 }
 

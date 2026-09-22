@@ -3,9 +3,12 @@ import SwiftUI
 @main
 struct DaysCamApp: App {
     /// One `CameraService` and one `ProfileStore` for the app's lifetime.
-    /// `CameraScreen` starts and stops the camera session on appear/disappear;
-    /// neither service is ever rebuilt, so a switched camera, a granted
-    /// permission or a profile change survives navigating away and back.
+    /// `CameraScreen` calls `onAppear`/`onDisappear` on its model, which in
+    /// turn starts/stops the camera session — though in this single-screen
+    /// app `onDisappear` effectively never fires in practice (see its own
+    /// doc comment). Neither service is ever rebuilt regardless, so a
+    /// switched camera, a granted permission or a profile change survives
+    /// any future navigating away and back.
     @StateObject private var cameraScreenModel = Self.makeCameraScreenModel()
 
     var body: some Scene {
