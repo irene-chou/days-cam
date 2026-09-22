@@ -219,7 +219,7 @@ extension CameraService {
     /// Call on the main queue.
     func start() {
         isActive = true
-        resolvePermission(runIfGranted: true)
+        resolvePermission()
     }
 
     /// Stops the session and returns to idle. Call when the camera screen goes
@@ -258,12 +258,13 @@ extension CameraService {
     /// It never starts a session that `stop()` has since shut down — only one
     /// the camera screen is still asking for. Call on the main queue.
     func refreshPermission() {
-        resolvePermission(runIfGranted: true)
+        resolvePermission()
     }
 
     /// Reads the current permission, prompting the first time, and publishes
-    /// it. Starts the session too when `runIfGranted` says the screen wants it.
-    private func resolvePermission(runIfGranted: Bool) {
+    /// it. When it is granted, asks `run()` to start the session, which only
+    /// does so while the camera screen is active.
+    private func resolvePermission() {
         switch authorizer.authorizationStatus() {
         case .notDetermined:
             publish(permission: .notDetermined)
@@ -271,12 +272,12 @@ extension CameraService {
                 guard let self else { return }
                 self.onMain {
                     self.publish(permission: granted ? .authorized : .denied)
-                    if granted, runIfGranted { self.run() }
+                    if granted { self.run() }
                 }
             }
         case .authorized:
             publish(permission: .authorized)
-            if runIfGranted { run() }
+            run()
         case .denied:
             publish(permission: .denied)
         case .restricted:
