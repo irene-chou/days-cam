@@ -17,7 +17,7 @@ struct DayCountCalculator {
     /// so that the debug clock override is consulted. Applying the override
     /// inside the initializer body instead would overwrite a clock the caller
     /// deliberately injected, which would break every test that passes one.
-    init(calendar: Calendar = .current,
+    init(calendar: Calendar = .autoupdatingCurrent,
          now: @escaping () -> Date = DayCountCalculator.defaultNow()) {
         self.calendar = calendar
         self.now = now
@@ -136,7 +136,7 @@ extension DayCountCalculator {
     ///
     /// This whole member is compiled out of release builds.
     static func debugFakeToday(environment: [String: String] = ProcessInfo.processInfo.environment,
-                               calendar: Calendar = .current) -> Date? {
+                               calendar: Calendar = .autoupdatingCurrent) -> Date? {
         guard let raw = environment[fakeTodayEnvironmentKey] else { return nil }
         let parts = raw.split(separator: "-")
         guard parts.count == 3,
