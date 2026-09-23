@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import CoreMedia
 import Foundation
 import UIKit
 
@@ -323,6 +324,9 @@ extension CameraService {
                 self.session.addInput(input)
                 self.videoInput = input
                 self.sessionFacing = target
+                // The new side has its own maximum, and it is usually smaller
+                // going to the front camera.
+                self.adoptNativeResolution(of: device)
                 self.session.commitConfiguration()
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
@@ -330,6 +334,7 @@ extension CameraService {
             } else if let previous, self.session.canAddInput(previous) {
                 // Put the working input back rather than leaving a dead session.
                 self.session.addInput(previous)
+                self.adoptNativeResolution(of: previous.device)
                 self.session.commitConfiguration()
             } else {
                 // Neither side went in: the session now has no video input at
@@ -399,7 +404,13 @@ extension CameraService {
                 }
             }
             self.captureDelegates[ObjectIdentifier(delegate)] = delegate
-            self.photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: delegate)
+            let settings = AVCapturePhotoSettings()
+            // Ask for the full sensor resolution the output was configured
+            // for (10.18). Taken from the output rather than the device so it
+            // can never exceed what the output allows, which would raise an
+            // uncatchable exception.
+            settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+            self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
 }
@@ -466,10 +477,25 @@ private extension CameraService {
             return false
         }
         session.addOutput(photoOutput)
+        adoptNativeResolution(of: device)
         session.commitConfiguration()
 
         rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         return true
+    }
+
+    /// Asks the output for this device's full sensor resolution instead of the
+    /// smaller default (acceptance 10.18).
+    ///
+    /// Must be redone whenever the input changes: the front camera's maximum
+    /// is smaller than the back one's, and asking a capture for more than the
+    /// output currently allows raises an Objective-C exception that Swift
+    /// cannot catch — the app would die on the shutter press.
+    func adoptNativeResolution(of device: AVCaptureDevice) {
+        guard let largest = CameraService.largestPhotoDimensions(
+            from: device.activeFormat.supportedMaxPhotoDimensions
+        ) else { return }
+        photoOutput.maxPhotoDimensions = largest
     }
 }
 
@@ -609,5 +635,21 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         guard hasFinished == false else { return }
         hasFinished = true
         finish(result, self)
+    }
+}
+
+// MARK: - Photo resolution
+
+extension CameraService {
+    /// The dimensions with the most pixels, which is the full-resolution
+    /// format (acceptance 10.18).
+    ///
+    /// Picking by width alone would choose a wide, short format over a larger
+    /// one. Internal rather than private so the choice can be unit tested;
+    /// applying it needs a real camera, so that part is verified on a device.
+    static func largestPhotoDimensions(from candidates: [CMVideoDimensions]) -> CMVideoDimensions? {
+        candidates.max { left, right in
+            Int(left.width) * Int(left.height) < Int(right.width) * Int(right.height)
+        }
     }
 }
