@@ -42,6 +42,17 @@ struct CameraScreen: View {
         .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
             Button("好") { model.dismissCorruptionRecoveredAlert() }
         }
+        .alert("無法完成拍照", isPresented: captureErrorBinding, presenting: model.captureError) { error in
+            if error.showsSettingsAction {
+                Button("前往設定") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("好", role: .cancel) { model.dismissCaptureError() }
+        } message: { error in
+            Text(error.message)
+        }
     }
 
     /// "已儲存" confirmation (PRD FR-5.4). Positioned above the shutter bar
@@ -63,6 +74,12 @@ struct CameraScreen: View {
     private var corruptionAlertBinding: Binding<Bool> {
         Binding(get: { model.showsCorruptionRecoveredAlert },
                 set: { isPresented in if !isPresented { model.dismissCorruptionRecoveredAlert() } })
+    }
+
+    /// `model.captureError` as a `Binding<Bool>` for `.alert(isPresented:presenting:)`.
+    private var captureErrorBinding: Binding<Bool> {
+        Binding(get: { model.captureError != nil },
+                set: { isPresented in if !isPresented { model.dismissCaptureError() } })
     }
 
     /// Profile switcher (leading, PRD FR-1.4, TASK-13) and settings-gear

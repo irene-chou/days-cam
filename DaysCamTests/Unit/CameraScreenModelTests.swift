@@ -85,11 +85,15 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
                            now: Date = Date(),
+                           bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
+                           handleBakedImage: @escaping (UIImage, @escaping () -> Void) -> Void = { _, completion in completion() },
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
                  nowProvider: { now },
+                 bake: bake,
+                 handleBakedImage: handleBakedImage,
                  scheduleToastDismiss: scheduleToastDismiss)
     }
 
@@ -105,6 +109,8 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
                            nowProvider: @escaping () -> Date,
+                           bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
+                           handleBakedImage: @escaping (UIImage, @escaping () -> Void) -> Void = { _, completion in completion() },
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
@@ -114,6 +120,8 @@ final class CameraScreenModelTests: XCTestCase {
                                       profileStore: store,
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
+                                      bake: bake,
+                                      handleBakedImage: handleBakedImage,
                                       scheduleToastDismiss: scheduleToastDismiss)
         return (model, service, provider, store)
     }
@@ -854,5 +862,121 @@ final class CameraScreenModelTests: XCTestCase {
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
         XCTAssertEqual(model.captureContext(for: future).text, "尚未開始")
+    }
+
+    // MARK: - processCapturedImage (TASK-10 bake wiring)
+
+    private func sampleContext(_ now: Date) -> (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition) {
+        (capturedAt: now, text: "第 1 天", theme: .theme(for: .classicWhite), position: .bottomTrailing)
+    }
+
+    func testProcessCapturedImagePassesTheContextThroughToBake() throws {
+        let now = try fixedNow()
+        var received: (image: UIImage?, text: String?, theme: OverlayTheme?, position: OverlayPosition?)
+        let bakeExp = expectation(description: "bake called")
+        let sourceImage = UIImage()
+        let (model, _, _, _) = makeModel(now: now, bake: { image, text, theme, position in
+            received = (image, text, theme, position)
+            bakeExp.fulfill()
+            return UIImage()
+        })
+
+        model.processCapturedImage(sourceImage, context: sampleContext(now))
+
+        wait(for: [bakeExp], timeout: 2)
+        XCTAssertTrue(received.image === sourceImage)
+        XCTAssertEqual(received.text, "第 1 天")
+        XCTAssertEqual(received.theme?.id, .classicWhite)
+        XCTAssertEqual(received.position, .bottomTrailing)
+    }
+
+    func testProcessCapturedImageSurfacesCaptureErrorWhenBakeFails() throws {
+        // PRD §7.3: baking failure — not one of PhotoSaver's save errors,
+        // does not depend on it landing.
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _ in nil })
+        XCTAssertNil(model.captureError)
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        // `processCapturedImage` sets this synchronously, before dispatching
+        // to the background queue — same as `capturePhoto()`'s own
+        // assignment does in the real flow.
+        XCTAssertTrue(model.isCapturing)
+
+        waitUntil { model.captureError != nil }
+        XCTAssertEqual(model.captureError?.message, "照片處理失敗，請再試一次。")
+        XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
+        // 10.22: the bake-failure branch must not leave the shutter stuck
+        // disabled — a genuine `true` → `false` transition, not merely
+        // "still false" (mutation-verified: deleting the reset here left
+        // this red).
+        waitUntil { model.isCapturing == false }
+    }
+
+    func testProcessCapturedImageDoesNotCallHandleBakedImageWhenBakeFails() throws {
+        var handleBakedImageCalled = false
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in nil },
+                                         handleBakedImage: { _, completion in
+                                             handleBakedImageCalled = true
+                                             completion()
+                                         })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.captureError != nil }
+        XCTAssertFalse(handleBakedImageCalled)
+    }
+
+    func testProcessCapturedImagePassesTheBakedImageToHandleBakedImage() throws {
+        let now = try fixedNow()
+        let bakedImage = UIImage()
+        var receivedImage: UIImage?
+        let handleExp = expectation(description: "handleBakedImage called")
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in bakedImage },
+                                         handleBakedImage: { image, completion in
+                                             receivedImage = image
+                                             handleExp.fulfill()
+                                             completion()
+                                         })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        wait(for: [handleExp], timeout: 2)
+        XCTAssertTrue(receivedImage === bakedImage)
+        XCTAssertNil(model.captureError)
+    }
+
+    func testProcessCapturedImageResetsIsCapturingWhenHandleBakedImageCompletes() throws {
+        // 10.22: whatever `handleBakedImage` eventually becomes (the real
+        // save step, once `PhotoSaver` is wired in) must not leave the
+        // shutter permanently disabled once it calls back.
+        let now = try fixedNow()
+        var storedCompletion: (() -> Void)?
+        let completionStored = expectation(description: "handleBakedImage completion captured")
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         handleBakedImage: { _, completion in
+                                             storedCompletion = completion
+                                             completionStored.fulfill()
+                                         })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        XCTAssertTrue(model.isCapturing) // set synchronously, before backgrounding
+
+        wait(for: [completionStored], timeout: 2)
+
+        // Not resolved yet: `handleBakedImage`'s own completion is still
+        // pending, deliberately not called above — `isCapturing` must still
+        // be `true` here, or this test would prove nothing about the reset
+        // below actually being *caused* by the completion firing.
+        XCTAssertNotNil(storedCompletion)
+        XCTAssertTrue(model.isCapturing)
+
+        storedCompletion?()
+
+        waitUntil { model.isCapturing == false }
     }
 }
