@@ -63,18 +63,11 @@ final class CameraScreenModel: ObservableObject {
     /// closure (see `processCapturedImage`).
     private let bake: (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage?
 
-    /// What happens to a successfully baked image. Placeholder until
-    /// `PhotoSaver` lands (TASK-10, core-dev's half — not yet on a shared
-    /// branch as of this commit) — defaults to a no-op that only calls
-    /// `completion`, same as the pre-bake-wiring placeholder this replaced.
-    /// Deliberately does *not* call `presentSavedToast` here: nothing was
-    /// actually saved yet, and claiming otherwise would be a lie the user
-    /// would see on screen. A follow-up commit (once
-    /// `feature/task-10-photo-saver` is available to rebase onto) replaces
-    /// this with the real save step, its `PhotoSaveError` handling, and the
-    /// toast trigger together — not before, so there's never a window where
-    /// this model claims a save happened without one.
-    private let handleBakedImage: (UIImage, @escaping () -> Void) -> Void
+    /// Saves a baked photo to the system photo library. Defaults to the real
+    /// `PhotoSaver`. Injectable for tests, and so `processCapturedImage` can
+    /// call it from a background queue without capturing `self` (same
+    /// reasoning as `bake`).
+    private let save: (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void
 
     /// Bumped whenever the calendar day changes or the app returns to the
     /// foreground (TASK-14). `overlayText` already recomputes from the live
@@ -104,6 +97,19 @@ final class CameraScreenModel: ObservableObject {
     /// How `presentSavedToast` schedules the toast's own auto-dismiss.
     /// Injected so tests don't have to wait a real 1.5 seconds; the default
     /// is the real delay.
+    ///
+    /// Pre-existing "passing non-sendable parameter 'work' to function
+    /// expecting a @Sendable closure" warning here (present since `d2d7329`,
+    /// before this file's `bake`/`processCapturedImage` work): marking `work`
+    /// `@Sendable` to silence it turns out to be a real fix, not a
+    /// formality — the default implementation's dismiss closure mutates
+    /// `self.toastState`, a main-actor-isolated property, and `@Sendable`
+    /// makes the compiler correctly refuse that from what it then treats as
+    /// a "could run anywhere" closure. Fixing it properly needs
+    /// `@MainActor @Sendable` on the parameter (the closure is Sendable *and*
+    /// guaranteed to run on the main actor) plus checking every call site
+    /// still type-checks — left alone for now to keep this PR to its actual
+    /// scope; tracked as a follow-up.
     private let scheduleToastDismiss: (@escaping () -> Void) -> Void
 
     private var cancellables = Set<AnyCancellable>()
@@ -124,7 +130,9 @@ final class CameraScreenModel: ObservableObject {
          bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { image, text, theme, position in
              OverlayRenderer().bake(image: image, text: text, theme: theme, position: position)
          },
-         handleBakedImage: @escaping (UIImage, @escaping () -> Void) -> Void = { _, completion in completion() },
+         save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { image, completion in
+             PhotoSaver().save(image, completion: completion)
+         },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          }) {
@@ -134,7 +142,7 @@ final class CameraScreenModel: ObservableObject {
         self.calculator = calculator
         self.renderer = renderer
         self.bake = bake
-        self.handleBakedImage = handleBakedImage
+        self.save = save
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
@@ -425,26 +433,28 @@ extension CameraScreenModel {
         }
     }
 
-    /// Bakes `image` and hands the result to `handleBakedImage`, off the main
-    /// thread (baking a 12-megapixel photo measured ~60–80ms in the
-    /// simulator; core-dev's own numbers for a real device were pending as
-    /// of this commit, but stalling the main thread for that long every
-    /// shutter press is not acceptable regardless).
+    /// Bakes `image` and saves the result, off the main thread (baking a
+    /// 12-megapixel photo measured ~60–80ms in the simulator; core-dev's own
+    /// numbers for a real device were pending as of this commit, but
+    /// stalling the main thread for that long every shutter press is not
+    /// acceptable regardless).
     ///
-    /// `bake` is captured into a local *before* dispatching rather than
-    /// referenced as `self.bake` from inside the background closure: `self`
-    /// is `@MainActor`-isolated, and the background closure must not touch
-    /// it until the explicit hop back to `DispatchQueue.main` below. `bake`
-    /// itself is just a plain function value once captured, not a
-    /// main-actor-isolated access.
+    /// `bake` and `save` are captured into locals *before* dispatching
+    /// rather than referenced as `self.bake`/`self.save` from inside the
+    /// background closure: `self` is `@MainActor`-isolated, and the
+    /// background closure must not touch it until the explicit hop back to
+    /// `DispatchQueue.main` for the bake-failure branch below (the
+    /// save-completion branch needs no such hop — see its own comment).
+    /// `bake`/`save` are themselves just plain function values once
+    /// captured, not main-actor-isolated accesses.
     ///
     /// Deliberately not `private`: reaching this from a real `capturePhoto()`
     /// call needs `cameraService.status == .running`, which — like
     /// `captureContext(for:)` above — is unavailable without real capture
     /// hardware (same boundary `CameraServiceTests` documents). This is what
-    /// `CameraScreenModelTests` calls directly to verify the bake-failure and
-    /// bake-success branches, and that `isCapturing` ends up `false` either
-    /// way (PRD acceptance 10.22).
+    /// `CameraScreenModelTests` calls directly to verify the bake-failure,
+    /// save-success and save-failure branches, and that `isCapturing` ends
+    /// up `false` on every one of them (PRD acceptance 10.22).
     func processCapturedImage(_ image: UIImage,
                               context: (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition)) {
         // Redundant with `capturePhoto()`'s own assignment in the real flow
@@ -455,6 +465,7 @@ extension CameraScreenModel {
         // in the test ever set.
         isCapturing = true
         let bake = self.bake
+        let save = self.save
         DispatchQueue.global(qos: .userInitiated).async {
             // core-dev's reminder: a 12MP photo in a wide-gamut color space
             // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
@@ -463,20 +474,48 @@ extension CameraScreenModel {
             let baked = autoreleasepool {
                 bake(image, context.text, context.theme, context.position)
             }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                guard let baked else {
-                    // PRD §7.3: baking failure. Not saved, no success toast.
-                    self.captureError = CaptureAlertError(message: "照片處理失敗，請再試一次。",
-                                                          showsSettingsAction: false)
-                    self.isCapturing = false
-                    return
-                }
-                self.handleBakedImage(baked) { [weak self] in
+            guard let baked else {
+                // PRD §7.3: baking failure. Not saved, no success toast.
+                DispatchQueue.main.async { [weak self] in
+                    self?.captureError = CaptureAlertError(message: "照片處理失敗，請再試一次。",
+                                                           showsSettingsAction: false)
                     self?.isCapturing = false
                 }
+                return
+            }
+            // Downscaled here, off the main thread, alongside the bake work
+            // it depends on — a 12MP `UIImage` is not something the toast
+            // should hold onto full-size for its 1.5 seconds on screen just
+            // to draw it at 44x44 (review-anticipated finding).
+            let thumbnail = Self.thumbnail(of: baked)
+
+            save(baked) { [weak self] result in
+                guard let self else { return }
+                // `PhotoSaver.save`'s completion already guarantees main —
+                // deliberately not wrapped in another `DispatchQueue.main.async`
+                // here, or the toast would appear one run-loop turn after
+                // `isCapturing` resets, rather than in the same update.
+                switch result {
+                case .success:
+                    self.presentSavedToast(thumbnail: thumbnail)
+                case let .failure(error):
+                    self.captureError = CaptureAlertError(message: error.displayMessage,
+                                                          showsSettingsAction: error.showsSettingsAction)
+                }
+                self.isCapturing = false
             }
         }
+    }
+
+    /// A small copy of `image`, for the toast (PRD FR-5.4) — never the
+    /// full-resolution baked photo.
+    private static func thumbnail(of image: UIImage, maxDimension: CGFloat = 88) -> UIImage {
+        let largestSide = max(image.size.width, image.size.height)
+        guard largestSide > maxDimension else { return image }
+        let scale = maxDimension / largestSide
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
     }
 }
 
@@ -495,10 +534,9 @@ extension CameraScreenModel {
     }
 
     /// Shows the "已儲存" confirmation toast and schedules it to fade out
-    /// after 1.5 seconds (PRD FR-5.4). `PhotoSaver`'s real save-success path
-    /// calls this once it's wired into `handleBakedImage`; nothing calls it
-    /// yet, since the placeholder `handleBakedImage` doesn't represent an
-    /// actual save.
+    /// after 1.5 seconds (PRD FR-5.4). Called from `processCapturedImage`'s
+    /// `save` completion on a successful save, with an already-downscaled
+    /// thumbnail (never the full-resolution baked photo).
     ///
     /// Each call gets a fresh `ToastState.id`, so two saves close together
     /// restart the fade-out rather than comparing equal and no-oping (see

@@ -86,14 +86,14 @@ final class CameraScreenModelTests: XCTestCase {
                            profileStore: ProfileStore? = nil,
                            now: Date = Date(),
                            bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
-                           handleBakedImage: @escaping (UIImage, @escaping () -> Void) -> Void = { _, completion in completion() },
+                           save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success(())) },
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
                  nowProvider: { now },
                  bake: bake,
-                 handleBakedImage: handleBakedImage,
+                 save: save,
                  scheduleToastDismiss: scheduleToastDismiss)
     }
 
@@ -110,7 +110,7 @@ final class CameraScreenModelTests: XCTestCase {
                            profileStore: ProfileStore? = nil,
                            nowProvider: @escaping () -> Date,
                            bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
-                           handleBakedImage: @escaping (UIImage, @escaping () -> Void) -> Void = { _, completion in completion() },
+                           save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success(())) },
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
@@ -121,7 +121,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
                                       bake: bake,
-                                      handleBakedImage: handleBakedImage,
+                                      save: save,
                                       scheduleToastDismiss: scheduleToastDismiss)
         return (model, service, provider, store)
     }
@@ -913,52 +913,116 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.isCapturing == false }
     }
 
-    func testProcessCapturedImageDoesNotCallHandleBakedImageWhenBakeFails() throws {
-        var handleBakedImageCalled = false
+    func testProcessCapturedImageDoesNotCallSaveWhenBakeFails() throws {
+        var saveCalled = false
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in nil },
-                                         handleBakedImage: { _, completion in
-                                             handleBakedImageCalled = true
-                                             completion()
+                                         save: { _, completion in
+                                             saveCalled = true
+                                             completion(.success(()))
                                          })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
         waitUntil { model.captureError != nil }
-        XCTAssertFalse(handleBakedImageCalled)
+        XCTAssertFalse(saveCalled)
     }
 
-    func testProcessCapturedImagePassesTheBakedImageToHandleBakedImage() throws {
+    func testProcessCapturedImagePassesTheBakedImageToSave() throws {
         let now = try fixedNow()
         let bakedImage = UIImage()
         var receivedImage: UIImage?
-        let handleExp = expectation(description: "handleBakedImage called")
+        let saveExp = expectation(description: "save called")
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in bakedImage },
-                                         handleBakedImage: { image, completion in
+                                         save: { image, completion in
                                              receivedImage = image
-                                             handleExp.fulfill()
-                                             completion()
+                                             saveExp.fulfill()
+                                             completion(.success(()))
                                          })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
-        wait(for: [handleExp], timeout: 2)
+        wait(for: [saveExp], timeout: 2)
         XCTAssertTrue(receivedImage === bakedImage)
-        XCTAssertNil(model.captureError)
     }
 
-    func testProcessCapturedImageResetsIsCapturingWhenHandleBakedImageCompletes() throws {
-        // 10.22: whatever `handleBakedImage` eventually becomes (the real
-        // save step, once `PhotoSaver` is wired in) must not leave the
-        // shutter permanently disabled once it calls back.
+    func testProcessCapturedImagePresentsSavedToastOnSaveSuccess() throws {
         let now = try fixedNow()
-        var storedCompletion: (() -> Void)?
-        let completionStored = expectation(description: "handleBakedImage completion captured")
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in UIImage() },
-                                         handleBakedImage: { _, completion in
+                                         save: { _, completion in completion(.success(())) })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.toastState != nil }
+        XCTAssertEqual(model.toastState?.message, "已儲存")
+        XCTAssertNil(model.captureError)
+        waitUntil { model.isCapturing == false }
+    }
+
+    func testProcessCapturedImageDownscalesTheThumbnailForTheToast() throws {
+        // Review-anticipated finding: the toast must not hold the
+        // full-resolution baked photo just to draw it at 44x44.
+        let now = try fixedNow()
+        let largeSize = CGSize(width: 1000, height: 800)
+        let large = UIGraphicsImageRenderer(size: largeSize).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: largeSize))
+        }
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in large },
+                                         save: { _, completion in completion(.success(())) })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.toastState != nil }
+        let thumbnail = try XCTUnwrap(model.toastState?.thumbnail)
+        XCTAssertLessThan(thumbnail.size.width, largeSize.width)
+        XCTAssertLessThan(thumbnail.size.height, largeSize.height)
+        XCTAssertEqual(max(thumbnail.size.width, thumbnail.size.height), 88, accuracy: 0.5)
+    }
+
+    func testProcessCapturedImageSurfacesCaptureErrorOnPermissionDenied() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.failure(.permissionDenied)) })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.captureError != nil }
+        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
+        XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
+        XCTAssertNil(model.toastState)
+        waitUntil { model.isCapturing == false }
+    }
+
+    func testProcessCapturedImageSurfacesCaptureErrorOnSaveFailed() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.failure(.saveFailed("磁碟空間不足"))) })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.captureError != nil }
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+        XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
+        XCTAssertNil(model.toastState)
+        waitUntil { model.isCapturing == false }
+    }
+
+    func testProcessCapturedImageResetsIsCapturingWhenSaveCompletes() throws {
+        // 10.22: `save` must not leave the shutter permanently disabled once
+        // it calls back, whichever way it resolves.
+        let now = try fixedNow()
+        var storedCompletion: ((Result<Void, PhotoSaveError>) -> Void)?
+        let completionStored = expectation(description: "save completion captured")
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in
                                              storedCompletion = completion
                                              completionStored.fulfill()
                                          })
@@ -968,14 +1032,14 @@ final class CameraScreenModelTests: XCTestCase {
 
         wait(for: [completionStored], timeout: 2)
 
-        // Not resolved yet: `handleBakedImage`'s own completion is still
-        // pending, deliberately not called above — `isCapturing` must still
-        // be `true` here, or this test would prove nothing about the reset
+        // Not resolved yet: `save`'s own completion is still pending,
+        // deliberately not called above — `isCapturing` must still be
+        // `true` here, or this test would prove nothing about the reset
         // below actually being *caused* by the completion firing.
         XCTAssertNotNil(storedCompletion)
         XCTAssertTrue(model.isCapturing)
 
-        storedCompletion?()
+        storedCompletion?(.success(()))
 
         waitUntil { model.isCapturing == false }
     }
