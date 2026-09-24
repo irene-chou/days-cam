@@ -22,10 +22,12 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.DaysCam
-        MARKETING_VERSION: "1.0"
+        MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
