@@ -167,12 +167,15 @@ extension DisplaySettingsModel {
 
 extension DisplaySettingsModel {
     func setPosition(_ newValue: OverlayPosition) {
-        guard newValue != profile.position else { return }
-        mutate { $0.position = newValue }
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        guard .anchor(newValue) != profile.position else { return }
+        mutate { $0.position = .anchor(newValue) }
     }
 
     func setThemeID(_ newValue: ThemeID) {
-        guard newValue != profile.themeID else { return }
-        mutate { $0.themeID = newValue }
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        let newStyle = OverlayStyle(legacyTheme: newValue)
+        guard newStyle != profile.style else { return }
+        mutate { $0.style = newStyle }
     }
 }

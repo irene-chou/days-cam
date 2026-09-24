@@ -284,14 +284,14 @@ final class DisplaySettingsModelTests: XCTestCase {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setPosition(.topLeading)
-        XCTAssertEqual(model.profile.position, .topLeading)
+        XCTAssertEqual(model.profile.position, .anchor(.topLeading))
     }
 
     func testSetThemeIDUpdatesProfile() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setThemeID(.retroOrange)
-        XCTAssertEqual(model.profile.themeID, .retroOrange)
+        XCTAssertEqual(model.profile.style, OverlayStyle(legacyTheme: .retroOrange))
     }
 
     // MARK: - A-6 持久化 (11.32–11.33)
@@ -304,8 +304,8 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setThemeID(.softPink)
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.showName, true)
-        XCTAssertEqual(spy.updated.last?.position, .topLeading)
-        XCTAssertEqual(spy.updated.last?.themeID, .softPink)
+        XCTAssertEqual(spy.updated.last?.position, .anchor(.topLeading))
+        XCTAssertEqual(spy.updated.last?.style, OverlayStyle(legacyTheme: .softPink))
     }
 
     func testDistinctModelsForDifferentProfilesDoNotShareState() throws {
@@ -314,8 +314,8 @@ final class DisplaySettingsModelTests: XCTestCase {
         let modelA = makeModel(profile: baselineProfile(name: "A"), now: try fixedNow(), spy: spyA)
         let modelB = makeModel(profile: baselineProfile(name: "B"), now: try fixedNow(), spy: spyB)
         modelA.setPosition(.topLeading)
-        XCTAssertEqual(modelA.profile.position, .topLeading)
-        XCTAssertEqual(modelB.profile.position, .bottomTrailing)
+        XCTAssertEqual(modelA.profile.position, .anchor(.topLeading))
+        XCTAssertEqual(modelB.profile.position, .anchor(.bottomTrailing))
     }
 
     // MARK: - Failure surfaces as lastError

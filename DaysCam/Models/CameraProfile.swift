@@ -20,6 +20,13 @@ enum CameraProfileValidationError: Error, Equatable {
     case unitPairNotOnSameTrack(largest: DisplayUnit, smallest: DisplayUnit)
     /// `useAgeWording` is on while `largestUnit` is not `.year` (invariant 5).
     case ageWordingRequiresYearUnit
+    /// `style.sizeScale` is outside 70...160 or not a multiple of 5 (PRD 0.2 §4.1).
+    case sizeScaleOutOfRange(Int)
+    /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
+    case customPositionOutOfRange(x: Double, y: Double)
+    /// `style.textColor` or `style.outlineColor` has a component outside 0...1
+    /// or is not fully opaque (PRD 0.2 §4.1).
+    case colorNotStorable
 }
 
 /// One saved set of overlay settings: what to print, how to count and how it looks.
@@ -57,10 +64,10 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var smallestUnit: DisplayUnit
     /// Whether years are printed as ages. Only valid when `largestUnit` is `.year`.
     var useAgeWording: Bool
-    /// Which of the nine anchor points the overlay is drawn at.
-    var position: OverlayPosition
-    /// Which preset theme the overlay is drawn with.
-    var themeID: ThemeID
+    /// Where the overlay is drawn: a grid anchor or a custom center point.
+    var position: OverlayPlacement
+    /// How the overlay looks (PRD 0.2 §4.2).
+    var style: OverlayStyle
     /// When this profile was created.
     var createdAt: Date
     /// When this profile was last modified.
@@ -80,8 +87,8 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          largestUnit: DisplayUnit = .day,
          smallestUnit: DisplayUnit = .day,
          useAgeWording: Bool = false,
-         position: OverlayPosition = .bottomTrailing,
-         themeID: ThemeID = .classicWhite,
+         position: OverlayPlacement = .default,
+         style: OverlayStyle = OverlayStyle(),
          createdAt: Date = Date(),
          updatedAt: Date = Date()) {
         self.id = id
@@ -95,7 +102,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.smallestUnit = smallestUnit
         self.useAgeWording = useAgeWording
         self.position = position
-        self.themeID = themeID
+        self.style = style
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -121,7 +128,8 @@ extension CameraProfile {
         return copy
     }
 
-    /// Throws if this profile violates any of the five invariants of PRD §4.1.
+    /// Throws if this profile violates any of the five invariants of PRD §4.1,
+    /// or the style and position invariants added by PRD 0.2 §4.1.
     ///
     /// Does not repair anything: a profile carrying a `timeZone` in `startDate`
     /// fails here. Call `normalized()` first to strip what can be stripped.
@@ -171,6 +179,18 @@ extension CameraProfile {
         if useAgeWording && largestUnit != .year {
             throw CameraProfileValidationError.ageWordingRequiresYearUnit
         }
+
+        guard style.hasValidSizeScale else {
+            throw CameraProfileValidationError.sizeScaleOutOfRange(style.sizeScale)
+        }
+
+        if case let .custom(x, y) = position, !position.isInRange {
+            throw CameraProfileValidationError.customPositionOutOfRange(x: x, y: y)
+        }
+
+        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true else {
+            throw CameraProfileValidationError.colorNotStorable
+        }
     }
 
     /// The normalized profile, or an error describing why it cannot be saved.
@@ -181,6 +201,61 @@ extension CameraProfile {
         let candidate = normalized()
         try candidate.validate(calendar: calendar)
         return candidate
+    }
+}
+
+// MARK: - Decoding, including 0.1 files
+
+extension CameraProfile {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, startDate, countingRule, showDayCount, showDate, showName
+        case largestUnit, smallestUnit, useAgeWording, position, style, createdAt, updatedAt
+    }
+
+    /// Keys that only 0.1 files carry. Read, never written.
+    private enum LegacyCodingKeys: String, CodingKey {
+        // 0.1 stored a preset theme name here; `style` replaces it.
+        case themeID
+    }
+
+    /// Decodes a profile in the 0.2 format or the 0.1 format (PRD 0.2 §4.3).
+    ///
+    /// A 0.1 record is converted rather than dropped: its `themeID` becomes the
+    /// closest `style` and its bare `position` string becomes `.anchor`. The
+    /// next write stores the new format, since encoding never emits `themeID`.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        startDate = try container.decode(DateComponents.self, forKey: .startDate)
+        countingRule = try container.decode(CountingRule.self, forKey: .countingRule)
+        showDayCount = try container.decode(Bool.self, forKey: .showDayCount)
+        showDate = try container.decode(Bool.self, forKey: .showDate)
+        showName = try container.decode(Bool.self, forKey: .showName)
+        largestUnit = try container.decode(DisplayUnit.self, forKey: .largestUnit)
+        smallestUnit = try container.decode(DisplayUnit.self, forKey: .smallestUnit)
+        useAgeWording = try container.decode(Bool.self, forKey: .useAgeWording)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+
+        // 0.1 wrote `position` as a bare string such as "bottomTrailing".
+        if let legacyPosition = try? container.decode(OverlayPosition.self, forKey: .position) {
+            position = .anchor(legacyPosition)
+        } else {
+            position = try container.decode(OverlayPlacement.self, forKey: .position)
+        }
+
+        if let decodedStyle = try container.decodeIfPresent(OverlayStyle.self, forKey: .style) {
+            style = decodedStyle
+        } else {
+            // 0.1 migration: map the preset theme name to its closest style.
+            // An unrecognized or missing name gets the default style instead of
+            // losing the profile (PRD 0.2 §4.3: never discard a profile).
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let legacyName = try? legacy.decodeIfPresent(String.self, forKey: .themeID)
+            style = legacyName.flatMap(ThemeID.init(rawValue:)).map(OverlayStyle.init(legacyTheme:))
+                ?? OverlayStyle()
+        }
     }
 }
 
