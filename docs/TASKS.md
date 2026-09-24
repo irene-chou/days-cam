@@ -1,12 +1,12 @@
 # DaysCam MVP 任務清單
 
-- 版本：v1.0
+- 版本：0.1
 - 日期：2026-09-19
 - 上游：[`docs/PRD.md`](./PRD.md)、`PROJECT_PLAN.md`、`CLAUDE.md`
 
 ---
 
-> **v2 介面改版的任務卡在 [`TASKS-v2-ui-redesign.md`](./TASKS-v2-ui-redesign.md)（TASK-17～30）**。本文件的部分 UI 驗收在 v2 之後失效，清單見該文件「事先預告」一節。
+> **0.2 介面改版的任務卡在 [`TASKS-0.2-ui-redesign.md`](./TASKS-0.2-ui-redesign.md)（TASK-17～30）**。本文件的部分 UI 驗收在 0.2 之後失效，清單見該文件「事先預告」一節。
 
 ## 怎麼用這份文件
 

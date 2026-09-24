@@ -114,7 +114,7 @@ button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
       <p>App 在每次存檔時記下那張照片在相簿裡的 ID，瀏覽時只讀這些 ID。在「照片」App 刪掉的照片會自動從清單消失。</p></div>
 
     <div class="item"><span class="tag chg">權限</span><h3>第一次點縮圖時才要讀取權限</h3>
-      <p>v1 只要「加入照片」權限。看照片需要讀取權限，所以第一次點左下縮圖時才跳系統詢問（不在開 App 時就問）。使用者選「限定照片」也能用：iOS 會自動讓 App 讀得到自己建立的照片（這點要在實作時實測確認）。被拒時顯示引導畫面＋「前往設定」。</p></div>
+      <p>0.1 只要「加入照片」權限。看照片需要讀取權限，所以第一次點左下縮圖時才跳系統詢問（不在開 App 時就問）。使用者選「限定照片」也能用：iOS 會自動讓 App 讀得到自己建立的照片（這點要在實作時實測確認）。被拒時顯示引導畫面＋「前往設定」。</p></div>
 
     <div class="item"><span class="tag">縮圖</span><h3>相機畫面左下的縮圖</h3>
       <p>剛拍完的照片直接用記憶體裡的烘焙結果當縮圖，不需要讀取權限。重開 App 後，有讀取權限就顯示最新一張，沒有就顯示相片圖示。</p></div>
@@ -125,7 +125,7 @@ button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
     <div class="item"><span class="tag">刪除</span><h3>只有刪除，沒有分享、編輯</h3>
       <p>右下垃圾桶刪除，確認框由 iOS 系統跳出（系統規定，App 無法自訂）。刪除會從相簿移到「最近刪除」。分享、編輯、收藏不做：社群分享仍是非目標，其他交給「照片」App。</p></div>
 
-    <div class="item"><span class="tag chg">推翻 v1</span><h3>解除「存檔後預覽頁」非目標</h3>
+    <div class="item"><span class="tag chg">推翻 0.1</span><h3>解除「存檔後預覽頁」非目標</h3>
       <p>拍完照仍然不自動跳到預覽頁，留在相機畫面；只有使用者主動點縮圖才進入瀏覽。相簿權限從「只加入」改成「讀寫」。</p></div>
   </section>
 </div>
