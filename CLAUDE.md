@@ -53,3 +53,5 @@
 - `PROJECT_PLAN.md`:整體規劃、MVP 範圍、agent 團隊架構、路線圖
 - `docs/PRD.md`:詳細產品需求規格(由 PM teammate 產出)
 - `docs/ARCHITECTURE.md`:技術架構文件(視需要由 Dev teammate 或 Docs teammate 補上)
+- `docs/PRD-0.2-ui-redesign.md`、`docs/TASKS-0.2-ui-redesign.md`:0.2 介面改版的規格與任務卡;`docs/design/` 為定案設計稿
+- `.claude/agents/`:各 teammate 的角色定義(職責、擁有的檔案、模型),spawn 時指定對應的 agent type
