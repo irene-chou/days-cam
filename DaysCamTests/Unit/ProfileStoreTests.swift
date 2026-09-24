@@ -86,8 +86,8 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(seeded.largestUnit, .day, "3.2")
         XCTAssertEqual(seeded.smallestUnit, .day, "3.2")
         XCTAssertFalse(seeded.useAgeWording, "3.2")
-        XCTAssertEqual(seeded.position, .bottomTrailing, "3.2")
-        XCTAssertEqual(seeded.themeID, .classicWhite, "3.2")
+        XCTAssertEqual(seeded.position, .anchor(.bottomTrailing), "3.2")
+        XCTAssertEqual(seeded.style, OverlayStyle(legacyTheme: .classicWhite), "3.2")
     }
 
     /// The seeded profile must print 第 1 天 on its first day, which is the

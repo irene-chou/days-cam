@@ -43,6 +43,14 @@ extension CameraProfileValidationError {
             return "天數單位組合不正確"
         case .ageWordingRequiresYearUnit:
             return "歲的措辭只能在最大單位為年時使用"
+        // TASK-17: 0.2 style and position invariants (PRD 0.2 §4.1). The 0.1 UI
+        // cannot produce these; wording to be reviewed with the 0.2 panels.
+        case .sizeScaleOutOfRange:
+            return "字級超出範圍"
+        case .customPositionOutOfRange:
+            return "位置超出範圍"
+        case .colorNotStorable:
+            return "顏色不正確"
         }
     }
 }
