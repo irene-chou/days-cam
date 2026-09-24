@@ -372,6 +372,112 @@ final class OverlayRendererTests: XCTestCase {
     }
 }
 
+// MARK: - TASK-18: style and placement
+
+/// Covers TASK-18 18.4 and 18.7 ... 18.10: baking with `OverlayStyle` and
+/// `OverlayPlacement` (PRD 0.2 FR-10, FR-12).
+final class OverlayRendererStyleTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "第 10 天"
+    /// Dark text with no decoration, so ink is easy to find on white.
+    private let plainDark = OverlayStyle(textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
+                                         outline: .none, shadow: .none)
+
+    func testUndecoratedStyleStillBakesVisibleText() throws {
+        XCTAssertTrue(OverlayTheme(style: plainDark).decorations.isEmpty, "18.4")
+        let grid = try bakedGrid(style: plainDark, placement: .anchor(.bottomTrailing))
+        XCTAssertTrue(grid.contains(in: PixelRegion(x: 600...1190, y: 1300...1590)) { $0.distance(to: .white) > 30 },
+                      "18.4: text area has ink")
+    }
+
+    /// 18.7: the "text box" is measured as the drawn box of a solid-box style,
+    /// which is exactly the laid-out block. Glyph ink alone is not symmetric
+    /// about the line box, so it cannot be held to ±3px.
+    func testCustomCenterPlacesTheBoxCenterAtThatPoint() throws {
+        let box = try solidBoxBounds(placement: .custom(x: 0.5, y: 0.5))
+        XCTAssertEqual(box.midX, 1512, accuracy: 3, "18.7")
+        XCTAssertEqual(box.midY, 2016, accuracy: 3, "18.7")
+    }
+
+    /// 18.8: a center at the far corner is clamped so the whole box stays one
+    /// 4% margin (120.96px) inside the photo.
+    func testCustomCornerIsClampedIntoTheMargin() throws {
+        let box = try solidBoxBounds(placement: .custom(x: 1.0, y: 1.0))
+        XCTAssertEqual(box.maxX, 3024 - 121, accuracy: 3, "18.8")
+        XCTAssertEqual(box.maxY, 4032 - 121, accuracy: 3, "18.8")
+    }
+
+    func testCustomOriginClampsIntoTheMarginOnTheLeadingEdgesToo() throws {
+        let box = try solidBoxBounds(placement: .custom(x: 0, y: 0))
+        XCTAssertEqual(box.minX, 121, accuracy: 3)
+        XCTAssertEqual(box.minY, 121, accuracy: 3)
+    }
+
+    func testEveryFontBakesVisibleText() throws {
+        for fontID in OverlayFontID.allCases {
+            var style = plainDark
+            style.fontID = fontID
+            let grid = try bakedGrid(style: style, placement: .anchor(.middleCenter))
+            XCTAssertTrue(grid.contains(in: PixelRegion(x: 200...1000, y: 600...1000)) { $0.distance(to: .white) > 30 },
+                          "18.9: \(fontID) drew nothing")
+        }
+    }
+
+    func testEveryShadowAndOutlineCombinationBakes() throws {
+        for shadow in OverlayShadow.allCases {
+            for outline in OverlayOutline.allCases {
+                let style = OverlayStyle(textColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
+                                         outline: outline, shadow: shadow)
+                let grid = try bakedGrid(style: style, placement: .anchor(.middleCenter))
+                XCTAssertTrue(grid.contains(in: PixelRegion(x: 200...1000, y: 600...1000)) { $0.distance(to: .white) > 30 },
+                              "18.10: \(outline) + \(shadow) drew nothing")
+            }
+        }
+    }
+
+    func testSizeScaleEnlargesTheBakedText() throws {
+        var small = plainDark
+        small.sizeScale = 70
+        var large = plainDark
+        large.sizeScale = 160
+        let smallInk = try XCTUnwrap(bakedGrid(style: small, placement: .anchor(.middleCenter))
+            .bounds(in: PixelRegion(x: 0...1199, y: 0...1599)) { $0.distance(to: .white) > 30 })
+        let largeInk = try XCTUnwrap(bakedGrid(style: large, placement: .anchor(.middleCenter))
+            .bounds(in: PixelRegion(x: 0...1199, y: 0...1599)) { $0.distance(to: .white) > 30 })
+        XCTAssertEqual(largeInk.width / smallInk.width, 160.0 / 70.0, accuracy: 0.15)
+    }
+
+    // MARK: Helpers
+
+    private func bakedGrid(style: OverlayStyle,
+                           placement: OverlayPlacement,
+                           width: Int = 1200,
+                           height: Int = 1600) throws -> PixelGrid {
+        let output = try XCTUnwrap(renderer.bake(image: try whiteImage(width: width, height: height),
+                                                 text: text, style: style, placement: placement),
+                                   "bake returned nil")
+        return try XCTUnwrap(PixelGrid(output))
+    }
+
+    /// Bounds of a black solid box baked on a 3024x4032 white photo.
+    private func solidBoxBounds(placement: OverlayPlacement) throws -> CGRect {
+        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none)
+        let grid = try bakedGrid(style: style, placement: placement, width: 3024, height: 4032)
+        return try XCTUnwrap(grid.bounds(in: PixelRegion(x: 0...3023, y: 0...4031)) { $0.distance(to: .white) > 128 })
+    }
+
+    private func whiteImage(width: Int, height: Int) throws -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+}
+
 // MARK: - Pixel reading
 
 /// An 8-bit sRGB color, compared exactly.

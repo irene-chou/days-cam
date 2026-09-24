@@ -119,103 +119,79 @@ enum OverlayDecoration: Equatable, Hashable {
     case stroke(color: OverlayColor, width: Double)
 }
 
-/// The system font family a theme draws with.
+/// The drawing values for one `OverlayStyle`: font, fill color and the
+/// decorations wrapped around the text (PRD 0.2 FR-10).
 ///
-/// Only system fonts are used; no font file is bundled (PRD FR-4.10).
-enum OverlayFontDesign: String, Codable, CaseIterable {
-    case system
-    case rounded
-    case monospaced
-}
-
-/// The weight a theme draws its text at.
-enum OverlayFontWeight: String, Codable, CaseIterable {
-    case regular
-    case semibold
-    case bold
-}
-
-/// One of the five preset looks: a fixed font, color and decoration combination
-/// that the user switches as a whole (PRD §3.4).
-///
-/// This type is pure data on purpose, so that the SwiftUI viewfinder overlay and
+/// Pure data derived from the style, so that the SwiftUI viewfinder overlay and
 /// the `UIGraphicsImageRenderer` baking path read the same numbers instead of
-/// each hard-coding their own. Anything that needs to measure text lives in
-/// `OverlayMetrics`.
-struct OverlayTheme: Equatable, Hashable, Identifiable {
-    let id: ThemeID
-    /// Name shown in the theme picker, in Traditional Chinese.
-    let displayName: String
-    let fontDesign: OverlayFontDesign
-    let fontWeight: OverlayFontWeight
+/// each hard-coding their own. Every decoration constant lives here and nowhere
+/// else (TASK-18 18.11). Constants are stated at a 17pt font and scaled by
+/// `OverlayMetrics.decorationScale(forFontSize:)` when drawn. Anything that
+/// needs to measure text lives in `OverlayMetrics`.
+struct OverlayTheme: Equatable, Hashable {
+    /// The style this theme was derived from.
+    let style: OverlayStyle
+    /// The font the text is drawn in.
+    let fontID: OverlayFontID
+    /// The fill color of the glyphs.
     let textColor: OverlayColor
-    /// At least one entry for every theme (PRD FR-4.6).
+    /// Outline first, then shadow, applied in array order: the shadow is cast
+    /// by the outlined or boxed text as a whole. Empty when both outline and
+    /// shadow are `.none` (FR-10.10).
     let decorations: [OverlayDecoration]
 
-    /// Every theme, in the order of the PRD §3.4 table.
-    static let all: [OverlayTheme] = [
-        OverlayTheme(
-            id: .classicWhite,
-            displayName: "經典白",
-            fontDesign: .rounded,
-            fontWeight: .bold,
-            textColor: .white,
-            decorations: [
-                .shadow(offset: CGSize(width: 0, height: 2), blur: 4, opacity: 0.6, color: .black)
-            ]
-        ),
-        OverlayTheme(
-            id: .retroOrange,
-            displayName: "復古橘",
-            fontDesign: .monospaced,
-            fontWeight: .bold,
-            textColor: OverlayColor(red8: 255, green8: 149, blue8: 0),
-            decorations: [
-                .shadow(offset: CGSize(width: 0, height: 1), blur: 3, opacity: 0.8, color: .black)
-            ]
-        ),
-        OverlayTheme(
-            id: .filmStrip,
-            displayName: "底片邊條",
-            fontDesign: .monospaced,
-            fontWeight: .bold,
-            textColor: .white,
-            decorations: [
-                .backgroundBox(color: .black,
-                               opacity: 0.45,
-                               cornerRadius: 8,
-                               insets: OverlayInsets(horizontal: 12, vertical: 6))
-            ]
-        ),
-        OverlayTheme(
-            id: .minimalDark,
-            displayName: "極簡黑",
-            fontDesign: .system,
-            fontWeight: .semibold,
-            textColor: OverlayColor(red8: 28, green8: 28, blue8: 30),
-            decorations: [
-                .backgroundBox(color: .white,
-                               opacity: 0.7,
-                               cornerRadius: 8,
-                               insets: OverlayInsets(horizontal: 12, vertical: 6))
-            ]
-        ),
-        OverlayTheme(
-            id: .softPink,
-            displayName: "柔粉",
-            fontDesign: .rounded,
-            fontWeight: .bold,
-            textColor: OverlayColor(red8: 255, green8: 107, blue8: 157),
-            decorations: [
-                .stroke(color: .white, width: 2),
-                .shadow(offset: CGSize(width: 0, height: 1), blur: 2, opacity: 0.3, color: .black)
-            ]
-        )
-    ]
+    /// Derives the drawing values for `style`. Outlines and boxes use
+    /// `style.resolvedOutlineColor`.
+    init(style: OverlayStyle) {
+        self.style = style
+        fontID = style.fontID
+        textColor = style.textColor
+        decorations = [Self.outlineDecoration(for: style), Self.shadowDecoration(for: style)].compactMap { $0 }
+    }
 
-    /// The theme for `id`, falling back to the default `classicWhite` so that a
-    /// lookup never fails and never force-unwraps.
-    static func theme(for id: ThemeID) -> OverlayTheme {
-        all.first { $0.id == id } ?? all[0]
+    // MARK: Decoration constants (PRD 0.2 FR-10, at a 17pt font)
+
+    /// Stroke width of `.thinStroke`.
+    static let thinStrokeWidth: Double = 2
+    /// Stroke width of `.thickStroke`.
+    static let thickStrokeWidth: Double = 4
+    /// Box opacity of `.translucentBox`.
+    static let translucentBoxOpacity: Double = 0.5
+    /// Box opacity of `.solidBox`.
+    static let solidBoxOpacity: Double = 1.0
+    /// Corner radius of both boxes.
+    static let boxCornerRadius: Double = 8
+    /// Padding inside both boxes.
+    static let boxInsets = OverlayInsets(horizontal: 12, vertical: 6)
+
+    private static func outlineDecoration(for style: OverlayStyle) -> OverlayDecoration? {
+        let color = style.resolvedOutlineColor
+        switch style.outline {
+        case .none:
+            return nil
+        case .thinStroke:
+            return .stroke(color: color, width: thinStrokeWidth)
+        case .thickStroke:
+            return .stroke(color: color, width: thickStrokeWidth)
+        case .translucentBox:
+            return .backgroundBox(color: color, opacity: translucentBoxOpacity,
+                                  cornerRadius: boxCornerRadius, insets: boxInsets)
+        case .solidBox:
+            return .backgroundBox(color: color, opacity: solidBoxOpacity,
+                                  cornerRadius: boxCornerRadius, insets: boxInsets)
+        }
+    }
+
+    private static func shadowDecoration(for style: OverlayStyle) -> OverlayDecoration? {
+        switch style.shadow {
+        case .none:
+            return nil
+        case .soft:
+            return .shadow(offset: CGSize(width: 0, height: 2), blur: 4, opacity: 0.6, color: .black)
+        case .hard:
+            return .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black)
+        case .glow:
+            return .shadow(offset: .zero, blur: 8, opacity: 0.9, color: style.textColor)
+        }
     }
 }

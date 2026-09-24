@@ -30,7 +30,7 @@ struct OverlayRenderer {
     ///
     /// Returns nil only when the image has no pixels to draw into; the caller
     /// treats nil as a baking failure and does not save the photo.
-    func bake(image: UIImage, text: String, theme: OverlayTheme, position: OverlayPosition) -> UIImage? {
+    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement) -> UIImage? {
         let pixelSize = CGSize(width: image.size.width * image.scale,
                                height: image.size.height * image.scale)
         guard pixelSize.width >= 1, pixelSize.height >= 1 else { return nil }
@@ -52,11 +52,19 @@ struct OverlayRenderer {
             image.draw(in: CGRect(origin: .zero, size: pixelSize))
 
             guard !text.isEmpty else { return }
-            let layout = OverlayLayout(text: text, theme: theme, frameSize: pixelSize)
+            let layout = OverlayLayout(text: text, style: style, frameSize: pixelSize)
             let block = layout.decoratedText()
-            let origin = layout.origin(for: block.size, at: position)
+            let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
             block.draw(rendererContext.cgContext, origin)
         }
+    }
+
+    /// TEMP(TASK-18): adapter until TASK-21/24 replaces this view layer.
+    ///
+    /// The 0.1 signature `CameraScreenModel` still calls; draws exactly what
+    /// the new signature draws for the theme's style at that anchor.
+    func bake(image: UIImage, text: String, theme: OverlayTheme, position: OverlayPosition) -> UIImage? {
+        bake(image: image, text: text, style: theme.style, placement: .anchor(position))
     }
 }
 
@@ -75,14 +83,14 @@ private struct OverlayLayout {
     let decorationScale: CGFloat
     let font: UIFont
 
-    init(text: String, theme: OverlayTheme, frameSize: CGSize) {
+    init(text: String, style: OverlayStyle, frameSize: CGSize) {
         self.text = text
-        self.theme = theme
+        self.theme = OverlayTheme(style: style)
         self.frameSize = frameSize
 
         let shortEdge = min(frameSize.width, frameSize.height)
         margin = OverlayMetrics.margin(forShortEdge: shortEdge)
-        let baseFontSize = OverlayMetrics.baseFontSize(forShortEdge: shortEdge)
+        let baseFontSize = OverlayMetrics.baseFontSize(forShortEdge: shortEdge, sizeScale: style.sizeScale)
         // Same as the viewfinder: the fit is against the text alone, not the
         // text plus any background box insets.
         let availableWidth = max(0, frameSize.width - margin * 2)
@@ -91,37 +99,12 @@ private struct OverlayLayout {
                                                  baseFontSize: baseFontSize,
                                                  availableWidth: availableWidth)
         decorationScale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-        font = OverlayMetrics.font(for: theme, size: fontSize)
-    }
-
-    /// Top-left corner for a block of `size` at one of the nine anchor
-    /// points: one margin in from the edges it hugs, centred on the axes it
-    /// does not (PRD FR-4.3). A block too wide for the margins at the 60% font
-    /// floor runs into them rather than being clipped (FR-4.8).
-    func origin(for size: CGSize, at position: OverlayPosition) -> CGPoint {
-        let leading = margin
-        let centerX = (frameSize.width - size.width) / 2
-        let trailing = frameSize.width - margin - size.width
-        let top = margin
-        let centerY = (frameSize.height - size.height) / 2
-        let bottom = frameSize.height - margin - size.height
-
-        switch position {
-        case .topLeading: return CGPoint(x: leading, y: top)
-        case .topCenter: return CGPoint(x: centerX, y: top)
-        case .topTrailing: return CGPoint(x: trailing, y: top)
-        case .middleLeading: return CGPoint(x: leading, y: centerY)
-        case .middleCenter: return CGPoint(x: centerX, y: centerY)
-        case .middleTrailing: return CGPoint(x: trailing, y: centerY)
-        case .bottomLeading: return CGPoint(x: leading, y: bottom)
-        case .bottomCenter: return CGPoint(x: centerX, y: bottom)
-        case .bottomTrailing: return CGPoint(x: trailing, y: bottom)
-        }
+        font = OverlayMetrics.font(for: style.fontID, size: fontSize)
     }
 
     /// The text with every one of the theme's decorations wrapped around it,
     /// in array order — the same nesting `OverlayTextView.decoratedText`
-    /// builds, so `softPink`'s shadow is cast by the stroked text as a whole.
+    /// builds, so a shadow is cast by the stroked or boxed text as a whole.
     func decoratedText() -> DrawingBlock {
         let textSize = (text as NSString).size(withAttributes: [.font: font])
         let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(theme.textColor)]

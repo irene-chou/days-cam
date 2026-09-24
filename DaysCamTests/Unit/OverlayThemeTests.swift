@@ -75,14 +75,14 @@ final class OverlayThemeTests: XCTestCase {
         XCTAssertEqual(softPink.blue, 157.0 / 255.0, accuracy: 0.01)
     }
 
-    func testFontDesignsAndWeightsMatchTheSpecification() {
-        XCTAssertEqual(OverlayTheme.theme(for: .classicWhite).fontDesign, .rounded)
-        XCTAssertEqual(OverlayTheme.theme(for: .classicWhite).fontWeight, .bold)
-        XCTAssertEqual(OverlayTheme.theme(for: .retroOrange).fontDesign, .monospaced)
-        XCTAssertEqual(OverlayTheme.theme(for: .filmStrip).fontDesign, .monospaced)
-        XCTAssertEqual(OverlayTheme.theme(for: .minimalDark).fontDesign, .system)
-        XCTAssertEqual(OverlayTheme.theme(for: .minimalDark).fontWeight, .semibold)
-        XCTAssertEqual(OverlayTheme.theme(for: .softPink).fontDesign, .rounded)
+    /// 0.2 §4.3: the five 0.1 themes now draw with the migrated style's font.
+    /// `minimalDark` changes from semibold SF Pro to bold SF Pro (A-2).
+    func testLegacyThemeFontsFollowTheMigrationTable() {
+        XCTAssertEqual(OverlayTheme.theme(for: .classicWhite).fontID, .sfRounded)
+        XCTAssertEqual(OverlayTheme.theme(for: .retroOrange).fontID, .sfMono)
+        XCTAssertEqual(OverlayTheme.theme(for: .filmStrip).fontID, .sfMono)
+        XCTAssertEqual(OverlayTheme.theme(for: .minimalDark).fontID, .sfPro)
+        XCTAssertEqual(OverlayTheme.theme(for: .softPink).fontID, .sfRounded)
     }
 
     func testLookupCoversEveryThemeIdentifier() {
@@ -97,5 +97,77 @@ final class OverlayThemeTests: XCTestCase {
         XCTAssertEqual(orange.green, 149.0 / 255.0, accuracy: 0.0001)
         XCTAssertEqual(orange.blue, 0.0, accuracy: 0.0001)
         XCTAssertEqual(orange.opacity, 1.0, accuracy: 0.0001)
+    }
+}
+
+/// Covers TASK-18 18.1 ... 18.4 (decorations half): `OverlayTheme(style:)`
+/// against the PRD 0.2 FR-10 decoration table.
+final class OverlayThemeStyleTests: XCTestCase {
+
+    private let softShadow = OverlayDecoration.shadow(offset: CGSize(width: 0, height: 2), blur: 4,
+                                                      opacity: 0.6, color: .black)
+    private let dark = OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E)
+    private let blue = OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
+    private let insets = OverlayInsets(horizontal: 12, vertical: 6)
+
+    func testDefaultStyleHasExactlyTheSoftShadow() {
+        XCTAssertEqual(OverlayTheme(style: OverlayStyle()).decorations, [softShadow], "18.1")
+    }
+
+    func testSolidBoxWithAutomaticColorUsesTheContrastColor() {
+        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: nil, shadow: .none)
+        XCTAssertEqual(OverlayTheme(style: style).decorations,
+                       [.backgroundBox(color: dark, opacity: 1.0, cornerRadius: 8, insets: insets)], "18.2")
+    }
+
+    func testSolidBoxWithExplicitColorUsesIt() {
+        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: blue, shadow: .none)
+        XCTAssertEqual(OverlayTheme(style: style).decorations,
+                       [.backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets)], "18.3")
+    }
+
+    func testNoOutlineAndNoShadowHasNoDecorations() {
+        XCTAssertTrue(OverlayTheme(style: OverlayStyle(outline: .none, shadow: .none)).decorations.isEmpty, "18.4")
+    }
+
+    func testEveryOutlineMatchesTheConstantTable() {
+        let expected: [OverlayOutline: OverlayDecoration] = [
+            .thinStroke: .stroke(color: blue, width: 2),
+            .thickStroke: .stroke(color: blue, width: 4),
+            .translucentBox: .backgroundBox(color: blue, opacity: 0.5, cornerRadius: 8, insets: insets),
+            .solidBox: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets)
+        ]
+        for outline in OverlayOutline.allCases {
+            let theme = OverlayTheme(style: OverlayStyle(outline: outline, outlineColor: blue, shadow: .none))
+            XCTAssertEqual(theme.decorations.first, expected[outline], "\(outline)")
+        }
+    }
+
+    func testEveryShadowMatchesTheConstantTable() {
+        let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
+        let expected: [OverlayShadow: OverlayDecoration] = [
+            .soft: softShadow,
+            .hard: .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black),
+            .glow: .shadow(offset: .zero, blur: 8, opacity: 0.9, color: pink)
+        ]
+        for shadow in OverlayShadow.allCases {
+            let theme = OverlayTheme(style: OverlayStyle(textColor: pink, outline: .none, shadow: shadow))
+            XCTAssertEqual(theme.decorations.first, expected[shadow], "\(shadow)")
+        }
+    }
+
+    /// The outline comes first so the shadow is cast by the outlined text.
+    func testOutlineIsAppliedBeforeShadow() {
+        let theme = OverlayTheme(style: OverlayStyle(outline: .thinStroke, shadow: .soft))
+        XCTAssertEqual(theme.decorations.count, 2)
+        XCTAssertEqual(theme.decorations.last, softShadow)
+    }
+
+    func testThemeCarriesFontAndTextColorFromTheStyle() {
+        let style = OverlayStyle(fontID: .didot, textColor: blue)
+        let theme = OverlayTheme(style: style)
+        XCTAssertEqual(theme.fontID, .didot)
+        XCTAssertEqual(theme.textColor, blue)
+        XCTAssertEqual(theme.style, style)
     }
 }
