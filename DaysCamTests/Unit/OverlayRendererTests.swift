@@ -450,14 +450,24 @@ final class OverlayRendererStyleTests: XCTestCase {
 
     // MARK: Helpers
 
+    /// Bakes and reads the pixels back inside an autorelease pool.
+    ///
+    /// Without the pool, each 3024x4032 round trip leaves ~70 MB of
+    /// autoreleased image memory alive until the test method ends (measured:
+    /// 94 → 164 → 234 … MB over consecutive calls; flat 24 MB with the pool).
+    /// Across this class and repeated runs that grew until the simulator
+    /// killed the test host (`Test crashed with signal kill`), which surfaced
+    /// as an intermittent failure of whichever large-image test was running.
     private func bakedGrid(style: OverlayStyle,
                            placement: OverlayPlacement,
                            width: Int = 1200,
                            height: Int = 1600) throws -> PixelGrid {
-        let output = try XCTUnwrap(renderer.bake(image: try whiteImage(width: width, height: height),
-                                                 text: text, style: style, placement: placement),
-                                   "bake returned nil")
-        return try XCTUnwrap(PixelGrid(output))
+        try autoreleasepool {
+            let output = try XCTUnwrap(renderer.bake(image: try whiteImage(width: width, height: height),
+                                                     text: text, style: style, placement: placement),
+                                       "bake returned nil")
+            return try XCTUnwrap(PixelGrid(output))
+        }
     }
 
     /// Bounds of a black solid box baked on a 3024x4032 white photo.
