@@ -1,0 +1,456 @@
+<title>DaysCam 設定檔面板 D-2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+:root{
+  --ground:#F3EFEA; --ink:#221F1C; --muted:#6B645D; --line:#DDD5CC; --card:#FBF8F5;
+  --accent:#C9772A; --accent-ink:#FFFFFF; --tag:#F8E6D2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+    --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+  --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"Noto Sans TC",-apple-system,"PingFang TC",sans-serif;font-size:15px;line-height:1.6;padding-inline:16px;padding-block:28px 48px}
+.wrap{max-width:1060px;margin:0 auto;display:grid;grid-template-columns:auto minmax(0,1fr);gap:40px;align-items:start}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr);justify-items:center}}
+header{max-width:1060px;margin:0 auto 24px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+h1{font-size:24px;margin:2px 0 6px;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:64ch}
+.stage{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%}
+.legend{font-size:12.5px;color:var(--muted);text-align:center;max-width:360px}
+
+/* ===== phone (DaysCam theme tokens) ===== */
+.phone{
+  --cam-bg:#F7F3EE; --fill:rgba(42,38,34,.07); --fill-strong:rgba(42,38,34,.12); --t1:#2A2622; --t2:rgba(42,38,34,.62); --t3:rgba(42,38,34,.38); --hair:rgba(42,38,34,.10);
+  --apricot:#FFC27A; --apricot-ink:#2A1A08; --danger:#E0503F; --sheet:rgba(255,255,255,.82);
+  --r-vf:20px; --r-sheet:28px; --r-ctl:14px; --r-seg:10px;
+  --spring:cubic-bezier(.34,1.3,.5,1);
+  width:360px;max-width:100%;aspect-ratio:390/844;background:#000;border-radius:48px;padding:10px;box-shadow:0 0 0 2px #2b2f33,0 24px 60px rgba(0,0,0,.25);position:relative;overflow:hidden;color:var(--t1);
+  font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none}
+.screen{position:absolute;inset:10px;border-radius:38px;overflow:hidden;background:var(--cam-bg);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:13px;font-weight:700;flex:none}
+.status svg{display:block}
+.island{width:96px;height:28px;background:#000;border-radius:20px;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:5}
+.top{height:48px;flex:none;display:flex;align-items:center;justify-content:center}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--fill);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:0;color:var(--t1);font:inherit;font-size:14px;font-weight:700;padding:7px 14px;border-radius:999px;cursor:pointer;transition:transform .2s var(--spring)}
+.chip:active{transform:scale(.94)}
+button:focus-visible{outline:2px solid var(--apricot);outline-offset:3px}
+
+.vf{margin:0 8px;width:calc(100% - 16px);border-radius:var(--r-vf);aspect-ratio:3/4;position:relative;overflow:hidden;flex:none;cursor:pointer}
+.scene{position:absolute;inset:0;background:
+  radial-gradient(60% 45% at 30% 70%,rgba(255,214,150,.55),transparent 70%),
+  radial-gradient(40% 30% at 72% 38%,rgba(255,255,255,.35),transparent 70%),
+  linear-gradient(180deg,#8FB3C9 0%,#B9C9C8 42%,#C9B79A 58%,#8C7A5E 100%)}
+.scene::after{content:"";position:absolute;left:18%;bottom:14%;width:44%;height:40%;border-radius:48% 52% 10% 10%/60% 60% 10% 10%;background:linear-gradient(180deg,#6E5A45,#4A3C2E);opacity:.55;filter:blur(1px)}
+.overlay{position:absolute;right:4%;bottom:4%;font-size:21px;pointer-events:none;white-space:nowrap;transition:all .25s var(--spring)}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.flash.on{opacity:.85;transition:none}
+
+/* overlay style presets */
+.s-classic{font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c",sans-serif;font-weight:800;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.s-retro{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-weight:700;color:#FF9500;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.s-film{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-weight:700;color:#fff;background:rgba(0,0,0,.45);padding:.28em .6em;border-radius:.4em}
+.s-minimal{font-family:-apple-system,"PingFang TC",sans-serif;font-weight:600;color:#1C1C1E;background:rgba(255,255,255,.7);padding:.28em .6em;border-radius:.4em}
+.s-pink{font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c",sans-serif;font-weight:800;color:#FF6B9D;-webkit-text-stroke:3px #fff;paint-order:stroke fill;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+
+/* bottom area */
+.bottom{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:16px;min-height:0}
+.row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 22px}
+.shutter{width:76px;height:76px;border-radius:50%;border:4px solid #EADFD3;background:transparent;padding:4px;cursor:pointer}
+.shutter span{display:block;width:100%;height:100%;border-radius:50%;background:var(--apricot);box-shadow:0 2px 8px rgba(201,119,42,.35);transition:transform .2s var(--spring)}
+.shutter:active span{transform:scale(.88)}
+.side{justify-self:center;background:transparent;border:0;color:var(--t2);font:inherit;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:11px;transition:transform .2s var(--spring)}
+.side:active{transform:scale(.94)}
+.bubble{width:50px;height:50px;border-radius:50%;background:var(--fill);display:grid;place-items:center}
+.style-tile{width:54px;height:54px;border-radius:var(--r-ctl);background:linear-gradient(135deg,#8C99A0,#4A4540);display:grid;place-items:center;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55);overflow:hidden}
+.style-tile b{font-size:17px;line-height:1}
+.style-tile b.s-film,.style-tile b.s-minimal{font-size:14px}
+
+/* panel sheet */
+.panel{display:none}
+.l2 .panel.p2{display:flex}
+.l2 .row{display:none}
+.l2 .bottom{justify-content:stretch;padding:8px 6px 8px}
+.p2{flex-direction:column;flex:1;min-height:0;background:var(--sheet);-webkit-backdrop-filter:blur(24px) saturate(1.4);backdrop-filter:blur(24px) saturate(1.4);border-radius:var(--r-sheet);box-shadow:0 -4px 24px rgba(60,40,20,.10),inset 0 0 0 .5px rgba(42,38,34,.06);animation:rise .35s var(--spring)}
+@keyframes rise{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.grab{width:36px;height:5px;border-radius:3px;background:var(--t3);margin:7px auto 0}
+.tabs{display:flex;gap:4px;align-items:center;padding:8px 10px 8px;border-bottom:1px solid var(--hair)}
+.tab{flex:1 1 auto;padding-inline:4px!important;white-space:nowrap;background:transparent;border:0;color:var(--t2);font:inherit;font-size:13px;font-weight:700;padding:6px 0;border-radius:var(--r-seg);cursor:pointer;transition:background .2s,color .2s}
+.tab[aria-selected="true"]{color:var(--t1);background:var(--fill-strong)}
+.check{margin-left:6px;white-space:nowrap;background:var(--apricot);color:var(--apricot-ink);border:0;border-radius:999px;font:inherit;font-size:13px;font-weight:800;padding:6px 14px;cursor:pointer}
+.tabbody{flex:1;min-height:0;overflow:auto;padding:12px 14px;font-size:13px;color:var(--t2)}
+.ph{height:100%;display:grid;place-items:center;text-align:center}
+.ph strong{display:block;color:var(--t1);font-size:14px;margin-bottom:4px}
+.presets{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.presets::-webkit-scrollbar{display:none}
+.pre{flex:none;display:flex;flex-direction:column;align-items:center;gap:5px;background:transparent;border:0;color:var(--t2);font:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:0}
+.pre .sw{width:56px;height:56px;border-radius:var(--r-ctl);display:grid;place-items:center;background:linear-gradient(180deg,#8FB3C9,#C9B79A 60%,#8C7A5E);box-shadow:inset 0 0 0 0 var(--apricot);transition:box-shadow .15s}
+.pre .sw b{font-size:15px}
+.pre[aria-pressed="true"]{color:var(--t1)}
+.pre[aria-pressed="true"] .sw{box-shadow:inset 0 0 0 2.5px var(--apricot)}
+.sub{font-size:11.5px;color:var(--t3);margin:10px 0 0}
+.form{display:flex;flex-direction:column;border-radius:var(--r-ctl);background:var(--fill);overflow:hidden}
+.field{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:14px;color:var(--t1)}
+.field+.field{border-top:1px solid var(--hair)}
+.field span:last-child{color:var(--t2)}
+.field .val{color:var(--apricot);font-weight:700}
+
+/* menu + dialog + toast */
+.menu{position:absolute;z-index:8;box-shadow:0 12px 36px rgba(60,40,20,.18);background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border-radius:var(--r-ctl);overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.5);animation:pop .22s var(--spring);transform-origin:top center}
+@keyframes pop{from{opacity:0;transform:translateX(-50%) scale(.92)}to{opacity:1;transform:translateX(-50%) scale(1)}}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:0;color:var(--t1);font:inherit;font-size:14.5px;font-weight:600;padding:10px 14px;cursor:pointer;text-align:left}
+.menu button+button{border-top:1px solid var(--hair)}
+.menu .sec{border-top:7px solid rgba(42,38,34,.06)}
+.menu button.danger{color:var(--danger)}
+.menu button:disabled{color:var(--t3);cursor:not-allowed}
+.menu .ck{width:16px;flex:none;display:grid;place-items:center}
+.menu .ic{margin-left:auto;display:grid;place-items:center;opacity:.9}
+.dd{left:50%;transform:translateX(-50%);width:min(250px,86%)}
+.scrim{position:absolute;inset:0;z-index:7;background:rgba(42,38,34,.18)}
+.dialog{position:absolute;z-index:9;left:10px;right:10px;bottom:10px;display:flex;flex-direction:column;gap:8px;animation:rise .3s var(--spring)}
+.dialog .grp{background:rgba(255,255,255,.96);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border-radius:var(--r-ctl);overflow:hidden;text-align:center}
+.dialog p{margin:0;padding:12px 16px;font-size:12.5px;color:var(--t2);border-bottom:1px solid var(--hair)}
+.dialog button{display:block;width:100%;background:transparent;border:0;font:inherit;font-size:16px;padding:12px;cursor:pointer;color:var(--t1)}
+.dialog .del{color:var(--danger);font-weight:700}
+.dialog .cancel{font-weight:800}
+.toast{position:absolute;left:50%;top:6px;transform:translateX(-50%);background:rgba(30,28,26,.9);font-size:13px;font-weight:700;padding:7px 14px;border-radius:999px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:4;white-space:nowrap}
+.toast.on{opacity:1}
+
+/* ===== notes ===== */
+.notes{min-width:0;width:100%}
+.notes h2{font-size:17px;margin:0 0 4px}
+.notes>p{color:var(--muted);margin:0 0 18px;max-width:62ch}
+.tok{margin:0 0 22px;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.tok h2{margin-bottom:10px}
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+.sw2{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.sw2 i{display:block;height:44px;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.3)}
+.sw2 b{font-size:12.5px}
+.sw2 code{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.radii{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;align-items:flex-end}
+.rad{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;color:var(--muted)}
+.rad i{display:block;width:54px;height:54px;background:#F7F3EE;box-shadow:inset 0 0 0 1.5px #C9772A}
+.rad b{color:var(--ink);font-size:12px}
+.type{margin-top:14px;padding:10px 12px;border-radius:10px;background:#F7F3EE;color:#2A2622;font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c",sans-serif;font-size:13px;line-height:1.5}
+.type b{font-weight:800;font-size:15px}
+.type span{color:rgba(42,38,34,.62)}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:14px 0;border-top:1px solid var(--line)}
+.item:last-of-type{border-bottom:1px solid var(--line)}
+.tag{font-size:12px;font-weight:700;background:var(--tag);color:var(--ink);padding:2px 8px;border-radius:6px;height:fit-content;white-space:nowrap}
+.tag.chg{background:var(--accent);color:var(--accent-ink)}
+.item h3{font-size:15px;margin:0}
+.item p{grid-column:2;margin:0;color:var(--muted);font-size:14px;max-width:60ch}
+.item p.rec{margin-top:4px;color:var(--ink)}
+.item p.rec::before{content:"設計師建議　";font-weight:700;color:var(--accent)}
+.try{margin:0 0 18px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:14px}
+.try ol{margin:4px 0 0;padding-left:1.3em}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* v6: borderless */
+.bubble{background:transparent!important;width:50px;height:50px}
+.chip{background:transparent!important;padding:7px 6px}
+.p2{background:transparent!important;box-shadow:none!important;border-radius:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.tabs{border-bottom:0!important;justify-content:center;gap:2px}
+.tab{position:relative;background:transparent!important;flex:0 1 auto!important;padding:6px 12px!important}
+.tab[aria-selected="true"]{color:var(--t1)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:50%;bottom:0;width:4px;height:4px;border-radius:50%;background:#C9772A;transform:translateX(-50%)}
+.form{background:transparent!important}
+.mgrow{background:transparent!important}
+.mgrow.dragging{background:#fff!important}
+.mgadd{border:0!important;background:transparent!important}
+.iconbtn{width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:#C9772A;display:grid;place-items:center;cursor:pointer}
+/* v5 */
+.side .bubble{color:var(--t1)}
+.l2 .row{display:grid;padding:6px 22px 0}
+.l2 .shutter{width:64px;height:64px;border-width:3px;padding:3px}
+.l2 .bottom{justify-content:flex-end;padding:6px 6px 14px;gap:6px}
+.p2{flex:1 1 auto;margin-top:0}
+.l2 .panel.p2{display:flex}
+.tabs{padding:10px 10px 8px}
+.scrim.clear{background:transparent}
+.mg{position:absolute;z-index:10;left:0;right:0;bottom:0;height:68%;background:rgba(255,255,255,.97);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border-radius:28px 28px 0 0;box-shadow:0 -8px 30px rgba(60,40,20,.15);display:flex;flex-direction:column;animation:rise .35s var(--spring)}
+.mghead{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px}
+.mghead b{font-size:16px}
+.mglist{flex:1;overflow:auto;padding:0 12px;display:flex;flex-direction:column;gap:6px}
+.mgrow{display:flex;align-items:center;background:var(--fill);border-radius:var(--r-ctl);padding:4px 4px 4px 0;position:relative;transition:box-shadow .15s}
+.mgrow.dragging{z-index:2;background:#fff;box-shadow:0 8px 20px rgba(60,40,20,.18);transition:none}
+.mgsel{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:transparent;border:0;color:var(--t1);font:inherit;text-align:left;padding:8px 6px 8px 10px;cursor:pointer}
+.mgsel .ck{width:16px;flex:none;display:grid;place-items:center}
+.mgtx{display:flex;flex-direction:column;min-width:0}
+.mgtx b{font-size:14.5px}
+.mgtx small{font-size:11.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mgpv{font-size:11px;padding:0 5px;border-radius:4px;background:linear-gradient(135deg,#8FB3C9,#8C7A5E)}
+.mgpv.s-film,.mgpv.s-minimal{background:none;padding:0 5px}
+.mgic{width:36px;height:36px;display:grid;place-items:center;border:0;background:transparent;color:var(--t2);border-radius:10px;cursor:pointer;flex:none}
+.grip{cursor:grab;touch-action:none}
+.mgadd{margin:10px 12px 14px;display:flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed rgba(201,119,42,.6);background:rgba(255,194,122,.14);color:#A45F1E;font:inherit;font-weight:800;font-size:14px;border-radius:var(--r-ctl);padding:11px;cursor:pointer}
+.mgadd:disabled{opacity:.45;cursor:not-allowed}
+.item code{font-size:12.5px}
+
+/* full-bleed viewfinder: no margin, no radius */
+.vf{margin:0!important;width:100%!important;border-radius:0!important}
+.vfbox{margin:0!important}
+
+/* space fix: shrink viewfinder while panel is open */
+.vf{transition:width .35s var(--spring)}
+.l2 .vf{width:80%!important;align-self:center;margin:0 auto!important;border-radius:0!important}
+.l2 .tabbody{overflow:visible!important}
+</style>
+
+<header>
+  <div class="eyebrow">DaysCam 介面改版 · 設計稿 D-2 / 4 · 第 7 版</div>
+  <h1>疊字面板與管理設定檔</h1>
+  <p>點右下「Aa」打開疊字面板，操作方式照 Foodie 濾鏡：快門留在最下列，左下角是管理設定檔，右下角把面板收起來。頂部膠囊只負責切換設定檔。</p>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen" id="screen">
+        <div class="status"><span>9:41</span><span>5G</span></div>
+        <div class="top"><button class="chip" id="chip" aria-haspopup="menu"></button></div>
+        <div class="vf" id="vf">
+          <div class="scene"></div>
+          <div class="overlay" id="overlay"></div>
+          <div class="flash" id="flash"></div>
+        </div>
+        <div class="bottom">
+          <div class="toast" id="toast"></div>
+          <div class="panel p2">
+            <div class="tabs" role="tablist" id="tabs"></div>
+            <div class="tabbody" id="tabbody"></div>
+          </div>
+          <div class="row" id="row">
+            <button class="side" id="leftBtn"></button>
+            <button class="shutter" id="shutter" aria-label="快門"><span></span></button>
+            <button class="side" id="rightBtn"></button>
+          </div>
+        </div>
+        <div id="layer"></div>
+      </div>
+    </div>
+    <div class="legend">管理設定檔裡，按住列右側的「≡」上下拖曳可以改順序。</div>
+  </div>
+
+  <section class="notes">
+    <div class="tok">
+      <h2>主題 tokens</h2>
+      <div class="swatches">
+        <div class="sw2"><i style="background:#F7F3EE"></i><b>camBackground</b><code>#F7F3EE</code></div>
+        <div class="sw2"><i style="background:#FFFFFF"></i><b>sheet</b><code>.regularMaterial（light）</code></div>
+        <div class="sw2"><i style="background:#EDE9E4"></i><b>fill</b><code>ink.opacity(0.07)</code></div>
+        <div class="sw2"><i style="background:#FFC27A"></i><b>accent 杏桃</b><code>#FFC27A</code></div>
+        <div class="sw2"><i style="background:#2A1A08"></i><b>onAccent</b><code>#2A1A08</code></div>
+        <div class="sw2"><i style="background:#2A2622"></i><b>ink（text1）</b><code>#2A2622</code></div>
+        <div class="sw2"><i style="background:#C9772A"></i><b>active 焦糖</b><code>#C9772A（啟用中的圖示）</code></div>
+        <div class="sw2"><i style="background:#E0503F"></i><b>danger</b><code>#E0503F</code></div>
+      </div>
+      <div class="radii">
+        <div class="rad"><i style="border-radius:10px"></i><b>10</b>分頁膠囊</div>
+        <div class="rad"><i style="border-radius:14px"></i><b>14</b>控制項／選單</div>
+        <div class="rad"><i style="border-radius:0"></i><b>0</b>觀景窗（滿版）</div>
+        <div class="rad"><i style="border-radius:28px"></i><b>28</b>面板</div>
+        <div class="rad"><i style="border-radius:999px;height:30px"></i><b>Capsule</b>膠囊鍵</div>
+      </div>
+    </div>
+
+    <h2>第 6 版：要你決定的點</h2>
+    <div class="item"><span class="tag chg">第 6 版</span><h3>去掉外框、完成改打勾、管理頁不顯示樣式</h3>
+      <p>快門兩側按鈕、頂部膠囊、疊字面板、分頁、管理清單的列都拿掉底色與框線，直接放在暖白底上；選中的分頁改用文字加深＋下方一個杏桃色小點標示。管理設定檔的「完成」改成打勾圖示鍵，每列只剩名稱和起始日。保留外形的只有快門本身和管理面板（它蓋在畫面上，需要底色才分得出層次）。</p></div>
+    <div class="try">建議試這條路徑：
+      <ol>
+        <li>點右下「Aa」→ 面板展開，快門還在，左右兩鍵換掉</li>
+        <li>按快門 → 面板開著也能拍</li>
+        <li>點左下列表圖示 → 管理設定檔：拖曳「≡」改順序、點「⋯」複製或刪除、最下面新增</li>
+        <li>點頂部「小寶」→ 只剩名稱清單，選了就切換</li>
+        <li>點右下「⌄」收起面板</li>
+      </ol>
+    </div>
+
+    <div class="item"><span class="tag chg">照做</span><h3>面板打開時最下列保留快門</h3>
+      <p>快門縮小到 64pt，面板放在它上方。這推翻前幾版「面板打開時收起快門」的做法，改成邊調邊拍。空間變小後，樣式分頁（D-3）的內容要在面板內捲動。</p></div>
+
+    <div class="item"><span class="tag chg">照做</span><h3>右下角：收起面板</h3>
+      <p>圖示用向下箭頭（SF Symbol <code>chevron.down</code>），和 Foodie 收起濾鏡列一樣。點觀景窗也能收起（只在面板打開時；面板收起時點觀景窗留給日後的對焦）。原本分頁列右側的「完成」拿掉了，免得兩個收起鍵重複。</p></div>
+
+    <div class="item"><span class="tag chg">照做</span><h3>左下角：管理設定檔</h3>
+      <p>點了從底部升起「管理設定檔」面板，蓋住大半畫面（這裡不需要看觀景窗）。每列有名稱、起始日與今天的疊字；右側「⋯」是複製、刪除，「≡」拖曳改順序；最下面「新增設定檔」。圖示用無外框的列表（SF Symbol <code>list.bullet</code>），不加文字。</p></div>
+
+    <div class="item"><span class="tag chg">照做</span><h3>頂部膠囊只剩切換</h3>
+      <p>選單只列名稱，選中的打勾。新增、複製、刪除都移到管理設定檔。頂部選單的順序跟著管理面板拖曳後的順序。</p></div>
+
+    <div class="item"><span class="tag">沿用</span><h3>新增與刪除規則</h3>
+      <p>新增不開表單：建立「新設定檔」（重複時自動編號成「新設定檔 2」），關掉管理面板並打開「天數規則」分頁讓你改名和起始日。刪除要二次確認；只剩 1 個時不能刪；最多 20 個。</p></div>
+
+    <div class="item"><span class="tag">圖示</span><h3>右下「Aa」暫用</h3>
+      <p>照你說的先用 Aa（<code>textformat</code>），跟翻轉鍵一樣是淺色圓鈕。</p></div>
+  </section>
+</div>
+
+<script>
+const presets=[['classic','經典'],['retro','復古'],['film','底片'],['minimal','極簡'],['pink','粉紅']];
+const profiles=[
+  {id:1,name:'小寶',text:'第 10 天',style:'classic',start:'2026/01/01',rule:'當天算第 1 天'},
+  {id:2,name:'紀念日',text:'第 209 天',style:'retro',start:'2025/06/15',rule:'當天算第 0 天'},
+  {id:3,name:'日期戳',text:'2026.01.10',style:'film',start:'—',rule:'只顯示日期'},
+  {id:4,name:'旅行',text:'第 3 天',style:'pink',start:'2026/01/08',rule:'當天算第 1 天'},
+  {id:5,name:'工作',text:'1 年 2 個月',style:'minimal',start:'2024/11/05',rule:'當天算第 1 天'}
+];
+let current=1, open=false, tab='樣式', nextId=6;
+const $=id=>document.getElementById(id);
+const screen=$('screen');
+const cur=()=>profiles.find(p=>p.id===current);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const I={
+  flip:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><path d="M9 13.5a3 3 0 0 1 5.2-2"/><path d="M15 12.5a3 3 0 0 1-5.2 2"/></svg>',
+  aa:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 18L8 5l5.5 13M4.6 13.2h6.8"/><path d="M20.5 11.5v6.5M20.5 14.7a2.9 2.9 0 1 1 0-.1"/></svg>',
+  down:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg>',
+  people:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17.5" r="1.1" fill="currentColor" stroke="none"/></svg>',
+  check:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#C9772A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"/></svg>',
+  chev:'<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="opacity:.6"><path d="M2 3.5l3 3 3-3"/></svg>',
+  right:'<svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="opacity:.5;margin-left:6px"><path d="M2 2l4 4-4 4"/></svg>',
+  more:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg>',
+  grip:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg>',
+  plus:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
+  copy:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5" y="5" width="8.5" height="8.5" rx="2"/><path d="M11 5V4a1.5 1.5 0 0 0-1.5-1.5h-5A1.5 1.5 0 0 0 3 4v5.5A1.5 1.5 0 0 0 4.5 11H5"/></svg>',
+  trash:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 8.5h6.6l.7-8.5"/></svg>'
+};
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),1600)}
+function uniqueName(base){if(!profiles.some(p=>p.name===base))return base;let n=2;while(profiles.some(p=>p.name===base+' '+n))n++;return base+' '+n}
+
+function render(){
+  const p=cur();
+  screen.className='screen'+(open?' l2':'');
+  $('chip').innerHTML=`${esc(p.name)} ${I.chev}`;
+  $('overlay').className='overlay s-'+p.style; $('overlay').textContent=p.text;
+  if(open){
+    $('leftBtn').innerHTML=`<span class="bubble">${I.people}</span>`; $('leftBtn').setAttribute('aria-label','管理設定檔');
+    $('rightBtn').innerHTML=`<span class="bubble">${I.down}</span>`; $('rightBtn').setAttribute('aria-label','收起面板');
+  }else{
+    $('leftBtn').innerHTML=`<span class="bubble">${I.flip}</span>`; $('leftBtn').setAttribute('aria-label','翻轉鏡頭');
+    $('rightBtn').innerHTML=`<span class="bubble">${I.aa}</span>`; $('rightBtn').setAttribute('aria-label','疊字設定');
+  }
+  $('tabs').innerHTML='';
+  ['樣式','格式','位置','天數規則'].forEach(n=>{
+    const t=document.createElement('button');t.className='tab';t.setAttribute('role','tab');t.textContent=n;
+    t.setAttribute('aria-selected',n===tab);t.onclick=()=>{tab=n;render()};$('tabs').appendChild(t);
+  });
+  const b=$('tabbody');
+  if(tab==='樣式'){
+    b.innerHTML=`<div class="presets">${presets.map(([k,n])=>`<button class="pre" data-k="${k}" aria-pressed="${p.style===k}"><span class="sw"><b class="s-${k}">Aa</b></span>${n}</button>`).join('')}</div>
+      <p class="sub">字體、顏色、襯底、字級 → 設計稿 D-3</p>`;
+    b.querySelectorAll('.pre').forEach(x=>x.onclick=()=>{p.style=x.dataset.k;render()});
+  }else if(tab==='天數規則'){
+    b.innerHTML=`<div class="form">
+      <div class="field"><span>名稱</span><span class="val">${esc(p.name)}</span></div>
+      <div class="field"><span>起始日</span><span>${p.start}${I.right}</span></div>
+      <div class="field"><span>起算規則</span><span>${p.rule}${I.right}</span></div></div>`;
+  }else{
+    const t={'格式':['格式分頁','顯示內容＋天數格式 → 設計稿 D-4'],'位置':['位置分頁','3×3 九宮格 → 設計稿 D-4']}[tab];
+    b.innerHTML=`<div class="ph"><div><strong>${t[0]}</strong>${t[1]}</div></div>`;
+  }
+}
+
+function closeLayer(){$('layer').innerHTML=''}
+
+/* top chip: switch only */
+function openSwitcher(){
+  const r=$('chip').getBoundingClientRect(), sr=screen.getBoundingClientRect();
+  $('layer').innerHTML=`<div class="scrim clear" id="scrim"></div>
+   <div class="menu dd" role="menu" style="top:${r.bottom-sr.top+6}px">
+     ${profiles.map(q=>`<button data-id="${q.id}" role="menuitemradio" aria-checked="${q.id===current}"><span class="ck">${q.id===current?I.check:''}</span>${esc(q.name)}</button>`).join('')}
+   </div>`;
+  $('scrim').onclick=closeLayer;
+  document.querySelectorAll('.dd button[data-id]').forEach(b=>b.onclick=()=>{current=+b.dataset.id;closeLayer();render()});
+}
+
+/* manage sheet */
+function openManage(){
+  const full=profiles.length>=20;
+  $('layer').innerHTML=`<div class="scrim" id="scrim"></div>
+   <div class="mg" role="dialog" aria-label="管理設定檔">
+     <div class="grab"></div>
+     <div class="mghead"><b>管理設定檔</b><button class="iconbtn" id="mgDone" aria-label="完成"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></div>
+     <div class="mglist" id="mglist"></div>
+     <button class="mgadd" id="mgAdd" ${full?'disabled':''}>${I.plus}${full?'已達 20 個上限':'新增設定檔'}</button>
+   </div>`;
+  $('scrim').onclick=closeLayer; $('mgDone').onclick=closeLayer;
+  if(!full)$('mgAdd').onclick=()=>{const n=uniqueName('新設定檔');profiles.push({id:nextId,name:n,text:'第 1 天',style:'classic',start:'2026/01/10',rule:'當天算第 1 天'});current=nextId++;closeLayer();open=true;tab='天數規則';render();toast('已新增「'+n+'」，請設定名稱與起始日')};
+  renderList();
+}
+function renderList(){
+  const L=$('mglist'); if(!L)return;
+  L.innerHTML=profiles.map(q=>`<div class="mgrow${q.id===current?' cur':''}" data-id="${q.id}">
+     <button class="mgsel" data-id="${q.id}"><span class="ck">${q.id===current?I.check:''}</span><span class="mgtx"><b>${esc(q.name)}</b><small>${q.start==='—'?'只顯示日期':q.start+' 起'}</small></span></button>
+     <button class="mgic more" data-id="${q.id}" aria-label="更多">${I.more}</button>
+     <span class="mgic grip" data-id="${q.id}" aria-label="拖曳排序">${I.grip}</span>
+   </div>`).join('');
+  L.querySelectorAll('.mgsel').forEach(b=>b.onclick=()=>{current=+b.dataset.id;render();renderList()});
+  L.querySelectorAll('.more').forEach(b=>b.onclick=e=>{e.stopPropagation();rowMenu(+b.dataset.id,b)});
+  L.querySelectorAll('.grip').forEach(g=>g.onpointerdown=startDrag);
+}
+function rowMenu(id,anchor){
+  document.querySelectorAll('.rowmenu').forEach(x=>x.remove());
+  const q=profiles.find(p=>p.id===id), full=profiles.length>=20, only=profiles.length<=1;
+  const sr=screen.getBoundingClientRect(), r=anchor.getBoundingClientRect();
+  const m=document.createElement('div'); m.className='menu rowmenu';
+  m.style.cssText=`right:${sr.right-r.right+6}px;top:${r.bottom-sr.top+2}px;z-index:12;min-width:170px;animation:none`;
+  m.innerHTML=`<button id="rmDup" ${full?'disabled':''}>${full?'複製（已達 20 個）':'複製'}<span class="ic">${I.copy}</span></button>
+    <button id="rmDel" class="danger" ${only?'disabled':''}>${only?'刪除（至少保留 1 個）':'刪除'}<span class="ic">${I.trash}</span></button>`;
+  $('layer').appendChild(m);
+  setTimeout(()=>document.addEventListener('click',function h(ev){if(!m.contains(ev.target)){m.remove();document.removeEventListener('click',h)}}),0);
+  if(!full)m.querySelector('#rmDup').onclick=()=>{const c={...q,id:nextId++,name:uniqueName(q.name+' 副本')};profiles.splice(profiles.indexOf(q)+1,0,c);m.remove();renderList();toast('已複製「'+q.name+'」')};
+  if(!only)m.querySelector('#rmDel').onclick=()=>{m.remove();confirmDelete(q)};
+}
+function confirmDelete(q){
+  const d=document.createElement('div'); d.className='dialog'; d.style.zIndex=13;
+  d.innerHTML=`<div class="grp"><p>刪除後無法復原，已拍的照片不受影響。</p><button class="del" id="yes">刪除「${esc(q.name)}」</button></div><div class="grp"><button class="cancel" id="no">取消</button></div>`;
+  const sc=document.createElement('div'); sc.className='scrim'; sc.style.zIndex=12;
+  $('layer').append(sc,d);
+  const close=()=>{d.remove();sc.remove()};
+  sc.onclick=close; d.querySelector('#no').onclick=close;
+  d.querySelector('#yes').onclick=()=>{const i=profiles.indexOf(q);profiles.splice(i,1);if(current===q.id)current=profiles[Math.max(0,i-1)].id;close();render();renderList();toast('已刪除')};
+}
+/* drag reorder */
+let drag=null;
+function startDrag(e){
+  e.preventDefault();
+  const row=e.currentTarget.closest('.mgrow'); const L=$('mglist');
+  drag={id:+row.dataset.id,row,startY:e.clientY,h:row.getBoundingClientRect().height};
+  row.classList.add('dragging');
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.currentTarget.onpointermove=ev=>{
+    const dy=ev.clientY-drag.startY; drag.row.style.transform=`translateY(${dy}px)`;
+    const idx=profiles.findIndex(p=>p.id===drag.id);
+    const steps=Math.round(dy/drag.h);
+    if(steps!==0){
+      const to=Math.max(0,Math.min(profiles.length-1,idx+steps));
+      if(to!==idx){const [m]=profiles.splice(idx,1);profiles.splice(to,0,m);drag.startY+= (to-idx)*drag.h;renderList();
+        drag.row=L.querySelector(`.mgrow[data-id="${drag.id}"]`);drag.row.classList.add('dragging');
+        const g=drag.row.querySelector('.grip'); g.setPointerCapture(ev.pointerId); g.onpointermove=e.currentTarget.onpointermove; g.onpointerup=g.onpointercancel=endDrag;}
+      drag.row.style.transform=`translateY(${ev.clientY-drag.startY}px)`;
+    }
+  };
+  e.currentTarget.onpointerup=e.currentTarget.onpointercancel=endDrag;
+}
+function endDrag(){if(!drag)return;drag.row.style.transform='';drag.row.classList.remove('dragging');drag=null;renderList()}
+
+$('rightBtn').onclick=()=>{open=!open;render()};
+$('leftBtn').onclick=e=>{
+  if(open){openManage();return}
+  const s=e.currentTarget.querySelector('svg');s.style.transition='transform .3s';s.style.transform=s.style.transform?'':'scaleX(-1)';
+};
+$('chip').onclick=openSwitcher;
+$('vf').onclick=()=>{if(open){open=false;render()}};
+$('shutter').onclick=()=>{const f=$('flash');f.classList.add('on');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')));toast('已儲存')};
+render();
+</script>
