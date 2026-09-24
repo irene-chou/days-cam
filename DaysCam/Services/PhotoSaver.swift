@@ -20,10 +20,16 @@ enum PhotoSaveError: Error, Equatable {
 /// Injected so the permission branches can be unit tested: the real library
 /// prompts the user and writes to their actual photos, neither of which a test
 /// can drive (PRD §8).
+///
+/// `changes` returns the identifier of whatever it created (or `nil` if it
+/// created nothing usable) rather than plain `Void`, so the completion can
+/// hand the new asset's `localIdentifier` back to the caller (PRD 0.2
+/// FR-15.1, TASK-28) without a second round trip to the library.
 protocol PhotoLibraryAccessing {
     func authorizationStatus(for level: PHAccessLevel) -> PHAuthorizationStatus
     func requestAuthorization(for level: PHAccessLevel, handler: @escaping (PHAuthorizationStatus) -> Void)
-    func performChanges(_ changes: @escaping () -> Void, completion: @escaping (Bool, Error?) -> Void)
+    func performChanges(_ changes: @escaping () -> String?,
+                        completion: @escaping (Bool, String?, Error?) -> Void)
 }
 
 /// Production implementation, straight through to `PHPhotoLibrary`.
@@ -36,8 +42,19 @@ struct SystemPhotoLibrary: PhotoLibraryAccessing {
         PHPhotoLibrary.requestAuthorization(for: level, handler: handler)
     }
 
-    func performChanges(_ changes: @escaping () -> Void, completion: @escaping (Bool, Error?) -> Void) {
-        PHPhotoLibrary.shared().performChanges(changes, completionHandler: completion)
+    func performChanges(_ changes: @escaping () -> String?,
+                        completion: @escaping (Bool, String?, Error?) -> Void) {
+        // `PHPhotoLibrary.performChanges` only ever hands the completion a
+        // success flag and an error — the identifier `changes` produces (from
+        // `PHAssetChangeRequest`'s placeholder, which is available
+        // synchronously, before the write commits) is captured here and
+        // threaded through to `completion` alongside them.
+        var identifier: String?
+        PHPhotoLibrary.shared().performChanges({
+            identifier = changes()
+        }, completionHandler: { succeeded, error in
+            completion(succeeded, identifier, error)
+        })
     }
 }
 
@@ -73,7 +90,40 @@ final class PhotoSaver {
     ///
     /// A refusal fails without writing anything: the caller has to tell the
     /// user the photo was not saved (PRD §2.3).
+    ///
+    /// This discards the new asset's identifier — kept as-is, under this
+    /// exact name and signature, so `CameraScreenModel`'s existing `save` seam
+    /// (its default forwards to exactly this) keeps compiling and behaving as
+    /// before ui-shell wires `capturedAssetIDs` through in TASK-21. New call
+    /// sites should prefer `saveReturningIdentifier` below (PRD 0.2 FR-15.1).
+    ///
+    /// Deliberately a *different method name* rather than an overload
+    /// distinguished only by the completion closure's `Result` type: a
+    /// trailing closure that discards or under-specifies its parameter (e.g.
+    /// `{ _ in ... }`, as `PhotoSaverTests` already had before this method
+    /// existed) cannot be resolved against two such overloads — the compiler
+    /// reports "ambiguous use" rather than picking one, so every existing
+    /// call site would have needed an explicit closure-parameter type
+    /// annotation just to keep compiling.
     func save(_ image: UIImage, completion: @escaping (Result<Void, PhotoSaveError>) -> Void) {
+        performSave(image, map: { _ in () }, completion: completion)
+    }
+
+    /// Saves `image` exactly as `save(_:completion:)` does, but on success
+    /// hands back the new photo's `PHAsset.localIdentifier` — what
+    /// `CapturedPhotoStore.recordCapturedAsset(_:)` needs (PRD 0.2 FR-15.1,
+    /// TASK-28). This is what ui-shell's TASK-21 wiring is expected to call.
+    func saveReturningIdentifier(_ image: UIImage,
+                                 completion: @escaping (Result<String, PhotoSaveError>) -> Void) {
+        performSave(image, map: { $0 }, completion: completion)
+    }
+
+    /// Shared permission/write logic behind both `save` methods above. `map`
+    /// converts the raw identifier a successful write produces into whatever
+    /// the caller promises (`Void` or the identifier itself).
+    private func performSave<T>(_ image: UIImage,
+                               map: @escaping (String) -> T,
+                               completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
         let accessLevel = Self.accessLevel
 
         switch library.authorizationStatus(for: accessLevel) {
@@ -84,13 +134,13 @@ final class PhotoSaver {
             // runs leaves the shutter disabled forever.
             library.requestAuthorization(for: accessLevel) { status in
                 if Self.allowsAdding(status) {
-                    self.write(image, completion: completion)
+                    self.write(image, map: map, completion: completion)
                 } else {
                     self.finish(.failure(.permissionDenied), completion)
                 }
             }
         case let status where Self.allowsAdding(status):
-            write(image, completion: completion)
+            write(image, map: map, completion: completion)
         default:
             // Denied or restricted. Both are settled refusals, so re-asking
             // would do nothing but produce a prompt the system suppresses.
@@ -108,16 +158,26 @@ final class PhotoSaver {
         status == .authorized || status == .limited
     }
 
-    private func write(_ image: UIImage, completion: @escaping (Result<Void, PhotoSaveError>) -> Void) {
+    private func write<T>(_ image: UIImage,
+                          map: @escaping (String) -> T,
+                          completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
         library.performChanges {
             // Creating the asset from the image is the whole change: no album
-            // is created and no metadata is written (FR-5.6, PRD §6.2).
-            PHAssetChangeRequest.creationRequestForAsset(from: image)
-        } completion: { succeeded, error in
-            let result: Result<Void, PhotoSaveError>
-            if succeeded {
-                result = .success(())
-            } else {
+            // is created and no metadata is written (FR-5.6, PRD §6.2). The
+            // placeholder's identifier is available synchronously, before the
+            // write commits — this is the one place it can be read.
+            PHAssetChangeRequest.creationRequestForAsset(from: image).placeholderForCreatedAsset?.localIdentifier
+        } completion: { succeeded, identifier, error in
+            let result: Result<T, PhotoSaveError>
+            switch (succeeded, identifier) {
+            case let (true, .some(identifier)):
+                result = .success(map(identifier))
+            case (true, .none):
+                // Should not happen in practice — the placeholder always has
+                // an identifier — but a success with nothing to identify it
+                // by is not something the caller can act on either.
+                result = .failure(.saveFailed("儲存成功但未取得照片識別碼"))
+            case (false, _):
                 result = .failure(.saveFailed(Self.describe(error)))
             }
             self.finish(result, completion)
@@ -131,8 +191,8 @@ final class PhotoSaver {
         return error.localizedDescription
     }
 
-    private func finish(_ result: Result<Void, PhotoSaveError>,
-                        _ completion: @escaping (Result<Void, PhotoSaveError>) -> Void) {
+    private func finish<T>(_ result: Result<T, PhotoSaveError>,
+                           _ completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
         if Thread.isMainThread {
             completion(result)
         } else {
