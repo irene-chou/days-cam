@@ -1,0 +1,139 @@
+<title>DaysCam 文字改圖示</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+:root{
+  --ground:#F3EFEA; --ink:#221F1C; --muted:#6B645D; --line:#DDD5CC; --card:#FBF8F5;
+  --accent:#C9772A; --accent-ink:#FFFFFF; --tag:#F8E6D2; --no:#E4DED6;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+    --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; --no:#2E2B28; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+  --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; --no:#2E2B28; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"Noto Sans TC",-apple-system,"PingFang TC",sans-serif;font-size:15px;line-height:1.6;padding-inline:16px;padding-block:28px 48px}
+header,.list{max-width:980px;margin-inline:auto}
+header{margin-bottom:20px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+h1{font-size:24px;margin:2px 0 6px}
+header p{margin:0;color:var(--muted);max-width:70ch}
+.list{display:flex;flex-direction:column;gap:14px}
+.row{display:grid;grid-template-columns:36px minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:center;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
+@media (max-width:760px){.row{grid-template-columns:36px minmax(0,1fr)}.row>.cmp{grid-column:2}}
+.num{font-weight:800;font-size:18px;color:var(--muted);text-align:center}
+.info h3{margin:0;font-size:15px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.info p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.rec{font-size:11.5px;font-weight:800;padding:1px 8px;border-radius:6px;white-space:nowrap}
+.rec.yes{background:var(--accent);color:var(--accent-ink)}
+.rec.no{background:var(--no);color:var(--ink)}
+.cmp{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cmp small{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em}
+/* mini phone strip */
+.ui{--bg:#F7F3EE;--t1:#2A2622;--t2:rgba(42,38,34,.62);--t3:rgba(42,38,34,.38);--act:#C9772A;
+  background:var(--bg);color:var(--t1);border-radius:12px;padding:10px 10px;min-height:52px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
+  font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c","PingFang TC",sans-serif;font-weight:700;font-size:13px;box-shadow:inset 0 0 0 1px rgba(42,38,34,.06)}
+.ui .t3{color:var(--t3)} .ui .act{color:var(--act)}
+.ui svg{display:block}
+.seg{display:flex;background:rgba(42,38,34,.07);border-radius:9px;padding:2px;gap:0}
+.seg span{padding:4px 9px;border-radius:7px;color:var(--t2);display:grid;place-items:center}
+.seg span.on{background:#fff;color:var(--t1);box-shadow:0 1px 3px rgba(60,40,20,.15)}
+.it{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--t3)}
+.it.on{color:var(--act)}
+.it i{font-style:normal;font-size:9.5px;font-weight:700;color:var(--t3)}
+.dot{width:20px;height:20px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(42,38,34,.15);display:inline-block}
+.sw{width:30px;height:18px;border-radius:9px;background:#F0A64A;position:relative;display:inline-block}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.hint{font-size:10.5px;color:#A45F1E;font-weight:600}
+.src{max-width:980px;margin:24px auto 0;font-size:12.5px;color:var(--muted)}
+</style>
+
+<header>
+  <div class="eyebrow">DaysCam 介面改版 · 文字改圖示的決策表</div>
+  <h1>哪些文字改成純圖示</h1>
+  <p>每一列左邊是現在的樣子，右邊是改成圖示後的樣子，都用疊字面板的實際配色畫。橘色標籤是我建議改的，灰色是建議不改的。每項回「改」或「不改」即可。</p>
+</header>
+
+<div class="list" id="list"></div>
+
+<p class="src">圖示是依 SF Symbols 的外形手繪近似，實作時會用真正的 SF Symbols（名稱標在每個圖示下方），線條粗細與細節會略有不同。</p>
+
+<script>
+const sv=(d,w=18)=>`<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I={
+ textformat:sv('<path d="M3 19L8 6l5 13M4.8 14.5h6.4"/><path d="M20.5 11v8M20.5 15a2.8 2.8 0 1 1 0-.1"/>'),
+ list:sv('<path d="M9 7h11M9 12h11M9 17h11"/><circle cx="4.5" cy="7" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="17" r="1" fill="currentColor"/>'),
+ move:sv('<path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/>'),
+ calendar:sv('<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'),
+ chars:sv('<path d="M2.5 18L7 6l4.5 12M4 14h6"/><path d="M13 18l3.5-9 3.5 9M14.2 15h4.6"/>'),
+ palette:sv('<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.3-1-1.5-1-2.6 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor"/><circle cx="10" cy="7" r="1.2" fill="currentColor"/><circle cx="15" cy="7.2" r="1.2" fill="currentColor"/>'),
+ dashed:sv('<rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3.2 2.8"/>'),
+ shadow:sv('<rect x="3.5" y="3.5" width="12" height="12" rx="2.5"/><path d="M19.5 8v9.5a2 2 0 0 1-2 2H8"/>'),
+ size:sv('<path d="M3 19l4.5-11L12 19M4.5 15.5h6"/><path d="M14 19l3-7.5 3 7.5M15 16.5h4" stroke-width="1.7"/>'),
+ eye:sv('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+ number:sv('<path d="M9 4L7 20M17 4l-2 16M4 9h16M3.5 15h16"/>'),
+ person:sv('<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2"/><path d="M5.8 16.2a3.4 3.4 0 0 1 6.4 0M14 10h4M14 13.5h3"/>'),
+ arrow:sv('<path d="M4 12h15M14 7l5 5-5 5"/>',16),
+ tag:sv('<path d="M3.5 12.5V5a1.5 1.5 0 0 1 1.5-1.5h7.5l8 8-9 9-8-8z"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/>'),
+ one:sv('<circle cx="12" cy="12" r="9"/><path d="M10.5 9l2-1.5V16.5"/>'),
+ clock:sv('<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4M12 7.5V12l3 2"/>',16),
+ half:`<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>`
+};
+const it=(icon,name,on)=>`<span class="it${on?' on':''}">${icon}<i>${name}</i></span>`;
+const dots='<span class="dot" style="background:#fff"></span><span class="dot" style="background:#1C1C1E"></span><span class="dot" style="background:#FF9500"></span><span class="dot" style="background:#FFC27A"></span>';
+const R=[
+ {t:'第一層分頁',d:'樣式｜格式｜位置｜天數規則',rec:0,why:'主要導覽；「格式」「天數規則」沒有一看就懂的圖示。',
+  a:`<div class="seg"><span class="on">樣式</span><span>格式</span><span>位置</span><span>天數規則</span></div>`,
+  b:`<div class="seg"><span class="on">${I.textformat}</span><span>${I.list}</span><span>${I.move}</span><span>${I.calendar}</span></div>`,
+  names:'textformat · list.bullet · arrow.up.and.down.and.arrow.left.and.right · calendar'},
+ {t:'樣式的第二層',d:'字型｜顏色｜外框｜陰影｜字級',rec:1,why:'五個都有常見圖示，也讓第二層和上方分段控制更好區分。',
+  a:`<span class="act">字型</span><span class="t3">顏色</span><span class="t3">外框</span><span class="t3">陰影</span><span class="t3">字級</span>`,
+  b:`<span class="act">${I.chars}</span><span class="t3">${I.palette}</span><span class="t3">${I.dashed}</span><span class="t3">${I.shadow}</span><span class="t3">${I.size}</span>`,
+  names:'textformat.characters · paintpalette · square.dashed · shadow · textformat.size'},
+ {t:'格式的第二層',d:'顯示內容｜天數格式',rec:0,why:'眼睛和井字號看不出是「顯示哪些」「天數怎麼寫」。',
+  a:`<span class="act">顯示內容</span><span class="t3">天數格式</span>`,
+  b:`<span class="act">${I.eye}</span><span class="t3">${I.number}</span>`,
+  names:'eye · number'},
+ {t:'顯示內容的三個開關',d:'天數、日期、名稱',rec:0,why:'開關旁沒字，不知道在開關什麼；井字號和日曆也容易混。',
+  a:`<span>天數 <span class="sw"></span></span><span>日期 <span class="sw"></span></span><span>名稱 <span class="sw"></span></span>`,
+  b:`<span style="display:flex;align-items:center;gap:4px">${I.number}<span class="sw"></span></span><span style="display:flex;align-items:center;gap:4px">${I.calendar}<span class="sw"></span></span><span style="display:flex;align-items:center;gap:4px">${I.person}<span class="sw"></span></span>`,
+  names:'number · calendar · person.text.rectangle'},
+ {t:'天數格式的「從」「到」',d:'兩排標籤',rec:1,why:'改成一排「年 月 週 天 → 月 天」，箭頭就表達了範圍，還省一排高度。',
+  a:`<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start"><span><span class="t3">從</span>　<span class="act">年</span> 月 週 天</span><span><span class="t3">到</span>　年 <span class="act">月</span> 天</span></div>`,
+  b:`<span><span class="act">年</span> 月 週 天</span><span class="t3">${I.arrow}</span><span>年 <span class="act">月</span> 天</span>`,
+  names:'arrow.right'},
+ {t:'「年改成歲」開關',d:'文字標籤',rec:0,why:'沒有對應的圖示。',
+  a:`<span>年改成歲 <span class="sw"></span></span>`,b:`<span class="t3">（沒有合適的圖示）</span>`,names:'—'},
+ {t:'天數規則的三列標籤',d:'名稱、起始日、起算',rec:0,why:'表單欄位要有字；「1.circle」看不出是起算規則。',
+  a:`<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;width:100%"><span><span class="t3">名稱</span>　小寶</span><span><span class="t3">起始日</span>　2026/01/01</span><span><span class="t3">起算</span>　當天算第 1 天</span></div>`,
+  b:`<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;width:100%"><span style="display:flex;gap:8px;align-items:center"><span class="t3">${I.tag}</span>小寶</span><span style="display:flex;gap:8px;align-items:center"><span class="t3">${I.calendar}</span>2026/01/01</span><span style="display:flex;gap:8px;align-items:center"><span class="t3">${I.one}</span>當天算第 1 天</span></div>`,
+  names:'tag · calendar · 1.circle'},
+ {t:'顏色的「最近」標籤',d:'第二排色票前的文字',rec:1,why:'時鐘加回轉箭頭是 iOS 常見的「最近」圖示。',
+  a:`<span class="t3" style="font-size:11px">最近</span>${dots}`,
+  b:`<span class="t3">${I.clock}</span>${dots}`,
+  names:'clock.arrow.circlepath'},
+ {t:'外框顏色的「自動」',d:'第一顆選項',rec:1,why:'半黑半白直接說明「自動取黑或白」。',
+  a:`<span class="act" style="font-size:11px;padding:1px 8px;border-radius:11px;box-shadow:0 0 0 2px #F7F3EE,0 0 0 4px #C9772A">自動</span>${dots}`,
+  b:`<span class="act" style="border-radius:50%;box-shadow:0 0 0 2px #F7F3EE,0 0 0 4px #C9772A;display:grid">${I.half}</span>${dots}`,
+  names:'circle.lefthalf.filled'},
+ {t:'「外框顏色」標題',d:'外框分頁裡色票上方的小標',rec:1,why:'已經在「外框」分頁內，不需要再寫一次。',
+  a:`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><span class="t3" style="font-size:11px">外框顏色</span><span style="display:flex;gap:10px">${dots}</span></div>`,
+  b:`<span style="display:flex;gap:10px">${dots}</span>`,names:'（直接拿掉）'},
+ {t:'位置分頁的說明',d:'「直接在觀景窗上拖曳疊字，或點左邊快速對齊」',rec:1,why:'可拖曳時疊字外的虛線框已經是提示。',
+  a:`<span style="display:flex;flex-direction:column;align-items:flex-start"><b style="font-size:15px">右下</b><span class="t3" style="font-size:10.5px">直接在觀景窗上拖曳疊字，<br>或點左邊快速對齊</span></span>`,
+  b:`<b style="font-size:15px">右下</b>`,names:'（直接拿掉）'},
+ {t:'灰掉時的說明',d:'「至少要顯示天數或日期其中一項」等',rec:0,why:'v1 規格要求（FR-2.4、FR-3.7）；不說原因，使用者會以為壞了。',
+  a:`<span class="hint">至少要顯示天數或日期其中一項</span>`,b:`<span class="t3">（開關變灰，沒有說明）</span>`,names:'（直接拿掉）'}
+];
+document.getElementById('list').innerHTML=R.map((r,i)=>`<div class="row">
+  <div class="num">${i+1}</div>
+  <div class="info"><h3>${r.t}<span class="rec ${r.rec?'yes':'no'}">${r.rec?'建議改':'建議不改'}</span></h3><p>${r.d}。${r.why}</p></div>
+  <div class="cmp"><small>現在</small><div class="ui">${r.a}</div></div>
+  <div class="cmp"><small>改成圖示</small><div class="ui">${r.b}</div><small style="font-weight:500;letter-spacing:0">${r.names}</small></div>
+</div>`).join('');
+</script>

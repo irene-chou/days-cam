@@ -1,0 +1,279 @@
+<title>DaysCam 相機畫面 D-1</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+:root{
+  --ground:#F3EFEA; --ink:#221F1C; --muted:#6B645D; --line:#DDD5CC; --card:#FBF8F5;
+  --accent:#C9772A; --accent-ink:#FFFFFF; --tag:#F8E6D2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+    --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+  --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"Noto Sans TC",-apple-system,"PingFang TC",sans-serif;font-size:15px;line-height:1.6;padding-inline:16px;padding-block:28px 48px}
+.wrap{max-width:1060px;margin:0 auto;display:grid;grid-template-columns:auto minmax(0,1fr);gap:40px;align-items:start}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr);justify-items:center}}
+header{max-width:1060px;margin:0 auto 24px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+h1{font-size:24px;margin:2px 0 6px;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:64ch}
+.stage{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%}
+.legend{font-size:12.5px;color:var(--muted);text-align:center;max-width:360px}
+
+.phone{
+  --cam-bg:#F7F3EE; --fill:rgba(42,38,34,.07); --fill-strong:rgba(42,38,34,.12); --t1:#2A2622; --t2:rgba(42,38,34,.62); --t3:rgba(42,38,34,.38); --hair:rgba(42,38,34,.10); --active:#C9772A;
+  --apricot:#FFC27A; --apricot-ink:#2A1A08; --spring:cubic-bezier(.34,1.3,.5,1);
+  width:360px;max-width:100%;aspect-ratio:390/844;background:#000;border-radius:48px;padding:10px;box-shadow:0 0 0 2px #2b2f33,0 24px 60px rgba(0,0,0,.25);position:relative;overflow:hidden;color:var(--t1);
+  font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none}
+.screen{position:absolute;inset:10px;border-radius:38px;overflow:hidden;background:var(--cam-bg);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:13px;font-weight:700;flex:none;position:relative;z-index:3}
+.island{width:96px;height:28px;background:#000;border-radius:20px;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:5}
+button:focus-visible{outline:2px solid var(--apricot);outline-offset:3px}
+
+/* top bar */
+.top{height:52px;flex:none;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 12px;position:relative;z-index:3}
+.tools{display:flex;gap:4px}
+.tools.r{justify-content:flex-end}
+.tool{width:38px;height:38px;border-radius:50%;border:0;background:transparent;color:var(--t1);display:grid;place-items:center;cursor:pointer;position:relative;transition:transform .2s var(--spring),background .2s}
+.tool:active{transform:scale(.9)}
+.tool.on{color:var(--active)}
+.tool .lbl{font-size:12px;font-weight:800;letter-spacing:.02em}
+.tool[disabled]{opacity:.35;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--fill);border:0;color:var(--t1);font:inherit;font-size:14px;font-weight:700;padding:7px 14px;border-radius:999px;cursor:pointer}
+.pop{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;background:rgba(255,255,255,.94);box-shadow:0 8px 24px rgba(60,40,20,.14);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border-radius:999px;padding:4px;display:flex;gap:2px;white-space:nowrap;animation:pop .22s var(--spring);z-index:6}
+@keyframes pop{from{opacity:0;transform:translateX(-50%) scale(.9)}to{opacity:1;transform:translateX(-50%) scale(1)}}
+.pop button{border:0;background:transparent;color:var(--t2);font:inherit;font-size:12.5px;font-weight:700;padding:5px 11px;border-radius:999px;cursor:pointer}
+.pop button[aria-pressed="true"]{background:var(--apricot);color:var(--apricot-ink)}
+
+/* viewfinder */
+.vfbox{flex:none;margin:0 8px;aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;position:relative}
+.vf{width:100%;border-radius:20px;aspect-ratio:3/4;position:relative;overflow:hidden;transition:aspect-ratio .3s var(--spring)}
+.r11 .vf{aspect-ratio:1/1}
+.r916 .vfbox{position:absolute;left:0;right:0;top:44px;margin:0;aspect-ratio:auto}
+.r916 .vf{border-radius:0;aspect-ratio:9/16}
+.r916 .top{background:linear-gradient(180deg,rgba(247,243,238,.85),transparent)}
+.scene{position:absolute;inset:0;background:
+  radial-gradient(60% 45% at 30% 70%,rgba(255,214,150,.55),transparent 70%),
+  radial-gradient(40% 30% at 72% 38%,rgba(255,255,255,.35),transparent 70%),
+  linear-gradient(180deg,#8FB3C9 0%,#B9C9C8 42%,#C9B79A 58%,#8C7A5E 100%)}
+.scene::after{content:"";position:absolute;left:18%;bottom:14%;width:44%;height:40%;border-radius:48% 52% 10% 10%/60% 60% 10% 10%;background:linear-gradient(180deg,#6E5A45,#4A3C2E);opacity:.55;filter:blur(1px)}
+.grid{position:absolute;inset:0;pointer-events:none;background:
+  linear-gradient(90deg,transparent calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% + .5px),transparent calc(66.66% + .5px)),
+  linear-gradient(180deg,transparent calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% - .5px),rgba(255,255,255,.45) calc(33.33% + .5px),transparent calc(33.33% + .5px),transparent calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% - .5px),rgba(255,255,255,.45) calc(66.66% + .5px),transparent calc(66.66% + .5px))}
+.overlay{position:absolute;right:4%;bottom:4%;font-size:21px;pointer-events:none;white-space:nowrap;font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c",sans-serif;font-weight:800;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.count{position:absolute;inset:0;display:grid;place-items:center;font-size:96px;font-weight:800;color:#fff;text-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:none}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.flash.on{opacity:.9;transition:none}
+
+/* bottom */
+.bottom{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:16px;z-index:3}
+.r916 .bottom{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(247,243,238,.9),transparent)}
+.row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 22px}
+.shutter{width:76px;height:76px;border-radius:50%;border:4px solid #EADFD3;background:transparent;padding:4px;cursor:pointer}
+.shutter span{display:block;width:100%;height:100%;border-radius:50%;background:var(--apricot);box-shadow:0 2px 8px rgba(201,119,42,.35);transition:transform .2s var(--spring)}
+.shutter:active span{transform:scale(.88)}
+.side{justify-self:center;background:transparent;border:0;color:var(--t2);font:inherit;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;font-size:11px}
+.bubble{color:var(--t1);width:50px;height:50px;border-radius:50%;background:var(--fill);display:grid;place-items:center}
+.style-tile{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#8C99A0,#4A4540);display:grid;place-items:center;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55)}
+.style-tile b{font-size:17px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.toast{position:absolute;left:50%;top:-8px;transform:translate(-50%,-100%);background:rgba(30,28,26,.9);font-size:13px;font-weight:700;padding:7px 14px;border-radius:999px;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.toast.on{opacity:1}
+
+.picker{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:380px}
+.opt{display:flex;flex-direction:column;align-items:center;gap:4px;width:68px;padding:8px 4px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:11.5px;line-height:1.3;cursor:pointer;text-align:center}
+.opt[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+.opt i{width:36px;height:36px;border-radius:50%;background:#EDE9E4;color:#2A2622;display:grid;place-items:center;font-style:normal}
+.opt small{color:var(--muted);font-size:10px;word-break:break-all}
+.opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bubble{background:transparent!important}
+.chip{background:transparent!important;padding:7px 6px}
+/* notes */
+.notes{min-width:0;width:100%}
+.notes h2{font-size:17px;margin:0 0 4px}
+.notes>p{color:var(--muted);margin:0 0 18px;max-width:62ch}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:14px 0;border-top:1px solid var(--line)}
+.item:last-of-type{border-bottom:1px solid var(--line)}
+.tag{font-size:12px;font-weight:700;background:var(--tag);color:var(--ink);padding:2px 8px;border-radius:6px;height:fit-content;white-space:nowrap}
+.tag.chg{background:var(--accent);color:var(--accent-ink)}
+.item h3{font-size:15px;margin:0}
+.item p{grid-column:2;margin:0;color:var(--muted);font-size:14px;max-width:60ch}
+.try{margin:0 0 18px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:14px}
+.try ol{margin:4px 0 0;padding-left:1.3em}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.thumb{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;color:var(--t1);overflow:hidden}
+.thumb.has{box-shadow:0 1px 4px rgba(60,40,20,.25)}
+.thumb .shot{display:block;width:100%;height:100%;background:linear-gradient(180deg,#8FB3C9,#C9B79A 60%,#8C7A5E);animation:pop .3s var(--spring)}
+.tools{gap:0!important}
+/* full-bleed viewfinder: no margin, no radius */
+.vf{margin:0!important;width:100%!important;border-radius:0!important}
+.vfbox{margin:0!important}
+</style>
+
+<header>
+  <div class="eyebrow">DaysCam 介面改版 · 設計稿 D-1 · 第 7 版</div>
+  <h1>相機畫面＋頂部相機工具列</h1>
+  <p>新增需求：頂部加入基礎相機調整，參考 Foodie 最上方那排工具。改成淺色主題（暖白底、圓體字、杏桃色），右下鍵只留圖示。</p>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <div class="phone">
+      <div class="island"></div>
+      <div class="screen" id="screen">
+        <div class="status"><span>9:41</span><span>5G</span></div>
+        <div class="top">
+          <div class="tools">
+            <button class="tool" id="flashBtn" aria-label="閃光燈"></button>
+            <button class="tool" id="timerBtn" aria-label="計時器"></button>
+          </div>
+          <button class="chip" id="chip">小寶 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="opacity:.7"><path d="M2 3.5l3 3 3-3"/></svg></button>
+          <div class="tools r">
+            <button class="tool" id="ratioBtn" aria-label="比例"></button>
+            <button class="tool" id="gridBtn" aria-label="格線"></button>
+            <button class="tool" id="flip" aria-label="翻轉鏡頭"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><path d="M9 13.5a3 3 0 0 1 5.2-2"/><path d="M15 12.5a3 3 0 0 1-5.2 2"/></svg></button>
+          </div>
+          <div id="popLayer"></div>
+        </div>
+        <div class="vfbox">
+          <div class="vf">
+            <div class="scene"></div>
+            <div class="grid" id="grid" hidden></div>
+            <div class="overlay">第 10 天</div>
+            <div class="count" id="count"></div>
+            <div class="flash" id="flash"></div>
+          </div>
+        </div>
+        <div class="bottom">
+          <div class="toast" id="toast"></div>
+          <div class="row">
+            <button class="side" id="thumbBtn" aria-label="查看已拍照片"><span class="thumb" id="thumb"></span></button>
+            <button class="shutter" id="shutter" aria-label="快門"><span></span></button>
+            <button class="side" id="ovBtn" aria-label="疊字設定"><span class="bubble" id="ovIcon"></span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="picker" id="picker" role="group" aria-label="右下鍵圖示選項"></div>
+    <div class="legend">點上面的選項，手機右下鍵會即時換圖示。頂部四個工具也都可以點：閃光燈、計時器直接切換；比例點開小選單；格線開關。</div>
+  </div>
+
+  <section class="notes">
+    <h2>這份要你決定的</h2>
+    <div class="item"><span class="tag chg">第 7 版</span><h3>左下改成「查看已拍照片」，翻轉移到頂部右側</h3>
+      <p>左下是最新一張 DaysCam 照片的縮圖（圓角 10，這是照片本身，不算框線）；還沒拍過時是相片圖示。按快門後縮圖立即更新，點了打開照片瀏覽（設計稿 D-5）。翻轉鏡頭移到頂部最右邊，右側工具變成「比例、格線、翻轉」。</p></div>
+    <div class="item"><span class="tag chg">第 6 版</span><h3>觀景窗滿版、無圓角</h3>
+      <p>拿掉左右 8pt 邊距與圓角，觀景窗貼齊螢幕寬度。D-2、D-3 同步修改。</p></div>
+    <div class="item"><span class="tag chg">第 5 版</span><h3>按鈕去掉底色與框線</h3>
+      <p>翻轉、右下 Aa、頂部膠囊和工具列都只留圖示或文字；啟用中的工具只靠杏桃色標示。右下鍵暫用 Aa。</p></div>
+    <div class="item"><span class="tag chg">第 4 版</span><h3>右下鍵：選一個圖示</h3>
+      <p>外框改成跟左邊翻轉一樣的淺色圓鈕。圖示有 5 個選項，都用 SF Symbols 內建圖示（名稱標在選項下），不用自己畫。我推薦 <b>Aa 字樣（textformat）</b>：這顆鍵調的是印在照片上的字，Aa 最直接；「天數日曆」比較有產品個性，但容易被誤會成選日期。</p></div>
+    <div class="item"><span class="tag chg">第 3 版</span><h3>淺色主題、底部鍵只留圖示</h3>
+      <p>相機底色改暖白 #F7F3EE，圖示與文字改深色，快門改杏桃色實心＋淺色外圈。翻轉和右下疊字鍵都拿掉文字，只留圖示。</p></div>
+    <div class="try">建議試這條路徑：
+      <ol>
+        <li>點左上閃光燈，循環「關 → 自動 → 開」</li>
+        <li>點右上「3:4」，選 1:1 和 9:16，看觀景窗變化</li>
+        <li>計時器切到 3 秒，按快門看倒數</li>
+        <li>按「翻轉」切到前鏡頭，閃光燈會變灰</li>
+      </ol>
+    </div>
+
+    <div class="item"><span class="tag chg">範圍</span><h3>先做四個：閃光燈、計時器、比例、格線</h3>
+      <p>這是 Foodie 頂部工具列和 iOS 相機共通、成本也低的部分。翻轉已在底部，不重複放。Foodie 其他像夜間模式、柔膚、模糊、App 設定頁這次不做。</p></div>
+
+    <div class="item"><span class="tag chg">版面</span><h3>工具分列在設定檔名稱兩側</h3>
+      <p>左：閃光燈、計時器；中：設定檔名稱膠囊（D-2 的選單）；右：比例、格線。啟用中的工具變杏桃色，一眼看得出目前狀態。</p></div>
+
+    <div class="item"><span class="tag">閃光燈</span><h3>關／自動／開，點一下循環</h3>
+      <p>預設「關」。前鏡頭沒有閃光燈，切到前鏡頭時變灰不能按（不做螢幕補光）。</p></div>
+
+    <div class="item"><span class="tag">計時器</span><h3>關／3 秒／10 秒，點一下循環</h3>
+      <p>倒數時觀景窗中央顯示大數字，倒數中再按快門就取消。疊字的日期與天數以「實際拍下的那一刻」計算（沿用 PRD §6.4 當場重算），不是按下快門那一刻。</p></div>
+
+    <div class="item"><span class="tag">比例</span><h3>3:4／1:1／9:16，點開小選單</h3>
+      <p>預設 3:4。1:1 觀景窗置中裁切；9:16 觀景窗鋪滿，上下工具浮在畫面上。照片依所選比例裁切後再印疊字，疊字的邊距和字級照新的短邊計算（沿用 FR-4.3、4.7），所以任何比例下疊字位置都跟觀景窗一致。</p></div>
+
+    <div class="item"><span class="tag">格線</span><h3>三分格線開關</h3>
+      <p>只顯示在觀景窗，不會印進照片。</p></div>
+
+    <div class="item"><span class="tag">記憶</span><h3>相機工具的狀態屬於 App，不屬於設定檔</h3>
+      <p>閃光燈、計時器、比例、格線是拍照習慣，不隨切換設定檔改變。下次開 App 時保留比例和格線；閃光燈和計時器每次開 App 都回到「關」，避免忘記而意外觸發。</p></div>
+
+    <div class="item"><span class="tag chg">推翻 v1</span><h3>解除 PRD 的三條限制</h3>
+      <p>v1 PRD 把閃光燈列為非目標、拍攝比例固定 4:3（FR-5.7）、相機只有快門和翻轉（FR-5.8）。這次需求要解除這三條，會寫進 PRD v2 的已定案決策。</p></div>
+  </section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const OPTS=[
+ ['Aa 字樣','textformat','<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 18L8 5l5.5 13M4.6 13.2h6.8"/><path d="M20.5 11.5v6.5M20.5 14.7a2.9 2.9 0 1 1 0-.1"/></svg>'],
+ ['調整滑桿','slider.horizontal.3','<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>'],
+ ['魔法棒','wand.and.stars','<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20L15 9M13.5 7.5l3 3"/><path d="M18 3v3M16.5 4.5h3M20 10v2M19 11h2M9 3.5v2M8 4.5h2"/></svg>'],
+ ['天數日曆','calendar','<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><text x="12" y="17.6" text-anchor="middle" font-size="7" font-weight="800" fill="currentColor" stroke="none" font-family="ui-rounded,sans-serif">10</text></svg>'],
+ ['字卡','character.textbox','<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3.5"/><path d="M8.5 16l3.5-8.5 3.5 8.5M9.8 13h4.4"/></svg>']
+];
+let ovPick=0;
+function renderPicker(){
+  $('ovIcon').innerHTML=OPTS[ovPick][2];
+  $('picker').innerHTML=OPTS.map((o,i)=>`<button class="opt" data-i="${i}" aria-pressed="${i===ovPick}"><i>${o[2]}</i>${o[0]}${i===0?'（推薦）':''}<small>${o[1]}</small></button>`).join('');
+  $('picker').querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ovPick=+b.dataset.i;renderPicker()});
+}
+const screen=$('screen');
+const S={flash:0,timer:0,ratio:'3:4',grid:false,front:false,counting:null};
+const FL=['關','自動','開'], TM=[0,3,10];
+const ico={
+  flashOff:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L6 13h5l-1 8 7-10h-5l1-8z"/><path d="M4 4l16 16"/></svg>',
+  flashOn:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3L6 13h5l-1 8 7-10h-5l1-8z"/></svg>',
+  flashAuto:'<svg width="22" height="20" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M11 3L4 13h5l-1 8 7-10h-5l1-8z"/><text x="17" y="21" font-size="9" font-weight="800" fill="currentColor" stroke="none" font-family="ui-rounded,sans-serif">A</text></svg>',
+  timer:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/></svg>',
+  grid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/></svg>'
+};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),1400)}
+function render(){
+  screen.className='screen '+({'3:4':'r34','1:1':'r11','9:16':'r916'}[S.ratio]);
+  const fb=$('flashBtn');
+  fb.innerHTML=[ico.flashOff,ico.flashAuto,ico.flashOn][S.flash];
+  fb.classList.toggle('on',S.flash>0&&!S.front); fb.disabled=S.front;
+  fb.setAttribute('aria-label','閃光燈：'+(S.front?'前鏡頭不可用':FL[S.flash]));
+  const tb=$('timerBtn');
+  tb.innerHTML=S.timer?`<span class="lbl">${TM[S.timer]}s</span>`:ico.timer;
+  tb.classList.toggle('on',S.timer>0);
+  $('ratioBtn').innerHTML=`<span class="lbl">${S.ratio}</span>`;
+  $('gridBtn').innerHTML=ico.grid; $('gridBtn').classList.toggle('on',S.grid);
+  $('grid').hidden=!S.grid;
+}
+$('flashBtn').onclick=()=>{S.flash=(S.flash+1)%3;render();toast('閃光燈：'+FL[S.flash])};
+$('timerBtn').onclick=()=>{S.timer=(S.timer+1)%3;render();toast(S.timer?'計時 '+TM[S.timer]+' 秒':'計時器：關')};
+$('gridBtn').onclick=()=>{S.grid=!S.grid;render()};
+$('ratioBtn').onclick=e=>{
+  e.stopPropagation();
+  const L=$('popLayer');
+  if(L.innerHTML){L.innerHTML='';return}
+  L.innerHTML=`<div class="pop" style="left:auto;right:8px;transform:none;animation:none">${['3:4','1:1','9:16'].map(r=>`<button data-r="${r}" aria-pressed="${r===S.ratio}">${r}</button>`).join('')}</div>`;
+  L.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.ratio=b.dataset.r;L.innerHTML='';render()});
+};
+document.addEventListener('click',e=>{if(!e.target.closest('#popLayer'))$('popLayer').innerHTML=''});
+$('chip').onclick=()=>toast('設定檔選單 → 見 D-2');
+$('flip').onclick=e=>{S.front=!S.front;const s=e.currentTarget.querySelector('svg');s.style.transition='transform .3s';s.style.transform=S.front?'scaleX(-1)':'';render();toast(S.front?'前鏡頭':'後鏡頭')};
+let shots=0;function renderThumb(){$('thumb').innerHTML=shots?'<i class="shot"></i>':'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M3.5 16l5-4.5 4 3.5 3-2.5 5 4"/><circle cx="15.5" cy="9.5" r="1.5"/></svg>';$('thumb').classList.toggle('has',!!shots)}
+renderThumb();
+$('thumbBtn').onclick=()=>toast(shots?'打開照片瀏覽 → 見 D-5':'還沒有用 DaysCam 拍的照片');
+function fire(){shots++;renderThumb();const f=$('flash');f.classList.add('on');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('on')));toast('已儲存')}
+$('shutter').onclick=()=>{
+  if(S.counting){clearInterval(S.counting);S.counting=null;$('count').textContent='';toast('已取消');return}
+  const n=TM[S.timer]; if(!n){fire();return}
+  let left=n;$('count').textContent=left;
+  S.counting=setInterval(()=>{left--; if(left<=0){clearInterval(S.counting);S.counting=null;$('count').textContent='';fire()} else $('count').textContent=left},1000);
+};
+render();renderPicker();
+$('ovBtn').onclick=()=>toast('打開疊字設定面板 → 見 D-2');
+</script>

@@ -1,0 +1,183 @@
+<title>DaysCam 分頁樣式比較</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+:root{
+  --ground:#F3EFEA; --ink:#221F1C; --muted:#6B645D; --line:#DDD5CC; --card:#FBF8F5;
+  --accent:#C9772A; --accent-ink:#FFFFFF; --tag:#F8E6D2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+    --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141312; --ink:#EDE8E3; --muted:#A39B93; --line:#2E2B28; --card:#1C1A18;
+  --accent:#FFC27A; --accent-ink:#2A1A08; --tag:#3A2A18; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"Noto Sans TC",-apple-system,"PingFang TC",sans-serif;font-size:15px;line-height:1.6;padding-inline:16px;padding-block:28px 48px}
+header,.grid,.src{max-width:1180px;margin-inline:auto}
+header{margin-bottom:22px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+h1{font-size:24px;margin:2px 0 6px;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:70ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:28px 24px}
+.opt{display:flex;flex-direction:column;gap:10px;min-width:0}
+.opt h2{font-size:16px;margin:0;display:flex;gap:8px;align-items:baseline}
+.opt h2 span{font-size:12px;font-weight:700;color:var(--accent-ink);background:var(--accent);padding:1px 8px;border-radius:6px}
+.opt p{margin:0;color:var(--muted);font-size:13.5px}
+.opt p b{color:var(--ink)}
+.src{margin-top:32px;font-size:13px;color:var(--muted)}
+.src a{color:var(--accent)}
+
+/* phone slice */
+.ph{--bg:#F7F3EE;--t1:#2A2622;--t2:rgba(42,38,34,.62);--t3:rgba(42,38,34,.36);--hair:rgba(42,38,34,.10);--fill:rgba(42,38,34,.07);--act:#C9772A;--apr:#FFC27A;
+  width:100%;max-width:360px;background:var(--bg);border-radius:28px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.08),0 14px 36px rgba(60,40,20,.14);color:var(--t1);
+  font-family:ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none;display:flex;flex-direction:column}
+.vfs{height:96px;margin:10px 8px 0;border-radius:16px 16px 16px 16px;position:relative;overflow:hidden;background:linear-gradient(180deg,#B9C9C8 0%,#C9B79A 50%,#8C7A5E 100%)}
+.ov{position:absolute;right:12px;bottom:10px;white-space:nowrap}
+.pn{height:176px;display:flex;flex-direction:column;padding:6px 10px 0}
+.brow{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:4px 22px 14px}
+.brow i{justify-self:center;width:40px;height:40px;display:grid;place-items:center;color:var(--t1)}
+.sh{width:58px;height:58px;border-radius:50%;border:3px solid #EADFD3;padding:3px}
+.sh b{display:block;width:100%;height:100%;border-radius:50%;background:var(--apr)}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.ph .ph-note{font-size:12px;color:var(--t3);text-align:center}
+
+/* shared content rows */
+.hs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.hs::-webkit-scrollbar{display:none}
+.fc{flex:none;border:0;background:transparent;color:var(--t2);padding:8px 10px;border-radius:10px;font-size:15px;white-space:nowrap}
+.fc[aria-pressed="true"]{color:var(--act)}
+.dots{gap:9px;padding:6px 2px}
+.dot{flex:none;width:28px;height:28px;border-radius:50%;border:0;padding:0;box-shadow:inset 0 0 0 1px rgba(42,38,34,.15)}
+.dot[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--act)}
+.oc{flex:none;border:0;min-width:58px;padding:6px 6px 3px;border-radius:10px;background:linear-gradient(180deg,#8FB3C9,#C9B79A 75%);color:#fff;font-size:10.5px;display:flex;flex-direction:column;align-items:center;gap:1px;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.oc b{font-size:15px;line-height:1.5;display:inline-block}
+.oc[aria-pressed="true"]{box-shadow:0 0 0 2px var(--act)}
+.zr{display:flex;align-items:center;gap:8px;padding:0 6px}
+.zr input{flex:1;accent-color:#C9772A}
+.zr small{font-weight:800;color:var(--t2)}
+.zr output{font-size:12px;min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- A: segmented + text ---------- */
+.A .seg{display:flex;background:rgba(42,38,34,.07);border-radius:10px;padding:2px;margin:0 2px}
+.A .seg button{flex:1;border:0;background:transparent;color:var(--t2);font-size:13px;font-weight:700;padding:5px 0;border-radius:8px}
+.A .seg button[aria-selected="true"]{background:#fff;color:var(--t1);box-shadow:0 1px 3px rgba(60,40,20,.15)}
+.A .sub{display:flex;gap:14px;padding:8px 6px 2px}
+.A .sub button{border:0;background:transparent;color:var(--t3);font-size:12.5px;font-weight:700;padding:2px 0}
+.A .sub button[aria-selected="true"]{color:var(--act)}
+
+/* ---------- B: IG-style icon toolbar ---------- */
+.B .top{display:flex;justify-content:center;gap:18px;padding:2px 0 6px}
+.B .top button{border:0;background:transparent;color:var(--t3);font-size:14px;font-weight:800;padding:2px 0}
+.B .top button[aria-selected="true"]{color:var(--t1)}
+.B .icons{display:flex;justify-content:center;gap:10px;padding:0 0 6px}
+.B .icons button{width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:var(--t2);display:grid;place-items:center}
+.B .icons button[aria-selected="true"]{background:var(--t1);color:#fff}
+
+/* ---------- C: primary at bottom (Lightroom) ---------- */
+.C .pn{padding-top:4px}
+.C .subchips{display:flex;gap:6px;padding:0 2px 4px;overflow-x:auto;scrollbar-width:none}
+.C .subchips button{flex:none;border:0;background:transparent;color:var(--t3);font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px}
+.C .subchips button[aria-selected="true"]{background:rgba(255,194,122,.35);color:#7A4513}
+.C .prim{display:flex;justify-content:space-around;border-top:1px solid var(--hair);padding-top:4px;margin-top:2px}
+.C .prim button{border:0;background:transparent;color:var(--t3);display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10.5px;font-weight:700;padding:2px 6px}
+.C .prim button[aria-selected="true"]{color:var(--t1)}
+.C .prim svg{width:20px;height:20px}
+
+/* ---------- D: drill-down ---------- */
+.D .list{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 2px}
+.D .list button{border:0;background:rgba(42,38,34,.05);border-radius:14px;padding:12px 10px;text-align:left;color:var(--t1);font-size:14px;font-weight:800;display:flex;justify-content:space-between;align-items:center}
+.D .list small{font-size:11px;color:var(--t3);font-weight:600}
+.D .hd{display:flex;align-items:center;gap:6px;padding:0 0 4px}
+.D .back{border:0;background:transparent;color:var(--t1);font-size:14px;font-weight:800;display:flex;align-items:center;gap:2px;padding:4px 4px 4px 0}
+.D .hd .sub{display:flex;gap:12px;margin-left:auto}
+.D .hd .sub button{border:0;background:transparent;color:var(--t3);font-size:12.5px;font-weight:700;padding:2px 0}
+.D .hd .sub button[aria-selected="true"]{color:var(--act)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header>
+  <div class="eyebrow">DaysCam 介面改版 · 設計稿 D-3 · 分頁樣式比較</div>
+  <h1>兩層分頁，四種做法</h1>
+  <p>每一種都可以點。上半是觀景窗的一角（疊字即時變化），中間是面板，最下列是快門。第一層是「樣式｜格式｜位置｜天數規則」，第二層是樣式裡的「字型｜顏色｜外框｜陰影｜字級」。其他分頁在這份只放佔位文字。選好一種告訴我代號即可。</p>
+</header>
+
+<div class="grid" id="grid"></div>
+
+<p class="src">參考來源：<a href="https://mobbin.com/glossary/segmented-control">Mobbin：Segmented control</a>、<a href="https://mobbin.com/explore/mobile/ui-elements/tab">Mobbin：Mobile tabs</a>、<a href="https://helpx.adobe.com/in/lightroom-cc/using/edit-photos-mobile-android.html">Adobe：Lightroom 行動版編輯工具</a>、<a href="https://www.capcut.com/resource/edit-text-in-photo">CapCut：照片文字編輯</a>。Instagram 限時動態的文字工具列是依我對 App 的印象描述，網路上查不到官方說明。</p>
+
+<script>
+const FONTS=[['SF Rounded','ui-rounded,"SF Pro Rounded","M PLUS Rounded 1c",sans-serif',800],['SF Pro','-apple-system,"SF Pro Text",sans-serif',700],['SF Mono','ui-monospace,"SF Mono",Menlo,monospace',700],['New York','ui-serif,"New York",Georgia,serif',700],['Avenir Next','"Avenir Next",Avenir,sans-serif',700],['Futura','Futura,sans-serif',700],['Georgia','Georgia,serif',700],['Typewriter','"American Typewriter",Courier,monospace',600],['Didot','Didot,"Bodoni 72",serif',700],['Snell Roundhand','"Snell Roundhand",cursive',700]];
+const COLORS=['#FFFFFF','#1C1C1E','#FF9500','#FFC27A','#FF6B9D','#FF3B30','#FFD60A','#34C759','#8FD3C9','#0A84FF','#B69CFF','#C8B8A6'];
+const OUT=[['無','none'],['細描邊','thin'],['粗描邊','thick'],['半透明底','soft'],['實心底','solid']];
+const SHA=[['無','none'],['柔和','soft'],['硬陰影','hard'],['發光','glow']];
+const PRIM=['樣式','格式','位置','天數規則'], SUB=['字型','顏色','外框','陰影','字級'];
+const SI={
+ '字型':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19L10 5l6 14M6.3 14h7.4M19 11v8"/></svg>',
+ '顏色':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>',
+ '外框':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="3.5" stroke-dasharray="3 2.5"/></svg>',
+ '陰影':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="12" height="12" rx="3"/><path d="M19 8.5V17a2 2 0 0 1-2 2H8.5" stroke-linecap="round"/></svg>',
+ '字級':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19l4.5-10L12 19M4.4 16h6.2"/><path d="M13 19l3.5-8 3.5 8M14.1 16.6h4.8" stroke-width="1.6"/></svg>'};
+const PI={
+ '樣式':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19L10 5l6 14M6.3 14h7.4M19 11v8"/></svg>',
+ '格式':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h10M5 17h7"/></svg>',
+ '位置':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/></svg>',
+ '天數規則':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg>'};
+const BOT='<div class="brow"><i><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17.5" r="1.1" fill="currentColor" stroke="none"/></svg></i><span class="sh"><b></b></span><i><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg></i></div>';
+
+function lum(h){const n=parseInt(h.slice(1),16);return .2126*(n>>16&255)/255+.7152*(n>>8&255)/255+.0722*(n&255)/255}
+function css(st,px){const F=FONTS[st.f],c=lum(st.c)>.55?'28,28,30':'255,255,255';let s=`font-family:${F[1]};font-weight:${F[2]};color:${st.c};font-size:${px}px;`;
+ if(st.o==='thin')s+=`-webkit-text-stroke:${px*.12}px rgb(${c});paint-order:stroke fill;`;if(st.o==='thick')s+=`-webkit-text-stroke:${px*.24}px rgb(${c});paint-order:stroke fill;`;
+ if(st.o==='soft')s+=`background:rgba(${c},.5);padding:.2em .5em;border-radius:.4em;`;if(st.o==='solid')s+=`background:rgb(${c});padding:.2em .5em;border-radius:.4em;`;
+ if(st.s==='soft')s+='text-shadow:0 2px 4px rgba(0,0,0,.55);';if(st.s==='hard')s+='text-shadow:2px 2px 0 rgba(0,0,0,.75);';if(st.s==='glow')s+=`text-shadow:0 0 6px ${st.c},0 0 14px ${st.c};`;return s}
+
+function content(S){
+  const st=S.st;
+  if(S.p!=='樣式')return `<p class="ph-note">「${S.p}」分頁內容見 D-4</p>`;
+  if(S.s==='字型')return `<div class="hs">${FONTS.map((F,i)=>`<button class="fc" data-a="f" data-v="${i}" aria-pressed="${st.f===i}" style="font-family:${F[1]};font-weight:${F[2]}">${F[0]}</button>`).join('')}</div>`;
+  if(S.s==='顏色')return `<div class="hs dots">${COLORS.map(c=>`<button class="dot" data-a="c" data-v="${c}" aria-label="${c}" aria-pressed="${st.c===c}" style="background:${c}"></button>`).join('')}</div>`;
+  if(S.s==='外框')return `<div class="hs">${OUT.map(([n,k])=>`<button class="oc" data-a="o" data-v="${k}" aria-pressed="${st.o===k}"><b style="${css({...st,o:k,s:'none'},15)}">Aa</b>${n}</button>`).join('')}</div>`;
+  if(S.s==='陰影')return `<div class="hs">${SHA.map(([n,k])=>`<button class="oc" data-a="s" data-v="${k}" aria-pressed="${st.s===k}"><b style="${css({...st,s:k},15)}">Aa</b>${n}</button>`).join('')}</div>`;
+  return `<div class="zr"><small style="font-size:11px">A</small><input type="range" min="70" max="160" step="5" value="${st.z}" aria-label="字級"><small style="font-size:18px">A</small><output>${st.z}%</output></div>`;
+}
+const tabs=(list,cur,attr)=>list.map(n=>`<button role="tab" data-${attr}="${n}" aria-selected="${n===cur}">${n}</button>`).join('');
+
+const V=[
+ {k:'A',t:'分段控制＋文字小分頁',d:'<b>第一層</b>用 iOS 分段控制（灰色軌道＋白色滑塊），<b>第二層</b>是下方一排杏桃色文字。iOS 原生元件，使用者最熟悉，層級差異最明顯；但分段控制本身有底色，是「非必要不加框」的例外。',
+  pn:S=>`<div class="seg" role="tablist">${tabs(PRIM,S.p,'p')}</div>${S.p==='樣式'?`<div class="sub" role="tablist">${tabs(SUB,S.s,'s')}</div>`:''}<div class="body">${content(S)}</div>`},
+ {k:'B',t:'文字分頁＋圖示工具列（Instagram 限時動態式）',d:'<b>第一層</b>是置中的粗體文字，<b>第二層</b>只用圖示，選中的變成深色實心圓。靠「文字 vs 圖示」區分，最精簡；缺點是圖示要學，第一次用可能看不懂「外框」「陰影」的圖示。',
+  pn:S=>`<div class="top" role="tablist">${tabs(PRIM,S.p,'p')}</div>${S.p==='樣式'?`<div class="icons" role="tablist">${SUB.map(n=>`<button role="tab" data-s="${n}" aria-selected="${n===S.s}" aria-label="${n}" title="${n}">${SI[n]}</button>`).join('')}</div>`:''}<div class="body">${content(S)}</div>`},
+ {k:'C',t:'第一層放底部（Lightroom 式）',d:'<b>第一層</b>變成面板最下方的圖示＋小字，貼近快門、拇指好按；<b>第二層</b>是面板上方的膠囊小字，選中的有淺杏桃底。上下分開，層級從位置就看得出來；缺點是面板裡多了一條分隔線。',
+  pn:S=>`${S.p==='樣式'?`<div class="subchips" role="tablist">${tabs(SUB,S.s,'s')}</div>`:''}<div class="body">${content(S)}</div><div class="prim" role="tablist">${PRIM.map(n=>`<button role="tab" data-p="${n}" aria-selected="${n===S.p}">${PI[n]}${n}</button>`).join('')}</div>`},
+ {k:'D',t:'下鑽式：一次只顯示一層',d:'面板先列出四個大項（2×2）；點「樣式」後整個面板換成「‹ 樣式」標題＋第二層小分頁。<b>畫面上永遠只有一層分頁</b>，不會混淆；缺點是切換第一層要多點一下返回。',
+  pn:S=>S.p===null?`<div class="body"><div class="list">${PRIM.map(n=>`<button data-p="${n}">${n}<small>›</small></button>`).join('')}</div></div>`
+   :`<div class="hd"><button class="back" data-back="1"><svg width="9" height="14" viewBox="0 0 10 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M8 2L2 8l6 6"/></svg>${S.p}</button>${S.p==='樣式'?`<div class="sub" role="tablist">${tabs(SUB,S.s,'s')}</div>`:''}</div><div class="body">${content(S)}</div>`}
+];
+
+const grid=document.getElementById('grid');
+V.forEach(v=>{
+  const S={p:v.k==='D'?null:'樣式',s:'字型',st:{f:0,c:'#FFFFFF',o:'none',s:'soft',z:100}};
+  const el=document.createElement('section');el.className='opt';
+  el.innerHTML=`<h2><span>${v.k}</span>${v.t}</h2><div class="ph ${v.k}"><div class="vfs"><div class="ov">第 10 天</div></div><div class="pn"></div>${BOT}</div><p>${v.d}</p>`;
+  grid.appendChild(el);
+  const pn=el.querySelector('.pn'),ov=el.querySelector('.ov');
+  const draw=()=>{pn.innerHTML=v.pn(S);ov.style.cssText=css(S.st,20*S.st.z/100)};
+  pn.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.back){S.p=null}
+    else if(b.dataset.p){S.p=b.dataset.p}
+    else if(b.dataset.s){S.s=b.dataset.s}
+    else if(b.dataset.a){const a=b.dataset.a,v2=b.dataset.v;S.st[a]=a==='f'?+v2:v2}
+    else return;
+    draw();
+  });
+  pn.addEventListener('input',e=>{if(e.target.type==='range'){S.st.z=+e.target.value;e.target.parentNode.querySelector('output').textContent=S.st.z+'%';ov.style.cssText=css(S.st,20*S.st.z/100)}});
+  draw();
+});
+</script>
