@@ -31,50 +31,58 @@
 
 ---
 
-## 依賴結構
+## 依賴結構與團隊
 
 ```
-第 0 層（可平行）
-  TASK-17 OverlayStyle 模型、舊檔轉換、最近自訂顏色      core-dev
-  TASK-19 相機工具（比例、閃光燈、計時器、格線）          core-dev
-  TASK-20 ProfileStore 排序、複製、命名                  core-dev
-  TASK-28 已拍照片紀錄與讀取權限                         core-dev
+第一波（Lead＋core-style、core-device、qa）
+  core-style : TASK-17 ─► TASK-18（core 半邊）─► TASK-27
+  core-device: TASK-19（core 半邊）─ TASK-20 ─ TASK-28（core 半邊）→ 做完即退場
+  qa         : 從 TASK-17 送 PR 起逐張驗收
 
-第 1 層
-  TASK-18 渲染層支援 OverlayStyle 與自訂位置      ← 17        core-dev（OverlayTextView 由 ui-dev 配合）
-  TASK-27 天數單位改為任意勾選（計算與文字）       ← 17        core-dev
-  TASK-21 主題 tokens 與相機畫面改版              ← 19, 28    ui-dev
+第二波（core-device 退場；加入 ui-shell、ui-panel）
+  ui-shell   : TASK-18（OverlayTextView）─► TASK-21 ─► TASK-22 ─► TASK-26 ─► TASK-29
+               上線條件：TASK-19、TASK-28 的 core 半邊已合併
+  ui-panel   : TASK-23／25 的 view model（依 17）─► 接上 TASK-22 ─► TASK-24（依 27）
+               上線條件：TASK-17 已合併
 
-第 2 層
-  TASK-22 疊字面板殼層                           ← 18, 21    ui-dev
-
-第 3 層（都是 ui-dev，CameraScreen.swift 以外可平行，實務上依序做）
-  TASK-23 樣式分頁                               ← 22
-  TASK-24 格式分頁與位置分頁（含拖曳）             ← 22, 27
-  TASK-25 天數規則分頁                           ← 22
-  TASK-26 管理設定檔面板；刪除舊畫面               ← 20, 22
-  TASK-29 照片瀏覽畫面                           ← 21, 28
-
-第 4 層
-  TASK-30 端對端整合驗收                          ← 全部       qa
+收尾
+  qa  : TASK-30
+  Lead: MARKETING_VERSION 升為 0.2.0（驗收 30.5a）
 ```
 
-**建議分工**：core-dev 依序 17 → 18 → 27，中間穿插 19、20、28；ui-dev 在 19、28 完成後從 21 開始。
+| 角色 | 負責 | 建議模型 | 角色定義 |
+|---|---|---|---|
+| Lead | 分派、PR 審查與合併順序、`docs/**`、`project.yml`、版本升級、B 級驗收整理給人類 | Opus | — |
+| core-style | 17、18（core）、27 | Opus | [`.claude/agents/core-style.md`](../.claude/agents/core-style.md) |
+| core-device | 19（core）、20、28（core） | Sonnet | [`.claude/agents/core-device.md`](../.claude/agents/core-device.md) |
+| ui-shell | 18（`OverlayTextView`）、21、22、26、29 | Sonnet | [`.claude/agents/ui-shell.md`](../.claude/agents/ui-shell.md) |
+| ui-panel | 23、24、25 | Sonnet | [`.claude/agents/ui-panel.md`](../.claude/agents/ui-panel.md) |
+| qa | 每張卡的 A 級、全部 B′、TASK-30 | Sonnet | [`.claude/agents/qa.md`](../.claude/agents/qa.md) |
+
+> **`Views/CameraScreen.swift` 的合併順序固定為 21 → 22 → 24（手勢接口）→ 26 → 29**，由 Lead 把關。ui-shell 獨佔這個檔案；ui-panel 需要在觀景窗上加東西時，向 ui-shell 提需求。
 
 ## 檔案所有權
 
-沿用 [`docs/TASKS.md` 的檔案所有權表](./TASKS.md#檔案所有權)。新增檔案的歸屬：
+**一個檔案只有一個擁有者。需要改別人的檔案時，回報 Lead，不要自己動手。**本表取代 [`docs/TASKS.md` 的所有權表](./TASKS.md#檔案所有權)。
 
-| 擁有者 | 新檔案 |
+| 擁有者 | 檔案 |
 |---|---|
-| core-dev | `Models/OverlayStyle.swift`、`Models/OverlayPlacement.swift`、`Models/CaptureSettings.swift`、`Services/CaptureSettingsStore.swift`、`Services/ImageCropper.swift`、`Services/RecentColorsStore.swift`、`Services/CapturedPhotoStore.swift` |
-| ui-dev | `Views/Theme/`（tokens）、`Views/OverlayPanel/`（面板與各分頁）、`Views/ProfileManager/`、`Views/CameraToolbar/`、`Views/Gallery/` |
+| core-style | `Models/`（`CaptureSettings.swift` 除外）、`Services/OverlayMetrics.swift`、`OverlayRenderer.swift`、`TemplateRenderer.swift`、`DayCountCalculator.swift`、`RecentColorsStore.swift` |
+| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift` |
+| ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets` |
+| ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
+| qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
+| Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`CLAUDE.md`、`.claude/agents/` |
 
-> **`Views/CameraScreen.swift` 仍是序列化瓶頸**（0.1 TASKS 已說明）。TASK-21、22、24（拖曳）、26、29 都要改它，必須依序合併。分頁內容請放在 `Views/OverlayPanel/` 的獨立檔案，不要塞進 `CameraScreen.swift`。
+**單元測試**：`DaysCamTests/Unit/<來源檔名>Tests.swift` 歸該來源檔的擁有者，隨實作一起寫。
+
+> **`project.yml` 只有 Lead 能改。** 因為 `sources` 是資料夾 glob，新增 `.swift` 檔**不需要**動它。
 
 ---
 
 ## TASK-17：OverlayStyle 模型、舊檔轉換、最近自訂顏色
+
+**負責**：core-style
 
 **目標**
 把 0.2 PRD §4.1～4.3 的樣式與位置模型落地：`OverlayStyle` 取代 `themeID`，`OverlayPlacement` 取代 `position`，舊檔能無損讀進來。（天數單位的模型變更在 TASK-27。）
@@ -122,6 +130,8 @@
 
 ## TASK-18：渲染層支援 OverlayStyle 與自訂位置
 
+**負責**：core-style（`OverlayTextView` 由 ui-shell）
+
 **目標**
 預覽（`OverlayTextView`）與烘焙（`OverlayRenderer`）都照 `OverlayStyle` 與 `OverlayPlacement` 畫，兩者結果一致。
 
@@ -162,6 +172,8 @@
 
 ## TASK-19：相機工具（比例、閃光燈、計時器、格線）
 
+**負責**：core-device（倒數接線由 ui-shell 在 TASK-21 做）
+
 **目標**
 PRD FR-7.4～7.10、§6 的相機端邏輯，全部可在 view model 層測試。
 
@@ -171,8 +183,8 @@ PRD FR-7.4～7.10、§6 的相機端邏輯，全部可在 view model 層測試�
 - `Services/CaptureSettingsStore.swift`：`captureAspectRatio` 與 `showsGrid` 存 `UserDefaults`；`flashMode`、`timerSeconds` 只在記憶體（PRD §4.4）
 - `Services/ImageCropper.swift`：從 4:3 原圖置中裁切成指定比例，**先裁再烘焙**（PRD FR-5.7′）
 - `CameraService`：`capturePhoto` 帶入 flash mode；提供 `isFlashAvailable`（前鏡頭或無閃光燈為 false）
-- `CameraScreenModel`：計時器倒數狀態（`countdownRemaining: Int?`）、倒數中再按快門取消、倒數結束才拍照；疊字在實際拍照時重算（沿用 0.1 §6.4）
-- 倒數用可注入的 tick 來源，測試不得真的等待
+- 倒數用的可注入 tick 來源（`CountdownTicker` 協定與系統實作），測試不得真的等待
+- **ui 半邊不在本卡**：`CameraScreenModel` 的倒數狀態（`countdownRemaining`）、倒數中再按取消、倒數結束才拍照，由 ui-shell 在 TASK-21 用本卡的 ticker 實作；驗收 19.8～19.10 也在 TASK-21 驗
 
 **驗收 — A. QA 可自動跑**
 
@@ -185,9 +197,9 @@ PRD FR-7.4～7.10、§6 的相機端邏輯，全部可在 view model 層測試�
 | 19.5 | 4032×3024 圖裁 1:1 | 3024×3024，取自水平置中 |
 | 19.6 | 3024×4032（直拍）圖裁 9:16 | 2268×4032，水平置中 |
 | 19.7 | 3024×4032 圖裁 3:4 | 尺寸不變 |
-| 19.8 | 計時 3 秒按快門，注入 3 次 tick | `countdownRemaining` 依序 3、2、1、nil，第 3 次 tick 後呼叫拍照恰好 1 次 |
-| 19.9 | 計時 10 秒按快門，tick 2 次後再按快門 | 倒數取消，`countdownRemaining == nil`，拍照 0 次，toast 為「已取消」 |
-| 19.10 | 計時 3 秒：開始倒數時 now = 2026-01-10 23:59:59，拍照時 now = 2026-01-11 00:00:02 | 烘焙文字為 `第 11 天`（以實際拍下時刻為準） |
+| 19.8 | （TASK-21 驗）計時 3 秒按快門，注入 3 次 tick | `countdownRemaining` 依序 3、2、1、nil，第 3 次 tick 後呼叫拍照恰好 1 次 |
+| 19.9 | （TASK-21 驗）計時 10 秒按快門，tick 2 次後再按快門 | 倒數取消，`countdownRemaining == nil`，拍照 0 次，toast 為「已取消」 |
+| 19.10 | （TASK-21 驗）計時 3 秒：開始倒數時 now = 2026-01-10 23:59:59，拍照時 now = 2026-01-11 00:00:02 | 烘焙文字為 `第 11 天`（以實際拍下時刻為準） |
 | 19.11 | 比例 1:1 下烘焙，裁切後短邊 3024 | 字級、邊距以 3024 計算（與 3:4 相同短邊）；9:16 時短邊為 2268，邊距 90.72 |
 | 19.12 | `grep -rn 'kCGImagePropertyExif' DaysCam/` | 無結果（0.1 §6.1 不變） |
 
@@ -204,6 +216,8 @@ PRD FR-7.4～7.10、§6 的相機端邏輯，全部可在 view model 層測試�
 ---
 
 ## TASK-20：ProfileStore 排序、複製、命名
+
+**負責**：core-device
 
 **目標**
 管理設定檔需要的持久化操作（PRD FR-9）。
@@ -233,6 +247,8 @@ PRD FR-7.4～7.10、§6 的相機端邏輯，全部可在 view model 層測試�
 
 ## TASK-21：主題 tokens 與相機畫面改版
 
+**負責**：ui-shell
+
 **目標**
 PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部列。面板在 TASK-22，照片瀏覽頁在 TASK-29。
 
@@ -244,6 +260,7 @@ PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部�
 - 名稱選單只列名稱＋打勾（FR-7.11），移除 0.1 的「管理設定檔」入口
 - 底部列：左最新照片縮圖（來源依 PRD FR-15.2，資料來自 TASK-28；點擊先留空，TASK-29 接上）、快門（`accent` 實心＋外圈）、疊字鍵（`textformat`）。無文字、無底色
 - 疊字鍵此時先打開 0.1 的顯示設定 sheet 當過渡（TASK-22 換掉），**PR 描述要寫明**
+- **接下 TASK-19、28 的 ui 半邊**：`CameraScreenModel` 的計時器倒數（用 TASK-19 的 ticker）與存檔後寫入 `CapturedPhotoStore`；並跑驗收 19.8～19.10
 
 **驗收 — A. QA 可自動跑**
 
@@ -270,11 +287,13 @@ PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部�
 |---|---|---|
 | 21.10 | 系統切到深色模式開 App | 相機畫面仍為淺色 |
 
-**依賴**：TASK-19、TASK-28
+**依賴**：TASK-19、TASK-28（兩者的 core 半邊）
 
 ---
 
 ## TASK-22：疊字面板殼層
+
+**負責**：ui-shell
 
 **目標**
 PRD FR-8：面板展開收合、觀景窗縮放、底部列切換、分頁框架。分頁內容在 23～25。
@@ -309,6 +328,8 @@ PRD FR-8：面板展開收合、觀景窗縮放、底部列切換、分頁框架
 ---
 
 ## TASK-23：樣式分頁
+
+**負責**：ui-panel
 
 **目標**
 PRD FR-10。
@@ -351,6 +372,8 @@ PRD FR-10。
 
 ## TASK-24：格式分頁與位置分頁（含拖曳）
 
+**負責**：ui-panel（觀景窗手勢接口由 ui-shell 提供）
+
 **目標**
 PRD FR-11、FR-12。
 
@@ -360,6 +383,7 @@ PRD FR-11、FR-12。
 - 位置分頁：九宮格快速對齊＋位置名稱，無說明文字
 - 觀景窗拖曳：**只在面板打開且位於「位置」分頁時**疊字可拖（`allowsHitTesting` 僅此時為 true），拖曳中即時夾進邊距，放開後存 `.custom`（FR-12.1～12.3）
 - 拖曳換算用觀景窗實際尺寸（縮到 80% 後的尺寸），存成比例值
+- 分工：觀景窗上的拖曳手勢與 `allowsHitTesting` 切換寫在 `CameraScreen`，由 ui-shell 開接口（回報拖曳位移與觀景窗尺寸）；換算、夾取與寫入在 ui-panel 的位置分頁 model
 
 **驗收 — A. QA 可自動跑**
 
@@ -398,6 +422,8 @@ PRD FR-11、FR-12。
 
 ## TASK-25：天數規則分頁
 
+**負責**：ui-panel
+
 **目標**
 PRD FR-13。
 
@@ -427,6 +453,8 @@ PRD FR-13。
 ---
 
 ## TASK-26：管理設定檔面板；刪除舊畫面
+
+**負責**：ui-shell
 
 **目標**
 PRD FR-9，並移除 0.1 的 S-2、S-3、S-4。
@@ -465,6 +493,8 @@ PRD FR-9，並移除 0.1 的 S-2、S-3、S-4。
 
 ## TASK-27：天數單位改為任意勾選（計算與文字）
 
+**負責**：core-style
+
 **目標**
 PRD §4.5：`largestUnit`／`smallestUnit` 換成 `displayUnits`，計算與文字規則照 U-1～U-9，**0.1 的輸出一字不變**。
 
@@ -502,13 +532,16 @@ PRD §4.5：`largestUnit`／`smallestUnit` 換成 `displayUnits`，計算與文�
 
 ## TASK-28：已拍照片紀錄與讀取權限
 
+**負責**：core-device（存檔後寫入 ID 的接線由 ui-shell 在 TASK-21 做）
+
 **目標**
 PRD FR-15.1～15.4 的資料層：記下 DaysCam 拍的照片，並以兩段式權限讀回來。
 
 **範圍**
 
 - `Services/CapturedPhotoStore.swift`：`capturedAssetIDs` 存 `Application Support/DaysCam/photos.json`，原子寫入（同 0.1 §4.3 的做法）
-- `PhotoSaver` 存檔成功後回傳新照片的 `localIdentifier`，由呼叫端寫入 store
+- `PhotoSaver` 存檔成功後回傳新照片的 `localIdentifier`
+- **ui 半邊不在本卡**：`CameraScreenModel` 在存檔成功後把 ID 寫入 `CapturedPhotoStore`，由 ui-shell 在 TASK-21 做
 - 讀取介面：`fetchAssets()` 回傳仍存在的照片（新的在前），並把已不存在的 ID 從檔案移除
 - 權限：`requestReadAccessIfNeeded()` 請求 `.readWrite`；存檔路徑**仍只請求 `.addOnly`**
 - 相簿存取抽成可注入的介面（沿用 0.1 `PhotoSaver` 的做法），測試不碰真的相簿
@@ -536,6 +569,8 @@ PRD FR-15.1～15.4 的資料層：記下 DaysCam 拍的照片，並以兩段式�
 ---
 
 ## TASK-29：照片瀏覽畫面
+
+**負責**：ui-shell
 
 **目標**
 PRD FR-15.5～15.10、設計稿 D-5。
@@ -575,6 +610,8 @@ PRD FR-15.5～15.10、設計稿 D-5。
 ---
 
 ## TASK-30：端對端整合驗收
+
+**負責**：qa（B′ 設計對照也由 qa 執行）
 
 **目標**
 0.2 全部功能串起來驗一次，並回歸 0.1 的核心保證。
