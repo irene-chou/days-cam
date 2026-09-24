@@ -90,7 +90,8 @@ struct DisplaySettingsSheet: View {
     }
 
     private func positionButton(_ position: OverlayPosition) -> some View {
-        let isSelected = model.profile.position == position
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        let isSelected = model.profile.position == .anchor(position)
         return Button {
             model.setPosition(position)
         } label: {
@@ -127,7 +128,8 @@ struct DisplaySettingsSheet: View {
     }
 
     private func themeSwatch(_ theme: OverlayTheme) -> some View {
-        let isSelected = model.profile.themeID == theme.id
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        let isSelected = ThemeID(nearestTo: model.profile.style) == theme.id
         return Button {
             model.setThemeID(theme.id)
         } label: {
