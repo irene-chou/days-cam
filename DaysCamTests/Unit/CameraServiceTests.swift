@@ -421,4 +421,54 @@ final class CameraServiceTests: XCTestCase {
     // drain ran, and would pass whether or not the drain existed. It is a
     // device-level check instead; the once-guard above is what the drain
     // relies on.
+
+    // MARK: - Flash (PRD 0.2 FR-7.4, FR-5.12, TASK-19 acceptance 19.4)
+
+    /// `CameraService.isFlashAvailable(facing:hasFlash:)` and
+    /// `effectiveFlashMode(requested:isFlashAvailable:)` are pure functions
+    /// of their arguments precisely so this branch is testable here: a real
+    /// `AVCaptureDevice` cannot be constructed to report `hasFlash`, and (see
+    /// the camera-switching tests above) `EmptyDeviceProvider` cannot make a
+    /// real switch to the front camera succeed either.
+    func test_isFlashAvailable_falseOnFrontCameraRegardlessOfHasFlash() {
+        XCTAssertFalse(CameraService.isFlashAvailable(facing: .front, hasFlash: true))
+        XCTAssertFalse(CameraService.isFlashAvailable(facing: .front, hasFlash: false))
+    }
+
+    func test_isFlashAvailable_falseOnBackCameraWithNoFlashUnit() {
+        XCTAssertFalse(CameraService.isFlashAvailable(facing: .back, hasFlash: false))
+    }
+
+    func test_isFlashAvailable_trueOnBackCameraWithAFlashUnit() {
+        XCTAssertTrue(CameraService.isFlashAvailable(facing: .back, hasFlash: true))
+    }
+
+    /// 19.4: whatever was requested, an unavailable flash is sent as `.off`.
+    func test_effectiveFlashMode_forcesOffWhenUnavailable() {
+        for requested: FlashMode in [.off, .auto, .on] {
+            XCTAssertEqual(CameraService.effectiveFlashMode(requested: requested, isFlashAvailable: false), .off)
+        }
+    }
+
+    func test_effectiveFlashMode_passesThroughWhenAvailable() {
+        XCTAssertEqual(CameraService.effectiveFlashMode(requested: .off, isFlashAvailable: true), .off)
+        XCTAssertEqual(CameraService.effectiveFlashMode(requested: .auto, isFlashAvailable: true), .auto)
+        XCTAssertEqual(CameraService.effectiveFlashMode(requested: .on, isFlashAvailable: true), .on)
+    }
+
+    /// The instance property wires the two pure functions above to the live
+    /// `facing`/`flashCapabilityProvider` — this is the "no flash unit on
+    /// the current side" half of 19.4 exercised through the real object.
+    func test_isFlashAvailableProperty_reflectsTheInjectedCapabilityProvider() {
+        struct NoFlash: FlashCapabilityProviding {
+            func hasFlash(for facing: CameraFacing) -> Bool { false }
+        }
+        let service = CameraService(authorizer: StubAuthorizer(status: .authorized),
+                                    deviceProvider: EmptyDeviceProvider(),
+                                    flashCapabilityProvider: NoFlash(),
+                                    isCaptureSupported: false)
+
+        XCTAssertEqual(service.facing, .back, "starts on the back camera")
+        XCTAssertFalse(service.isFlashAvailable, "the fake device reports no flash unit")
+    }
 }

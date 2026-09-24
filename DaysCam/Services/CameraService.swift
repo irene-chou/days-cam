@@ -116,6 +116,59 @@ struct SystemCaptureDeviceProvider: CaptureDeviceProviding {
     }
 }
 
+/// Whether a side of the device has a flash unit at all.
+///
+/// A real `AVCaptureDevice` cannot be constructed in a test — there is no
+/// public initializer — so `hasFlash` is asked through this seam instead of
+/// reading `device(for:).hasFlash` directly. That keeps "front camera, or a
+/// device with no flash" (PRD 0.2 FR-7.4) testable at the view-model layer
+/// (acceptance 19.4) rather than only on a real device.
+protocol FlashCapabilityProviding {
+    func hasFlash(for facing: CameraFacing) -> Bool
+}
+
+/// Production capability lookup: asks whatever `CaptureDeviceProviding` this
+/// service was built with.
+struct SystemFlashCapabilityProvider: FlashCapabilityProviding {
+    let deviceProvider: CaptureDeviceProviding
+
+    func hasFlash(for facing: CameraFacing) -> Bool {
+        deviceProvider.device(for: facing)?.hasFlash ?? false
+    }
+}
+
+// MARK: - Countdown ticker
+
+/// A tick source for the timer countdown (PRD 0.2 FR-7.6).
+///
+/// Injected so the countdown state machine (`CameraScreenModel`, TASK-21) can
+/// be driven one tick at a time in tests instead of waiting on a real clock.
+protocol CountdownTicker {
+    /// Starts calling `onTick` once per second until `stop()` is called.
+    /// Safe to call again before `stop()`; a fresh call replaces the pending
+    /// ticks with new ones from the new call's start. Call on the main queue.
+    func start(onTick: @escaping () -> Void)
+    /// Stops any pending ticks. Safe to call whether or not one is running.
+    func stop()
+}
+
+/// Production ticker: a repeating `Timer` on the main run loop.
+final class SystemCountdownTicker: CountdownTicker {
+    private var timer: Timer?
+
+    init() {}
+
+    func start(onTick: @escaping () -> Void) {
+        stop()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in onTick() }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 // MARK: - CameraService
 
 /// Owns the capture session behind the viewfinder (PRD S-1, S-5).
@@ -162,8 +215,17 @@ final class CameraService: ObservableObject {
         #endif
     }
 
+    /// Whether the flash can fire right now: `false` on the front camera,
+    /// and `false` for a back camera with no flash unit (PRD 0.2 FR-7.4).
+    /// The toolbar disables the flash button on this, and `capturePhoto`
+    /// forces `.off` regardless of what was requested.
+    var isFlashAvailable: Bool {
+        CameraService.isFlashAvailable(facing: facing, hasFlash: flashCapabilityProvider.hasFlash(for: facing))
+    }
+
     private let authorizer: CameraAuthorizing
     private let deviceProvider: CaptureDeviceProviding
+    private let flashCapabilityProvider: FlashCapabilityProviding
     private let sessionQueue = DispatchQueue(label: "com.irenechou.DaysCam.camera-session")
     private let photoOutput = AVCapturePhotoOutput()
 
@@ -192,13 +254,19 @@ final class CameraService: ObservableObject {
     /// - Parameters:
     ///   - authorizer: permission source; defaults to `AVCaptureDevice`.
     ///   - deviceProvider: device lookup; defaults to the discovery session.
+    ///   - flashCapabilityProvider: flash-availability lookup; defaults to
+    ///     asking `deviceProvider`. Tests inject a fake directly, since a
+    ///     real `AVCaptureDevice` cannot be constructed to report `hasFlash`.
     ///   - isCaptureSupported: false disables every hardware path, which is
     ///     what the simulator gets.
     init(authorizer: CameraAuthorizing = SystemCameraAuthorizer(),
          deviceProvider: CaptureDeviceProviding = SystemCaptureDeviceProvider(),
+         flashCapabilityProvider: FlashCapabilityProviding? = nil,
          isCaptureSupported: Bool = CameraService.platformSupportsCapture) {
         self.authorizer = authorizer
         self.deviceProvider = deviceProvider
+        self.flashCapabilityProvider = flashCapabilityProvider
+            ?? SystemFlashCapabilityProvider(deviceProvider: deviceProvider)
         self.isCaptureSupported = isCaptureSupported
         registerObservers()
     }
@@ -369,7 +437,16 @@ extension CameraService {
     /// Call on the main queue. The guards reject synchronously, so a rejected
     /// call runs `completion` *before* this method returns — set any
     /// "capture in flight" flag before calling, not after (PRD FR-5.5).
-    func capturePhoto(completion: @escaping (Result<UIImage, CameraCaptureError>) -> Void) {
+    ///
+    /// - Parameter flashMode: what was requested from the toolbar. Forced to
+    ///   `.off` internally whenever `isFlashAvailable` is false, regardless
+    ///   of what is passed (PRD 0.2 FR-5.12, FR-7.4) — see
+    ///   `effectiveFlashMode(requested:isFlashAvailable:)`. Defaults to
+    ///   `.off` so an existing caller that has not yet been wired to
+    ///   `CaptureSettingsStore` (TASK-21) keeps compiling and behaving as
+    ///   before.
+    func capturePhoto(flashMode: FlashMode = .off,
+                      completion: @escaping (Result<UIImage, CameraCaptureError>) -> Void) {
         guard isCaptureSupported else {
             onMain { completion(.failure(.captureUnavailable)) }
             return
@@ -378,6 +455,12 @@ extension CameraService {
             onMain { completion(.failure(.notRunning)) }
             return
         }
+
+        // Read on the calling (main) thread, per this type's own threading
+        // contract — `facing` only changes there, and `effectiveFlashMode`
+        // is the pure decision the acceptance criteria test directly.
+        let resolvedFlashMode = CameraService.effectiveFlashMode(requested: flashMode,
+                                                                  isFlashAvailable: isFlashAvailable)
 
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -410,6 +493,13 @@ extension CameraService {
             // can never exceed what the output allows, which would raise an
             // uncatchable exception.
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+            // Only ever a mode the output actually reports supporting —
+            // assigning an unsupported one is silently ignored by
+            // AVFoundation, but checking here keeps the intent explicit
+            // (PRD 0.2 FR-5.12).
+            if self.photoOutput.supportedFlashModes.contains(resolvedFlashMode) {
+                settings.flashMode = resolvedFlashMode
+            }
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
@@ -651,5 +741,40 @@ extension CameraService {
         candidates.max { left, right in
             Int(left.width) * Int(left.height) < Int(right.width) * Int(right.height)
         }
+    }
+
+    /// The flash mode actually sent to `AVCapturePhotoSettings`, given what
+    /// was requested and whether the flash is currently available.
+    ///
+    /// Forces `.off` whenever `isFlashAvailable` is false — the front camera,
+    /// or a back camera with no flash unit — regardless of what was
+    /// requested (PRD 0.2 FR-5.12, FR-7.4, acceptance 19.4).
+    ///
+    /// Internal rather than private, and a pure function of its two
+    /// arguments, so this decision is testable without a real capture
+    /// device: `isFlashAvailable` itself needs one (there is no public
+    /// `AVCaptureDevice` initializer to fake `hasFlash` with), but this
+    /// function does not.
+    static func effectiveFlashMode(requested: FlashMode, isFlashAvailable: Bool) -> AVCaptureDevice.FlashMode {
+        guard isFlashAvailable else { return .off }
+        switch requested {
+        case .off: return .off
+        case .auto: return .auto
+        case .on: return .on
+        }
+    }
+
+    /// Whether the flash can fire on `facing`, given whether that side
+    /// reports a flash unit: never on the front camera, regardless of
+    /// `hasFlash` (PRD 0.2 FR-7.4, acceptance 19.4).
+    ///
+    /// A free function of its two arguments — unlike the instance property
+    /// `isFlashAvailable`, this needs no real `CameraFacing` switch to have
+    /// actually succeeded (which `CameraServiceTests`' `EmptyDeviceProvider`
+    /// cannot make happen, by design: a switch to a device that does not
+    /// exist must not lie about which side is active). Tests exercise the
+    /// front-camera and no-flash-device branches by calling this directly.
+    static func isFlashAvailable(facing: CameraFacing, hasFlash: Bool) -> Bool {
+        facing == .back && hasFlash
     }
 }
