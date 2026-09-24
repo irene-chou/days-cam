@@ -389,8 +389,8 @@ final class CameraScreenModelTests: XCTestCase {
 
         var second = CameraProfile(name: "小寶",
                                    startDate: DateFixture.components(2026, 1, 1),
-                                   position: .topLeading,
-                                   themeID: .retroOrange)
+                                   position: .anchor(.topLeading),
+                                   style: OverlayStyle(legacyTheme: .retroOrange))
         second = try store.add(second) // FR-1.10: add also auto-selects it
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
@@ -576,8 +576,8 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         var styled = try XCTUnwrap(store.profiles.first)
-        styled.themeID = .filmStrip
-        styled.position = .topLeading
+        styled.style = OverlayStyle(legacyTheme: .filmStrip)
+        styled.position = .anchor(.topLeading)
         try store.update(styled)
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
