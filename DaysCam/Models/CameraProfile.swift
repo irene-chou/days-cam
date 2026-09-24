@@ -16,9 +16,10 @@ enum CameraProfileValidationError: Error, Equatable {
     case startDateNotARealDate
     /// Both `showDayCount` and `showDate` are off (invariant 3).
     case displaySwitchesAllOff
-    /// `smallestUnit` is not on `largestUnit`'s track (invariant 4).
-    case unitPairNotOnSameTrack(largest: DisplayUnit, smallest: DisplayUnit)
-    /// `useAgeWording` is on while `largestUnit` is not `.year` (invariant 5).
+    /// `displayUnits` is empty (PRD 0.2 §4.1, replacing 0.1 invariant 4).
+    case displayUnitsEmpty
+    /// `useAgeWording` is on while `displayUnits` lacks `.year`
+    /// (PRD 0.2 §4.1, replacing 0.1 invariant 5).
     case ageWordingRequiresYearUnit
     /// `style.sizeScale` is outside 70...160 or not a multiple of 5 (PRD 0.2 §4.1).
     case sizeScaleOutOfRange(Int)
@@ -58,11 +59,10 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var showDate: Bool
     /// Whether `name` is printed ahead of the rest of the overlay.
     var showName: Bool
-    /// Largest unit of the elapsed amount; also picks the unit track.
-    var largestUnit: DisplayUnit
-    /// Smallest unit of the elapsed amount; must sit on `largestUnit`'s track.
-    var smallestUnit: DisplayUnit
-    /// Whether years are printed as ages. Only valid when `largestUnit` is `.year`.
+    /// Which units the elapsed amount is broken into: any non-empty subset
+    /// of year, month, week and day (PRD 0.2 §4.5). Printed in that order.
+    var displayUnits: Set<DisplayUnit>
+    /// Whether years are printed as ages. Only valid when `displayUnits` has `.year`.
     var useAgeWording: Bool
     /// Where the overlay is drawn: a grid anchor or a custom center point.
     var position: OverlayPlacement
@@ -84,8 +84,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          showDayCount: Bool = true,
          showDate: Bool = false,
          showName: Bool = false,
-         largestUnit: DisplayUnit = .day,
-         smallestUnit: DisplayUnit = .day,
+         displayUnits: Set<DisplayUnit> = [.day],
          useAgeWording: Bool = false,
          position: OverlayPlacement = .default,
          style: OverlayStyle = OverlayStyle(),
@@ -98,8 +97,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.showDayCount = showDayCount
         self.showDate = showDate
         self.showName = showName
-        self.largestUnit = largestUnit
-        self.smallestUnit = smallestUnit
+        self.displayUnits = displayUnits
         self.useAgeWording = useAgeWording
         self.position = position
         self.style = style
@@ -171,12 +169,11 @@ extension CameraProfile {
             throw CameraProfileValidationError.displaySwitchesAllOff
         }
 
-        guard DisplayUnitTrack.isLegalPair(largest: largestUnit, smallest: smallestUnit) else {
-            throw CameraProfileValidationError.unitPairNotOnSameTrack(largest: largestUnit,
-                                                                     smallest: smallestUnit)
+        if displayUnits.isEmpty {
+            throw CameraProfileValidationError.displayUnitsEmpty
         }
 
-        if useAgeWording && largestUnit != .year {
+        if useAgeWording && !displayUnits.contains(.year) {
             throw CameraProfileValidationError.ageWordingRequiresYearUnit
         }
 
@@ -209,20 +206,66 @@ extension CameraProfile {
 extension CameraProfile {
     private enum CodingKeys: String, CodingKey {
         case id, name, startDate, countingRule, showDayCount, showDate, showName
-        case largestUnit, smallestUnit, useAgeWording, position, style, createdAt, updatedAt
+        case displayUnits, useAgeWording, position, style, createdAt, updatedAt
     }
 
     /// Keys that only 0.1 files carry. Read, never written.
     private enum LegacyCodingKeys: String, CodingKey {
         // 0.1 stored a preset theme name here; `style` replaces it.
         case themeID
+        // 0.1 stored a unit range here; `displayUnits` replaces it.
+        case largestUnit
+        case smallestUnit
+    }
+
+    /// The 0.1 unit tracks, largest unit first (0.1 PRD §3.2). Used only to
+    /// convert a 0.1 `(largestUnit, smallestUnit)` range (PRD 0.2 §4.3).
+    private static func legacyTrack(largest: DisplayUnit) -> [DisplayUnit] {
+        switch largest {
+        case .year: return [.year, .month, .day]
+        case .month: return [.month, .day]
+        case .week: return [.week, .day]
+        case .day: return [.day]
+        }
+    }
+
+    /// The units of a 0.1 `(largestUnit, smallestUnit)` range: its track from
+    /// the largest down to the smallest, inclusive, e.g. `(year, day)` →
+    /// `[.year, .month, .day]` and `(week, day)` → `[.week, .day]`.
+    ///
+    /// A pair 0.1 would have rejected (smallest not on the track) keeps just
+    /// the largest unit, so the profile is kept rather than dropped.
+    private static func legacyDisplayUnits(largest: DisplayUnit, smallest: DisplayUnit) -> Set<DisplayUnit> {
+        let track = legacyTrack(largest: largest)
+        guard let end = track.firstIndex(of: smallest) else { return [largest] }
+        return Set(track[...end])
+    }
+
+    /// Encodes the 0.2 format. `displayUnits` is written in year → day order
+    /// so the file does not churn with `Set`'s unstable iteration order.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(startDate, forKey: .startDate)
+        try container.encode(countingRule, forKey: .countingRule)
+        try container.encode(showDayCount, forKey: .showDayCount)
+        try container.encode(showDate, forKey: .showDate)
+        try container.encode(showName, forKey: .showName)
+        try container.encode(DisplayUnit.allCases.filter(displayUnits.contains), forKey: .displayUnits)
+        try container.encode(useAgeWording, forKey: .useAgeWording)
+        try container.encode(position, forKey: .position)
+        try container.encode(style, forKey: .style)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 
     /// Decodes a profile in the 0.2 format or the 0.1 format (PRD 0.2 §4.3).
     ///
     /// A 0.1 record is converted rather than dropped: its `themeID` becomes the
-    /// closest `style` and its bare `position` string becomes `.anchor`. The
-    /// next write stores the new format, since encoding never emits `themeID`.
+    /// closest `style`, its unit range becomes `displayUnits` and its bare
+    /// `position` string becomes `.anchor`. The next write stores the new
+    /// format, since encoding never emits the 0.1 keys.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -232,8 +275,6 @@ extension CameraProfile {
         showDayCount = try container.decode(Bool.self, forKey: .showDayCount)
         showDate = try container.decode(Bool.self, forKey: .showDate)
         showName = try container.decode(Bool.self, forKey: .showName)
-        largestUnit = try container.decode(DisplayUnit.self, forKey: .largestUnit)
-        smallestUnit = try container.decode(DisplayUnit.self, forKey: .smallestUnit)
         useAgeWording = try container.decode(Bool.self, forKey: .useAgeWording)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
@@ -245,13 +286,24 @@ extension CameraProfile {
             position = try container.decode(OverlayPlacement.self, forKey: .position)
         }
 
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+
+        if let decodedUnits = try container.decodeIfPresent([DisplayUnit].self, forKey: .displayUnits) {
+            displayUnits = Set(decodedUnits)
+        } else {
+            // 0.1 migration: the (largestUnit, smallestUnit) range becomes the
+            // same units as a set, which renders the same text (PRD 0.2 §4.3, §4.5).
+            let largest = try legacy.decode(DisplayUnit.self, forKey: .largestUnit)
+            let smallest = try legacy.decode(DisplayUnit.self, forKey: .smallestUnit)
+            displayUnits = Self.legacyDisplayUnits(largest: largest, smallest: smallest)
+        }
+
         if let decodedStyle = try container.decodeIfPresent(OverlayStyle.self, forKey: .style) {
             style = decodedStyle
         } else {
             // 0.1 migration: map the preset theme name to its closest style.
             // An unrecognized or missing name gets the default style instead of
             // losing the profile (PRD 0.2 §4.3: never discard a profile).
-            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
             let legacyName = try? legacy.decodeIfPresent(String.self, forKey: .themeID)
             style = legacyName.flatMap(ThemeID.init(rawValue:)).map(OverlayStyle.init(legacyTheme:))
                 ?? OverlayStyle()
