@@ -469,4 +469,161 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(before, after, "a rejected add must not touch the file")
         XCTAssertTrue(makeStore(at: instant).load().contains { $0.id == good.id })
     }
+
+    // MARK: - TASK-20 (20.1 ... 20.6): ordering, duplicating, naming (PRD 0.2 FR-9)
+
+    /// 20.1: reordering persists and survives a reload.
+    func test_move_reordersAndPersists() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load() // seeds one profile ("預設")
+        let a = try store.add(profile(name: "A"))
+        let b = try store.add(profile(name: "B"))
+        let c = try store.add(profile(name: "C"))
+        // profiles is now [預設, A, B, C]; drop the seeded one so indices line
+        // up with the acceptance table's [A, B, C].
+        try store.delete(id: store.profiles[0].id)
+        XCTAssertEqual(store.profiles.map(\.name), ["A", "B", "C"])
+
+        // Move C (index 2) to the front (index 0).
+        try store.move(fromOffsets: IndexSet(integer: 2), toOffset: 0)
+
+        XCTAssertEqual(store.profiles.map(\.id), [c.id, a.id, b.id], "20.1")
+        let reloaded = makeStore(at: instant).load()
+        XCTAssertEqual(reloaded.map(\.id), [c.id, a.id, b.id], "20.1 survives a reload")
+    }
+
+    /// 20.2: duplicating copies every field but `id`/`name`/timestamps, inserts
+    /// right after the original, and does not touch the selection.
+    func test_duplicate_insertsACopyRightAfterTheOriginalWithoutChangingSelection() throws {
+        // A clock that advances on every read, so `createdAt`/`updatedAt` are
+        // actually distinguishable between the original and its duplicate —
+        // acceptance 20.2 excludes `id`/`name`/timestamps from "must be
+        // identical" precisely because they are expected to differ.
+        var tick = 0
+        let base = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(now: {
+            defer { tick += 1 }
+            return base.addingTimeInterval(TimeInterval(tick))
+        })
+        store.load()
+        var original = profile(name: "小寶")
+        original.showDate = true
+        original.showName = true
+        original.useAgeWording = false
+        original.largestUnit = .week
+        original.smallestUnit = .day
+        let saved = try store.add(original)
+        let other = try store.add(profile(name: "其他"))
+        // `add` selects whatever it just created (FR-1.10); pin the selection
+        // to something other than `saved` before duplicating, so a duplicate
+        // that wrongly re-selects would be caught.
+        store.select(id: other.id)
+
+        let copy = try store.duplicate(id: saved.id)
+
+        XCTAssertEqual(copy.name, "小寶 副本", "20.2")
+        XCTAssertNotEqual(copy.id, saved.id, "20.2")
+        XCTAssertNotEqual(copy.createdAt, saved.createdAt, "20.2")
+        XCTAssertNotEqual(copy.updatedAt, saved.updatedAt, "20.2")
+        // Every other field matches.
+        XCTAssertEqual(copy.startDate, saved.startDate, "20.2")
+        XCTAssertEqual(copy.countingRule, saved.countingRule, "20.2")
+        XCTAssertEqual(copy.showDayCount, saved.showDayCount, "20.2")
+        XCTAssertEqual(copy.showDate, saved.showDate, "20.2")
+        XCTAssertEqual(copy.showName, saved.showName, "20.2")
+        XCTAssertEqual(copy.largestUnit, saved.largestUnit, "20.2")
+        XCTAssertEqual(copy.smallestUnit, saved.smallestUnit, "20.2")
+        XCTAssertEqual(copy.useAgeWording, saved.useAgeWording, "20.2")
+        XCTAssertEqual(copy.position, saved.position, "20.2")
+        XCTAssertEqual(copy.style, saved.style, "20.2")
+
+        let index = try XCTUnwrap(store.profiles.firstIndex { $0.id == copy.id })
+        let sourceIndex = try XCTUnwrap(store.profiles.firstIndex { $0.id == saved.id })
+        XCTAssertEqual(index, sourceIndex + 1, "20.2 inserted right after the original")
+
+        XCTAssertEqual(store.selectedProfileID, other.id, "20.2 selection must not change")
+    }
+
+    /// 20.3: duplicating the same profile again picks up the next number.
+    func test_duplicate_appendsAnIncrementingNumberOnRepeatedDuplicates() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let saved = try store.add(profile(name: "小寶"))
+
+        let firstCopy = try store.duplicate(id: saved.id)
+        let secondCopy = try store.duplicate(id: saved.id)
+
+        XCTAssertEqual(firstCopy.name, "小寶 副本", "20.3")
+        XCTAssertEqual(secondCopy.name, "小寶 副本 2", "20.3")
+    }
+
+    /// 20.4: `uniqueName(base:)` on its own, the way a brand-new "新設定檔"
+    /// (ui-shell, TASK-26) is expected to use it.
+    func test_uniqueName_incrementsPastExistingNumberedNames() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let seeded = store.profiles[0]
+        _ = try store.add(profile(name: "新設定檔"))
+        _ = try store.add(profile(name: "新設定檔 2"))
+        try store.delete(id: seeded.id) // start from a known slate, seed gone
+
+        XCTAssertEqual(store.uniqueName(base: "新設定檔"), "新設定檔 3", "20.4")
+    }
+
+    /// 20.5: a 20-character name, duplicated, must still fit in 20 characters
+    /// and end with "副本" rather than have it clipped off.
+    func test_duplicate_truncatesA20CharacterNameButKeepsTheSuffixIntact() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let longName = "一二三四五六七八九十一二三四五六七八九十"
+        XCTAssertEqual(longName.count, 20, "the fixture itself must be exactly 20 characters")
+        let saved = try store.add(profile(name: longName))
+
+        let copy = try store.duplicate(id: saved.id)
+
+        XCTAssertLessThanOrEqual(copy.name.count, CameraProfile.maximumNameLength, "20.5")
+        XCTAssertTrue(copy.name.hasSuffix(" 副本"), "20.5, got \(copy.name)")
+    }
+
+    /// 20.6: duplicating at the profile limit throws and leaves the file
+    /// untouched, the same guarantee `add(_:)` already gives (3.9).
+    func test_duplicate_atTheLimitThrowsAndLeavesTheFileUntouched() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let first = try XCTUnwrap(store.profiles.first)
+        for index in 1..<ProfileStore.profileLimit {
+            try store.add(profile(name: "設定檔 \(index)"))
+        }
+        XCTAssertEqual(store.profiles.count, ProfileStore.profileLimit, "20.6 precondition")
+
+        let before = try Data(contentsOf: fileURL)
+        XCTAssertThrowsError(try store.duplicate(id: first.id), "20.6") { error in
+            XCTAssertEqual(error as? ProfileStoreError, .limitReached(limit: ProfileStore.profileLimit), "20.6")
+        }
+        let after = try Data(contentsOf: fileURL)
+        XCTAssertEqual(before, after, "20.6 the file must be unchanged")
+        XCTAssertEqual(store.profiles.count, ProfileStore.profileLimit, "20.6")
+    }
+
+    /// `uniqueName(base:)` truncates only when the numbering forces it —
+    /// exercising the general FR-9.9 rule beyond what 20.1-20.6 cover, since
+    /// none of them happen to need a base *and* a number both at once.
+    func test_uniqueName_truncatesTheBaseWhenNumberingWouldOtherwiseOverflow() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let longName = "一二三四五六七八九十一二三四五六七八九十" // 20 chars
+        _ = try store.add(profile(name: longName))
+        _ = try store.add(profile(name: String(longName.prefix(18)) + " 2"))
+
+        let name = store.uniqueName(base: longName)
+
+        XCTAssertLessThanOrEqual(name.count, CameraProfile.maximumNameLength)
+        XCTAssertTrue(name.hasSuffix(" 3"), "expected the next free number, got \(name)")
+    }
 }

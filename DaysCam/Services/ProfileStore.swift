@@ -229,6 +229,104 @@ extension ProfileStore {
     }
 }
 
+// MARK: - Ordering, duplicating, naming (PRD 0.2 FR-9, TASK-20)
+
+extension ProfileStore {
+    /// Reorders `profiles` — the model behind PRD 0.2 FR-9.4's drag handle —
+    /// and persists immediately, the same way FR-9.4 describes ("放開後立即
+    /// 持久化"). Takes the same `(IndexSet, Int)` shape SwiftUI's `.onMove`
+    /// hands a view, so ui-shell's list can forward it unchanged.
+    func move(fromOffsets source: IndexSet, toOffset destination: Int) throws {
+        var updated = profiles
+        updated.move(fromOffsets: source, toOffset: destination)
+        try persist(updated)
+        profiles = updated
+    }
+
+    /// Inserts a copy of the profile named `id` directly after it: a new
+    /// identity, fresh timestamps, and the name "{原名} 副本" — auto-numbered
+    /// through `uniqueName(base:)` if that name is already taken (PRD 0.2
+    /// FR-9.5, FR-9.9).
+    ///
+    /// Deliberately does **not** change `selectedProfileID` (PRD 0.2 A-3):
+    /// unlike `add(_:)`, which PRD FR-1.10 says must switch to what it just
+    /// created, a duplicate is meant to sit alongside the original without
+    /// disturbing whatever is currently on screen.
+    @discardableResult
+    func duplicate(id: UUID) throws -> CameraProfile {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw ProfileStoreError.profileNotFound(id: id)
+        }
+        guard profiles.count < Self.profileLimit else {
+            throw ProfileStoreError.limitReached(limit: Self.profileLimit)
+        }
+
+        let source = profiles[index]
+        // Truncate the original name *before* appending the tag, so
+        // "{original} 副本" itself never exceeds the limit before
+        // `uniqueName` even has to think about a disambiguating number
+        // (PRD 0.2 FR-9.9, acceptance 20.5 — the result must still end with
+        // "副本", not have it clipped off by a naive tail-truncation).
+        let maxOriginalLength = max(0, CameraProfile.maximumNameLength - Self.duplicateSuffix.count)
+        let truncatedOriginal = String(source.name.prefix(maxOriginalLength))
+        let name = uniqueName(base: truncatedOriginal + Self.duplicateSuffix)
+
+        let timestamp = now()
+        let duplicated = CameraProfile(name: name,
+                                       startDate: source.startDate,
+                                       countingRule: source.countingRule,
+                                       showDayCount: source.showDayCount,
+                                       showDate: source.showDate,
+                                       showName: source.showName,
+                                       largestUnit: source.largestUnit,
+                                       smallestUnit: source.smallestUnit,
+                                       useAgeWording: source.useAgeWording,
+                                       position: source.position,
+                                       style: source.style,
+                                       createdAt: timestamp,
+                                       updatedAt: timestamp)
+
+        var updated = profiles
+        updated.insert(duplicated, at: index + 1)
+        try persist(updated)
+        profiles = updated
+        return duplicated
+    }
+
+    /// The suffix `duplicate(id:)` appends to a copied profile's name
+    /// (PRD 0.2 FR-9.5).
+    private static let duplicateSuffix = " 副本"
+
+    /// A name that does not collide with any current profile's name
+    /// (PRD 0.2 FR-9.9): `base` itself if nothing already has that exact
+    /// name, otherwise `base` with " 2", " 3", … appended until free.
+    ///
+    /// Truncates `base` — never the numbering — whenever the combination
+    /// would exceed `CameraProfile.maximumNameLength`, so the result is
+    /// always immediately valid for `validate(calendar:)` without the caller
+    /// having to trim anything further. This is what both a brand-new
+    /// "新設定檔" (ui-shell, TASK-26) and `duplicate(id:)`'s "{原名} 副本"
+    /// go through.
+    func uniqueName(base: String) -> String {
+        let cappedBase = String(base.prefix(CameraProfile.maximumNameLength))
+        let existingNames = Set(profiles.map(\.name))
+        guard existingNames.contains(cappedBase) else {
+            return cappedBase
+        }
+
+        var number = 2
+        while true {
+            let suffix = " \(number)"
+            let maxBaseLength = max(0, CameraProfile.maximumNameLength - suffix.count)
+            let candidate = String(base.prefix(maxBaseLength)) + suffix
+            if !existingNames.contains(candidate) {
+                return candidate
+            }
+            number += 1
+        }
+    }
+}
+
 // MARK: - Selection
 
 extension ProfileStore {
