@@ -319,12 +319,14 @@ extension CameraScreenModel {
 
     /// The theme `selectedProfile` draws its overlay with.
     var overlayTheme: OverlayTheme {
-        OverlayTheme.theme(for: selectedProfile?.themeID ?? .classicWhite)
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        OverlayTheme.theme(for: selectedProfile.map { ThemeID(nearestTo: $0.style) } ?? .classicWhite)
     }
 
     /// The anchor point `selectedProfile` draws its overlay at.
     var overlayPosition: OverlayPosition {
-        selectedProfile?.position ?? .bottomTrailing
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        selectedProfile?.position.legacyAnchor ?? .bottomTrailing
     }
 }
 
@@ -398,7 +400,8 @@ extension CameraScreenModel {
     func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition) {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        return (capturedAt, text, OverlayTheme.theme(for: profile.themeID), profile.position)
+        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
+        return (capturedAt, text, OverlayTheme.theme(for: ThemeID(nearestTo: profile.style)), profile.position.legacyAnchor)
     }
 
     /// Triggers a capture.

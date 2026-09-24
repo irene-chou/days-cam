@@ -94,8 +94,8 @@ final class ProfileListModelTests: XCTestCase {
         XCTAssertFalse(draft.showName)
         XCTAssertEqual(draft.largestUnit, .day)
         XCTAssertEqual(draft.smallestUnit, .day)
-        XCTAssertEqual(draft.position, .bottomTrailing)
-        XCTAssertEqual(draft.themeID, .classicWhite)
+        XCTAssertEqual(draft.position, .anchor(.bottomTrailing))
+        XCTAssertEqual(draft.style, OverlayStyle(legacyTheme: .classicWhite))
         XCTAssertEqual(draft.countingRule, .dayOne)
     }
 
