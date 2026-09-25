@@ -66,13 +66,13 @@ jobs:
             Review this pull request yourself, in this session. Do NOT launch subagents or background tasks,
             and do not end your turn until all comments are posted.
 
-            1. Read CLAUDE.md for project conventions.
+            1. Read AGENTS.md for project conventions.
             2. Use `gh pr view` and `gh pr diff` to read the PR description and changes.
-            3. Look for correctness bugs, violations of CLAUDE.md hard rules, and missing tests for core logic.
+            3. Look for correctness bugs, violations of AGENTS.md hard rules, and missing tests for core logic.
                Only report issues you are confident about.
             4. For each issue, post an inline comment with mcp__github_inline_comment__create_inline_comment.
                Mark each one as [必修] (blocking) or [建議] (non-blocking).
-               Blocking means: a correctness bug, a CLAUDE.md hard-rule violation, or missing tests for core logic.
+               Blocking means: a correctness bug, a AGENTS.md hard-rule violation, or missing tests for core logic.
                Style preferences and optional improvements are non-blocking.
             5. Finally, always submit exactly one review with a summary in Traditional Chinese:
                - any blocking issue: `gh pr review <N> --request-changes --body "<summary>"`

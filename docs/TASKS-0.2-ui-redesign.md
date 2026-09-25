@@ -72,7 +72,7 @@
 | ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets` |
 | ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
 | qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
-| Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`CLAUDE.md`、`.claude/agents/` |
+| Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`AGENTS.md`、`.claude/agents/` |
 
 **單元測試**：`DaysCamTests/Unit/<來源檔名>Tests.swift` 歸該來源檔的擁有者，隨實作一起寫。
 
@@ -625,7 +625,7 @@ PRD FR-15.5～15.10、設計稿 D-5。
 | 30.3 | 完整測試 `xcodebuild ... test` | 全數通過 |
 | 30.4 | `grep -rn 'kCGImagePropertyExif' DaysCam/` | 無結果 |
 | 30.5 | 只顯示日期，跨日重啟（2026-01-10 → 2026-01-11） | `2026.01.11`，不是 `第 2 天`（0.1 FR-2.17） |
-| 30.5a | `grep -n 'MARKETING_VERSION' project.yml` | 值為 `"0.2.0"`。由 Lead 在 TASK-17～29 全部合併、本卡其餘 A 級通過後修改（版本規則見 `CLAUDE.md`） |
+| 30.5a | `grep -n 'MARKETING_VERSION' project.yml` | 值為 `"0.2.0"`。由 Lead 在 TASK-17～29 全部合併、本卡其餘 A 級通過後修改（版本規則見 `AGENTS.md`） |
 
 **驗收 — B′. 設計對照**：D-1～D-5 每個畫面各 preview 一次，與設計稿逐一對照，差異列成清單回報。
 

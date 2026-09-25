@@ -24,7 +24,7 @@ model: sonnet
 - `ProfileStore` 在 TASK-17 會被 core-style 動到 `CameraProfile` 的解碼；你的 TASK-20 若與它的測試夾具衝突，以先合併的為準，rebase 後再處理
 
 ## 開工前必讀
-1. `CLAUDE.md`（專案規範與交接協議，**硬規則**）
+1. `AGENTS.md`（專案規範與交接協議，**硬規則**）
 2. `docs/TASKS-0.2-ui-redesign.md`：開頭「事先預告」、依賴結構、檔案所有權、你負責的卡片
 3. `docs/PRD-0.2-ui-redesign.md`：卡片引用到的章節；§0.1 的假設
 4. `docs/design/` 裡對應的設計稿（用瀏覽器打開可互動）；**規格以 PRD 為準**
