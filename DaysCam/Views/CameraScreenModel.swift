@@ -68,6 +68,20 @@ final class CameraScreenModel: ObservableObject {
     /// currently on screen.
     let profileListModel: ProfileListModel
 
+    /// Drives the overlay panel's shell (PRD 0.2 FR-8, TASK-22): whether
+    /// it's open and which first-level tab is selected. Built once and
+    /// reused, same reasoning as `profileListModel` — it owns no data that
+    /// depends on `selectedProfile`, so there is nothing to go stale.
+    let panelModel = OverlayPanelModel()
+
+    /// The 天數規則 tab's model (PRD 0.2 FR-13, TASK-25's `RulesTabView`).
+    /// Rebuilt only when `selectedProfileID` actually changes — same
+    /// reasoning as `displaySettingsModel`'s own doc comment: the panel's
+    /// tab-content closure re-runs on unrelated `@Published` changes while
+    /// it's on screen, and rebuilding a fresh `RulesTabModel` on every one of
+    /// those would discard an in-progress name edit each time.
+    @Published private(set) var rulesTabModel: RulesTabModel?
+
     /// True from the moment the shutter is tapped until the photo pipeline
     /// finishes, success or failure (PRD FR-5.5: disabled while saving).
     @Published private(set) var isCapturing = false
@@ -217,6 +231,7 @@ final class CameraScreenModel: ObservableObject {
         bindToCameraService()
         bindToCaptureSettingsStore()
         bindToClockNotifications()
+        refreshRulesTabModelIfNeeded()
     }
 
     private func bindToProfileStore() {
@@ -226,8 +241,28 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
         profileStore.$selectedProfileID
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.selectedProfileID = $0 }
+            .sink { [weak self] in
+                self?.selectedProfileID = $0
+                self?.refreshRulesTabModelIfNeeded()
+            }
             .store(in: &cancellables)
+    }
+
+    /// Rebuilds `rulesTabModel` only when `selectedProfileID` has actually
+    /// changed since it was last built — see `rulesTabModel`'s own doc
+    /// comment for why that matters.
+    private func refreshRulesTabModelIfNeeded() {
+        guard rulesTabModel?.profile.id != selectedProfileID else { return }
+        guard let selectedProfile else {
+            rulesTabModel = nil
+            return
+        }
+        rulesTabModel = RulesTabModel(profile: selectedProfile,
+                                     calendar: calendar,
+                                     calculator: calculator,
+                                     renderer: renderer) { [weak self] updated in
+            try self?.profileStore.update(updated)
+        }
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
