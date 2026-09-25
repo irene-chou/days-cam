@@ -133,8 +133,8 @@ struct DisplaySettingsSheet: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color(.tertiarySystemBackground))
                     OverlayTextView(text: "16",
-                                    theme: theme,
-                                    position: .middleCenter,
+                                    style: theme.style,
+                                    placement: .anchor(.middleCenter),
                                     frameSize: CGSize(width: 72, height: 44))
                 }
                 .frame(width: 72, height: 44)

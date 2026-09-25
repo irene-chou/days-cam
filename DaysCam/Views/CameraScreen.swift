@@ -166,8 +166,8 @@ struct CameraScreen: View {
                 // screen's), matching FR-6.1's requirement that the preview
                 // and the eventual baked photo agree.
                 OverlayTextView(text: model.overlayText,
-                                theme: model.overlayTheme,
-                                position: model.overlayPosition,
+                                style: model.overlayStyle,
+                                placement: model.overlayPlacement,
                                 frameSize: proxy.size)
 
                 if let statusMessage = model.statusMessage {

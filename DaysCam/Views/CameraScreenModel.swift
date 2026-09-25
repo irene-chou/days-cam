@@ -317,16 +317,15 @@ extension CameraScreenModel {
         return renderer.render(profile: selectedProfile, capturedAt: calculator.now(), calendar: calendar)
     }
 
-    /// The theme `selectedProfile` draws its overlay with.
-    var overlayTheme: OverlayTheme {
-        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
-        OverlayTheme.theme(for: selectedProfile.map { ThemeID(nearestTo: $0.style) } ?? .classicWhite)
+    /// The style `selectedProfile` draws its overlay with (PRD 0.2 §4.2).
+    var overlayStyle: OverlayStyle {
+        selectedProfile?.style ?? OverlayStyle()
     }
 
-    /// The anchor point `selectedProfile` draws its overlay at.
-    var overlayPosition: OverlayPosition {
-        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
-        selectedProfile?.position.legacyAnchor ?? .bottomTrailing
+    /// Where `selectedProfile` draws its overlay: a grid anchor or a custom
+    /// center (PRD 0.2 §4.1).
+    var overlayPlacement: OverlayPlacement {
+        selectedProfile?.position ?? .default
     }
 }
 

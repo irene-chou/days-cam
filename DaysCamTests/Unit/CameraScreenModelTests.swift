@@ -395,16 +395,16 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
         XCTAssertEqual(model.selectedProfileID, second.id)
-        XCTAssertEqual(model.overlayPosition, .topLeading)
-        XCTAssertEqual(model.overlayTheme.id, .retroOrange)
+        XCTAssertEqual(model.overlayPlacement, .anchor(.topLeading))
+        XCTAssertEqual(model.overlayStyle, OverlayStyle(legacyTheme: .retroOrange))
 
         store.select(id: defaultProfile.id)
         // The mirroring sink is dispatched via `.receive(on: .main)`, so it
         // needs a main-queue pump before it is observable, same as
         // `ProfileListModelProfileStoreAdapterTests`.
         waitUntil { model.selectedProfileID == defaultProfile.id }
-        XCTAssertEqual(model.overlayPosition, .bottomTrailing)
-        XCTAssertEqual(model.overlayTheme.id, .classicWhite)
+        XCTAssertEqual(model.overlayPlacement, .anchor(.bottomTrailing))
+        XCTAssertEqual(model.overlayStyle, OverlayStyle())
     }
 
     func testProfilesAndSelectionMirrorTheStoreAfterConstruction() throws {
