@@ -553,8 +553,7 @@ final class ProfileStoreTests: XCTestCase {
         original.showDate = true
         original.showName = true
         original.useAgeWording = false
-        original.largestUnit = .week
-        original.smallestUnit = .day
+        original.displayUnits = [.week, .day]
         let saved = try store.add(original)
         let other = try store.add(profile(name: "其他"))
         // `add` selects whatever it just created (FR-1.10); pin the selection
@@ -574,8 +573,7 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(copy.showDayCount, saved.showDayCount, "20.2")
         XCTAssertEqual(copy.showDate, saved.showDate, "20.2")
         XCTAssertEqual(copy.showName, saved.showName, "20.2")
-        XCTAssertEqual(copy.largestUnit, saved.largestUnit, "20.2")
-        XCTAssertEqual(copy.smallestUnit, saved.smallestUnit, "20.2")
+        XCTAssertEqual(copy.displayUnits, saved.displayUnits, "20.2")
         XCTAssertEqual(copy.useAgeWording, saved.useAgeWording, "20.2")
         XCTAssertEqual(copy.position, saved.position, "20.2")
         XCTAssertEqual(copy.style, saved.style, "20.2")
