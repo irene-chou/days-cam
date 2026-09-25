@@ -18,10 +18,30 @@ import UIKit
 @MainActor
 final class CameraScreenModel: ObservableObject {
     let cameraService: CameraService
+    /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
+    /// grid. Exposed (not `private`) the same way `cameraService` is, so
+    /// `CameraToolbar` can read it directly; this model forwards its change
+    /// notifications the same way it does for `cameraService`
+    /// (`bindToCaptureSettingsStore`).
+    let captureSettingsStore: CaptureSettingsStore
+    /// Where a successful save's asset identifier is recorded (PRD 0.2
+    /// FR-15.1). Reading it directly (e.g. the gallery in TASK-29) never
+    /// needs this model.
+    let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
+    /// Crops a captured 4:3 photo to `captureSettingsStore.captureAspectRatio`
+    /// before it is baked (PRD 0.2 FR-5.7′: "先裁再烘焙"). Defaults to the
+    /// real `ImageCropper`. Injectable so tests can confirm the pipeline
+    /// crops before baking without depending on real pixel math (already
+    /// covered by `ImageCropperTests`).
+    private let crop: (UIImage, CaptureAspectRatio) -> UIImage
+    /// Drives the timer countdown (PRD 0.2 FR-7.6). Defaults to the real
+    /// `SystemCountdownTicker`. Injectable so tests can advance the
+    /// countdown one tick at a time instead of waiting on a real clock.
+    private let countdownTicker: CountdownTicker
 
     /// Mirrors `profileStore.profiles`. The caller (`DaysCamApp`) is expected
     /// to have already called `profileStore.load()` before building this
@@ -56,18 +76,49 @@ final class CameraScreenModel: ObservableObject {
     /// nothing should be shown.
     @Published private(set) var captureError: CaptureAlertError?
 
+    /// The remaining whole seconds of an in-progress timer countdown (PRD 0.2
+    /// FR-7.6); `nil` when no countdown is running. Set the instant the
+    /// shutter starts one (before the first tick), then ticks down once per
+    /// second via `countdownTicker` until it reaches `nil`, at which point
+    /// the photo is actually captured.
+    @Published private(set) var countdownRemaining: Int?
+
+    /// The most recently baked photo from *this app launch*, held in memory
+    /// (PRD 0.2 FR-15.2's first branch — needs no photo-library read
+    /// permission). `nil` until the first successful save; the bottom bar's
+    /// thumbnail button falls back to the photo icon while it is `nil`.
+    ///
+    /// Deliberately does not yet implement FR-15.2's second branch ("has read
+    /// permission → the newest surviving `capturedAssetIDs` entry's photo") —
+    /// that needs a `PHAsset` thumbnail loader this codebase does not have
+    /// yet, and belongs with the gallery infrastructure TASK-29 is already
+    /// building. Flagged as an assumption in this PR's description.
+    @Published private(set) var latestThumbnailImage: UIImage?
+
     /// Bakes the overlay into a captured image. Defaults to the real
     /// `OverlayRenderer`. Injectable so this model is testable without a
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?
 
-    /// Saves a baked photo to the system photo library. Defaults to the real
-    /// `PhotoSaver`. Injectable for tests, and so `processCapturedImage` can
-    /// call it from a background queue without capturing `self` (same
-    /// reasoning as `bake`).
-    private let save: (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void
+    /// Saves a baked photo to the system photo library, returning its new
+    /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
+    /// the real `PhotoSaver.saveReturningIdentifier`. Injectable for tests,
+    /// and so `processCapturedImage` can call it from a background queue
+    /// without capturing `self` (same reasoning as `bake`).
+    private let save: (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void
+
+    /// Fires the actual shutter. Defaults to `cameraService.capturePhoto`
+    /// (set in `init` rather than in the parameter list, since the default
+    /// has to close over the specific `cameraService` instance this model
+    /// was built with — unlike `bake`/`save`/`crop`, which each construct an
+    /// unrelated fresh object). Injectable so `CameraScreenModelTests` can
+    /// exercise the countdown state machine (acceptance 19.8–19.10) end to
+    /// end without needing `cameraService.status == .running`, which — like
+    /// every other real-hardware path in this app — cannot be reached from a
+    /// unit test (same boundary `CameraServiceTests` documents).
+    private let captureImage: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void
 
     /// Bumped whenever the calendar day changes or the app returns to the
     /// foreground (TASK-14). `overlayText` already recomputes from the live
@@ -94,7 +145,7 @@ final class CameraScreenModel: ObservableObject {
     /// should be shown.
     @Published private(set) var toastState: ToastState?
 
-    /// How `presentSavedToast` schedules the toast's own auto-dismiss.
+    /// How `showToast` schedules the toast's own auto-dismiss.
     /// Injected so tests don't have to wait a real 1.5 seconds; the default
     /// is the real delay.
     ///
@@ -124,25 +175,39 @@ final class CameraScreenModel: ObservableObject {
     ///   `Calendar` (e.g. `DateFixture.taipei`), which is unaffected.
     init(cameraService: CameraService,
          profileStore: ProfileStore,
+         captureSettingsStore: CaptureSettingsStore = CaptureSettingsStore(),
+         capturedPhotoStore: CapturedPhotoStore = CapturedPhotoStore(),
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
-         bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { image, text, theme, position in
-             OverlayRenderer().bake(image: image, text: text, theme: theme, position: position)
+         crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, aspectRatio in
+             ImageCropper().crop(image, to: aspectRatio)
          },
-         save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { image, completion in
-             PhotoSaver().save(image, completion: completion)
+         countdownTicker: CountdownTicker = SystemCountdownTicker(),
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { image, text, style, placement in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement)
          },
+         save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
+             PhotoSaver().saveReturningIdentifier(image, completion: completion)
+         },
+         captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          }) {
         self.cameraService = cameraService
+        self.captureSettingsStore = captureSettingsStore
+        self.capturedPhotoStore = capturedPhotoStore
         self.profileStore = profileStore
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
+        self.crop = crop
+        self.countdownTicker = countdownTicker
         self.bake = bake
         self.save = save
+        self.captureImage = captureImage ?? { [cameraService] flashMode, completion in
+            cameraService.capturePhoto(flashMode: flashMode, completion: completion)
+        }
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
@@ -150,6 +215,7 @@ final class CameraScreenModel: ObservableObject {
         self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
         bindToCameraService()
+        bindToCaptureSettingsStore()
         bindToClockNotifications()
     }
 
@@ -179,6 +245,16 @@ final class CameraScreenModel: ObservableObject {
     /// team lead).
     private func bindToCameraService() {
         cameraService.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    /// Same reasoning as `bindToCameraService`: `captureSettingsStore` is a
+    /// nested `ObservableObject`, and `CameraToolbar` only observes this
+    /// model, so a flash/timer/ratio/grid change would never trigger a
+    /// re-render without forwarding it here.
+    private func bindToCaptureSettingsStore() {
+        captureSettingsStore.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
@@ -362,6 +438,15 @@ extension CameraScreenModel {
         selectedProfile?.name ?? ""
     }
 
+    /// The profile switcher's menu items: exactly the profiles, in
+    /// `ProfileStore`'s order, with no synthetic "manage profiles" entry
+    /// mixed in — that entry point moves to the bottom bar's own key
+    /// (TASK-26), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
+    /// 21.1).
+    var profileMenuItems: [CameraProfile] {
+        profiles
+    }
+
     /// Switches the camera to `id` without leaving the camera screen
     /// (PRD FR-1.4). Forwards straight to the store, which also persists
     /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
@@ -371,6 +456,59 @@ extension CameraScreenModel {
 
     func presentProfileManagement() {
         isProfileListPresented = true
+    }
+}
+
+// MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21)
+
+extension CameraScreenModel {
+    /// Whether the flash button should be disabled: the front camera, or a
+    /// back camera with no flash unit (PRD 0.2 FR-7.4, acceptance 21.2).
+    var isFlashToolDisabled: Bool {
+        !cameraService.isFlashAvailable
+    }
+
+    /// Whether the flash icon should render in the `active` color (PRD 0.2
+    /// FR-7.10, acceptance 21.3): on whenever the mode isn't `.off`, even if
+    /// `isFlashToolDisabled` — the front camera still shows what it's set
+    /// to, it just can't fire it.
+    var isFlashToolActive: Bool {
+        captureSettingsStore.flashMode != .off
+    }
+
+    /// Whether the timer icon should render in the `active` color (PRD 0.2
+    /// FR-7.10, acceptance 21.3).
+    var isTimerToolActive: Bool {
+        captureSettingsStore.timerSeconds != .off
+    }
+
+    /// Whether the grid icon should render in the `active` color (PRD 0.2
+    /// FR-7.10, acceptance 21.3).
+    var isGridToolActive: Bool {
+        captureSettingsStore.showsGrid
+    }
+
+    /// Cycles the flash button (PRD 0.2 FR-7.4). A no-op while
+    /// `isFlashToolDisabled` is not enforced here — the button itself is
+    /// disabled in the view, matching every other disabled control in this
+    /// model (e.g. the shutter).
+    func cycleFlash() {
+        captureSettingsStore.cycleFlash()
+    }
+
+    /// Cycles the timer button 關 → 3 秒 → 10 秒 → 關 (PRD 0.2 FR-7.5).
+    func cycleTimer() {
+        captureSettingsStore.cycleTimer()
+    }
+
+    /// Selects the capture aspect ratio (PRD 0.2 FR-7.7).
+    func selectAspectRatio(_ ratio: CaptureAspectRatio) {
+        captureSettingsStore.setAspectRatio(ratio)
+    }
+
+    /// Flips the grid overlay (PRD 0.2 FR-7.9).
+    func toggleGrid() {
+        captureSettingsStore.toggleGrid()
     }
 }
 
@@ -396,29 +534,98 @@ extension CameraScreenModel {
     /// the simulator (same boundary `CameraServiceTests` documents), so this
     /// is what `CameraScreenModelTests` calls directly to verify 10.3/10.4
     /// without needing to drive a full capture through real hardware.
-    func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition) {
+    func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement) {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
-        return (capturedAt, text, OverlayTheme.theme(for: ThemeID(nearestTo: profile.style)), profile.position.legacyAnchor)
+        return (capturedAt, text, profile.style, profile.position)
     }
 
-    /// Triggers a capture.
+    /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
+    /// FR-7.6).
     ///
-    /// No-ops while `isShutterDisabled` (which already covers "a capture is
-    /// already in flight," so this doubles as the FR-5.5 debounce) or before
-    /// any profile is selected.
+    /// While `countdownRemaining != nil` this always cancels, regardless of
+    /// `isShutterDisabled` — the countdown itself already proved the shutter
+    /// was enabled when it started, and a disabled check here would strand
+    /// the countdown with no way to cancel it if some other state changed
+    /// mid-count (acceptance 19.9).
+    ///
+    /// Otherwise a no-op while `isShutterDisabled` (which already covers "a
+    /// capture is already in flight," so this doubles as the FR-5.5
+    /// debounce) or before any profile is selected.
     func capturePhoto() {
+        guard countdownRemaining == nil else {
+            cancelCountdown()
+            return
+        }
         guard !isShutterDisabled, let selectedProfile else { return }
+        beginCapture(profile: selectedProfile)
+    }
+
+    /// Starts capturing `profile`: immediately when
+    /// `captureSettingsStore.timerSeconds == .off` (exactly like before
+    /// TASK-21), otherwise it starts the countdown and the real capture
+    /// happens only once `tickCountdown` reaches zero (PRD 0.2 FR-7.6).
+    ///
+    /// Deliberately not `private`, for the same reason `captureContext(for:)`
+    /// below is not: reaching this from a real `capturePhoto()` call needs
+    /// `cameraService.status == .running`, unavailable without real capture
+    /// hardware (same boundary `CameraServiceTests` documents). This is what
+    /// `CameraScreenModelTests` calls directly to drive the countdown state
+    /// machine end to end (acceptance 19.8–19.10) with an injected
+    /// `countdownTicker`/`captureImage`, without needing a real device.
+    func beginCapture(profile: CameraProfile) {
+        let seconds = captureSettingsStore.timerSeconds.rawValue
+        guard seconds > 0 else {
+            performCapture(profile: profile)
+            return
+        }
+        countdownRemaining = seconds
+        countdownTicker.start { [weak self] in
+            self?.tickCountdown(profile: profile)
+        }
+    }
+
+    /// One second of an in-progress countdown (PRD 0.2 FR-7.6, acceptance
+    /// 19.8): decrements `countdownRemaining`, and on the tick that reaches
+    /// zero, stops the ticker, clears `countdownRemaining` to `nil` and
+    /// triggers the real capture — never before then, so the overlay's date
+    /// and day count are computed from the instant the countdown actually
+    /// finishes, not the instant the shutter was first pressed (PRD §6.4,
+    /// acceptance 19.10).
+    private func tickCountdown(profile: CameraProfile) {
+        guard let remaining = countdownRemaining else { return }
+        let next = remaining - 1
+        guard next > 0 else {
+            countdownTicker.stop()
+            countdownRemaining = nil
+            performCapture(profile: profile)
+            return
+        }
+        countdownRemaining = next
+    }
+
+    /// Cancels an in-progress countdown without capturing (PRD 0.2 FR-7.6,
+    /// acceptance 19.9).
+    private func cancelCountdown() {
+        countdownTicker.stop()
+        countdownRemaining = nil
+        showToast(message: "已取消")
+    }
+
+    /// Actually fires the shutter — either immediately (no timer) or once a
+    /// countdown reaches zero.
+    private func performCapture(profile: CameraProfile) {
         isCapturing = true
         // Computed here, synchronously, on the main actor — before the
         // capture even starts, let alone before anything hops to a
-        // background queue. `capturedAt` must be the instant the shutter was
-        // pressed, not the instant baking happens to get around to running
-        // (PRD §6.5.5, TASK-10 10.4).
-        let context = captureContext(for: selectedProfile)
+        // background queue. `capturedAt` must be the instant the shutter
+        // actually fires, not the instant the shutter was first pressed if a
+        // countdown was running (PRD §6.5.5, TASK-10 10.4, 0.2 acceptance
+        // 19.10).
+        let context = captureContext(for: profile)
+        let flashMode = captureSettingsStore.flashMode
 
-        cameraService.capturePhoto { [weak self] result in
+        captureImage(flashMode) { [weak self] result in
             guard let self else { return }
             switch result {
             case let .success(image):
@@ -458,7 +665,7 @@ extension CameraScreenModel {
     /// save-success and save-failure branches, and that `isCapturing` ends
     /// up `false` on every one of them (PRD acceptance 10.22).
     func processCapturedImage(_ image: UIImage,
-                              context: (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition)) {
+                              context: (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement)) {
         // Redundant with `capturePhoto()`'s own assignment in the real flow
         // (already `true` by the time this runs there) — kept here so this
         // method is self-contained: a test calling it directly exercises the
@@ -466,15 +673,22 @@ extension CameraScreenModel {
         // rather than starting from (and asserting against) a value nobody
         // in the test ever set.
         isCapturing = true
+        let crop = self.crop
         let bake = self.bake
         let save = self.save
+        let aspectRatio = captureSettingsStore.captureAspectRatio
         DispatchQueue.global(qos: .userInitiated).async {
             // core-dev's reminder: a 12MP photo in a wide-gamut color space
             // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
             // per bake — without this, memory piles up across rapid presses
             // (PRD acceptance 10.22) instead of being reclaimed between them.
-            let baked = autoreleasepool {
-                bake(image, context.text, context.theme, context.position)
+            let baked = autoreleasepool { () -> UIImage? in
+                // Crop first, then bake (PRD 0.2 FR-5.7′): the overlay's
+                // margin and font size are derived from the *cropped*
+                // image's short edge, matching what the viewfinder already
+                // showed for the same aspect ratio (FR-5.9, FR-5.11).
+                let cropped = crop(image, aspectRatio)
+                return bake(cropped, context.text, context.style, context.placement)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
@@ -493,13 +707,21 @@ extension CameraScreenModel {
 
             save(baked) { [weak self] result in
                 guard let self else { return }
-                // `PhotoSaver.save`'s completion already guarantees main —
-                // deliberately not wrapped in another `DispatchQueue.main.async`
-                // here, or the toast would appear one run-loop turn after
-                // `isCapturing` resets, rather than in the same update.
+                // `PhotoSaver.saveReturningIdentifier`'s completion already
+                // guarantees main — deliberately not wrapped in another
+                // `DispatchQueue.main.async` here, or the toast would appear
+                // one run-loop turn after `isCapturing` resets, rather than
+                // in the same update.
                 switch result {
-                case .success:
-                    self.presentSavedToast(thumbnail: thumbnail)
+                case let .success(assetID):
+                    // PRD 0.2 FR-15.1/FR-15.2: record the new asset so the
+                    // gallery (TASK-29) can find it later, and update the
+                    // in-memory thumbnail immediately — this is the "captured
+                    // this launch" branch FR-15.2 wants shown without any
+                    // read permission.
+                    self.capturedPhotoStore.recordCapturedAsset(assetID)
+                    self.latestThumbnailImage = thumbnail
+                    self.showToast(message: "已儲存", thumbnail: thumbnail)
                 case let .failure(error):
                     self.captureError = CaptureAlertError(message: error.displayMessage,
                                                           showsSettingsAction: error.showsSettingsAction)
@@ -535,19 +757,20 @@ extension CameraScreenModel {
         captureError = nil
     }
 
-    /// Shows the "已儲存" confirmation toast and schedules it to fade out
-    /// after 1.5 seconds (PRD FR-5.4). Called from `processCapturedImage`'s
-    /// `save` completion on a successful save, with an already-downscaled
-    /// thumbnail (never the full-resolution baked photo).
+    /// Shows a transient confirmation toast and schedules it to fade out
+    /// after 1.5 seconds (PRD FR-5.4, 0.2 FR-7.6's "已取消"). Called from
+    /// `processCapturedImage`'s `save` completion on a successful save (with
+    /// an already-downscaled thumbnail, never the full-resolution baked
+    /// photo) and from `cancelCountdown()` (no thumbnail).
     ///
-    /// Each call gets a fresh `ToastState.id`, so two saves close together
+    /// Each call gets a fresh `ToastState.id`, so two toasts close together
     /// restart the fade-out rather than comparing equal and no-oping (see
     /// `ToastState`'s own doc comment) — and the dismiss guards on that same
     /// `id`, so an older toast's timer firing late can't cut a newer one
     /// short (PRD acceptance 10.22: rapid shutter presses must not make the
     /// toast disappear early or stack up).
-    func presentSavedToast(thumbnail: UIImage? = nil) {
-        let state = ToastState(message: "已儲存", thumbnail: thumbnail)
+    func showToast(message: String, thumbnail: UIImage? = nil) {
+        let state = ToastState(message: message, thumbnail: thumbnail)
         toastState = state
         scheduleToastDismiss { [weak self] in
             guard self?.toastState?.id == state.id else { return }
