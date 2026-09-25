@@ -132,6 +132,14 @@ extension DisplaySettingsModel {
         }
     }
 
+    /// Whether `unit`'s checkbox should be disabled: it is the last unit
+    /// still checked, so unchecking it would leave `displayUnits` empty
+    /// (FR-11.3) — mirrors `toggleUnit`'s own no-op guard, so the view can
+    /// show the same rule it enforces.
+    func isUnitToggleDisabled(_ unit: DisplayUnit) -> Bool {
+        profile.displayUnits.contains(unit) && profile.displayUnits.count == 1
+    }
+
     /// Whether the "歲措辭" toggle should be disabled: it only applies to the
     /// year unit (FR-2.9, 0.2 FR-11.4).
     var isAgeWordingToggleDisabled: Bool {
