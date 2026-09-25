@@ -200,6 +200,24 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.count, 3)
     }
 
+    // MARK: - isUnitToggleDisabled (24.2, mirrors toggleUnit's no-op guard)
+
+    func testOnlyTheLastCheckedUnitIsDisabled() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(displayUnits: [.day]), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isUnitToggleDisabled(.day), "24.2: 只剩天，天 disabled")
+        XCTAssertFalse(model.isUnitToggleDisabled(.year), "24.2: 未勾的年不 disabled")
+        XCTAssertFalse(model.isUnitToggleDisabled(.month))
+        XCTAssertFalse(model.isUnitToggleDisabled(.week))
+    }
+
+    func testNoUnitIsDisabledOnceMoreThanOneIsChecked() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: spy)
+        XCTAssertFalse(model.isUnitToggleDisabled(.year))
+        XCTAssertFalse(model.isUnitToggleDisabled(.day))
+    }
+
     // MARK: - A-5 歲措辭 (11.28–11.31)
 
     func testAgeWordingDisabledWithoutYear() throws {
