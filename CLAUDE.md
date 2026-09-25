@@ -39,6 +39,11 @@
 5. **規格自相矛盾時,以驗收表為準,先實作再回報**:散文式的需求描述與驗收表不一致時(這在本專案發生過),**以驗收表為準**繼續實作,同時回報 Lead 修正文字。理由是驗收表通常寫得更具體、也是 QA 實際照做的依據。不要停下來等裁決,但也不要默默選一邊。
 6. **主動預告下游會誤判的地方**:交接時若你知道某處規格會讓下一個 teammate 誤判(例如「若照 FR-2.14 字面看會覺得這條驗收錯了,請以表格為準」),**在交接訊息裡先講**。事後解釋比事前預告貴得多——本專案已有一次因為預告而省掉整輪假 bug 往返的實例。
 7. **靜態檢查(grep)誤傷時回報,不要遷就它**:若某條 grep 驗收逼你改變數命名、改方法名或改寫法才能通過,而那個改動在語意上毫無必要,**那通常是驗收條目寫得太粗,不是你的程式碼有問題**。回報 Lead 收斂該條,不要默默配合。本專案已有三條驗收因此被修正。
+8. **Code review 迴圈**:每個 PR 開啟與每次 push 後,`claude[bot]` 會自動 review,送出 Approve 或 Request changes,並把結果同步成 `review: approved`/`review: changes-requested` 標籤。
+   - **Dev teammate**:收到 Lead 通知(或自己看到 `review: changes-requested`)後,讀 bot 的 review 總結與行內留言(`gh pr view <N> --comments`、`gh api repos/irene-chou/days-cam/pulls/<N>/comments`)。`[必修]` 逐條處理:同意就在同一分支修正、跑完整測試、push,並回覆該留言「已修正:<commit>」;不同意就回覆理由並告知 Lead,不要為了拿到 approve 硬改(同第 7 條精神)。`[建議]` 可自行判斷,不採納時簡短回覆原因即可
+   - **Lead**:定期(例如 `/loop 10m`)檢查開著的 PR;bot 對最新 commit 要求修改時,依 TASKS-0.2「檔案所有權」通知負責的 teammate。同一個 PR 來回 **3 輪**仍未 approve,就停下來交給人類判斷,不要讓 bot 與 dev 無限往返
+   - **合併條件**:bot 對最新 commit 已 approve(有 `review: approved` 標籤),且 qa 驗收通過;bot 被 dev 以理由駁回的條目需由 Lead 或人類確認
+   - review workflow 修改前開的分支,若沒 merge 最新 `main`,不會跑新版 review(workflow 檔與 `main` 不同會被跳過),先 merge `main` 再 push
 
 ## 測試【可調整】
 - 新增功能需附上對應的 XCTest 單元測試,涵蓋主要邏輯(尤其是天數計算這種容易出錯的核心邏輯)
