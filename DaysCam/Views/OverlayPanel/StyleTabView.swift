@@ -113,7 +113,7 @@ struct StyleTabView: View {
                     swatches: model.textColorSwatches,
                     showAutoButton: false,
                     isDisabled: false,
-                    onSelectSwatch: { color in if let color { model.selectTextColor(color) } },
+                    onSelectSwatch: { model.selectTextColor($0) },
                     onPickCustom: { model.pickCustomTextColor($0) })
     }
 
@@ -148,6 +148,7 @@ struct StyleTabView: View {
                         showAutoButton: true,
                         isDisabled: model.isOutlineColorSectionDisabled,
                         onSelectSwatch: { model.selectOutlineColor($0) },
+                        onSelectAuto: { model.selectOutlineColor(nil) },
                         onPickCustom: { model.pickCustomOutlineColor($0) })
         }
     }
@@ -182,7 +183,7 @@ struct StyleTabView: View {
 
     private var sizeSlider: some View {
         HStack(spacing: 12) {
-            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary)
+            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary).accessibilityHidden(true)
             Slider(
                 value: Binding(
                     get: { Double(model.profile.style.sizeScale) },
@@ -192,7 +193,7 @@ struct StyleTabView: View {
                 step: Double(StyleTabModel.sizeScaleStep)
             )
             .accessibilityLabel("字級")
-            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(.secondary)
+            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(.secondary).accessibilityHidden(true)
             Text("\(model.profile.style.sizeScale)%")
                 .font(.subheadline.monospacedDigit())
                 .frame(minWidth: 46, alignment: .trailing)
@@ -210,13 +211,14 @@ struct StyleTabView: View {
                               swatches: [OverlayColor],
                               showAutoButton: Bool,
                               isDisabled: Bool,
-                              onSelectSwatch: @escaping (OverlayColor?) -> Void,
+                              onSelectSwatch: @escaping (OverlayColor) -> Void,
+                              onSelectAuto: @escaping () -> Void = {},
                               onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 if showAutoButton {
                     Button {
-                        onSelectSwatch(nil)
+                        onSelectAuto()
                     } label: {
                         Image(systemName: "circle.lefthalf.filled")
                             .font(.system(size: 16))
