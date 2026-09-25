@@ -381,8 +381,7 @@ private func previewProfile(style: OverlayStyle = OverlayStyle()) -> CameraProfi
                  showDayCount: true,
                  showDate: false,
                  showName: false,
-                 largestUnit: .day,
-                 smallestUnit: .day,
+                 displayUnits: [.day],
                  useAgeWording: false,
                  position: .anchor(.bottomTrailing),
                  style: style)
