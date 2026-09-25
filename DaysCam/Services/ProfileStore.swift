@@ -237,8 +237,17 @@ extension ProfileStore {
     /// 持久化"). Takes the same `(IndexSet, Int)` shape SwiftUI's `.onMove`
     /// hands a view, so ui-shell's list can forward it unchanged.
     func move(fromOffsets source: IndexSet, toOffset destination: Int) throws {
+        // Implemented by hand rather than with `Array.move(fromOffsets:toOffset:)`,
+        // which is a SwiftUI extension: the data layer must not depend on
+        // SwiftUI (CLAUDE.md), and only compiles today because another file in
+        // the module happens to import it. Semantics match SwiftUI's version.
         var updated = profiles
-        updated.move(fromOffsets: source, toOffset: destination)
+        let moving = source.map { updated[$0] }
+        for index in source.reversed() {
+            updated.remove(at: index)
+        }
+        let insertionIndex = destination - source.count(in: 0..<destination)
+        updated.insert(contentsOf: moving, at: insertionIndex)
         try persist(updated)
         profiles = updated
     }
@@ -262,14 +271,10 @@ extension ProfileStore {
         }
 
         let source = profiles[index]
-        // Truncate the original name *before* appending the tag, so
-        // "{original} 副本" itself never exceeds the limit before
-        // `uniqueName` even has to think about a disambiguating number
-        // (PRD 0.2 FR-9.9, acceptance 20.5 — the result must still end with
-        // "副本", not have it clipped off by a naive tail-truncation).
-        let maxOriginalLength = max(0, CameraProfile.maximumNameLength - Self.duplicateSuffix.count)
-        let truncatedOriginal = String(source.name.prefix(maxOriginalLength))
-        let name = uniqueName(base: truncatedOriginal + Self.duplicateSuffix)
+        // Only the original name is ever truncated — never " 副本" and never
+        // the disambiguating number — so the result always ends with
+        // "副本" or "副本 N" (PRD 0.2 FR-9.9, acceptance 20.5).
+        let name = uniqueName(base: source.name, keeping: Self.duplicateSuffix)
 
         let timestamp = now()
         let duplicated = CameraProfile(name: name,
@@ -298,27 +303,31 @@ extension ProfileStore {
     private static let duplicateSuffix = " 副本"
 
     /// A name that does not collide with any current profile's name
-    /// (PRD 0.2 FR-9.9): `base` itself if nothing already has that exact
-    /// name, otherwise `base` with " 2", " 3", … appended until free.
+    /// (PRD 0.2 FR-9.9): `base` followed by `tag` if nothing already has that
+    /// exact name, otherwise with " 2", " 3", … appended until free.
     ///
-    /// Truncates `base` — never the numbering — whenever the combination
-    /// would exceed `CameraProfile.maximumNameLength`, so the result is
-    /// always immediately valid for `validate(calendar:)` without the caller
-    /// having to trim anything further. This is what both a brand-new
-    /// "新設定檔" (ui-shell, TASK-26) and `duplicate(id:)`'s "{原名} 副本"
-    /// go through.
-    func uniqueName(base: String) -> String {
-        let cappedBase = String(base.prefix(CameraProfile.maximumNameLength))
+    /// Only `base` is truncated — never `tag` and never the numbering —
+    /// whenever the combination would exceed `CameraProfile.maximumNameLength`,
+    /// so the result is always immediately valid for `validate(calendar:)`.
+    /// A brand-new "新設定檔" (ui-shell, TASK-26) passes no tag;
+    /// `duplicate(id:)` passes " 副本" so repeated copies of a long name
+    /// become "…副本 2" instead of losing "副本".
+    func uniqueName(base: String, keeping tag: String = "") -> String {
         let existingNames = Set(profiles.map(\.name))
-        guard existingNames.contains(cappedBase) else {
-            return cappedBase
+
+        func compose(numberSuffix: String) -> String {
+            let maxBaseLength = max(0, CameraProfile.maximumNameLength - tag.count - numberSuffix.count)
+            return String(base.prefix(maxBaseLength)) + tag + numberSuffix
+        }
+
+        let unnumbered = compose(numberSuffix: "")
+        guard existingNames.contains(unnumbered) else {
+            return unnumbered
         }
 
         var number = 2
         while true {
-            let suffix = " \(number)"
-            let maxBaseLength = max(0, CameraProfile.maximumNameLength - suffix.count)
-            let candidate = String(base.prefix(maxBaseLength)) + suffix
+            let candidate = compose(numberSuffix: " \(number)")
             if !existingNames.contains(candidate) {
                 return candidate
             }

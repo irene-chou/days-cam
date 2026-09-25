@@ -493,6 +493,49 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.map(\.id), [c.id, a.id, b.id], "20.1 survives a reload")
     }
 
+    /// Multi-row moves must match SwiftUI's `.onMove` semantics, since the
+    /// store no longer borrows SwiftUI's `Array.move` (PR #45 review).
+    func test_move_multipleOffsetsMatchesSwiftUISemantics() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let seeded = store.profiles[0]
+        for name in ["A", "B", "C", "D", "E"] {
+            _ = try store.add(profile(name: name))
+        }
+        try store.delete(id: seeded.id)
+        XCTAssertEqual(store.profiles.map(\.name), ["A", "B", "C", "D", "E"])
+
+        // Move A and C to just before E: SwiftUI yields [B, D, A, C, E].
+        try store.move(fromOffsets: IndexSet([0, 2]), toOffset: 4)
+        XCTAssertEqual(store.profiles.map(\.name), ["B", "D", "A", "C", "E"])
+
+        // Move E and B to the end: SwiftUI yields [D, A, C, B, E].
+        try store.move(fromOffsets: IndexSet([0, 4]), toOffset: 5)
+        XCTAssertEqual(store.profiles.map(\.name), ["D", "A", "C", "B", "E"])
+    }
+
+    /// A long name duplicated repeatedly must keep "副本" and number the
+    /// copies, never clipping the tag (PR #45 review, FR-9.9).
+    func test_duplicate_repeatedlyOnALongNameKeepsTheSuffixAndNumbers() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = makeStore(at: instant)
+        store.load()
+        let longName = "一二三四五六七八九十一二三四五六七八九十" // 20 chars
+        let saved = try store.add(profile(name: longName))
+
+        let first = try store.duplicate(id: saved.id)
+        let second = try store.duplicate(id: saved.id)
+        let third = try store.duplicate(id: saved.id)
+
+        XCTAssertEqual(first.name, String(longName.prefix(17)) + " 副本")
+        XCTAssertEqual(second.name, String(longName.prefix(15)) + " 副本 2")
+        XCTAssertEqual(third.name, String(longName.prefix(15)) + " 副本 3")
+        for copy in [first, second, third] {
+            XCTAssertLessThanOrEqual(copy.name.count, CameraProfile.maximumNameLength)
+        }
+    }
+
     /// 20.2: duplicating copies every field but `id`/`name`/timestamps, inserts
     /// right after the original, and does not touch the selection.
     func test_duplicate_insertsACopyRightAfterTheOriginalWithoutChangingSelection() throws {
