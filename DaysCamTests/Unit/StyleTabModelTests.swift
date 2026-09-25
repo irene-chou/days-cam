@@ -25,12 +25,6 @@ final class StyleTabModelTests: XCTestCase {
         try XCTUnwrap(OverlayColor(hex: string))
     }
 
-    private func baselineProfile(style: OverlayStyle = OverlayStyle()) -> CameraProfile {
-        CameraProfile(name: "小寶",
-                     startDate: DateComponents(year: 2026, month: 1, day: 1),
-                     style: style)
-    }
-
     private final class Spy {
         var updated: [CameraProfile] = []
         var shouldThrow: Error?

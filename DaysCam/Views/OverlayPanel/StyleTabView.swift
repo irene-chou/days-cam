@@ -159,9 +159,13 @@ struct StyleTabView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
+                    // Isolates the shadow, clearing outline, mirroring
+                    // `outlineContent`'s swatches (which isolate the outline
+                    // by clearing shadow) so the two rows behave symmetrically.
                     let previewStyle: OverlayStyle = {
                         var style = model.profile.style
                         style.shadow = shadow
+                        style.outline = .none
                         return style
                     }()
                     let isSelected = model.profile.style.shadow == shadow
