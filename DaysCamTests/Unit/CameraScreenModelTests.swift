@@ -812,13 +812,15 @@ final class CameraScreenModelTests: XCTestCase {
         var future = try makeFutureProfile(store: store)
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(DisplayUnitTrack.legalPairs.count, 8)
-        for pair in DisplayUnitTrack.legalPairs {
-            future.largestUnit = pair.largest
-            future.smallestUnit = pair.smallest
+        // The eight 0.1 pairs as their PRD 0.2 §4.3 unit sets.
+        let legacySets: [Set<DisplayUnit>] = [
+            [.day], [.week, .day], [.week], [.month, .day], [.month],
+            [.year, .month, .day], [.year, .month], [.year]
+        ]
+        for units in legacySets {
+            future.displayUnits = units
             try store.update(future)
-            XCTAssertEqual(model.overlayText, "尚未開始",
-                           "largest=\(pair.largest) smallest=\(pair.smallest)")
+            XCTAssertEqual(model.overlayText, "尚未開始", "\(units)")
         }
     }
 

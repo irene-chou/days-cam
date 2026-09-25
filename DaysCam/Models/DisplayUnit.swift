@@ -2,9 +2,8 @@ import Foundation
 
 /// A unit used to express the elapsed amount in the overlay text.
 ///
-/// A profile picks a largest and a smallest unit; the units in between are
-/// filled in automatically. Weeks form their own track and are never mixed
-/// with years or months (see PRD FR-2.8).
+/// A profile checks any non-empty set of these; they are always printed in
+/// declaration order, year to day (PRD 0.2 §4.5).
 enum DisplayUnit: String, Codable, CaseIterable {
     case year
     case month

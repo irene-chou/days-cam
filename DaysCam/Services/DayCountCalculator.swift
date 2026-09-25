@@ -56,27 +56,58 @@ struct DayCountCalculator {
     /// itself this returns `(0, 0, 0)` while `dayCount` returns 1 under
     /// `.dayOne`, and that difference is intended (PRD §3.2).
     func calendarBreakdown(from startDate: DateComponents) -> (years: Int, months: Int, days: Int) {
-        guard let fromMidnight = startOfStartDate(startDate) else { return (0, 0, 0) }
-        let components = calendar.dateComponents([.year, .month, .day],
-                                                 from: fromMidnight,
-                                                 to: calendar.startOfDay(for: now()))
+        let components = calendarDifference([.year, .month, .day], from: startDate)
         return (components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
-    /// Calendar month/day breakdown, with the months **not** rolled up into years.
+    /// The elapsed amount broken into the checked `units` (PRD 0.2 §4.5).
     ///
-    /// The month track counts total elapsed months, so the same span that reads
-    /// as 1 year 2 months on the year track reads as 14 months here. That is why
-    /// this cannot be derived from `calendarBreakdown` by arithmetic: asking
-    /// `Calendar` for `[.month, .day]` is what produces the 14 (PRD §3.2).
+    /// - No year and no month checked (U-3): everything comes from the day
+    ///   count `n`, so the counting rule's +1 **is** applied. Weeks are
+    ///   `n / 7` and days `n % 7`; without a day unit the remainder is dropped.
+    /// - Year or month checked (U-4): the calendar difference in exactly the
+    ///   checked year/month units plus days, so an unchecked unit is not split
+    ///   out (U-5: year and day only gives "1 年 64 天"). The counting rule is
+    ///   **not** applied (0.1 §3.2). The leftover days then become weeks and
+    ///   days as above. Month arithmetic clamps a missing day to the month's
+    ///   end, as Foundation does (U-6).
     ///
-    /// Like `calendarBreakdown`, the counting rule is not applied.
-    func monthDayBreakdown(from startDate: DateComponents) -> (months: Int, days: Int) {
-        guard let fromMidnight = startOfStartDate(startDate) else { return (0, 0) }
-        let components = calendar.dateComponents([.month, .day],
-                                                 from: fromMidnight,
-                                                 to: calendar.startOfDay(for: now()))
-        return (components.month ?? 0, components.day ?? 0)
+    /// Asking `Calendar` for all the checked components in one call is what
+    /// keeps every 0.1 combination's output identical to 0.1, which made the
+    /// same single call. Only the checked units carry values; the rest are 0.
+    /// The ordinal "day only" case (U-2) is the caller's to special-case.
+    func elapsedBreakdown(from startDate: DateComponents,
+                          units: Set<DisplayUnit>,
+                          rule: CountingRule) -> ElapsedBreakdown {
+        var breakdown = ElapsedBreakdown()
+        let remainder: Int
+        if units.contains(.year) || units.contains(.month) {
+            var components: Set<Calendar.Component> = [.day]
+            if units.contains(.year) { components.insert(.year) }
+            if units.contains(.month) { components.insert(.month) }
+            let difference = calendarDifference(components, from: startDate)
+            breakdown.years = difference.year ?? 0
+            breakdown.months = difference.month ?? 0
+            remainder = difference.day ?? 0
+        } else {
+            remainder = dayCount(from: startDate, rule: rule)
+        }
+
+        if units.contains(.week) {
+            breakdown.weeks = remainder / 7
+            breakdown.days = units.contains(.day) ? remainder % 7 : 0
+        } else {
+            breakdown.days = units.contains(.day) ? remainder : 0
+        }
+        return breakdown
+    }
+
+    /// `Calendar`'s difference in `components` from `startDate` to today,
+    /// all zero when `startDate` names no day.
+    private func calendarDifference(_ components: Set<Calendar.Component>,
+                                    from startDate: DateComponents) -> DateComponents {
+        guard let fromMidnight = startOfStartDate(startDate) else { return DateComponents() }
+        return calendar.dateComponents(components, from: fromMidnight, to: calendar.startOfDay(for: now()))
     }
 
     /// Local midnight on `startDate`, or nil when it names no day.
@@ -101,6 +132,25 @@ struct DayCountCalculator {
     /// Used for the printed date and for defaulting a new profile's start date.
     func currentDateComponents() -> DateComponents {
         calendar.dateComponents([.year, .month, .day], from: now())
+    }
+}
+
+/// An elapsed amount split into the four display units. Units that were
+/// not checked are 0 (PRD 0.2 §4.5).
+struct ElapsedBreakdown: Equatable {
+    var years = 0
+    var months = 0
+    var weeks = 0
+    var days = 0
+
+    /// The value for `unit`.
+    func value(of unit: DisplayUnit) -> Int {
+        switch unit {
+        case .year: return years
+        case .month: return months
+        case .week: return weeks
+        case .day: return days
+        }
     }
 }
 

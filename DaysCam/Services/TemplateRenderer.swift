@@ -10,7 +10,7 @@ struct TemplateRenderer {
     /// Shown instead of a count when the start date has not arrived yet
     /// (PRD §7.2).
     static let notStartedText = "尚未開始"
-    /// Shown when every unit on the chosen track is zero (PRD FR-2.12).
+    /// Shown when every checked unit is zero (PRD FR-2.12, 0.2 U-7).
     static let allZeroText = "0 天"
     /// Separates the date from the elapsed amount: ideographic space U+3000
     /// (PRD FR-2.5).
@@ -71,7 +71,7 @@ private extension TemplateRenderer {
 // MARK: - Elapsed amount
 
 private extension TemplateRenderer {
-    /// The elapsed amount on the track chosen by `largestUnit`.
+    /// The elapsed amount in the checked `displayUnits` (PRD 0.2 §4.5).
     func elapsedText(profile: CameraProfile, calculator: DayCountCalculator) -> String {
         // Checked on the raw difference, not the day count: under `.dayOne` a
         // start date one day out still counts to 0, and 0 is not "day zero".
@@ -79,94 +79,44 @@ private extension TemplateRenderer {
             return Self.notStartedText
         }
 
-        switch profile.largestUnit {
-        case .day:
-            // The one ordinal form in the product, and the only track where the
-            // day is `n` itself. Kept even at zero: `.dayZero` on the start date
-            // prints 第 0 天, not the all-zero fallback (PRD FR-2.13).
+        let units = profile.displayUnits
+        if units == [.day] {
+            // U-2: the one ordinal form in the product. Kept even at zero:
+            // `.dayZero` on the start date prints 第 0 天, not the all-zero
+            // fallback (0.1 FR-2.13).
             let count = calculator.dayCount(from: profile.startDate, rule: profile.countingRule)
             return "第 \(count) 天"
+        }
 
-        case .week:
-            let count = calculator.dayCount(from: profile.startDate, rule: profile.countingRule)
-            return weekTrackText(dayCount: count, smallestUnit: profile.smallestUnit)
+        let breakdown = calculator.elapsedBreakdown(from: profile.startDate,
+                                                    units: units,
+                                                    rule: profile.countingRule)
+        // U-1 order; U-7 drops zero units.
+        let segments: [String] = DisplayUnit.allCases.compactMap { unit in
+            guard units.contains(unit) else { return nil }
+            let value = breakdown.value(of: unit)
+            guard value != 0 else { return nil }
+            return "\(value) \(label(for: unit, useAgeWording: profile.useAgeWording))"
+        }
+        guard !segments.isEmpty else { return Self.allZeroText }
+        return segments.joined(separator: separator(for: units))
+    }
 
-        case .month:
-            let breakdown = calculator.monthDayBreakdown(from: profile.startDate)
-            return monthTrackText(breakdown: breakdown, smallestUnit: profile.smallestUnit)
-
-        case .year:
-            let breakdown = calculator.calendarBreakdown(from: profile.startDate)
-            return yearTrackText(breakdown: breakdown,
-                                 smallestUnit: profile.smallestUnit,
-                                 useAgeWording: profile.useAgeWording)
+    /// The unit's printed label; years read as ages when asked (U-9).
+    func label(for unit: DisplayUnit, useAgeWording: Bool) -> String {
+        switch unit {
+        case .year: return useAgeWording ? "歲" : "年"
+        case .month: return "個月"
+        case .week: return "週"
+        case .day: return "天"
         }
     }
 
-    /// Weeks and days, both derived from `n` and so both carrying the counting
-    /// rule's +1 — unlike the year and month tracks (PRD §3.2).
-    func weekTrackText(dayCount: Int, smallestUnit: DisplayUnit) -> String {
-        let weeks = dayCount / 7
-        let days = dayCount % 7
-        var segments: [String] = []
-        if weeks != 0 {
-            segments.append("\(weeks) 週")
-        }
-        // At `.week` the remainder is truncated by the chosen smallest unit
-        // rather than omitted for being zero.
-        if smallestUnit == .day && days != 0 {
-            segments.append("\(days) 天")
-        }
-        return joined(segments, separator: "又 ")
-    }
-
-    /// Total elapsed months and the leftover days.
-    func monthTrackText(breakdown: (months: Int, days: Int), smallestUnit: DisplayUnit) -> String {
-        var segments: [String] = []
-        if breakdown.months != 0 {
-            segments.append("\(breakdown.months) 個月")
-        }
-        if smallestUnit == .day && breakdown.days != 0 {
-            segments.append("\(breakdown.days) 天")
-        }
-        return joined(segments, separator: "又 ")
-    }
-
-    /// Years, months and days from the calendar difference.
-    ///
-    /// The days here are the calendar remainder (5 in the reference case), not
-    /// `n` and not `n % 7`. Reusing one "days" variable across the tracks is the
-    /// single easiest way to get this section wrong (PRD §3.2).
-    func yearTrackText(breakdown: (years: Int, months: Int, days: Int),
-                       smallestUnit: DisplayUnit,
-                       useAgeWording: Bool) -> String {
-        var units = DisplayUnitTrack.units(largest: .year, smallest: smallestUnit)
-        if units.isEmpty {
-            // Only reachable with a profile the persistence layer would reject.
-            units = DisplayUnitTrack.units(forLargest: .year)
-        }
-
-        var segments: [String] = []
-        for unit in units {
-            switch unit {
-            case .year where breakdown.years != 0:
-                segments.append("\(breakdown.years) \(useAgeWording ? "歲" : "年")")
-            case .month where breakdown.months != 0:
-                segments.append("\(breakdown.months) 個月")
-            case .day where breakdown.days != 0:
-                segments.append("\(breakdown.days) 天")
-            default:
-                break
-            }
-        }
-        // No connective on this track: "1 年 2 個月又 5 天" does not read well
-        // with three segments (PRD FR-2.14).
-        return joined(segments, separator: " ")
-    }
-
-    /// Joins the non-zero segments, falling back to `0 天` when every unit on
-    /// the track was zero (PRD FR-2.12).
-    func joined(_ segments: [String], separator: String) -> String {
-        segments.isEmpty ? Self.allZeroText : segments.joined(separator: separator)
+    /// U-8: exactly two checked units without a year are joined with 「又」
+    /// (`61 週又 3 天`); everything else with a half-width space
+    /// (`1 年 2 個月 5 天`). Decided by what is checked, not by which
+    /// segments happen to be non-zero, so one setting always reads one way.
+    func separator(for units: Set<DisplayUnit>) -> String {
+        units.count == 2 && !units.contains(.year) ? "又 " : " "
     }
 }

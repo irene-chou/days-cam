@@ -1,7 +1,10 @@
 import XCTest
 @testable import DaysCam
 
-/// Covers the TASK-04 acceptance table (4.1 ... 4.56).
+/// Covers the TASK-04 acceptance table (4.1 ... 4.56), and since 0.2 TASK-27
+/// also 27.1: every expected string below is unchanged from 0.1. Only the
+/// input changed — each 0.1 `(largest, smallest)` pair is turned into the
+/// unit set PRD 0.2 §4.3 maps it to, by `legacyUnits(largest:smallest:)`.
 ///
 /// Reference case throughout, unless a test says otherwise: name 小寶,
 /// start 2025-01-15, `.dayOne`, captured 2026-03-20 10:00 Asia/Taipei. That
@@ -10,6 +13,31 @@ import XCTest
 final class TemplateRendererTests: XCTestCase {
 
     private let renderer = TemplateRenderer()
+
+    /// The eight 0.1 `(largest, smallest)` pairs (0.1 PRD §4.1 invariant 4).
+    static let legacyPairs: [(largest: DisplayUnit, smallest: DisplayUnit)] = [
+        (.day, .day),
+        (.week, .day), (.week, .week),
+        (.month, .day), (.month, .month),
+        (.year, .day), (.year, .month), (.year, .year)
+    ]
+
+    /// PRD 0.2 §4.3: a 0.1 pair becomes the units of its track from the
+    /// largest down to the smallest. Written out as a table, independently of
+    /// the migration code, so a wrong migration cannot pass itself.
+    static func legacyUnits(largest: DisplayUnit, smallest: DisplayUnit) -> Set<DisplayUnit> {
+        switch (largest, smallest) {
+        case (.day, .day): return [.day]
+        case (.week, .day): return [.week, .day]
+        case (.week, .week): return [.week]
+        case (.month, .day): return [.month, .day]
+        case (.month, .month): return [.month]
+        case (.year, .day): return [.year, .month, .day]
+        case (.year, .month): return [.year, .month]
+        case (.year, .year): return [.year]
+        default: return []
+        }
+    }
 
     private func profile(name: String = "小寶",
                          start: DateComponents = DateFixture.components(2025, 1, 15),
@@ -26,8 +54,7 @@ final class TemplateRendererTests: XCTestCase {
                       showDayCount: showDayCount,
                       showDate: showDate,
                       showName: showName,
-                      largestUnit: largest,
-                      smallestUnit: smallest,
+                      displayUnits: Self.legacyUnits(largest: largest, smallest: smallest),
                       useAgeWording: useAgeWording)
     }
 
@@ -62,10 +89,13 @@ final class TemplateRendererTests: XCTestCase {
         }
     }
 
-    /// Every pair in the table must also be one the model calls legal, so the
-    /// two lists cannot drift apart.
-    func testTheEightRenderedPairsAreExactlyTheLegalOnes() {
-        XCTAssertEqual(DisplayUnitTrack.legalPairs.count, 8)
+    /// The pair list really is the eight 0.1 pairs, each mapped to a
+    /// distinct, non-empty set.
+    func testTheEightLegacyPairsMapToDistinctUnitSets() {
+        XCTAssertEqual(Self.legacyPairs.count, 8)
+        let sets = Self.legacyPairs.map { Self.legacyUnits(largest: $0.largest, smallest: $0.smallest) }
+        XCTAssertFalse(sets.contains { $0.isEmpty })
+        XCTAssertEqual(Set(sets).count, 8)
     }
 
     // MARK: - A-2 (4.9 ... 4.14) date and ordering
@@ -263,7 +293,7 @@ final class TemplateRendererTests: XCTestCase {
                       DateFixture.components(2026, 3, 20),
                       DateFixture.components(2030, 12, 31)] {
             for rule in CountingRule.allCases {
-                for pair in DisplayUnitTrack.legalPairs {
+                for pair in Self.legacyPairs {
                     let subject = profile(start: start,
                                           rule: rule,
                                           showDayCount: false,
@@ -305,7 +335,7 @@ final class TemplateRendererTests: XCTestCase {
     func testEveryUnitPairReportsNotStartedForAFutureStart() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 9, 19, hour: 10))
         let start = DateFixture.components(2026, 12, 1)
-        for pair in DisplayUnitTrack.legalPairs {
+        for pair in Self.legacyPairs {
             let subject = profile(start: start, largest: pair.largest, smallest: pair.smallest)
             XCTAssertEqual(render(subject, at: capturedAt), "尚未開始",
                            "4.53 \(pair.largest)/\(pair.smallest)")
@@ -359,5 +389,94 @@ final class TemplateRendererTests: XCTestCase {
         let output = render(subject, at: capturedAt)
         XCTAssertTrue(output.hasPrefix("第 13"), "expected a five-digit count, got \(output)")
         XCTAssertFalse(output.contains(","), "PRD FR-2.15 forbids digit grouping")
+    }
+}
+
+// MARK: - 0.2 TASK-27: any combination of units
+
+/// Covers TASK-27 27.2 ... 27.10 and the PRD 0.2 §4.5 reference table.
+final class TemplateRendererUnitSetTests: XCTestCase {
+
+    private func render(start: DateComponents,
+                        capturedAt: (Int, Int, Int),
+                        units: Set<DisplayUnit>,
+                        rule: CountingRule = .dayOne,
+                        useAgeWording: Bool = false) throws -> String {
+        let moment = try XCTUnwrap(DateFixture.date(capturedAt.0, capturedAt.1, capturedAt.2, hour: 10))
+        let profile = CameraProfile(name: "小寶", startDate: start, countingRule: rule,
+                                    displayUnits: units, useAgeWording: useAgeWording)
+        return TemplateRenderer().render(profile: profile, capturedAt: moment, calendar: DateFixture.taipei)
+    }
+
+    private let reference = DateFixture.components(2025, 1, 15)
+    private let referenceCapture = (2026, 3, 20)
+
+    /// PRD 0.2 §4.5 table, reference case n = 430.
+    func testReferenceTable() throws {
+        let cases: [(String, Set<DisplayUnit>, String)] = [
+            ("天", [.day], "第 430 天"),
+            ("週天", [.week, .day], "61 週又 3 天"),
+            ("月天", [.month, .day], "14 個月又 5 天"),
+            ("年月", [.year, .month], "1 年 2 個月"),
+            ("年月天", [.year, .month, .day], "1 年 2 個月 5 天"),
+            ("27.2 年天", [.year, .day], "1 年 64 天"),
+            ("27.3 年月週天", [.year, .month, .week, .day], "1 年 2 個月 5 天"),
+            ("27.4 月週", [.month, .week], "14 個月")
+        ]
+        for (label, units, expected) in cases {
+            XCTAssertEqual(try render(start: reference, capturedAt: referenceCapture, units: units), expected, label)
+        }
+    }
+
+    func testWeeksAfterYearsAndMonths() throws {
+        let start = DateFixture.components(2024, 8, 1)
+        let capture = (2026, 1, 22)
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.year, .month, .week]),
+                       "1 年 5 個月 3 週", "27.5")
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.month, .week]),
+                       "17 個月又 3 週", "27.6")
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.year, .month]),
+                       "1 年 5 個月", "27.7")
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.year, .month, .week, .day]),
+                       "1 年 5 個月 3 週", "21 days is exactly 3 weeks, day omitted")
+    }
+
+    func testCountingRuleAppliesOnlyWithoutYearAndMonth() throws {
+        let start = DateFixture.components(2026, 1, 1)
+        let capture = (2026, 1, 10)
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.week, .day]), "1 週又 3 天", "27.8")
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.month, .day]), "9 天", "27.9")
+        XCTAssertEqual(try render(start: start, capturedAt: capture, units: [.week, .day], rule: .dayZero),
+                       "1 週又 2 天")
+    }
+
+    func testFebruary29ClampsToAFullYear() throws {
+        XCTAssertEqual(try render(start: DateFixture.components(2024, 2, 29), capturedAt: (2025, 2, 28),
+                                  units: [.year, .month, .day]), "1 年", "27.10")
+    }
+
+    /// U-8 is decided by the checked units, not by the non-zero segments.
+    func testConnectiveFollowsTheCheckedUnits() throws {
+        // Three checked units, no year: spaces even though only two show.
+        XCTAssertEqual(try render(start: reference, capturedAt: referenceCapture, units: [.month, .week, .day]),
+                       "14 個月 5 天")
+        // Two checked units with a year: a space.
+        XCTAssertEqual(try render(start: reference, capturedAt: referenceCapture, units: [.year, .week]),
+                       "1 年 9 週")
+    }
+
+    func testAgeWordingAndAllZero() throws {
+        XCTAssertEqual(try render(start: reference, capturedAt: referenceCapture, units: [.year, .day],
+                                  useAgeWording: true), "1 歲 64 天", "U-9")
+        let start = DateFixture.components(2026, 1, 1)
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 1), units: [.year, .month]), "0 天", "U-7")
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 3), units: [.week]), "0 天", "U-7")
+    }
+
+    func testFutureStartIsNotStartedForAnySet() throws {
+        for units: Set<DisplayUnit> in [[.day], [.year, .week], [.month, .week, .day]] {
+            XCTAssertEqual(try render(start: DateFixture.components(2026, 12, 1), capturedAt: (2026, 9, 19),
+                                      units: units), "尚未開始", "\(units)")
+        }
     }
 }

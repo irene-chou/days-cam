@@ -53,17 +53,12 @@ struct DisplaySettingsSheet: View {
 
     private var dayCountFormatSection: some View {
         Section {
-            Picker("最大單位", selection: Binding(get: { model.profile.largestUnit },
-                                              set: { model.setLargestUnit($0) })) {
-                ForEach(DisplayUnit.allCases, id: \.self) { unit in
-                    Text(displayName(for: unit)).tag(unit)
-                }
-            }
-            Picker("最小單位", selection: Binding(get: { model.profile.smallestUnit },
-                                              set: { model.setSmallestUnit($0) })) {
-                ForEach(model.availableSmallestUnits, id: \.self) { unit in
-                    Text(displayName(for: unit)).tag(unit)
-                }
+            // TEMP(TASK-27): adapter until TASK-24 replaces this view layer
+            ForEach(DisplayUnit.allCases, id: \.self) { unit in
+                let isChecked = model.profile.displayUnits.contains(unit)
+                Toggle(displayName(for: unit), isOn: Binding(get: { isChecked },
+                                                            set: { _ in model.toggleUnit(unit) }))
+                    .disabled(isChecked && model.profile.displayUnits.count == 1)
             }
             Toggle("歲措辭", isOn: Binding(get: { model.profile.useAgeWording },
                                         set: { model.setUseAgeWording($0) }))
