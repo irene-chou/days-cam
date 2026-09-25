@@ -92,6 +92,35 @@ final class DayCountCalculatorTests: XCTestCase {
         XCTAssertEqual(breakdown.days, 0)
     }
 
+    // MARK: - 0.2 elapsed breakdown by unit set (PRD 0.2 §4.5)
+
+    /// Reference case: 2025-01-15 → 2026-03-20, n = 430.
+    func testElapsedBreakdownSplitsOnlyTheCheckedUnits() throws {
+        let subject = calculator(now: try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10)))
+        let start = DateFixture.components(2025, 1, 15)
+        func breakdown(_ units: Set<DisplayUnit>) -> ElapsedBreakdown {
+            subject.elapsedBreakdown(from: start, units: units, rule: .dayOne)
+        }
+        XCTAssertEqual(breakdown([.year, .day]), ElapsedBreakdown(years: 1, days: 64), "U-5")
+        XCTAssertEqual(breakdown([.year, .month, .day]), ElapsedBreakdown(years: 1, months: 2, days: 5))
+        XCTAssertEqual(breakdown([.month, .week, .day]), ElapsedBreakdown(months: 14, weeks: 0, days: 5))
+        XCTAssertEqual(breakdown([.year, .week]), ElapsedBreakdown(years: 1, weeks: 9), "remainder dropped")
+        XCTAssertEqual(breakdown([.week, .day]), ElapsedBreakdown(weeks: 61, days: 3), "U-3 uses n")
+        XCTAssertEqual(breakdown([.week]), ElapsedBreakdown(weeks: 61))
+    }
+
+    /// U-3 applies the counting rule's +1; U-4 does not.
+    func testCountingRuleAppliesOnlyWithoutYearOrMonth() throws {
+        let subject = calculator(now: try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10)))
+        let start = DateFixture.components(2026, 1, 1)
+        XCTAssertEqual(subject.elapsedBreakdown(from: start, units: [.week, .day], rule: .dayOne),
+                       ElapsedBreakdown(weeks: 1, days: 3))
+        XCTAssertEqual(subject.elapsedBreakdown(from: start, units: [.week, .day], rule: .dayZero),
+                       ElapsedBreakdown(weeks: 1, days: 2))
+        XCTAssertEqual(subject.elapsedBreakdown(from: start, units: [.month, .week, .day], rule: .dayOne),
+                       ElapsedBreakdown(weeks: 1, days: 2))
+    }
+
     // MARK: - 2.23 ... 2.25 current date and time zones
 
     func testCurrentDateComponentsIgnoresTimeOfDay() throws {

@@ -1,7 +1,7 @@
 import XCTest
 @testable import DaysCam
 
-/// Covers the five invariants of PRD §4.1 at the model level.
+/// Covers the invariants of PRD §4.1 (as amended by 0.2 §4.1) at the model level.
 ///
 /// `ProfileStore` is the layer that has to call these; TASK-03 will test the
 /// file round trip. What is pinned here is that the rules exist, that the
@@ -13,15 +13,13 @@ final class CameraProfileTests: XCTestCase {
                          startDate: DateComponents = DateFixture.components(2025, 1, 15),
                          showDayCount: Bool = true,
                          showDate: Bool = false,
-                         largestUnit: DisplayUnit = .day,
-                         smallestUnit: DisplayUnit = .day,
+                         displayUnits: Set<DisplayUnit> = [.day],
                          useAgeWording: Bool = false) -> CameraProfile {
         CameraProfile(name: name,
                       startDate: startDate,
                       showDayCount: showDayCount,
                       showDate: showDate,
-                      largestUnit: largestUnit,
-                      smallestUnit: smallestUnit,
+                      displayUnits: displayUnits,
                       useAgeWording: useAgeWording)
     }
 
@@ -44,8 +42,7 @@ final class CameraProfileTests: XCTestCase {
         XCTAssertTrue(subject.showDayCount)
         XCTAssertFalse(subject.showDate)
         XCTAssertFalse(subject.showName)
-        XCTAssertEqual(subject.largestUnit, .day)
-        XCTAssertEqual(subject.smallestUnit, .day)
+        XCTAssertEqual(subject.displayUnits, [.day])
         XCTAssertFalse(subject.useAgeWording)
         XCTAssertEqual(subject.position, .anchor(.bottomTrailing))
         XCTAssertEqual(subject.style, OverlayStyle(legacyTheme: .classicWhite))
@@ -54,13 +51,13 @@ final class CameraProfileTests: XCTestCase {
     /// The initializer must accept invalid states so that an editing screen can
     /// hold a half-typed profile and so that tests can build one to reject.
     func testMemberwiseInitializerDoesNotValidate() {
-        let invalid = profile(name: "", showDayCount: false, showDate: false, largestUnit: .week, smallestUnit: .month)
+        let invalid = profile(name: "", showDayCount: false, showDate: false, displayUnits: [])
         XCTAssertEqual(invalid.name, "")
         XCTAssertThrowsError(try invalid.validate(calendar: DateFixture.taipei))
     }
 
     func testCodableRoundTripPreservesEveryField() throws {
-        var subject = profile(showDate: true, largestUnit: .year, smallestUnit: .month, useAgeWording: true)
+        var subject = profile(showDate: true, displayUnits: [.year, .month, .week], useAgeWording: true)
         subject.showName = true
         subject.position = .anchor(.topLeading)
         subject.style = OverlayStyle(legacyTheme: .filmStrip)
@@ -177,36 +174,39 @@ final class CameraProfileTests: XCTestCase {
             .validatedForPersistence(calendar: DateFixture.taipei))
     }
 
-    // MARK: - Invariant 4: unit pair
+    // MARK: - Units (PRD 0.2 §4.1, replacing 0.1 invariants 4 and 5)
 
-    func testAllEightLegalUnitPairsValidate() {
-        for pair in DisplayUnitTrack.legalPairs {
-            let subject = profile(largestUnit: pair.largest, smallestUnit: pair.smallest)
-            XCTAssertNoThrow(try subject.validatedForPersistence(calendar: DateFixture.taipei),
-                             "\(pair.largest) / \(pair.smallest) should be legal")
+    /// Every non-empty subset is legal now, including the 0.1-illegal mixes.
+    func testEveryNonEmptyUnitSetValidates() {
+        for mask in 1..<16 {
+            let units = Set(DisplayUnit.allCases.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element))
+            XCTAssertNoThrow(try profile(displayUnits: units).validatedForPersistence(calendar: DateFixture.taipei),
+                             "\(units)")
         }
     }
 
-    func testUnitPairsOffTheTrackAreRejected() {
-        let illegal: [(DisplayUnit, DisplayUnit)] = [
-            (.year, .week), (.month, .year), (.month, .week),
-            (.week, .year), (.week, .month), (.day, .year), (.day, .month), (.day, .week)
-        ]
-        for (largest, smallest) in illegal {
-            expectValidationFailure(profile(largestUnit: largest, smallestUnit: smallest),
-                                    .unitPairNotOnSameTrack(largest: largest, smallest: smallest))
-        }
+    func testEmptyUnitSetIsRejected() {
+        expectValidationFailure(profile(displayUnits: []), .displayUnitsEmpty)
     }
-
-    // MARK: - Invariant 5: age wording
 
     func testAgeWordingRequiresTheYearUnit() {
-        expectValidationFailure(profile(largestUnit: .day, smallestUnit: .day, useAgeWording: true),
+        expectValidationFailure(profile(displayUnits: [.day], useAgeWording: true),
                                 .ageWordingRequiresYearUnit)
-        expectValidationFailure(profile(largestUnit: .month, smallestUnit: .day, useAgeWording: true),
+        expectValidationFailure(profile(displayUnits: [.month, .week, .day], useAgeWording: true),
                                 .ageWordingRequiresYearUnit)
-        XCTAssertNoThrow(try profile(largestUnit: .year, smallestUnit: .month, useAgeWording: true)
+        XCTAssertNoThrow(try profile(displayUnits: [.year, .month], useAgeWording: true)
             .validatedForPersistence(calendar: DateFixture.taipei))
+        XCTAssertNoThrow(try profile(displayUnits: [.year, .week], useAgeWording: true)
+            .validatedForPersistence(calendar: DateFixture.taipei))
+    }
+
+    /// The file lists units in year → day order, not `Set` order.
+    func testDisplayUnitsAreEncodedInDisplayOrder() throws {
+        let data = try JSONEncoder().encode(profile(displayUnits: [.day, .week, .year]))
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(text.contains(#""displayUnits":["year","week","day"]"#), text)
+        XCTAssertFalse(text.contains("largestUnit"))
+        XCTAssertFalse(text.contains("smallestUnit"))
     }
 }
 
@@ -246,11 +246,12 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
 
     /// One record exactly as 0.1's synthesized `Codable` wrote it: a
     /// `themeID` key, and `position` as a bare string.
-    private func legacyRecord(id: String, name: String, themeID: String, position: String) -> String {
+    private func legacyRecord(id: String, name: String, themeID: String, position: String,
+                              largestUnit: String = "day", smallestUnit: String = "day") -> String {
         """
         {"id":"\(id)","name":"\(name)","startDate":{"year":2026,"month":1,"day":1},\
         "countingRule":"dayOne","showDayCount":true,"showDate":false,"showName":false,\
-        "largestUnit":"day","smallestUnit":"day","useAgeWording":false,\
+        "largestUnit":"\(largestUnit)","smallestUnit":"\(smallestUnit)","useAgeWording":false,\
         "position":"\(position)","themeID":"\(themeID)",\
         "createdAt":789000000,"updatedAt":789000000}
         """
@@ -335,6 +336,34 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         XCTAssertEqual(loaded.count, 1, "17.5: record kept")
         XCTAssertEqual(loaded.first?.id, profile.id, "17.5")
         XCTAssertEqual(loaded.first?.style.fontID, .sfRounded, "17.5")
+    }
+
+    /// 27.11: each 0.1 unit pair becomes the PRD 0.2 §4.3 set, in a real
+    /// 0.1-format file read through `ProfileStore`.
+    func testLegacyUnitPairsConvertToUnitSets() throws {
+        let records = TemplateRendererTests.legacyPairs.enumerated().map { index, pair in
+            legacyRecord(id: String(format: "00000000-0000-0000-0000-%012d", index + 100),
+                         name: "單位\(index)", themeID: "classicWhite", position: "bottomTrailing",
+                         largestUnit: pair.largest.rawValue, smallestUnit: pair.smallest.rawValue)
+        }
+        try Data("[\(records.joined(separator: ","))]".utf8).write(to: fileURL, options: [.atomic])
+
+        let loaded = try makeStore().load()
+        XCTAssertEqual(loaded.count, 8, "27.11: no record dropped")
+        for (index, pair) in TemplateRendererTests.legacyPairs.enumerated() {
+            XCTAssertEqual(loaded.first { $0.name == "單位\(index)" }?.displayUnits,
+                           TemplateRendererTests.legacyUnits(largest: pair.largest, smallest: pair.smallest),
+                           "27.11 \(pair.largest)/\(pair.smallest)")
+        }
+    }
+
+    /// A pair 0.1 itself would have rejected is kept, with its largest unit.
+    func testIllegalLegacyUnitPairKeepsTheLargestUnit() throws {
+        let record = legacyRecord(id: "00000000-0000-0000-0000-000000000099", name: "壞",
+                                  themeID: "classicWhite", position: "bottomTrailing",
+                                  largestUnit: "week", smallestUnit: "month")
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: Data(record.utf8))
+        XCTAssertEqual(decoded.displayUnits, [.week])
     }
 
     func testUnknownLegacyThemeFallsBackToDefaultStyle() throws {

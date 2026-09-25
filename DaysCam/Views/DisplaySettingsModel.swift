@@ -113,52 +113,37 @@ extension DisplaySettingsModel {
         !profile.showDayCount
     }
 
-    /// The smallest-unit options for the current `largestUnit`, in
-    /// largest-to-smallest order (PRD §3.2's track table).
-    var availableSmallestUnits: [DisplayUnit] {
-        DisplayUnitTrack.allowedSmallestUnits(forLargest: profile.largestUnit)
-    }
-
-    /// Sets `largestUnit`, clamping `smallestUnit` when it falls off the new
-    /// track and turning off `useAgeWording` when the new track is not year.
+    /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, TASK-27).
     ///
-    /// Clamp target is `newValue` itself, not the new track's actual smallest
-    /// unit: switching largest from year/month to week leaves smallest at
-    /// week (i.e. week/week), not week/day — verified against TASK-11
-    /// acceptance 11.25/11.26.
-    func setLargestUnit(_ newValue: DisplayUnit) {
-        guard newValue != profile.largestUnit else { return }
-        mutate { profile in
-            profile.largestUnit = newValue
-            if !DisplayUnitTrack.isLegalPair(largest: newValue, smallest: profile.smallestUnit) {
-                profile.smallestUnit = newValue
+    /// Unchecking the last remaining unit is a no-op: `displayUnits` may
+    /// never be empty. Unchecking the year also turns `useAgeWording` off
+    /// (FR-11.4).
+    func toggleUnit(_ unit: DisplayUnit) {
+        if profile.displayUnits.contains(unit) {
+            guard profile.displayUnits.count > 1 else { return }
+            mutate { profile in
+                profile.displayUnits.remove(unit)
+                if unit == .year {
+                    profile.useAgeWording = false
+                }
             }
-            if newValue != .year {
-                profile.useAgeWording = false
-            }
+        } else {
+            mutate { $0.displayUnits.insert(unit) }
         }
     }
 
-    /// Sets `smallestUnit`. A no-op for a unit not on the current track — the
-    /// view is expected to only offer `availableSmallestUnits` (FR-2.8).
-    func setSmallestUnit(_ newValue: DisplayUnit) {
-        guard newValue != profile.smallestUnit else { return }
-        guard DisplayUnitTrack.isLegalPair(largest: profile.largestUnit, smallest: newValue) else { return }
-        mutate { $0.smallestUnit = newValue }
-    }
-
     /// Whether the "歲措辭" toggle should be disabled: it only applies to the
-    /// year track (FR-2.9).
+    /// year unit (FR-2.9, 0.2 FR-11.4).
     var isAgeWordingToggleDisabled: Bool {
-        profile.largestUnit != .year
+        !profile.displayUnits.contains(.year)
     }
 
-    /// Sets `useAgeWording`. A no-op while `largestUnit` is not `.year` — the
+    /// Sets `useAgeWording`. A no-op while the year is not checked — the
     /// view is expected to disable the toggle in that state already; this is
     /// the defensive backstop (FR-2.9).
     func setUseAgeWording(_ newValue: Bool) {
         guard newValue != profile.useAgeWording else { return }
-        guard profile.largestUnit == .year else { return }
+        guard profile.displayUnits.contains(.year) else { return }
         mutate { $0.useAgeWording = newValue }
     }
 }

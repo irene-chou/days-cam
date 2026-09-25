@@ -20,16 +20,14 @@ final class DisplaySettingsModelTests: XCTestCase {
                                  showDayCount: Bool = true,
                                  showDate: Bool = false,
                                  showName: Bool = false,
-                                 largestUnit: DisplayUnit = .day,
-                                 smallestUnit: DisplayUnit = .day,
+                                 displayUnits: Set<DisplayUnit> = [.day],
                                  useAgeWording: Bool = false) -> CameraProfile {
         CameraProfile(name: name,
                      startDate: startDate,
                      showDayCount: showDayCount,
                      showDate: showDate,
                      showName: showName,
-                     largestUnit: largestUnit,
-                     smallestUnit: smallestUnit,
+                     displayUnits: displayUnits,
                      useAgeWording: useAgeWording)
     }
 
@@ -138,7 +136,7 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - A-3 單位區間 (11.15–11.20)
+    // MARK: - A-3 單位區間 (11.15–11.20), inputs as 0.2 unit sets; texts unchanged
 
     func testDayDayIsTheDefaultOrdinalForm() throws {
         let spy = Spy()
@@ -146,133 +144,102 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.overlayPreviewText, "第 10 天")
     }
 
-    func testLargestWeekKeepsDaySmallestAndReadsWeekAndDay() throws {
+    func testWeekAndDayReadsWeekAndDay() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.week)
-        XCTAssertEqual(model.profile.smallestUnit, .day)
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.profile.displayUnits, [.week, .day])
         XCTAssertEqual(model.overlayPreviewText, "1 週又 3 天")
     }
 
-    func testWeekWeekOmitsTheDayRemainder() throws {
+    func testWeekOnlyOmitsTheDayRemainder() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.week)
-        model.setSmallestUnit(.week)
+        model.toggleUnit(.week)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.week])
         XCTAssertEqual(model.overlayPreviewText, "1 週")
     }
 
     func testMonthDayOmitsAZeroMonth() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.month)
-        XCTAssertEqual(model.profile.smallestUnit, .day)
+        let model = makeModel(profile: baselineProfile(displayUnits: [.month, .day]), now: try fixedNow(), spy: spy)
         XCTAssertEqual(model.overlayPreviewText, "9 天")
     }
 
-    func testYearDayOmitsZeroYearAndMonth() throws {
+    func testYearMonthDayOmitsZeroYearAndMonth() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.year)
-        XCTAssertEqual(model.profile.smallestUnit, .day)
+        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .month, .day]), now: try fixedNow(), spy: spy)
         XCTAssertEqual(model.overlayPreviewText, "9 天")
     }
 
-    func testYearYearWithAllZeroTrackFallsBackToZeroDays() throws {
+    func testYearOnlyWithAllZeroFallsBackToZeroDays() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.year)
-        model.setSmallestUnit(.year)
+        let model = makeModel(profile: baselineProfile(displayUnits: [.year]), now: try fixedNow(), spy: spy)
         XCTAssertEqual(model.overlayPreviewText, "0 天")
     }
 
-    // MARK: - A-4 選項連動與夾取 (11.21–11.27)
+    // MARK: - toggleUnit (0.2 FR-11.3, TASK-27; replaces 0.1 11.21–11.27)
 
-    func testAvailableSmallestUnitsForEachLargestUnit() throws {
+    func testTogglingTheOnlyCheckedUnitIsANoOp() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-
-        model.setLargestUnit(.year)
-        XCTAssertEqual(model.availableSmallestUnits, [.year, .month, .day])
-
-        model.setLargestUnit(.month)
-        XCTAssertEqual(model.availableSmallestUnits, [.month, .day])
-
-        model.setLargestUnit(.week)
-        XCTAssertEqual(model.availableSmallestUnits, [.week, .day])
-
-        model.setLargestUnit(.day)
-        XCTAssertEqual(model.availableSmallestUnits, [.day])
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.day], "27.13")
+        XCTAssertTrue(spy.updated.isEmpty, "27.13")
     }
 
-    func testClampsSmallestToLargestWhenOldSmallestFallsOffTheNewTrack() throws {
-        // year/month -> week: month is not on the week track, clamp to week/week.
+    func testToggleAddsAndRemovesAnyUnit() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(largestUnit: .year, smallestUnit: .month), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.week)
-        XCTAssertEqual(model.profile.smallestUnit, .week)
-        XCTAssertEqual(model.overlayPreviewText, "1 週")
-    }
-
-    func testKeepsSmallestWhenItIsStillOnTheNewTrack() throws {
-        // year/day -> week: day is on the week track, smallest stays day.
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(largestUnit: .year, smallestUnit: .day), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.week)
-        XCTAssertEqual(model.profile.smallestUnit, .day)
-        XCTAssertEqual(model.overlayPreviewText, "1 週又 3 天")
-    }
-
-    func testSetSmallestUnitNoOpsForAUnitNotOnTheCurrentTrack() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(largestUnit: .week, smallestUnit: .week), now: try fixedNow(), spy: spy)
-        model.setSmallestUnit(.month) // not on the week track
-        XCTAssertEqual(model.profile.smallestUnit, .week)
-        XCTAssertTrue(spy.updated.isEmpty)
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.toggleUnit(.year)
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day])
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week])
+        XCTAssertEqual(spy.updated.count, 3)
     }
 
     // MARK: - A-5 歲措辭 (11.28–11.31)
 
-    func testAgeWordingDisabledWhenLargestUnitIsDay() throws {
+    func testAgeWordingDisabledWithoutYear() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         XCTAssertTrue(model.isAgeWordingToggleDisabled)
     }
 
-    func testAgeWordingEnabledOnceLargestUnitIsYear() throws {
+    func testAgeWordingEnabledOnceYearIsChecked() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.year)
+        model.toggleUnit(.year)
         XCTAssertFalse(model.isAgeWordingToggleDisabled)
         XCTAssertFalse(model.profile.useAgeWording)
     }
 
-    func testAgeWordingOnYearYearPrintsSui() throws {
+    func testAgeWordingOnYearOnlyPrintsSui() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
-                                                        largestUnit: .year,
-                                                        smallestUnit: .year),
+                                                        displayUnits: [.year]),
                               now: try fixedNow(), spy: spy)
         model.setUseAgeWording(true)
         XCTAssertEqual(model.overlayPreviewText, "1 歲")
     }
 
-    func testSwitchingLargestUnitAwayFromYearTurnsAgeWordingOffAndDisablesIt() throws {
+    func testUncheckingYearTurnsAgeWordingOffAndDisablesIt() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
-                                                        largestUnit: .year,
-                                                        smallestUnit: .year,
+                                                        displayUnits: [.year, .month],
                                                         useAgeWording: true),
                               now: try fixedNow(), spy: spy)
-        model.setLargestUnit(.month)
+        model.toggleUnit(.year)
         XCTAssertFalse(model.profile.useAgeWording)
         XCTAssertTrue(model.isAgeWordingToggleDisabled)
         XCTAssertFalse(model.overlayPreviewText.contains("歲"))
     }
 
-    func testSetUseAgeWordingNoOpsWhenLargestUnitIsNotYear() throws {
+    func testSetUseAgeWordingNoOpsWithoutYear() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy) // largest = .day
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy) // units = [.day]
         model.setUseAgeWording(true)
         XCTAssertFalse(model.profile.useAgeWording)
         XCTAssertTrue(spy.updated.isEmpty)
