@@ -63,6 +63,31 @@ final class CameraScreenModelTests: XCTestCase {
         }
     }
 
+    /// A `CountdownTicker` a test drives one tick at a time, instead of
+    /// waiting on a real clock (TASK-21, acceptance 19.8–19.10).
+    private final class FakeCountdownTicker: CountdownTicker {
+        private(set) var startCallCount = 0
+        private(set) var stopCallCount = 0
+        private var onTick: (() -> Void)?
+
+        func start(onTick: @escaping () -> Void) {
+            startCallCount += 1
+            self.onTick = onTick
+        }
+
+        func stop() {
+            stopCallCount += 1
+            onTick = nil
+        }
+
+        /// Simulates one second passing. A no-op once `stop()` has been
+        /// called, so a test that ticks past the countdown's end (by
+        /// mistake, or to prove nothing fires twice) does not crash.
+        func tick() {
+            onTick?()
+        }
+    }
+
     // MARK: - Helpers
 
     private func fixedNow() throws -> Date {
@@ -85,15 +110,25 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
                            now: Date = Date(),
-                           bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
-                           save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success(())) },
+                           flashCapabilityProvider: FlashCapabilityProviding? = nil,
+                           captureSettingsStore: CaptureSettingsStore? = nil,
+                           countdownTicker: CountdownTicker = SystemCountdownTicker(),
+                           crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
+                           save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
+                           captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
                  nowProvider: { now },
+                 flashCapabilityProvider: flashCapabilityProvider,
+                 captureSettingsStore: captureSettingsStore,
+                 countdownTicker: countdownTicker,
+                 crop: crop,
                  bake: bake,
                  save: save,
+                 captureImage: captureImage,
                  scheduleToastDismiss: scheduleToastDismiss)
     }
 
@@ -105,23 +140,46 @@ final class CameraScreenModelTests: XCTestCase {
     /// presents stays put until the test inspects it; tests that care about
     /// the dismiss itself (or the ordering between two scheduled dismissals)
     /// pass their own `SchedulerSpy` and invoke it explicitly.
+    ///
+    /// `captureSettingsStore` defaults to a fresh store backed by this test's
+    /// own isolated `defaults` suite (not `.standard`) — otherwise the
+    /// persisted `captureAspectRatio`/`showsGrid` fields would leak between
+    /// test runs the way `ProfileStore`'s own isolation already prevents for
+    /// profiles. `capturedPhotoStore` similarly gets its own subdirectory of
+    /// this test's temporary `directory`, so `recordCapturedAsset` never
+    /// touches the real `Application Support/DaysCam/photos.json`.
     private func makeModel(status: AVAuthorizationStatus = .notDetermined,
                            captureSupported: Bool = false,
                            profileStore: ProfileStore? = nil,
                            nowProvider: @escaping () -> Date,
-                           bake: @escaping (UIImage, String, OverlayTheme, OverlayPosition) -> UIImage? = { _, _, _, _ in UIImage() },
-                           save: @escaping (UIImage, @escaping (Result<Void, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success(())) },
+                           flashCapabilityProvider: FlashCapabilityProviding? = nil,
+                           captureSettingsStore: CaptureSettingsStore? = nil,
+                           countdownTicker: CountdownTicker = SystemCountdownTicker(),
+                           crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
+                           save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
+                           captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
-        let service = CameraService(authorizer: authorizer, deviceProvider: provider, isCaptureSupported: captureSupported)
+        let service = CameraService(authorizer: authorizer,
+                                    deviceProvider: provider,
+                                    flashCapabilityProvider: flashCapabilityProvider,
+                                    isCaptureSupported: captureSupported)
         let store = profileStore ?? makeProfileStore(now: nowProvider())
+        let resolvedCaptureSettingsStore = captureSettingsStore ?? CaptureSettingsStore(defaults: defaults)
+        let capturedPhotoStore = CapturedPhotoStore(directory: directory.appendingPathComponent("captured-photos", isDirectory: true))
         let model = CameraScreenModel(cameraService: service,
                                       profileStore: store,
+                                      captureSettingsStore: resolvedCaptureSettingsStore,
+                                      capturedPhotoStore: capturedPhotoStore,
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
+                                      crop: crop,
+                                      countdownTicker: countdownTicker,
                                       bake: bake,
                                       save: save,
+                                      captureImage: captureImage,
                                       scheduleToastDismiss: scheduleToastDismiss)
         return (model, service, provider, store)
     }
@@ -582,8 +640,8 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
         let context = model.captureContext(for: styled)
-        XCTAssertEqual(context.theme.id, .filmStrip)
-        XCTAssertEqual(context.position, .topLeading)
+        XCTAssertEqual(context.style, OverlayStyle(legacyTheme: .filmStrip))
+        XCTAssertEqual(context.placement, .anchor(.topLeading))
     }
 
     func testCapturePhotoIsANoOpWhenTheShutterIsDisabled() throws {
@@ -733,26 +791,26 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertFalse(model.showsCorruptionRecoveredAlert)
     }
 
-    // MARK: - Saved toast (TASK-15, PRD FR-5.4)
+    // MARK: - Saved toast (TASK-15, PRD FR-5.4; 0.2 TASK-21 generalizes this to showToast)
 
-    func testPresentSavedToastShowsTheConfirmationMessage() throws {
+    func testShowToastShowsTheGivenMessage() throws {
         let (model, _, _, _) = makeModel(now: try fixedNow())
-        model.presentSavedToast()
+        model.showToast(message: "已儲存")
         XCTAssertEqual(model.toastState?.message, "已儲存")
     }
 
-    func testPresentSavedToastCarriesTheThumbnail() throws {
+    func testShowToastCarriesTheThumbnail() throws {
         let (model, _, _, _) = makeModel(now: try fixedNow())
         let thumbnail = UIImage()
-        model.presentSavedToast(thumbnail: thumbnail)
+        model.showToast(message: "已儲存", thumbnail: thumbnail)
         XCTAssertTrue(model.toastState?.thumbnail === thumbnail)
     }
 
-    func testPresentSavedToastDismissesWhenTheScheduledCallbackFires() throws {
+    func testShowToastDismissesWhenTheScheduledCallbackFires() throws {
         let spy = SchedulerSpy()
         let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
 
-        model.presentSavedToast()
+        model.showToast(message: "已儲存")
         XCTAssertNotNil(model.toastState)
         XCTAssertEqual(spy.scheduled.count, 1)
 
@@ -769,9 +827,9 @@ final class CameraScreenModelTests: XCTestCase {
         let spy = SchedulerSpy()
         let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
 
-        model.presentSavedToast()
+        model.showToast(message: "已儲存")
         let firstID = model.toastState?.id
-        model.presentSavedToast()
+        model.showToast(message: "已儲存")
         let secondID = model.toastState?.id
         XCTAssertNotEqual(firstID, secondID)
         XCTAssertEqual(spy.scheduled.count, 2)
@@ -866,17 +924,17 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - processCapturedImage (TASK-10 bake wiring)
 
-    private func sampleContext(_ now: Date) -> (capturedAt: Date, text: String, theme: OverlayTheme, position: OverlayPosition) {
-        (capturedAt: now, text: "第 1 天", theme: .theme(for: .classicWhite), position: .bottomTrailing)
+    private func sampleContext(_ now: Date) -> (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement) {
+        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing))
     }
 
     func testProcessCapturedImagePassesTheContextThroughToBake() throws {
         let now = try fixedNow()
-        var received: (image: UIImage?, text: String?, theme: OverlayTheme?, position: OverlayPosition?)
+        var received: (image: UIImage?, text: String?, style: OverlayStyle?, placement: OverlayPlacement?)
         let bakeExp = expectation(description: "bake called")
         let sourceImage = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { image, text, theme, position in
-            received = (image, text, theme, position)
+        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement in
+            received = (image, text, style, placement)
             bakeExp.fulfill()
             return UIImage()
         })
@@ -886,8 +944,32 @@ final class CameraScreenModelTests: XCTestCase {
         wait(for: [bakeExp], timeout: 2)
         XCTAssertTrue(received.image === sourceImage)
         XCTAssertEqual(received.text, "第 1 天")
-        XCTAssertEqual(received.theme?.id, .classicWhite)
-        XCTAssertEqual(received.position, .bottomTrailing)
+        XCTAssertEqual(received.style, OverlayStyle())
+        XCTAssertEqual(received.placement, .anchor(.bottomTrailing))
+    }
+
+    func testProcessCapturedImageCropsBeforeBakingUsingTheConfiguredAspectRatio() throws {
+        // PRD 0.2 FR-5.7′: "先裁再烘焙" — the configured
+        // `captureSettingsStore.captureAspectRatio` must reach `crop` before
+        // `bake` ever sees the image.
+        let now = try fixedNow()
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.setAspectRatio(.oneByOne)
+        var receivedRatio: CaptureAspectRatio?
+        let cropExp = expectation(description: "crop called")
+        let (model, _, _, _) = makeModel(now: now,
+                                         captureSettingsStore: settings,
+                                         crop: { image, ratio in
+                                             receivedRatio = ratio
+                                             cropExp.fulfill()
+                                             return image
+                                         },
+                                         bake: { _, _, _, _ in UIImage() })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        wait(for: [cropExp], timeout: 2)
+        XCTAssertEqual(receivedRatio, .oneByOne)
     }
 
     func testProcessCapturedImageSurfacesCaptureErrorWhenBakeFails() throws {
@@ -920,7 +1002,7 @@ final class CameraScreenModelTests: XCTestCase {
                                          bake: { _, _, _, _ in nil },
                                          save: { _, completion in
                                              saveCalled = true
-                                             completion(.success(()))
+                                             completion(.success("asset-1"))
                                          })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -939,7 +1021,7 @@ final class CameraScreenModelTests: XCTestCase {
                                          save: { image, completion in
                                              receivedImage = image
                                              saveExp.fulfill()
-                                             completion(.success(()))
+                                             completion(.success("asset-1"))
                                          })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -952,7 +1034,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success(())) })
+                                         save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
@@ -973,7 +1055,7 @@ final class CameraScreenModelTests: XCTestCase {
         }
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in large },
-                                         save: { _, completion in completion(.success(())) })
+                                         save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
@@ -1018,7 +1100,7 @@ final class CameraScreenModelTests: XCTestCase {
         // 10.22: `save` must not leave the shutter permanently disabled once
         // it calls back, whichever way it resolves.
         let now = try fixedNow()
-        var storedCompletion: ((Result<Void, PhotoSaveError>) -> Void)?
+        var storedCompletion: ((Result<String, PhotoSaveError>) -> Void)?
         let completionStored = expectation(description: "save completion captured")
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in UIImage() },
@@ -1039,8 +1121,220 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertNotNil(storedCompletion)
         XCTAssertTrue(model.isCapturing)
 
-        storedCompletion?(.success(()))
+        storedCompletion?(.success("asset-1"))
 
         waitUntil { model.isCapturing == false }
+    }
+
+    // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.5)
+
+    private final class StubFlashCapabilityProvider: FlashCapabilityProviding {
+        let hasFlash: Bool
+        init(hasFlash: Bool) { self.hasFlash = hasFlash }
+        func hasFlash(for facing: CameraFacing) -> Bool { hasFlash }
+    }
+
+    func testProfileMenuItemsAreExactlyTheProfilesInStoreOrderWithNoManagementEntry() throws {
+        // 21.1: the menu is just names, in `ProfileStore`'s order — no
+        // synthetic "管理設定檔" entry mixed into the model-level list (that
+        // entry point moved out of the menu in FR-7.11; `CameraScreen`'s
+        // `Menu` correspondingly no longer adds one).
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        XCTAssertEqual(model.profileMenuItems.map(\.name), store.profiles.map(\.name))
+        XCTAssertEqual(model.profileMenuItems.count, store.profiles.count)
+    }
+
+    func testFlashToolIsDisabledWhenNoFlashIsAvailable() throws {
+        // 21.2. `switchCamera()` cannot actually reach the front camera in
+        // this test harness (`EmptyDeviceProvider` always returns `nil`, the
+        // same boundary PR #41's 19.4 documents), so this exercises
+        // `isFlashAvailable`'s other `false` condition — a back camera with
+        // no flash unit — which disables the button the same way the front
+        // camera does. Flagged in this PR's description so this isn't
+        // mistaken for an untested "front camera" branch.
+        let (model, _, _, _) = makeModel(now: try fixedNow(),
+                                         flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: false))
+        XCTAssertTrue(model.isFlashToolDisabled)
+    }
+
+    func testFlashToolIsNotDisabledWhenFlashIsAvailable() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow(),
+                                         flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: true))
+        XCTAssertFalse(model.isFlashToolDisabled)
+    }
+
+    func testActiveToolsReflectTheirCaptureSettings() throws {
+        // 21.3: flash auto, timer 3s, grid on → all three `isActive`.
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleFlash() // .off -> .auto
+        settings.cycleTimer() // .off -> .threeSeconds
+        settings.toggleGrid() // false -> true
+        let (model, _, _, _) = makeModel(now: try fixedNow(), captureSettingsStore: settings)
+
+        XCTAssertTrue(model.isFlashToolActive)
+        XCTAssertTrue(model.isTimerToolActive)
+        XCTAssertTrue(model.isGridToolActive)
+    }
+
+    func testToolsAreNotActiveAtTheirDefaults() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        XCTAssertFalse(model.isFlashToolActive)
+        XCTAssertFalse(model.isTimerToolActive)
+        XCTAssertFalse(model.isGridToolActive)
+    }
+
+    // MARK: - Bottom-bar thumbnail (PRD 0.2 FR-15.2, TASK-21 acceptance 21.4/21.5)
+
+    func testLatestThumbnailIsNilBeforeAnyCaptureThisLaunch() throws {
+        // 21.4 (the reachable half — no read permission is ever requested by
+        // this model, so the "icon" fallback in the view is simply whatever
+        // renders when this is `nil`).
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        XCTAssertNil(model.latestThumbnailImage)
+    }
+
+    func testLatestThumbnailIsTheBakedResultAfterACaptureThisLaunch() throws {
+        // 21.5.
+        let now = try fixedNow()
+        let baked = UIImage()
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _ in baked })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { model.latestThumbnailImage != nil }
+    }
+
+    func testSuccessfulSaveRecordsTheAssetInCapturedPhotoStore() throws {
+        // PRD 0.2 FR-15.1: the identifier `save` returns must reach
+        // `capturedPhotoStore.capturedAssetIDs`, not just the in-memory
+        // thumbnail.
+        let now = try fixedNow()
+        let capturedPhotoStore = CapturedPhotoStore(directory: directory.appendingPathComponent("recorded-photos", isDirectory: true))
+        let store = makeProfileStore(now: now)
+        let service = CameraService(authorizer: StubAuthorizer(status: .notDetermined), deviceProvider: EmptyDeviceProvider())
+        let model = CameraScreenModel(cameraService: service,
+                                      profileStore: store,
+                                      capturedPhotoStore: capturedPhotoStore,
+                                      calendar: DateFixture.taipei,
+                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
+                                      bake: { _, _, _, _ in UIImage() },
+                                      save: { _, completion in completion(.success("new-asset-id")) })
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+
+        waitUntil { capturedPhotoStore.capturedAssetIDs.contains("new-asset-id") }
+    }
+
+    // MARK: - Timer countdown (PRD 0.2 FR-7.6, TASK-21 acceptance 19.8–19.10)
+
+    func testCountdownTicksDownThenCapturesExactlyOnce() throws {
+        // 19.8: 3-second timer, 3 injected ticks → countdownRemaining goes
+        // 3, 2, 1, nil, and the real capture fires exactly once, after the
+        // third tick (not before).
+        let now = try fixedNow()
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // .off -> .threeSeconds
+        let ticker = FakeCountdownTicker()
+        var captureCallCount = 0
+        let (model, _, _, _) = makeModel(now: now,
+                                         captureSettingsStore: settings,
+                                         countdownTicker: ticker,
+                                         captureImage: { _, completion in
+                                             captureCallCount += 1
+                                             completion(.success(UIImage()))
+                                         })
+        let profile = try XCTUnwrap(model.selectedProfile)
+
+        model.beginCapture(profile: profile)
+        XCTAssertEqual(model.countdownRemaining, 3)
+        XCTAssertEqual(captureCallCount, 0)
+
+        ticker.tick()
+        XCTAssertEqual(model.countdownRemaining, 2)
+        XCTAssertEqual(captureCallCount, 0)
+
+        ticker.tick()
+        XCTAssertEqual(model.countdownRemaining, 1)
+        XCTAssertEqual(captureCallCount, 0)
+
+        ticker.tick()
+        XCTAssertNil(model.countdownRemaining)
+        XCTAssertEqual(captureCallCount, 1)
+    }
+
+    func testCancellingMidCountdownStopsTheTickerAndCapturesNothing() throws {
+        // 19.9: 10-second timer, 2 ticks, then the shutter is pressed again
+        // → cancels: countdownRemaining nil, capture never fires, "已取消"
+        // toast.
+        let now = try fixedNow()
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // .off -> .threeSeconds
+        settings.cycleTimer() // .threeSeconds -> .tenSeconds
+        let ticker = FakeCountdownTicker()
+        var captureCallCount = 0
+        let (model, _, _, _) = makeModel(now: now,
+                                         captureSettingsStore: settings,
+                                         countdownTicker: ticker,
+                                         captureImage: { _, completion in
+                                             captureCallCount += 1
+                                             completion(.success(UIImage()))
+                                         })
+        let profile = try XCTUnwrap(model.selectedProfile)
+
+        model.beginCapture(profile: profile)
+        ticker.tick()
+        ticker.tick()
+        XCTAssertEqual(model.countdownRemaining, 8)
+
+        // The cancel branch of `capturePhoto()` — unlike its start branch —
+        // does not depend on `isShutterDisabled`, so it is reachable through
+        // the public entry point even in this hardware-less test harness.
+        model.capturePhoto()
+
+        XCTAssertNil(model.countdownRemaining)
+        XCTAssertEqual(captureCallCount, 0)
+        XCTAssertEqual(ticker.stopCallCount, 1)
+        XCTAssertEqual(model.toastState?.message, "已取消")
+    }
+
+    func testCountdownCapturesAtTheInstantItActuallyFinishesNotWhenItStarted() throws {
+        // 19.10: countdown starts at 23:59:59, finishes at 00:00:02 the next
+        // day — the baked text must reflect the moment the countdown
+        // actually finished (第 11 天), not the moment the shutter was first
+        // pressed (which would still be 第 10 天).
+        let seedDay = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 23, minute: 59, second: 59))
+        let clock = MutableClock(seedDay)
+        // Started 2026-01-01, dayOne: Jan 10 is 第 10 天, Jan 11 is 第 11 天
+        // (the shared fixture `docs/TASKS-0.2-ui-redesign.md` uses).
+        let store = makeProfileStore(now: seedDay, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        ])
+        let profile = try XCTUnwrap(store.profiles.first)
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // .off -> .threeSeconds
+        let ticker = FakeCountdownTicker()
+        var receivedText: String?
+        let (model, _, _, _) = makeModel(profileStore: store,
+                                         nowProvider: clock.now,
+                                         captureSettingsStore: settings,
+                                         countdownTicker: ticker,
+                                         bake: { _, text, _, _ in
+                                             receivedText = text
+                                             return UIImage()
+                                         },
+                                         captureImage: { _, completion in completion(.success(UIImage())) })
+
+        model.beginCapture(profile: profile)
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 0, minute: 0, second: 2))
+        ticker.tick()
+        ticker.tick()
+        ticker.tick()
+
+        waitUntil { receivedText != nil }
+        XCTAssertEqual(receivedText, "第 11 天")
     }
 }

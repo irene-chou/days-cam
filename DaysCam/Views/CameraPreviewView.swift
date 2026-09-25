@@ -13,11 +13,16 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> CameraPreviewContainerView {
         let view = CameraPreviewContainerView()
         view.videoPreviewLayer.session = session
-        // `.resizeAspect` rather than `.resizeAspectFill`: the container this
-        // view sits in is already fixed to the sensor's 4:3 ratio, and a fill
-        // gravity would crop the edges, which is exactly what would make
-        // TASK-07's acceptance 7.2 (measured aspect ratio) come out wrong.
-        view.videoPreviewLayer.videoGravity = .resizeAspect
+        // `.resizeAspectFill` (changed from `.resizeAspect` in TASK-21):
+        // `CameraScreen` now sizes this view's container to the *selected*
+        // `CaptureAspectRatio` (3:4, 1:1 or 9:16), not always the sensor's
+        // native 4:3 — so what's on screen must be center-cropped to that
+        // container exactly the way `ImageCropper` center-crops the saved
+        // photo (PRD 0.2 FR-5.11), the same "so you see what you get"
+        // reasoning TASK-07's acceptance 7.2 already established for the
+        // 4:3 case. At 3:4 the container still matches the sensor exactly,
+        // so this is a no-op there.
+        view.videoPreviewLayer.videoGravity = .resizeAspectFill
         return view
     }
 
