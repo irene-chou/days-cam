@@ -20,6 +20,8 @@ final class PhotoSaverTests: XCTestCase {
         var grants: PHAuthorizationStatus
         /// Non-nil makes the write fail with this error.
         var writeError: Error?
+        /// The identifier a successful write reports back (TASK-28, FR-15.1).
+        var identifierToReturn = "stub-asset-identifier"
 
         private(set) var requestedLevels: [PHAccessLevel] = []
         private(set) var checkedLevels: [PHAccessLevel] = []
@@ -41,14 +43,17 @@ final class PhotoSaverTests: XCTestCase {
             handler(grants)
         }
 
-        func performChanges(_ changes: @escaping () -> Void, completion: @escaping (Bool, Error?) -> Void) {
+        func performChanges(_ changes: @escaping () -> String?,
+                           completion: @escaping (Bool, String?, Error?) -> Void) {
             writeCount += 1
-            // The real library runs the block to collect change requests; it is
-            // not run here because `PHAssetChangeRequest` needs a real library.
+            // The real library runs `changes` to collect change requests; it
+            // is not run here because `PHAssetChangeRequest` needs a real
+            // library. The identifier it would have produced is supplied
+            // directly instead.
             if let writeError {
-                completion(false, writeError)
+                completion(false, nil, writeError)
             } else {
-                completion(true, nil)
+                completion(true, identifierToReturn, nil)
             }
         }
     }
@@ -210,8 +215,51 @@ final class PhotoSaverTests: XCTestCase {
         func requestAuthorization(for level: PHAccessLevel, handler: @escaping (PHAuthorizationStatus) -> Void) {
             handler(.authorized)
         }
-        func performChanges(_ changes: @escaping () -> Void, completion: @escaping (Bool, Error?) -> Void) {
-            completion(false, nil)
+        func performChanges(_ changes: @escaping () -> String?,
+                           completion: @escaping (Bool, String?, Error?) -> Void) {
+            completion(false, nil, nil)
+        }
+    }
+
+    // MARK: - Identifier (TASK-28, PRD 0.2 FR-15.1)
+
+    /// `saveReturningIdentifier` (TASK-21 will call this from
+    /// `CapturedPhotoStore.recordCapturedAsset(_:)`) reports the new asset's
+    /// identifier on success.
+    func testSaveReturningIdentifierReportsTheNewAssetsLocalIdentifier() throws {
+        let library = StubLibrary(status: .authorized)
+        library.identifierToReturn = "asset-42"
+        let saver = PhotoSaver(library: library)
+        let done = expectation(description: "save completes")
+        var result: Result<String, PhotoSaveError>?
+
+        saver.saveReturningIdentifier(image) { result = $0; done.fulfill() }
+        wait(for: [done], timeout: 2)
+
+        switch try XCTUnwrap(result) {
+        case .success(let identifier):
+            XCTAssertEqual(identifier, "asset-42")
+        case .failure(let error):
+            XCTFail("expected success, got \(error)")
+        }
+    }
+
+    /// `saveReturningIdentifier` shares `save`'s permission branches — a
+    /// refusal fails the same way.
+    func testSaveReturningIdentifierStillFailsOnPermissionDenial() throws {
+        let library = StubLibrary(status: .denied)
+        let saver = PhotoSaver(library: library)
+        let done = expectation(description: "save completes")
+        var result: Result<String, PhotoSaveError>?
+
+        saver.saveReturningIdentifier(image) { result = $0; done.fulfill() }
+        wait(for: [done], timeout: 2)
+
+        switch try XCTUnwrap(result) {
+        case .failure(let error):
+            XCTAssertEqual(error, .permissionDenied)
+        case .success:
+            XCTFail("expected permissionDenied")
         }
     }
 

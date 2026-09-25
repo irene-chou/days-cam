@@ -158,7 +158,7 @@
 | 18.8 | 同上，`.custom(x: 1.0, y: 1.0)` | 文字框右下角落在 (3024−121, 4032−121) ±3px，沒有超出邊距 |
 | 18.9 | 對 10 種字型各烘焙一次 | 全部成功，文字區有非透明像素 |
 | 18.10 | 對 4 種陰影 × 5 種外框（20 種組合）各烘焙一次 | 全部成功 |
-| 18.11 | `grep -rn -e 'blur: 4' -e 'cornerRadius: 8' DaysCam/Views/` | 無結果（常數只能在 `OverlayTheme`） |
+| 18.11 | `grep -rn -e 'blur: 4' -e 'cornerRadius: 8' DaysCam/Views/OverlayTextView.swift` | 無結果（疊字的裝飾常數只能在 `OverlayTheme`）。範圍只限 `OverlayTextView`：`Views/` 其他檔案的 `cornerRadius: 8` 是介面元件的外觀，不是疊字常數（原本掃整個 `Views/` 會誤傷 `ToastView` 等檔案，已收斂） |
 
 **驗收 — B. 需人類實機**
 
