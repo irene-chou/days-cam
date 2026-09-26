@@ -89,19 +89,24 @@ extension OverlayPanelModel {
 ///
 /// This is the "接口" TASK-22 is asked to open: `CameraScreen` attaches the
 /// drag gesture to the overlay text and reports through here, but never
-/// clamps, normalizes or persists a position itself — that conversion (drag
-/// translation → a stored `.custom(x:y:)` fraction, clamped into the 4%
-/// margin) is entirely the position tab's job (PRD 0.2 FR-12.2, FR-12.6).
+/// persists a position itself — writing the new `.custom(x:y:)` fraction is
+/// entirely the position tab's job (PRD 0.2 FR-12.3).
+///
+/// `center` is already clamped into the 4% margin by `OverlayTextView`
+/// itself (#68, PRD FR-12.2) — the same `blockSize`-aware clamp a settled
+/// `.custom` position gets from `OverlayMetrics.origin` — so a conformer
+/// here never needs to reapply that margin logic; it only needs to convert
+/// `center` into a stored fraction (`PositionTabModel.applyDrag`).
 protocol OverlayDragHandling: AnyObject {
     /// Called continuously while the overlay text is being dragged, with the
-    /// drag's translation from its start point and the viewfinder's current
+    /// block's current on-screen center and the viewfinder's current
     /// on-screen size (already the 80%-scaled size while the panel is open,
     /// per FR-8.2 — never the full screen size).
-    func overlayDragChanged(translation: CGSize, viewfinderSize: CGSize)
+    func overlayDragChanged(center: CGPoint, viewfinderSize: CGSize)
     /// Called once when the drag ends, with the same two values at their
-    /// final state. This is expected to be where a real handler converts,
-    /// clamps and persists the new `.custom` position.
-    func overlayDragEnded(translation: CGSize, viewfinderSize: CGSize)
+    /// final state. This is expected to be where a real handler persists the
+    /// new `.custom` position.
+    func overlayDragEnded(center: CGPoint, viewfinderSize: CGSize)
 }
 
 extension OverlayPanelModel {

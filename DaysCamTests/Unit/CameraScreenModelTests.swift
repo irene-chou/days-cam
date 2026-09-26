@@ -1258,7 +1258,7 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.positionTabModel?.profile.position, .anchor(.middleCenter))
 
         let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
-        handler.overlayDragEnded(translation: .zero, viewfinderSize: CGSize(width: 288, height: 384))
+        handler.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
 
         XCTAssertEqual(model.positionTabModel?.profile.position, .custom(x: 0.5, y: 0.5))
     }
@@ -1272,8 +1272,8 @@ final class CameraScreenModelTests: XCTestCase {
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
         let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
-        // (144,192) + (256,308) = (400,500) — past the 288x384 viewfinder.
-        handler.overlayDragEnded(translation: CGSize(width: 256, height: 308),
+        // Past the 288x384 viewfinder.
+        handler.overlayDragEnded(center: CGPoint(x: 400, y: 500),
                                  viewfinderSize: CGSize(width: 288, height: 384))
 
         guard case let .custom(x, y) = model.positionTabModel?.profile.position else {

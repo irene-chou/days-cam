@@ -87,4 +87,83 @@ final class OverlayTextViewTests: XCTestCase {
         XCTAssertEqual(photoOrigin.x, previewOrigin.x * scale, accuracy: 0.01)
         XCTAssertEqual(photoOrigin.y, previewOrigin.y * scale, accuracy: 0.01)
     }
+
+    // MARK: - Drag: `clampedDragCenter` (#68, D.1–D.4)
+
+    private let dragFrameSize = CGSize(width: 288, height: 384)
+    private let dragBlockSize = CGSize(width: 80, height: 24)
+
+    /// The origin a stored `.custom` fraction derived from `center` would
+    /// render at — the same round trip `PositionDragAdapter.overlayDragEnded`
+    /// triggers via `PositionTabModel.applyDrag`, without depending on that
+    /// ui-panel type: `PositionTabModel.customPosition` only re-clamps when a
+    /// fraction falls outside the margin band, which every `center` used
+    /// below (already clamped by `clampedDragCenter` itself) never does.
+    private func renderedOrigin(forCenter center: CGPoint, frameSize: CGSize, blockSize: CGSize) -> CGPoint {
+        let fraction = OverlayPlacement.custom(x: Double(center.x / frameSize.width),
+                                               y: Double(center.y / frameSize.height))
+        return OverlayTextView.origin(forBlockSize: blockSize, frameSize: frameSize, placement: fraction)
+    }
+
+    /// D.1: releasing a drag with zero translation must land back exactly
+    /// where it started — starting from `.anchor(.topLeading)`, not
+    /// `.custom`, is the case #68 fixes (the old `PositionDragAdapter` used a
+    /// zero-size reference point, which only happens to equal `.custom`'s own
+    /// center; for an anchor it lands on the anchor's margin corner instead).
+    func testZeroTranslationFromAnAnchorReproducesItsOwnOrigin() {
+        let originalOrigin = OverlayTextView.origin(forBlockSize: dragBlockSize, frameSize: dragFrameSize, placement: .anchor(.topLeading))
+        let start = CGPoint(x: originalOrigin.x + dragBlockSize.width / 2, y: originalOrigin.y + dragBlockSize.height / 2)
+
+        let center = OverlayTextView.clampedDragCenter(start: start, translation: .zero, frameSize: dragFrameSize, blockSize: dragBlockSize)
+        let roundTrippedOrigin = renderedOrigin(forCenter: center, frameSize: dragFrameSize, blockSize: dragBlockSize)
+
+        XCTAssertEqual(roundTrippedOrigin.x, originalOrigin.x, accuracy: 0.5, "D.1")
+        XCTAssertEqual(roundTrippedOrigin.y, originalOrigin.y, accuracy: 0.5, "D.1")
+    }
+
+    /// D.2: same as D.1, for every one of the nine anchors.
+    func testZeroTranslationReproducesEveryAnchorsOwnOrigin() {
+        for position in OverlayPosition.allCases {
+            let placement = OverlayPlacement.anchor(position)
+            let originalOrigin = OverlayTextView.origin(forBlockSize: dragBlockSize, frameSize: dragFrameSize, placement: placement)
+            let start = CGPoint(x: originalOrigin.x + dragBlockSize.width / 2, y: originalOrigin.y + dragBlockSize.height / 2)
+
+            let center = OverlayTextView.clampedDragCenter(start: start, translation: .zero, frameSize: dragFrameSize, blockSize: dragBlockSize)
+            let roundTrippedOrigin = renderedOrigin(forCenter: center, frameSize: dragFrameSize, blockSize: dragBlockSize)
+
+            XCTAssertEqual(roundTrippedOrigin.x, originalOrigin.x, accuracy: 0.5, "D.2: \(position)")
+            XCTAssertEqual(roundTrippedOrigin.y, originalOrigin.y, accuracy: 0.5, "D.2: \(position)")
+        }
+    }
+
+    /// D.3: a translation that keeps the block inside the margin band moves
+    /// the origin by exactly that translation.
+    func testTranslationFromAnAnchorMovesTheOriginByTheSameAmount() {
+        let originalOrigin = OverlayTextView.origin(forBlockSize: dragBlockSize, frameSize: dragFrameSize, placement: .anchor(.bottomTrailing))
+        let start = CGPoint(x: originalOrigin.x + dragBlockSize.width / 2, y: originalOrigin.y + dragBlockSize.height / 2)
+        let translation = CGSize(width: -50, height: -80)
+
+        let center = OverlayTextView.clampedDragCenter(start: start, translation: translation, frameSize: dragFrameSize, blockSize: dragBlockSize)
+        let roundTrippedOrigin = renderedOrigin(forCenter: center, frameSize: dragFrameSize, blockSize: dragBlockSize)
+
+        XCTAssertEqual(roundTrippedOrigin.x, originalOrigin.x + translation.width, accuracy: 0.5, "D.3")
+        XCTAssertEqual(roundTrippedOrigin.y, originalOrigin.y + translation.height, accuracy: 0.5, "D.3")
+    }
+
+    /// D.4: a translation that would carry the block past the viewfinder's
+    /// edge is kept inside the 4% margin band *at drag time* — not only once
+    /// the drag ends — by `clampedDragCenter` itself, matching the margin a
+    /// settled `.custom` position already gets from `OverlayMetrics.origin`.
+    func testDraggingPastTheEdgeStaysInsideTheMargin() {
+        let start = CGPoint(x: dragFrameSize.width / 2, y: dragFrameSize.height / 2)
+        let farOutsideTranslation = CGSize(width: 10_000, height: 10_000)
+
+        let center = OverlayTextView.clampedDragCenter(start: start, translation: farOutsideTranslation, frameSize: dragFrameSize, blockSize: dragBlockSize)
+        let origin = OverlayTextView.origin(forBlockSize: dragBlockSize, frameSize: dragFrameSize,
+                                            placement: .custom(x: Double(center.x / dragFrameSize.width), y: Double(center.y / dragFrameSize.height)))
+        let margin = OverlayMetrics.margin(forShortEdge: min(dragFrameSize.width, dragFrameSize.height))
+
+        XCTAssertEqual(origin.x, dragFrameSize.width - margin - dragBlockSize.width, accuracy: 0.0001, "D.4")
+        XCTAssertEqual(origin.y, dragFrameSize.height - margin - dragBlockSize.height, accuracy: 0.0001, "D.4")
+    }
 }

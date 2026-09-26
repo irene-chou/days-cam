@@ -26,19 +26,23 @@ struct OverlayTextView: View {
     /// viewfinder's bounds live, the photo's pixel size when baking. Margin
     /// and base font size scale off its short edge (PRD FR-4.3, FR-4.7).
     let frameSize: CGSize
-    /// Called continuously while the block is dragged, with the drag's
-    /// translation from its start and this view's `frameSize` (TASK-24, PRD
-    /// 0.2 FR-12.1–FR-12.3). `nil` (the default) makes the block
-    /// non-interactive: see `isInteractive`.
+    /// Called continuously while the block is dragged, with the block's own
+    /// on-screen center (already kept inside the 4% margin, same as a
+    /// settled `.custom` position — see `Self.clampedDragCenter`) and this
+    /// view's `frameSize` (TASK-24, #68, PRD 0.2 FR-12.1–FR-12.3). `nil` (the
+    /// default) makes the block non-interactive: see `isInteractive`.
     ///
-    /// Deliberately *not* where clamping, normalizing to 0...1 or persisting
-    /// happens — this view only reports raw gesture values; converting them
-    /// into a stored `.custom` position is the position tab's job
-    /// (`OverlayDragHandling`, owned by ui-panel).
-    var onDragChanged: ((CGSize, CGSize) -> Void)?
+    /// A *center point*, not a raw translation (#68's fix): a translation
+    /// alone can't be turned back into a `.custom` fraction without knowing
+    /// where the block started, and only this view knows that (`placement`
+    /// plus its own measured `blockSize`). Deliberately still not where
+    /// *persisting* happens — this view only reports where the block
+    /// currently is; writing that back to a profile is the position tab's
+    /// job (`OverlayDragHandling`, owned by ui-panel).
+    var onDragChanged: ((CGPoint, CGSize) -> Void)?
     /// Called once when the drag ends, with the same two values as
     /// `onDragChanged`'s final call.
-    var onDragEnded: ((CGSize, CGSize) -> Void)?
+    var onDragEnded: ((CGPoint, CGSize) -> Void)?
 
     /// The measured size of the decorated text block. Starts at `.zero`, so
     /// the very first layout pass places the block as though it were empty;
@@ -47,6 +51,23 @@ struct OverlayTextView: View {
     /// lets `.custom` placements share `OverlayMetrics.origin` with the
     /// baking path instead of the view inventing its own nine-grid logic.
     @State private var blockSize: CGSize = .zero
+
+    /// The block's settled (non-dragging) center, captured the instant the
+    /// current gesture began — `nil` between gestures. `DragGesture`'s
+    /// `translation` is always measured from wherever the touch started, so
+    /// this is the one fixed reference point every `onChanged`/`onEnded`
+    /// call of one continuous gesture adds that translation to (#68: reusing
+    /// `placement`/`blockSize` fresh on every callback would be wrong once
+    /// the block has already visually moved away from its settled position).
+    @State private var dragStartCenter: CGPoint?
+
+    /// The block's live center while a drag is in progress — `nil` between
+    /// gestures, in which case the settled `placement`-derived origin is
+    /// used instead (see `body`). This is what actually makes the block
+    /// track the finger (#68): without it, `placement` (and so the rendered
+    /// position) never changes until the drag ends and a new `.custom`
+    /// position round-trips all the way back from `ProfileStore`.
+    @State private var liveDragCenter: CGPoint?
 
     /// Creates a view. `frameSize` and everything before it are the settled
     /// public shape from TASK-18; `onDragChanged`/`onDragEnded` are TASK-24's
@@ -58,8 +79,8 @@ struct OverlayTextView: View {
          style: OverlayStyle,
          placement: OverlayPlacement,
          frameSize: CGSize,
-         onDragChanged: ((CGSize, CGSize) -> Void)? = nil,
-         onDragEnded: ((CGSize, CGSize) -> Void)? = nil) {
+         onDragChanged: ((CGPoint, CGSize) -> Void)? = nil,
+         onDragEnded: ((CGPoint, CGSize) -> Void)? = nil) {
         self.text = text
         self.style = style
         self.placement = placement
@@ -85,7 +106,14 @@ struct OverlayTextView: View {
         if !text.isEmpty, frameSize.width > 0, frameSize.height > 0 {
             let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: frameSize)
             let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-            let origin = Self.origin(forBlockSize: blockSize, frameSize: frameSize, placement: placement)
+            let settledOrigin = Self.origin(forBlockSize: blockSize, frameSize: frameSize, placement: placement)
+            // While a drag is live, its center overrides the settled,
+            // `placement`-derived origin (#68) — this is what makes the
+            // block track the finger instead of only jumping once the drag
+            // ends and a new `.custom` position comes back through `placement`.
+            let displayOrigin = liveDragCenter.map { center in
+                CGPoint(x: center.x - blockSize.width / 2, y: center.y - blockSize.height / 2)
+            } ?? settledOrigin
 
             decoratedText(fontSize: fontSize, scale: scale)
                 .onGeometryChange(for: CGSize.self) { proxy in
@@ -93,7 +121,7 @@ struct OverlayTextView: View {
                 } action: { newValue in
                     blockSize = newValue
                 }
-                .position(x: origin.x + blockSize.width / 2, y: origin.y + blockSize.height / 2)
+                .position(x: displayOrigin.x + blockSize.width / 2, y: displayOrigin.y + blockSize.height / 2)
                 .allowsHitTesting(isInteractive)
                 .gesture(
                     // Always attached, never conditionally — `allowsHitTesting`
@@ -101,10 +129,36 @@ struct OverlayTextView: View {
                     // ever actually receive a touch, so there is no second place
                     // "draggable or not" has to stay in sync.
                     DragGesture(minimumDistance: 0)
-                        .onChanged { value in onDragChanged?(value.translation, frameSize) }
-                        .onEnded { value in onDragEnded?(value.translation, frameSize) }
+                        .onChanged { value in
+                            let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin)
+                            liveDragCenter = center
+                            onDragChanged?(center, frameSize)
+                        }
+                        .onEnded { value in
+                            let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin)
+                            onDragEnded?(center, frameSize)
+                            // Hands display back to `placement` — by the time
+                            // this update and `onDragEnded`'s own (which is
+                            // expected to persist a new `.custom` position
+                            // that round-trips back into `placement`) both
+                            // settle, `settledOrigin` already agrees with
+                            // `center`, so this never visibly jumps (#68).
+                            dragStartCenter = nil
+                            liveDragCenter = nil
+                        }
                 )
         }
+    }
+
+    /// `Self.clampedDragCenter`, filling in this gesture's start center —
+    /// captured once, from `settledOrigin`, on the first callback of the
+    /// gesture, and reused for every later callback of the same one (see
+    /// `dragStartCenter`'s own doc comment).
+    private func dragCenter(forTranslation translation: CGSize, settledOrigin: CGPoint) -> CGPoint {
+        let start = dragStartCenter ?? CGPoint(x: settledOrigin.x + blockSize.width / 2,
+                                               y: settledOrigin.y + blockSize.height / 2)
+        dragStartCenter = start
+        return Self.clampedDragCenter(start: start, translation: translation, frameSize: frameSize, blockSize: blockSize)
     }
 
     // MARK: - Shared layout (mirrors `OverlayRenderer`'s private `OverlayLayout`)
@@ -135,6 +189,45 @@ struct OverlayTextView: View {
                        frameSize: CGSize,
                        placement: OverlayPlacement) -> CGPoint {
         OverlayMetrics.origin(forBlockSize: blockSize, in: frameSize, placement: placement)
+    }
+
+    // MARK: - Drag (TASK-24, #68)
+
+    /// `start + translation`, kept inside the 4% margin the same way a
+    /// settled `.custom` position already is (PRD FR-12.2, #68's D.1–D.4).
+    ///
+    /// Routes through `Self.origin(forBlockSize:frameSize:placement:)` —
+    /// the same clamp `OverlayMetrics.origin` applies to any `.custom`
+    /// placement — by converting the raw candidate center to a fraction of
+    /// `frameSize` and reading the clamped origin straight back out. Two
+    /// things fall out of reusing that one function instead of duplicating
+    /// its margin math here:
+    ///
+    /// - The block stays inside the margin band *while dragging*, not only
+    ///   once a drag ends and gets clamped on the way back in through a
+    ///   freshly stored `.custom` fraction (D.4 — the previous version only
+    ///   clamped at that point, so mid-drag the block could visibly leave
+    ///   the margin before snapping back).
+    /// - Starting a drag from an `.anchor` and releasing with zero
+    ///   translation reproduces that exact anchor's origin (D.1, D.2): an
+    ///   anchor's origin already satisfies the margin band by construction,
+    ///   so converting its real (non-zero) `blockSize`-based center to a
+    ///   fraction and back through this same clamp is a no-op. The
+    ///   `#67`/`PositionDragAdapter` version of this used
+    ///   `OverlayMetrics.origin(forBlockSize: .zero, …)` as a stand-in
+    ///   reference point, which is only actually the block's center for
+    ///   `.custom` (PRD A-1's own definition) — for an anchor it lands on
+    ///   the anchor's margin *corner* instead, off by half the block's size
+    ///   on each axis it hugs. Using the view's own real `blockSize` here
+    ///   fixes that at the source instead of leaving `PositionDragAdapter`
+    ///   to guess it.
+    static func clampedDragCenter(start: CGPoint, translation: CGSize, frameSize: CGSize, blockSize: CGSize) -> CGPoint {
+        guard frameSize.width > 0, frameSize.height > 0 else { return start }
+        let rawCenter = CGPoint(x: start.x + translation.width, y: start.y + translation.height)
+        let fractionX = Double(rawCenter.x / frameSize.width)
+        let fractionY = Double(rawCenter.y / frameSize.height)
+        let clampedOrigin = origin(forBlockSize: blockSize, frameSize: frameSize, placement: .custom(x: fractionX, y: fractionY))
+        return CGPoint(x: clampedOrigin.x + blockSize.width / 2, y: clampedOrigin.y + blockSize.height / 2)
     }
 
     /// Builds `text` styled with every one of `theme`'s decorations, applied

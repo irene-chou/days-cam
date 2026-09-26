@@ -211,11 +211,11 @@ struct CameraScreen: View {
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
                             frameSize: frameSize,
-                            onDragChanged: model.panelModel.isOverlayDraggable ? { translation, size in
-                                model.panelModel.overlayDragHandler?.overlayDragChanged(translation: translation, viewfinderSize: size)
+                            onDragChanged: model.panelModel.isOverlayDraggable ? { center, size in
+                                model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
                             } : nil,
-                            onDragEnded: model.panelModel.isOverlayDraggable ? { translation, size in
-                                model.panelModel.overlayDragHandler?.overlayDragEnded(translation: translation, viewfinderSize: size)
+                            onDragEnded: model.panelModel.isOverlayDraggable ? { center, size in
+                                model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
                             } : nil)
 
             if let countdownRemaining = model.countdownRemaining {
