@@ -1199,6 +1199,90 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(first === second)
     }
 
+    // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)
+
+    func testStyleFormatPositionTabModelsAreNotNilOnceAProfileIsSelected() throws {
+        // P.2
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        XCTAssertNotNil(model.styleTabModel)
+        XCTAssertNotNil(model.formatTabModel)
+        XCTAssertNotNil(model.positionTabModel)
+    }
+
+    func testStyleFormatPositionTabModelsTrackTheSelectedProfile() throws {
+        // P.2
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let firstStyle = try XCTUnwrap(model.styleTabModel)
+        let firstFormat = try XCTUnwrap(model.formatTabModel)
+        let firstPosition = try XCTUnwrap(model.positionTabModel)
+        XCTAssertEqual(firstStyle.profile.id, model.selectedProfileID)
+        XCTAssertEqual(firstFormat.displaySettings.profile.id, model.selectedProfileID)
+        XCTAssertEqual(firstPosition.profile.id, model.selectedProfileID)
+
+        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        waitUntil { model.selectedProfileID == second.id }
+
+        let updatedStyle = try XCTUnwrap(model.styleTabModel)
+        let updatedFormat = try XCTUnwrap(model.formatTabModel)
+        let updatedPosition = try XCTUnwrap(model.positionTabModel)
+        XCTAssertEqual(updatedStyle.profile.id, second.id)
+        XCTAssertEqual(updatedFormat.displaySettings.profile.id, second.id)
+        XCTAssertEqual(updatedPosition.profile.id, second.id)
+    }
+
+    func testStyleFormatPositionTabModelsKeepTheSameInstanceAcrossUnrelatedChanges() throws {
+        // Same reasoning as `testRulesTabModelKeepsTheSameInstanceAcrossUnrelatedChanges`.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let firstStyle = try XCTUnwrap(model.styleTabModel)
+        let firstFormat = try XCTUnwrap(model.formatTabModel)
+        let firstPosition = try XCTUnwrap(model.positionTabModel)
+
+        model.refreshOverlay() // bumps `refreshTick`, unrelated to the profile
+
+        XCTAssertTrue(firstStyle === model.styleTabModel)
+        XCTAssertTrue(firstFormat === model.formatTabModel)
+        XCTAssertTrue(firstPosition === model.positionTabModel)
+    }
+
+    // MARK: - 拖曳轉接 (#65's `PositionDragAdapter`, equivalent to 24.8/24.9 — P.3, P.4)
+
+    func testOverlayDragHandlerConvertsAViewfinderCenterDragIntoHalfHalf() throws {
+        // P.3
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(model.positionTabModel?.profile.position, .anchor(.middleCenter))
+
+        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
+        handler.overlayDragEnded(translation: .zero, viewfinderSize: CGSize(width: 288, height: 384))
+
+        XCTAssertEqual(model.positionTabModel?.profile.position, .custom(x: 0.5, y: 0.5))
+    }
+
+    func testOverlayDragHandlerClampsADragThatEndsOutsideTheViewfinder() throws {
+        // P.4
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
+        // (144,192) + (256,308) = (400,500) — past the 288x384 viewfinder.
+        handler.overlayDragEnded(translation: CGSize(width: 256, height: 308),
+                                 viewfinderSize: CGSize(width: 288, height: 384))
+
+        guard case let .custom(x, y) = model.positionTabModel?.profile.position else {
+            return XCTFail("expected a .custom position")
+        }
+        XCTAssertLessThanOrEqual(x, 1, "P.4")
+        XCTAssertLessThanOrEqual(y, 1, "P.4")
+    }
+
     // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.5)
 
     private final class StubFlashCapabilityProvider: FlashCapabilityProviding {

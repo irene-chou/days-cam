@@ -74,6 +74,27 @@ final class CameraScreenModel: ObservableObject {
     /// depends on `selectedProfile`, so there is nothing to go stale.
     let panelModel = OverlayPanelModel()
 
+    /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
+    /// Rebuilt only when `selectedProfileID` actually changes — see
+    /// `refreshOverlayPanelTabModelsIfNeeded`.
+    @Published private(set) var styleTabModel: StyleTabModel?
+
+    /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
+    /// Rebuilt alongside `styleTabModel`.
+    @Published private(set) var formatTabModel: FormatTabModel?
+
+    /// The 位置 tab's model (PRD 0.2 FR-12, TASK-24's `PositionTabView`).
+    /// Rebuilt alongside `styleTabModel`; `panelModel.overlayDragHandler` is
+    /// kept pointed at a fresh `PositionDragAdapter` wrapping this instance
+    /// every time it changes (see `positionDragAdapter`).
+    @Published private(set) var positionTabModel: PositionTabModel?
+
+    /// Bridges `panelModel.overlayDragHandler`'s translation-based reports to
+    /// `positionTabModel`'s center-based `applyDrag` (#65's "轉接"). Held
+    /// strongly here — `overlayDragHandler` is `weak` (see its own doc
+    /// comment), so nothing else keeps this alive.
+    private var positionDragAdapter: PositionDragAdapter?
+
     /// The 天數規則 tab's model (PRD 0.2 FR-13, TASK-25's `RulesTabView`).
     /// Rebuilt only when `selectedProfileID` actually changes — same
     /// reasoning as `displaySettingsModel`'s own doc comment: the panel's
@@ -232,7 +253,7 @@ final class CameraScreenModel: ObservableObject {
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
-        refreshRulesTabModelIfNeeded()
+        refreshOverlayPanelTabModelsIfNeeded()
     }
 
     private func bindToProfileStore() {
@@ -244,20 +265,52 @@ final class CameraScreenModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 self?.selectedProfileID = $0
-                self?.refreshRulesTabModelIfNeeded()
+                self?.refreshOverlayPanelTabModelsIfNeeded()
             }
             .store(in: &cancellables)
     }
 
-    /// Rebuilds `rulesTabModel` only when `selectedProfileID` has actually
-    /// changed since it was last built — see `rulesTabModel`'s own doc
-    /// comment for why that matters.
-    private func refreshRulesTabModelIfNeeded() {
+    /// Rebuilds every overlay-panel tab model — `styleTabModel`,
+    /// `formatTabModel`, `positionTabModel` (plus its drag adapter) and
+    /// `rulesTabModel` — only when `selectedProfileID` has actually changed
+    /// since they were last built — see `rulesTabModel`'s own doc comment for
+    /// why that matters (rebuilding on every unrelated re-render would
+    /// discard whatever the user is mid-edit on).
+    ///
+    /// All four are rebuilt together, gated on the same check, so they can
+    /// never point at four different profiles at once.
+    private func refreshOverlayPanelTabModelsIfNeeded() {
         guard rulesTabModel?.profile.id != selectedProfileID else { return }
         guard let selectedProfile else {
+            styleTabModel = nil
+            formatTabModel = nil
+            positionTabModel = nil
+            positionDragAdapter = nil
+            panelModel.overlayDragHandler = nil
             rulesTabModel = nil
             return
         }
+
+        styleTabModel = StyleTabModel(profile: selectedProfile) { [weak self] updated in
+            try self?.profileStore.update(updated)
+        }
+
+        let displaySettings = DisplaySettingsModel(profile: selectedProfile,
+                                                   calendar: calendar,
+                                                   calculator: calculator,
+                                                   renderer: renderer) { [weak self] updated in
+            try self?.profileStore.update(updated)
+        }
+        formatTabModel = FormatTabModel(displaySettings: displaySettings)
+
+        let newPositionTabModel = PositionTabModel(profile: selectedProfile) { [weak self] updated in
+            try self?.profileStore.update(updated)
+        }
+        positionTabModel = newPositionTabModel
+        let adapter = PositionDragAdapter(positionTabModel: newPositionTabModel)
+        positionDragAdapter = adapter
+        panelModel.overlayDragHandler = adapter
+
         rulesTabModel = RulesTabModel(profile: selectedProfile,
                                      calendar: calendar,
                                      calculator: calculator,
