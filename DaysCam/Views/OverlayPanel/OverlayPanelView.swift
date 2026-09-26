@@ -55,30 +55,36 @@ struct OverlayPanelView: View {
 
     // MARK: - Second layer: tab bodies
 
-    /// TASK-23（樣式）／TASK-24（格式／位置）fill these in as their own PRs
-    /// land; TASK-25（天數規則）already has — see `RulesTabView`. Until then
-    /// the still-missing tabs show a plain placeholder so the panel is at
-    /// least navigable end to end (PRD 0.2 TASK-22 scope: "各分頁先放空白佔位").
+    /// Every tab's model is built by `CameraScreenModel` once a profile is
+    /// selected (TASK-22/23/24, #65) — the brief `nil` window before that
+    /// (PRD FR-1.8 guarantees it never happens once the app has actually
+    /// launched) falls back to the same plain placeholder this file used
+    /// before TASK-23/24 landed.
     @ViewBuilder
     private var tabContent: some View {
         switch model.panelModel.selectedTab {
         case .style:
-            // TEMP(TASK-22→23): `StyleTabView`/`StyleTabModel` exist (PR #53)
-            // but were not yet merged when this was written (still working
-            // through required bot-review changes) — placeholder until they
-            // land; see this file's own PR description for the swap-in note.
-            placeholderTab(title: "樣式", subtitle: "字型、顏色、外框、陰影、字級")
+            if let styleTabModel = model.styleTabModel {
+                StyleTabView(model: styleTabModel)
+            } else {
+                placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
+            }
         case .format:
-            placeholderTab(title: "格式", subtitle: "顯示內容、天數格式")
+            if let formatTabModel = model.formatTabModel {
+                FormatTabView(model: formatTabModel)
+            } else {
+                placeholderTab(title: "格式", subtitle: "尚未選取設定檔")
+            }
         case .position:
-            placeholderTab(title: "位置", subtitle: "九宮格快速對齊、拖曳自訂位置")
+            if let positionTabModel = model.positionTabModel {
+                PositionTabView(model: positionTabModel)
+            } else {
+                placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
+            }
         case .rules:
             if let rulesTabModel = model.rulesTabModel {
                 RulesTabView(model: rulesTabModel)
             } else {
-                // Only reachable in the brief window before any profile is
-                // selected (PRD FR-1.8 guarantees this never happens once
-                // the app has actually launched).
                 placeholderTab(title: "天數規則", subtitle: "尚未選取設定檔")
             }
         }
@@ -99,10 +105,32 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("樣式（佔位）") {
+#Preview("樣式（StyleTabView 已接上）") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    return ZStack {
+        CameraTheme.background.ignoresSafeArea()
+        OverlayPanelView(model: model)
+    }
+}
+
+#Preview("格式（FormatTabView 已接上）") {
+    let store = ProfileStore()
+    store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    model.panelModel.selectedTab = .format
+    return ZStack {
+        CameraTheme.background.ignoresSafeArea()
+        OverlayPanelView(model: model)
+    }
+}
+
+#Preview("位置（PositionTabView 已接上）") {
+    let store = ProfileStore()
+    store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    model.panelModel.selectedTab = .position
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)
