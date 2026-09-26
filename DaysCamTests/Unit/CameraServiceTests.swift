@@ -141,7 +141,7 @@ final class CameraServiceTests: XCTestCase {
     }
 
     func testNotDeterminedStartPromptsOnceAndPublishesTheAnswer() {
-        let (service, authorizer, _) = makeService(status: .notDetermined, grants: true)
+        let (service, authorizer, _) = makeService(status: .notDetermined, grants: true, captureSupported: true)
 
         service.start()
 
@@ -150,7 +150,7 @@ final class CameraServiceTests: XCTestCase {
     }
 
     func testDeclinedPromptPublishesDeniedAndAsksForTheGuidanceScreen() {
-        let (service, _, _) = makeService(status: .notDetermined, grants: false)
+        let (service, _, _) = makeService(status: .notDetermined, grants: false, captureSupported: true)
 
         service.start()
 
@@ -159,7 +159,7 @@ final class CameraServiceTests: XCTestCase {
     }
 
     func testRestrictedAsksForTheGuidanceScreenToo() {
-        let (service, _, _) = makeService(status: .restricted)
+        let (service, _, _) = makeService(status: .restricted, captureSupported: true)
 
         service.start()
 
@@ -184,7 +184,7 @@ final class CameraServiceTests: XCTestCase {
     /// PRD §2.3, last row: granting from Settings and coming back must recover
     /// without a relaunch.
     func testRefreshPermissionPicksUpAGrantMadeInSettings() {
-        let (service, authorizer, _) = makeService(status: .denied)
+        let (service, authorizer, _) = makeService(status: .denied, captureSupported: true)
         service.start()
         expect(service, permission: .denied)
 
@@ -224,7 +224,7 @@ final class CameraServiceTests: XCTestCase {
     }
 
     func testReturningToTheForegroundRechecksPermission() {
-        let (service, authorizer, _) = makeService(status: .denied)
+        let (service, authorizer, _) = makeService(status: .denied, captureSupported: true)
         service.start()
         expect(service, permission: .denied)
 
@@ -233,6 +233,47 @@ final class CameraServiceTests: XCTestCase {
                                         object: nil)
 
         expect(service, permission: .authorized)
+    }
+
+    // MARK: - Simulator skips the permission flow (PRD §2.4, issue #64)
+
+    /// S.1: unsupported capture must never ask about camera permission at
+    /// all — there is no camera to ask about — so the guidance screen never
+    /// shows over the placeholder viewfinder.
+    func testUnsupportedCaptureSkipsThePermissionFlowOnStart() {
+        let (service, authorizer, _) = makeService(status: .denied, captureSupported: false)
+
+        service.start()
+
+        expect(service, permission: .authorized)
+        XCTAssertFalse(service.permission.needsGuidance)
+        XCTAssertEqual(authorizer.statusReadCount, 0)
+        XCTAssertEqual(authorizer.requestCount, 0)
+    }
+
+    /// S.2: the same holds for the foreground/Settings recheck path.
+    func testUnsupportedCaptureSkipsThePermissionFlowOnRefresh() {
+        let (service, authorizer, _) = makeService(status: .denied, captureSupported: false)
+
+        service.refreshPermission()
+
+        expect(service, permission: .authorized)
+        XCTAssertFalse(service.permission.needsGuidance)
+        XCTAssertEqual(authorizer.statusReadCount, 0)
+        XCTAssertEqual(authorizer.requestCount, 0)
+    }
+
+    /// S.3: on a real device (capture supported) the guidance screen must
+    /// still show for a denied permission — this fix must not touch that
+    /// path.
+    func testSupportedCaptureStillAsksForTheGuidanceScreenWhenDenied() {
+        let (service, authorizer, _) = makeService(status: .denied, captureSupported: true)
+
+        service.start()
+
+        expect(service, permission: .denied)
+        XCTAssertTrue(service.permission.needsGuidance)
+        XCTAssertEqual(authorizer.statusReadCount, 1)
     }
 
     // MARK: - Unavailable branches (PRD §2.4)

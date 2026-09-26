@@ -333,7 +333,19 @@ extension CameraService {
     /// Reads the current permission, prompting the first time, and publishes
     /// it. When it is granted, asks `run()` to start the session, which only
     /// does so while the camera screen is active.
+    ///
+    /// Where capture is unsupported (the simulator), the permission prompt
+    /// never applies — there is no camera to ask about — so this reports
+    /// `.authorized` without touching `authorizer` at all and lets `run()`
+    /// publish the placeholder status (PRD §2.4, 0.2 issue #64). The shutter
+    /// stays disabled regardless, via `isCaptureSupported`.
     private func resolvePermission() {
+        guard isCaptureSupported else {
+            publish(permission: .authorized)
+            run()
+            return
+        }
+
         switch authorizer.authorizationStatus() {
         case .notDetermined:
             publish(permission: .notDetermined)
