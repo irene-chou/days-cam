@@ -1130,6 +1130,24 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - Overlay panel shell (PRD 0.2 FR-8, TASK-22 acceptance 22.4)
 
+    func testPanelModelChangesAreForwardedToTheScreenModel() throws {
+        // PR #60 review: CameraScreen only observes CameraScreenModel, so the
+        // nested panel model's changes must re-publish through it.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        var sends = 0
+        let cancellable = model.objectWillChange.sink { _ in sends += 1 }
+        defer { cancellable.cancel() }
+
+        model.panelModel.open()
+        XCTAssertGreaterThan(sends, 0, "open() must re-render CameraScreen")
+        let afterOpen = sends
+        model.panelModel.selectedTab = .position
+        XCTAssertGreaterThan(sends, afterOpen, "switching tabs must re-render")
+        let afterTab = sends
+        model.panelModel.close()
+        XCTAssertGreaterThan(sends, afterTab, "close() must re-render")
+    }
+
     func testCapturingWhilePanelIsOpenRunsNormallyAndKeepsItOpen() throws {
         // 22.4: opening the panel must not disable the shutter or otherwise
         // couple into the capture pipeline, and a capture must not close it.

@@ -230,6 +230,7 @@ final class CameraScreenModel: ObservableObject {
         bindToProfileStore()
         bindToCameraService()
         bindToCaptureSettingsStore()
+        bindToPanelModel()
         bindToClockNotifications()
         refreshRulesTabModelIfNeeded()
     }
@@ -290,6 +291,17 @@ final class CameraScreenModel: ObservableObject {
     /// re-render without forwarding it here.
     private func bindToCaptureSettingsStore() {
         captureSettingsStore.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    /// Same reasoning as `bindToCameraService`: `CameraScreen` and
+    /// `OverlayPanelView` observe only this model and read `panelModel`'s
+    /// state through it, so opening/closing the panel or switching tabs would
+    /// never re-render without forwarding the nested model's changes here
+    /// (PR #60 review).
+    private func bindToPanelModel() {
+        panelModel.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
