@@ -1283,6 +1283,111 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertLessThanOrEqual(y, 1, "P.4")
     }
 
+    // MARK: - 跨分頁不互相覆蓋 (#70, M.1–M.5)
+
+    func testSequentialEditsAcrossAllFourTabsAllSurvive() throws {
+        // M.1
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        model.styleTabModel?.selectFont(.futura)
+        model.positionTabModel?.selectAnchor(.bottomLeading)
+        model.formatTabModel?.displaySettings.setShowDate(true)
+        model.rulesTabModel?.setName("阿寶")
+
+        let stored = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(stored.style.fontID, .futura, "M.1: 樣式改動仍在")
+        XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.1: 位置改動仍在")
+        XCTAssertTrue(stored.showDate, "M.1: 格式改動仍在")
+        XCTAssertEqual(stored.name, "阿寶", "M.1: 天數規則改動仍在")
+    }
+
+    func testSequentialEditsAcrossAllFourTabsInReverseOrderAllSurvive() throws {
+        // M.2
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        model.rulesTabModel?.setName("阿寶")
+        model.formatTabModel?.displaySettings.setShowDate(true)
+        model.positionTabModel?.selectAnchor(.bottomLeading)
+        model.styleTabModel?.selectFont(.futura)
+
+        let stored = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(stored.style.fontID, .futura, "M.2: 樣式改動仍在")
+        XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.2: 位置改動仍在")
+        XCTAssertTrue(stored.showDate, "M.2: 格式改動仍在")
+        XCTAssertEqual(stored.name, "阿寶", "M.2: 天數規則改動仍在")
+    }
+
+    func testDragThenStyleChangeKeepsTheDraggedPosition() throws {
+        // M.3
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
+        handler.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
+        model.styleTabModel?.selectFont(.futura)
+
+        let stored = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(stored.position, .custom(x: 0.5, y: 0.5), "M.3: 拖曳結果仍在")
+        XCTAssertEqual(stored.style.fontID, .futura)
+    }
+
+    func testRenamingOutsideThePanelThenChangingStyleKeepsTheNewName() throws {
+        // M.4
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let selected = try XCTUnwrap(model.selectedProfile)
+
+        // Simulates a rename from outside the panel (e.g. the management
+        // list, TASK-26) — not through any tab model's own `updateProfile`.
+        var renamed = selected
+        renamed.name = "阿寶"
+        try store.update(renamed)
+
+        model.styleTabModel?.selectTextColor(.black)
+
+        let stored = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(stored.name, "阿寶", "M.4: 面板外的改名仍在")
+        XCTAssertEqual(stored.style.textColor, .black)
+    }
+
+    func testSwitchingToFormatTabAfterAStyleChangeDoesNotLoseTheStyleInTheStore() throws {
+        // M.5: the store itself must never lose the style change — whether
+        // `formatTabModel`'s own working copy also reflects it live is a
+        // separate, ui-panel-owned concern (see this test's own comment).
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now, seed: [
+            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        ])
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+
+        model.styleTabModel?.selectFont(.futura)
+        model.panelModel.selectedTab = .format // switching tabs never rebuilds (same profile)
+
+        let stored = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(stored.style.fontID, .futura, "M.5: store 端沒有遺失樣式改動")
+        // Not asserted: `model.formatTabModel?.displaySettings.profile.style`
+        // — `FormatTabView` never reads `style`/`position` today (grep
+        // confirms), so this is not currently user-visible; syncing a tab's
+        // own working copy live across tabs would need ui-panel to add a
+        // refresh API to `DisplaySettingsModel`/`StyleTabModel`/
+        // `PositionTabModel`/`RulesTabModel`, which this card does not do
+        // (flagged to Lead per #70's own escape hatch).
+    }
+
     // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.5)
 
     private final class StubFlashCapabilityProvider: FlashCapabilityProviding {
