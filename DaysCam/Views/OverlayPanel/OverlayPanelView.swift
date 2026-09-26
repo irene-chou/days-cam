@@ -6,51 +6,83 @@ import SwiftUI
 ///
 /// Expanding/collapsing the panel and shrinking the viewfinder to 80% are
 /// `CameraScreen`'s job (it owns the layout the panel appears inside of);
-/// this view only lays out the segmented control and the tab body. No
-/// background, no border (FR-8.8) — it sits directly on `CameraTheme
-/// .background`.
+/// this view only lays out the segmented control and the tab body.
+///
+/// The segmented control (not the tab body below it) is the one exception
+/// to PRD 0.2 §10's "無框線、無底色": comp A of `D3-tab-options.html` (the
+/// finalized first-layer style, superseding `D2-overlay-panel.html`'s
+/// borderless "v6" this file originally shipped with — #75) states plainly
+/// that "分段控制本身有底色，是『非必要不加框』的例外" — an iOS segmented
+/// control's own gray track, matching PRD FR-8.4's own wording.
 struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
 
     var body: some View {
         VStack(spacing: 10) {
             segmentedControl
-            tabContent
+            // The tab body scrolls within whatever space is left, rather
+            // than growing the panel or getting clipped, on a tab whose
+            // content is taller than the panel (#75, T.8) — e.g. the format
+            // tab on a narrow phone.
+            ScrollView {
+                tabContent
+            }
         }
         .padding(.top, 4)
+        // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
+        // fills whatever vertical space frees up below the viewfinder — a
+        // plain `VStack` centers a shorter child inside that by default, so
+        // without pinning `.top` here, switching to a tab with different
+        // content height visibly shifted the segmented control up or down
+        // (#75's second bug). Pinning it top-aligned keeps its y position
+        // identical across every tab (T.7).
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    // MARK: - First layer (FR-8.4)
+    // MARK: - First layer (FR-8.4, comp A)
 
-    /// Borderless by design (PRD 0.2 §10 "按鈕 | 無框線、無底色"): the
-    /// selected tab is only distinguished by darker text plus a small
-    /// `active`-colored dot underneath, matching D-2's final ("v6") revision
-    /// — not a filled segmented-control track.
+    /// The gray track (`rgba(42,38,34,.07)` — `CameraTheme.fill`, already
+    /// documented there for exactly this use), corner radius 10, 2pt inset
+    /// on every side (`D3-tab-options.html:68`, `.A .seg`).
     private var segmentedControl: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(OverlayPanelModel.Tab.allCases, id: \.self) { tab in
                 tabButton(tab)
             }
         }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(CameraTheme.fill)
+        )
+        .padding(.horizontal, 2)
     }
 
+    /// The selected-segment shadow (`rgba(60,40,20,.15)`,
+    /// `D3-tab-options.html:70`) — stated directly, like
+    /// `CameraTheme.shutterRing`, since it is used in exactly one place.
+    private static let selectedSegmentShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.15)
+
+    /// One of the four equal-width segments (`.A .seg button`): selected
+    /// gets a white, rounded, drop-shadowed chip; unselected stays plain
+    /// text on the shared gray track — no dot, no per-segment border.
     private func tabButton(_ tab: OverlayPanelModel.Tab) -> some View {
         let isSelected = model.panelModel.selectedTab == tab
         return Button {
             model.panelModel.selectedTab = tab
         } label: {
-            VStack(spacing: 4) {
-                Text(tab.title)
-                    .font(CameraTheme.toolFont(.footnote))
-                    .foregroundColor(isSelected ? CameraTheme.ink : CameraTheme.inkSecondary)
-                Circle()
-                    .fill(isSelected ? CameraTheme.active : Color.clear)
-                    .frame(width: 4, height: 4)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity)
+            Text(tab.title)
+                .font(CameraTheme.toolFont(.footnote))
+                .foregroundColor(isSelected ? CameraTheme.ink : CameraTheme.inkSecondary)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Color.white : Color.clear)
+                        .shadow(color: isSelected ? Self.selectedSegmentShadow : .clear, radius: 3, x: 0, y: 1)
+                )
         }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Second layer: tab bodies
