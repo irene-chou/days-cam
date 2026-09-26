@@ -268,7 +268,7 @@
 
 | # | 需求 |
 |---|---|
-| FR-10.1 | 第二層是 5 個純圖示：字型（單一個「A」字形）、顏色（`paintpalette`）、外框（`square.dashed`）、陰影（實心方塊疊在空心方塊後方，SF Symbol `square.filled.on.square`）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
+| FR-10.1 | 第二層是 5 個純圖示：字型（單一個「A」字形）、顏色（`paintpalette`）、外框（`square.dashed`）、陰影（自訂圖示：空心圓角方塊＋右下 L 形陰影線，照 `docs/design/D3-tab-options.html` 的 SVG 繪製；SF Symbols 無對應）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
 | FR-10.2 | **字型**：以下 10 種，橫向捲動，每個選項用**該字型寫出自己的名稱**（英文原名）；選中的名稱變 active 色，**不加底線或框** |
 
 | `fontID` | 顯示名稱 | iOS 取得方式 |
