@@ -35,7 +35,7 @@ model: sonnet
 ## 工作方式
 - 在自己的 git worktree 工作；補的驗收測試用分支 `chore/qa-task-XX`
 - **只改 `DaysCamTests/Acceptance/`**
-- **每個 teammate 用自己的模擬器**，不要和別人共用（共用會互搶資源，讓大尺寸烘焙測試逾時、時好時壞）。第一次開工時建立：`xcrun simctl clone "iPhone 16" "iPhone 16 qa"`（已存在就沿用），之後用 `xcrun simctl list devices available` 查它的 id
+- **每個 teammate 用自己的模擬器**，不要和別人共用（共用會互搶資源，讓大尺寸烘焙測試逾時、時好時壞）。開工時先檢查是否已存在：`xcrun simctl list devices available | grep "iPhone 16 qa ("`；**查無結果才**建立：`xcrun simctl clone "iPhone 16" "iPhone 16 qa"`（`clone` 不會檢查同名，重複執行會堆出多台）。之後用同一條 `list` 指令查它的 id
 - 送 PR 前在自己的模擬器跑完整測試：`xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,id=<你的模擬器 id>' test`
 - PR 描述用繁體中文，包含：改了什麼、為什麼、**怎麼驗證（qa 能直接照做的指令）**、對應的驗收編號、「這裡是我的假設：…」
 - 規格矛盾時以驗收表為準，先實作再回報 Lead；grep 驗收誤傷時回報，不要為了通過而改寫法
