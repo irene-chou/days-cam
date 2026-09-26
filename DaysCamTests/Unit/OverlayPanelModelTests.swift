@@ -81,15 +81,15 @@ final class OverlayPanelModelTests: XCTestCase {
 
     /// A fake conformer, standing in for TASK-24's position-tab model.
     private final class RecordingDragHandler: OverlayDragHandling {
-        private(set) var changedCalls: [(translation: CGSize, viewfinderSize: CGSize)] = []
-        private(set) var endedCalls: [(translation: CGSize, viewfinderSize: CGSize)] = []
+        private(set) var changedCalls: [(center: CGPoint, viewfinderSize: CGSize)] = []
+        private(set) var endedCalls: [(center: CGPoint, viewfinderSize: CGSize)] = []
 
-        func overlayDragChanged(translation: CGSize, viewfinderSize: CGSize) {
-            changedCalls.append((translation, viewfinderSize))
+        func overlayDragChanged(center: CGPoint, viewfinderSize: CGSize) {
+            changedCalls.append((center, viewfinderSize))
         }
 
-        func overlayDragEnded(translation: CGSize, viewfinderSize: CGSize) {
-            endedCalls.append((translation, viewfinderSize))
+        func overlayDragEnded(center: CGPoint, viewfinderSize: CGSize) {
+            endedCalls.append((center, viewfinderSize))
         }
     }
 
@@ -98,15 +98,15 @@ final class OverlayPanelModelTests: XCTestCase {
         let handler = RecordingDragHandler()
         model.overlayDragHandler = handler
 
-        model.overlayDragHandler?.overlayDragChanged(translation: CGSize(width: 12, height: -4),
+        model.overlayDragHandler?.overlayDragChanged(center: CGPoint(x: 112, y: 186),
                                                       viewfinderSize: CGSize(width: 300, height: 400))
-        model.overlayDragHandler?.overlayDragEnded(translation: CGSize(width: 20, height: -10),
+        model.overlayDragHandler?.overlayDragEnded(center: CGPoint(x: 120, y: 180),
                                                     viewfinderSize: CGSize(width: 300, height: 400))
 
         XCTAssertEqual(handler.changedCalls.count, 1)
-        XCTAssertEqual(handler.changedCalls.first?.translation, CGSize(width: 12, height: -4))
+        XCTAssertEqual(handler.changedCalls.first?.center, CGPoint(x: 112, y: 186))
         XCTAssertEqual(handler.endedCalls.count, 1)
-        XCTAssertEqual(handler.endedCalls.first?.translation, CGSize(width: 20, height: -10))
+        XCTAssertEqual(handler.endedCalls.first?.center, CGPoint(x: 120, y: 180))
     }
 
     func testOverlayDragHandlerIsHeldWeakly() {
