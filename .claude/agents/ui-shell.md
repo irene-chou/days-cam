@@ -37,7 +37,8 @@ model: sonnet
 - 在自己的 git worktree 工作，分支命名 `feature/task-XX-<簡述>`，一張卡一個 PR（卡片太大可拆，PR 標題註明「core 半邊」等）
 - **只改自己擁有的檔案**（見 TASKS-0.2「檔案所有權」）。需要改別人的檔案時回報 Lead，不要自己動手
 - 新功能附單元測試，放 `DaysCamTests/Unit/<來源檔名>Tests.swift`
-- 送 PR 前在模擬器跑完整測試：`xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,name=iPhone 16' test`
+- **每個 teammate 用自己的模擬器**，不要和別人共用（共用會互搶資源，讓大尺寸烘焙測試逾時、時好時壞）。開工時先檢查是否已存在：`xcrun simctl list devices available | grep "iPhone 16 ui-shell ("`；**查無結果才**建立：`xcrun simctl clone "iPhone 16" "iPhone 16 ui-shell"`（`clone` 不會檢查同名，重複執行會堆出多台）。之後用同一條 `list` 指令查它的 id
+- 送 PR 前在自己的模擬器跑完整測試：`xcodegen generate && xcodebuild -project DaysCam.xcodeproj -scheme DaysCam -destination 'platform=iOS Simulator,id=<你的模擬器 id>' test`
 - PR 描述用繁體中文，包含：改了什麼、為什麼、**怎麼驗證（qa 能直接照做的指令）**、對應的驗收編號、「這裡是我的假設：…」
 - 規格矛盾時以驗收表為準，先實作再回報 Lead；grep 驗收誤傷時回報，不要為了通過而改寫法
 - 知道哪裡會讓 qa 誤判時，在 PR 描述先講
