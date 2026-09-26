@@ -11,8 +11,10 @@ import SwiftUI
 /// (PRD FR-6.1, FR-4.7, FR-4.8; 0.2 FR-5.10, FR-12). No decoration constant
 /// is defined here; they all live in `OverlayTheme` (TASK-18 18.11).
 ///
-/// Never intercepts touches (PRD FR-6.4), so it never blocks the shutter or
-/// camera controls underneath it.
+/// Never intercepts touches (PRD FR-6.4) *unless* `onDragChanged`/
+/// `onDragEnded` are supplied (TASK-24, PRD 0.2 FR-12.1) — with neither set
+/// (the default) it behaves exactly as before and never blocks the shutter
+/// or camera controls underneath it.
 struct OverlayTextView: View {
     /// The text to draw. An empty string draws nothing.
     let text: String
@@ -24,6 +26,19 @@ struct OverlayTextView: View {
     /// viewfinder's bounds live, the photo's pixel size when baking. Margin
     /// and base font size scale off its short edge (PRD FR-4.3, FR-4.7).
     let frameSize: CGSize
+    /// Called continuously while the block is dragged, with the drag's
+    /// translation from its start and this view's `frameSize` (TASK-24, PRD
+    /// 0.2 FR-12.1–FR-12.3). `nil` (the default) makes the block
+    /// non-interactive: see `isInteractive`.
+    ///
+    /// Deliberately *not* where clamping, normalizing to 0...1 or persisting
+    /// happens — this view only reports raw gesture values; converting them
+    /// into a stored `.custom` position is the position tab's job
+    /// (`OverlayDragHandling`, owned by ui-panel).
+    var onDragChanged: ((CGSize, CGSize) -> Void)?
+    /// Called once when the drag ends, with the same two values as
+    /// `onDragChanged`'s final call.
+    var onDragEnded: ((CGSize, CGSize) -> Void)?
 
     /// The measured size of the decorated text block. Starts at `.zero`, so
     /// the very first layout pass places the block as though it were empty;
@@ -33,7 +48,38 @@ struct OverlayTextView: View {
     /// baking path instead of the view inventing its own nine-grid logic.
     @State private var blockSize: CGSize = .zero
 
+    /// Creates a view. `frameSize` and everything before it are the settled
+    /// public shape from TASK-18; `onDragChanged`/`onDragEnded` are TASK-24's
+    /// addition, both defaulting to `nil` so every pre-existing call site
+    /// (`CameraScreen`'s non-position tabs, `DisplaySettingsSheet`'s little
+    /// preview swatches) keeps compiling and keeps being non-interactive
+    /// without changing a single call site.
+    init(text: String,
+         style: OverlayStyle,
+         placement: OverlayPlacement,
+         frameSize: CGSize,
+         onDragChanged: ((CGSize, CGSize) -> Void)? = nil,
+         onDragEnded: ((CGSize, CGSize) -> Void)? = nil) {
+        self.text = text
+        self.style = style
+        self.placement = placement
+        self.frameSize = frameSize
+        self.onDragChanged = onDragChanged
+        self.onDragEnded = onDragEnded
+    }
+
     private var theme: OverlayTheme { OverlayTheme(style: style) }
+
+    /// Whether this instance should accept drags at all. `CameraScreen` is
+    /// expected to only ever pass non-nil closures while
+    /// `OverlayPanelModel.isOverlayDraggable` is true (FR-12.1's own
+    /// wording: "只在位置分頁啟用，allowsHitTesting 僅此時為 true"), but this
+    /// is computed from the closures themselves rather than trusting the
+    /// caller, so a stray non-nil closure can never leave the block
+    /// draggable when the caller forgot to gate it.
+    private var isInteractive: Bool {
+        onDragChanged != nil || onDragEnded != nil
+    }
 
     var body: some View {
         if !text.isEmpty, frameSize.width > 0, frameSize.height > 0 {
@@ -48,7 +94,16 @@ struct OverlayTextView: View {
                     blockSize = newValue
                 }
                 .position(x: origin.x + blockSize.width / 2, y: origin.y + blockSize.height / 2)
-                .allowsHitTesting(false)
+                .allowsHitTesting(isInteractive)
+                .gesture(
+                    // Always attached, never conditionally — `allowsHitTesting`
+                    // above is the single switch that decides whether this can
+                    // ever actually receive a touch, so there is no second place
+                    // "draggable or not" has to stay in sync.
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in onDragChanged?(value.translation, frameSize) }
+                        .onEnded { value in onDragEnded?(value.translation, frameSize) }
+                )
         }
     }
 

@@ -21,22 +21,6 @@ struct CameraScreen: View {
             .preferredColorScheme(.light)
             .onAppear { model.onAppear() }
             .onDisappear { model.onDisappear() }
-            .sheet(isPresented: displaySettingsBinding) {
-                // `model.displaySettingsModel` is the instance cached when the
-                // sheet opened, not rebuilt on every access — see its own doc
-                // comment for why that matters.
-                //
-                // TEMP(TASK-21→22): this is 0.1's display-settings sheet,
-                // reused as a placeholder for the bottom bar's "Aa" key —
-                // TASK-22 replaces it with the real overlay panel (PRD 0.2
-                // FR-8). Kept only so the key does *something* in the
-                // meantime; its own theme (system default, not `CameraTheme`)
-                // is intentionally left alone since it is being deleted, not
-                // restyled.
-                if let displaySettingsModel = model.displaySettingsModel {
-                    DisplaySettingsSheet(model: displaySettingsModel)
-                }
-            }
             .sheet(isPresented: $model.isProfileListPresented) {
                 NavigationStack {
                     ProfileListView(model: model.profileListModel)
@@ -77,42 +61,66 @@ struct CameraScreen: View {
 
     // MARK: - 3:4 / 1:1 layout
 
-    /// The viewfinder sits in a box fixed to 3:4 regardless of the selected
-    /// ratio, so the toolbar and bottom bar never move when switching ratios
-    /// (only what's *inside* the box changes). At 1:1 the inner square
-    /// centers vertically within that box (PRD 0.2 FR-7.8) — for free, since
-    /// a `ZStack` centers a smaller child by default.
+    /// The toolbar sits in normal flow above the viewfinder box (matching
+    /// D-1's own column layout — it is not an overlay floating over the
+    /// live picture at this ratio; 9:16 is the one case that does that).
+    ///
+    /// The box itself is always 3:4 (PRD 0.2 FR-7.8), so the toolbar and
+    /// bottom bar never move when switching ratios — only what's *inside*
+    /// shrinks: at 1:1 the inner square centers vertically for free, since a
+    /// `ZStack` centers a smaller child by default. While the overlay panel
+    /// is open (PRD 0.2 FR-8.2), the *whole box* additionally scales to 80%
+    /// width (height following, since the box keeps its 3:4 shape) and
+    /// centers horizontally — the panel then fills the vertical space that
+    /// frees up between it and the bottom bar, exactly the way a plain
+    /// `VStack` hands unclaimed height to a flexible sibling.
     private var standardLayout: some View {
-        VStack(spacing: 0) {
-            GeometryReader { proxy in
-                let vfSize = viewfinderSize(in: proxy.size)
-                ZStack {
-                    viewfinderContent(frameSize: vfSize)
-                        .frame(width: vfSize.width, height: vfSize.height)
-                        .clipped()
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-            }
-            .aspectRatio(3.0 / 4.0, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .top) { CameraToolbar(model: model) }
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                CameraToolbar(model: model)
 
-            bottomBar
+                viewfinderBox(containerWidth: proxy.size.width)
+                    .frame(maxWidth: .infinity)
+                    .animation(CameraTheme.spring, value: model.panelModel.isOpen)
+
+                if model.panelModel.isOpen {
+                    OverlayPanelView(model: model)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                }
+
+                bottomBar
+            }
         }
     }
 
-    /// The on-screen size of the viewfinder itself within a `containerSize`
-    /// box that is always 3:4 (PRD 0.2 FR-7.8): unchanged for 3:4, the full
-    /// width squared for 1:1. Never called for 9:16 — that ratio uses
+    /// The viewfinder box sized for a `containerWidth`-wide screen: full
+    /// width normally, 80% and centered while the panel is open (FR-8.2).
+    /// Height always follows from width to keep the box's 3:4 shape.
+    private func viewfinderBox(containerWidth: CGFloat) -> some View {
+        let boxWidth = model.panelModel.isOpen ? containerWidth * 0.8 : containerWidth
+        let boxHeight = boxWidth * 4.0 / 3.0
+        let vfSize = viewfinderSize(boxWidth: boxWidth, boxHeight: boxHeight)
+        return ZStack {
+            viewfinderContent(frameSize: vfSize)
+                .frame(width: vfSize.width, height: vfSize.height)
+                .clipped()
+        }
+        .frame(width: boxWidth, height: boxHeight)
+    }
+
+    /// The on-screen size of the viewfinder itself within a box that is
+    /// always 3:4 (PRD 0.2 FR-7.8): unchanged for 3:4, the full box width
+    /// squared for 1:1. Never called for 9:16 — that ratio uses
     /// `fullBleedLayout` instead, not this box.
-    private func viewfinderSize(in containerSize: CGSize) -> CGSize {
+    private func viewfinderSize(boxWidth: CGFloat, boxHeight: CGFloat) -> CGSize {
         switch model.captureSettingsStore.captureAspectRatio {
         case .threeByFour:
-            return containerSize
+            return CGSize(width: boxWidth, height: boxHeight)
         case .oneByOne:
-            return CGSize(width: containerSize.width, height: containerSize.width)
+            return CGSize(width: boxWidth, height: boxWidth)
         case .nineBySixteen:
-            return containerSize
+            return CGSize(width: boxWidth, height: boxHeight)
         }
     }
 
@@ -122,6 +130,13 @@ struct CameraScreen: View {
     /// it, each behind a gradient fading to `CameraTheme.background` so they
     /// stay legible over whatever the camera is pointed at (PRD 0.2 FR-7.8,
     /// D-1).
+    ///
+    /// Assumption: PRD 0.2 FR-8.2/D-2 only ever show the panel against a 3:4
+    /// viewfinder; opening it while at 9:16 has no documented layout. Rather
+    /// than shrink an already-full-bleed viewfinder (which would need its
+    /// own bespoke centering rules nothing describes), the panel simply
+    /// floats over the bottom bar at a fixed height here — flagged in this
+    /// PR's description for a human/B′ call on whether that is good enough.
     private var fullBleedLayout: some View {
         GeometryReader { proxy in
             viewfinderContent(frameSize: proxy.size)
@@ -133,8 +148,16 @@ struct CameraScreen: View {
                         .background(topFadeGradient.ignoresSafeArea(edges: .top))
                 }
                 .overlay(alignment: .bottom) {
-                    bottomBar
-                        .background(bottomFadeGradient.ignoresSafeArea(edges: .bottom))
+                    VStack(spacing: 0) {
+                        if model.panelModel.isOpen {
+                            OverlayPanelView(model: model)
+                                .frame(height: 220)
+                                .transition(.opacity)
+                        }
+                        bottomBar
+                    }
+                    .background(bottomFadeGradient.ignoresSafeArea(edges: .bottom))
+                    .animation(CameraTheme.spring, value: model.panelModel.isOpen)
                 }
         }
     }
@@ -179,11 +202,21 @@ struct CameraScreen: View {
 
             // Overlay text tracks the viewfinder's own size (not the
             // screen's), matching FR-6.1's requirement that the preview and
-            // the eventual baked photo agree.
+            // the eventual baked photo agree. Draggable only while the panel
+            // is open on the 位置 tab (PRD 0.2 FR-12.1, TASK-24's interface —
+            // see `OverlayPanelModel.overlayDragHandler`'s own doc comment);
+            // the closures forward straight through and never interpret the
+            // values themselves.
             OverlayTextView(text: model.overlayText,
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
-                            frameSize: frameSize)
+                            frameSize: frameSize,
+                            onDragChanged: model.panelModel.isOverlayDraggable ? { translation, size in
+                                model.panelModel.overlayDragHandler?.overlayDragChanged(translation: translation, viewfinderSize: size)
+                            } : nil,
+                            onDragEnded: model.panelModel.isOverlayDraggable ? { translation, size in
+                                model.panelModel.overlayDragHandler?.overlayDragEnded(translation: translation, viewfinderSize: size)
+                            } : nil)
 
             if let countdownRemaining = model.countdownRemaining {
                 Text("\(countdownRemaining)")
@@ -206,6 +239,16 @@ struct CameraScreen: View {
                 PermissionGuidanceView()
             }
         }
+        // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
+        // collapses the panel, only while it is open. `OverlayTextView`
+        // itself claims its own hit-testing area only while draggable
+        // (position tab), so a tap that starts there reaches its drag
+        // gesture instead of this one — never both.
+        .onTapGesture {
+            if model.panelModel.isOpen {
+                model.panelModel.close()
+            }
+        }
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
@@ -223,11 +266,13 @@ struct CameraScreen: View {
         }
     }
 
-    // MARK: - Bottom bar (PRD 0.2 FR-7.3)
+    // MARK: - Bottom bar (PRD 0.2 FR-7.3, FR-8.3)
 
-    /// Left: latest-photo thumbnail (FR-15.2). Center: shutter. Right: "Aa"
-    /// overlay key. No text labels, no background — every button is just an
-    /// icon (FR-14.2).
+    /// Left/center/right switch with the panel (PRD 0.2 FR-8.3, acceptance
+    /// 22.5): closed is TASK-21's thumbnail／shutter／Aa; open is manage-
+    /// profiles／shrunk shutter／collapse. The shutter stays tappable either
+    /// way (FR-8.3: "快門照常可拍"). No text labels, no background — every
+    /// button is just an icon (FR-14.2).
     private var bottomBar: some View {
         ZStack {
             HStack {
@@ -236,18 +281,54 @@ struct CameraScreen: View {
                 Spacer()
             }
             HStack {
-                thumbnailButton
+                leftBottomBarButton
                 Spacer()
-                overlayKeyButton
+                rightBottomBarButton
             }
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 24)
+        .padding(.vertical, model.panelModel.isOpen ? 12 : 24)
     }
 
-    /// Left key: the newest DaysCam photo, or a placeholder icon (PRD 0.2
-    /// FR-15.2). Tapping it does nothing yet — TASK-29 wires up requesting
-    /// read access and opening the gallery.
+    @ViewBuilder
+    private var leftBottomBarButton: some View {
+        switch model.panelModel.leftBottomBarAction {
+        case .latestPhoto:
+            thumbnailButton
+        case .manageProfiles:
+            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔") {
+                model.presentProfileManagement()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rightBottomBarButton: some View {
+        switch model.panelModel.rightBottomBarAction {
+        case .openOverlayPanel:
+            iconButton(systemName: "textformat", accessibilityLabel: "疊字設定") {
+                model.panelModel.open()
+            }
+        case .collapse:
+            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板") {
+                model.panelModel.close()
+            }
+        }
+    }
+
+    private func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// Left key while closed: the newest DaysCam photo, or a placeholder
+    /// icon (PRD 0.2 FR-15.2). Tapping it does nothing yet — TASK-29 wires
+    /// up requesting read access and opening the gallery.
     private var thumbnailButton: some View {
         Button {
             // TASK-29: request read access, then open the gallery.
@@ -270,51 +351,32 @@ struct CameraScreen: View {
     }
 
     /// Center: the shutter — the one place PRD 0.2 FR-14.2 allows a filled
-    /// background (the `accent` circle) plus a ring, matching D-1.
+    /// background (the `accent` circle) plus a ring, matching D-1. Shrinks
+    /// to 64pt while the panel is open (PRD 0.2 FR-8.3) but stays exactly as
+    /// tappable (acceptance 22.4: capturing while the panel is open must
+    /// work normally and must not close it).
     private var shutterButton: some View {
-        Button(action: model.capturePhoto) {
+        let diameter: CGFloat = model.panelModel.isOpen ? 64 : 76
+        let ringWidth: CGFloat = model.panelModel.isOpen ? 3 : 4
+        return Button(action: model.capturePhoto) {
             ZStack {
                 Circle()
-                    .strokeBorder(CameraTheme.shutterRing, lineWidth: 4)
+                    .strokeBorder(CameraTheme.shutterRing, lineWidth: ringWidth)
                 Circle()
                     .fill(CameraTheme.accent)
-                    .padding(4)
+                    .padding(ringWidth)
             }
-            .frame(width: 76, height: 76)
+            .frame(width: diameter, height: diameter)
         }
         .disabled(model.isShutterDisabled)
         .opacity(model.isShutterDisabled ? 0.4 : 1)
         .accessibilityLabel("快門")
     }
 
-    /// Right key: opens the overlay entry point. Still 0.1's display-settings
-    /// sheet until TASK-22 lands the real panel — see the `TEMP` note on the
-    /// `.sheet` above.
-    private var overlayKeyButton: some View {
-        Button {
-            model.presentDisplaySettings()
-        } label: {
-            Image(systemName: "textformat")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundColor(CameraTheme.ink)
-                .frame(width: 44, height: 44)
-        }
-        .accessibilityLabel("疊字設定")
-    }
-
     // MARK: - Bindings
 
-    /// `model.isDisplaySettingsPresented` as a `Binding` for `.sheet`:
-    /// dismissing the sheet (swipe-down, tapping outside) must also clear the
-    /// model's state, not just the SwiftUI-owned presentation flag — same
-    /// pattern as `ProfileListView.editorBinding`.
-    private var displaySettingsBinding: Binding<Bool> {
-        Binding(get: { model.isDisplaySettingsPresented },
-                set: { isPresented in if !isPresented { model.dismissDisplaySettings() } })
-    }
-
     /// `model.showsCorruptionRecoveredAlert` as a `Binding` for `.alert`, same
-    /// dismiss-clears-model-state pattern as `displaySettingsBinding`.
+    /// dismiss-clears-model-state pattern as `ProfileListView.editorBinding`.
     private var corruptionAlertBinding: Binding<Bool> {
         Binding(get: { model.showsCorruptionRecoveredAlert },
                 set: { isPresented in if !isPresented { model.dismissCorruptionRecoveredAlert() } })
@@ -389,5 +451,22 @@ private struct GridLinesView: View {
     let model = CameraScreenModel(cameraService: CameraService(),
                                   profileStore: store,
                                   captureSettingsStore: settings)
+    return CameraScreen(model: model)
+}
+
+#Preview("疊字面板打開（22.6，對照 D-2）") {
+    let store = ProfileStore()
+    store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    model.panelModel.open()
+    return CameraScreen(model: model)
+}
+
+#Preview("疊字面板打開・天數規則分頁") {
+    let store = ProfileStore()
+    store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    model.panelModel.open()
+    model.panelModel.selectedTab = .rules
     return CameraScreen(model: model)
 }

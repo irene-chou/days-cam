@@ -1128,6 +1128,77 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.isCapturing == false }
     }
 
+    // MARK: - Overlay panel shell (PRD 0.2 FR-8, TASK-22 acceptance 22.4)
+
+    func testPanelModelChangesAreForwardedToTheScreenModel() throws {
+        // PR #60 review: CameraScreen only observes CameraScreenModel, so the
+        // nested panel model's changes must re-publish through it.
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        var sends = 0
+        let cancellable = model.objectWillChange.sink { _ in sends += 1 }
+        defer { cancellable.cancel() }
+
+        model.panelModel.open()
+        XCTAssertGreaterThan(sends, 0, "open() must re-render CameraScreen")
+        let afterOpen = sends
+        model.panelModel.selectedTab = .position
+        XCTAssertGreaterThan(sends, afterOpen, "switching tabs must re-render")
+        let afterTab = sends
+        model.panelModel.close()
+        XCTAssertGreaterThan(sends, afterTab, "close() must re-render")
+    }
+
+    func testCapturingWhilePanelIsOpenRunsNormallyAndKeepsItOpen() throws {
+        // 22.4: opening the panel must not disable the shutter or otherwise
+        // couple into the capture pipeline, and a capture must not close it.
+        let now = try fixedNow()
+        var captureCallCount = 0
+        let (model, _, _, _) = makeModel(now: now,
+                                         captureImage: { _, completion in
+                                             captureCallCount += 1
+                                             completion(.success(UIImage()))
+                                         })
+        let profile = try XCTUnwrap(model.selectedProfile)
+        model.panelModel.open()
+
+        model.beginCapture(profile: profile) // bypasses the hardware-gated
+                                              // public `capturePhoto()`, same
+                                              // reasoning as every other
+                                              // direct call in this file.
+
+        XCTAssertEqual(captureCallCount, 1)
+        XCTAssertTrue(model.panelModel.isOpen, "capturing must not close the panel")
+    }
+
+    // MARK: - 天數規則 tab wiring (PRD 0.2 FR-13, TASK-22 hooking up TASK-25's RulesTabModel)
+
+    func testRulesTabModelTracksTheSelectedProfile() throws {
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let first = try XCTUnwrap(model.rulesTabModel)
+        XCTAssertEqual(first.profile.id, model.selectedProfileID)
+
+        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
+        waitUntil { model.selectedProfileID == second.id }
+
+        let updated = try XCTUnwrap(model.rulesTabModel)
+        XCTAssertEqual(updated.profile.id, second.id)
+    }
+
+    func testRulesTabModelKeepsTheSameInstanceAcrossUnrelatedChanges() throws {
+        // Rebuilding on every unrelated re-render would discard an
+        // in-progress name edit (same class of bug `displaySettingsModel`'s
+        // own doc comment documents).
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let first = try XCTUnwrap(model.rulesTabModel)
+
+        model.refreshOverlay() // bumps `refreshTick`, unrelated to the profile
+
+        let second = try XCTUnwrap(model.rulesTabModel)
+        XCTAssertTrue(first === second)
+    }
+
     // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.5)
 
     private final class StubFlashCapabilityProvider: FlashCapabilityProviding {
