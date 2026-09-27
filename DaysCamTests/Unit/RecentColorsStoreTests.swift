@@ -48,7 +48,7 @@ final class RecentColorsStoreTests: XCTestCase {
 
     func testSwatchColorsAreNotAdded() throws {
         let store = RecentColorsStore(defaults: defaults)
-        store.add(try hex("#FF9500"))
+        store.add(try hex("#FD8D32"))
         XCTAssertEqual(store.recentCustomColors, [], "17.15")
         for swatch in OverlayStyle.swatches {
             store.add(swatch)
@@ -63,7 +63,7 @@ final class RecentColorsStoreTests: XCTestCase {
         store.add(OverlayColor(red: 0.2001, green: 0.4001, blue: 0.6001))
         XCTAssertEqual(store.recentCustomColors.count, 1)
         // Near-swatch picker output is still a swatch.
-        store.add(OverlayColor(red: 1.0, green: 149.0 / 255.0 + 0.0001, blue: 0.0))
+        store.add(OverlayColor(red: 253.0 / 255.0, green: 141.0 / 255.0 + 0.0001, blue: 50.0 / 255.0))
         XCTAssertEqual(store.recentCustomColors.count, 1)
     }
 

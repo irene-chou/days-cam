@@ -77,20 +77,20 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 23.4 文字顏色第一排：7 色
+    // MARK: - 23.4 文字顏色第一排：9 色
 
-    func testTextColorSwatchesAreTheSevenPresetsInOrder() {
+    func testTextColorSwatchesAreTheNinePresetsInOrder() {
         let model = makeModel()
         XCTAssertEqual(model.textColorSwatches, OverlayStyle.swatches, "23.4")
-        XCTAssertEqual(model.textColorSwatches.count, 7, "23.4")
+        XCTAssertEqual(model.textColorSwatches.count, 9, "23.4")
     }
 
-    // MARK: - 23.5 外框顏色第一排：自動 + 前 6 色，初始選中自動
+    // MARK: - 23.5 外框顏色第一排：自動 + 9 色，初始選中自動
 
-    func testOutlineColorSwatchesAreFirstSixPresetsAndAutoIsInitiallySelected() {
+    func testOutlineColorSwatchesAreAllPresetsAndAutoIsInitiallySelected() {
         let model = makeModel()
-        XCTAssertEqual(model.outlineColorSwatches, Array(OverlayStyle.swatches.prefix(6)), "23.5")
-        XCTAssertEqual(model.outlineColorSwatches.count, 6, "23.5")
+        XCTAssertEqual(model.outlineColorSwatches, OverlayStyle.swatches, "23.5")
+        XCTAssertEqual(model.outlineColorSwatches.count, 9, "23.5")
         XCTAssertNil(model.profile.style.outlineColor, "23.5: 初始選中「自動」")
     }
 

@@ -51,9 +51,10 @@ final class OverlayStyleTests: XCTestCase {
         XCTAssertEqual(style.sizeScale, 100, "17.2")
     }
 
-    func testSwatchesAreTheSevenPresetColorsInOrder() {
+    func testSwatchesAreTheNinePresetColorsInOrder() {
         XCTAssertEqual(OverlayStyle.swatches.map(\.hexString),
-                       ["#FFFFFF", "#1C1C1E", "#FF9500", "#FFC27A", "#FF6B9D", "#FFD60A", "#0A84FF"])
+                       ["#FFFFFF", "#000000", "#3897F0", "#70C050", "#FDCB5C",
+                        "#FD8D32", "#ED4956", "#D10869", "#A307BA"])
     }
 
     func testSizeScaleValidity() {

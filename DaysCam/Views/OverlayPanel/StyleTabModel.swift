@@ -105,16 +105,16 @@ extension StyleTabModel {
 // MARK: - 顏色 (FR-10.4, FR-10.6, FR-10.7)
 
 extension StyleTabModel {
-    /// The first row of the text-color palette: the seven swatches (FR-10.4).
+    /// The first row of the text-color palette: the nine swatches (FR-10.4).
     /// The view appends its own rainbow `ColorPicker` entry after these, for
-    /// eight items total.
+    /// ten items total.
     var textColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
-    /// The first row of the outline-color palette: the first six swatches
+    /// The first row of the outline-color palette: all nine swatches
     /// (FR-10.6). The view prepends its own "automatic" button (represented
     /// here by `outlineColor == nil`) and appends the rainbow `ColorPicker`,
-    /// for eight items total.
-    var outlineColorSwatches: [OverlayColor] { Array(OverlayStyle.swatches.prefix(6)) }
+    /// for eleven items total.
+    var outlineColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
     /// Whether the outline-color section should be disabled: there is no
     /// outline to color while `outline` is `.none` (FR-10.6).

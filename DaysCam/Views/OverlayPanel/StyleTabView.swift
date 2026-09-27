@@ -15,11 +15,14 @@ import UIKit
 struct StyleTabView: View {
     @ObservedObject var model: StyleTabModel
 
-    /// Swatch diameter for the color rows. Eight of these plus spacing must
-    /// fit inside a 375pt-wide screen without horizontal scrolling
-    /// (FR-10.4, acceptance 23.12); at 28pt with 8pt spacing eight items take
-    /// 8*28 + 7*8 = 280pt, well inside a 343pt content width (375 - 16*2).
-    private static let swatchDiameter: CGFloat = 28
+    /// Swatch diameter for the color rows. The longest row (outline color:
+    /// auto + nine swatches + rainbow = eleven items) must fit inside a
+    /// 375pt-wide screen without horizontal scrolling (FR-10.4, acceptance
+    /// 23.12); at 26pt with 5pt spacing that is 11*26 + 10*5 = 336pt, inside
+    /// a 343pt content width (375 - 16*2).
+    private static let swatchDiameter: CGFloat = 26
+    /// Gap between items in a color row; see `swatchDiameter`.
+    private static let swatchSpacing: CGFloat = 5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -219,7 +222,7 @@ struct StyleTabView: View {
                               onSelectAuto: @escaping () -> Void = {},
                               onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: Self.swatchSpacing) {
                 if showAutoButton {
                     Button {
                         onSelectAuto()
@@ -237,7 +240,7 @@ struct StyleTabView: View {
                 }
                 customColorPicker(current: current, onPickCustom: onPickCustom)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: Self.swatchSpacing) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 14))
                     .foregroundColor(.secondary)
