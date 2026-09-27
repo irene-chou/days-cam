@@ -256,7 +256,14 @@ struct StyleTabView: View {
                 ForEach(swatches, id: \.hexString) { swatch in
                     colorDot(swatch, isSelected: current == swatch) { onSelectSwatch(swatch) }
                 }
-                customColorPicker(current: current, onPickCustom: onPickCustom)
+                // The rainbow swatch is "selected" when `current` is a custom
+                // color that does not match any preset or recent swatch —
+                // those already show their own ring, so this only fires for
+                // an actually custom color (R.3).
+                let isCustomSelected = current != nil
+                    && !swatches.contains(current!)
+                    && !model.recentColors.contains(current!)
+                customColorPicker(current: current, isSelected: isCustomSelected, onPickCustom: onPickCustom)
             }
             HStack(spacing: Self.swatchSpacing) {
                 Image(systemName: "clock.arrow.circlepath")
@@ -290,17 +297,43 @@ struct StyleTabView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    /// Rainbow hues for the custom-color swatch, in standard hue-wheel order
+    /// (issue #83: assumed absent a design-specified order).
+    private static let rainbowHues: [Color] = stride(from: 0.0, through: 1.0, by: 1.0 / 6.0)
+        .map { Color(hue: $0, saturation: 1, brightness: 1) }
+
+    /// Custom-color entry point: a solid rainbow circle, same diameter as the
+    /// other swatches (issue #83) — not the system `ColorPicker`'s default
+    /// ring-with-current-color-well look. The real `ColorPicker` is still
+    /// there, made effectively invisible (`.opacity` low enough to read as
+    /// transparent but non-zero, since SwiftUI stops forwarding taps to a
+    /// fully transparent control) and stacked on top so tapping still opens
+    /// the system color picker and preserves FR-10.7's "add to recent"
+    /// behavior unchanged. The `ColorPicker`'s own accessibility label
+    /// (its title, "自訂顏色", even with `.labelsHidden()`) is left as-is
+    /// rather than combined, so VoiceOver's activation still routes to the
+    /// native control exactly as before this change (R.4).
     private func customColorPicker(current: OverlayColor?,
+                                   isSelected: Bool,
                                    onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        ColorPicker("自訂顏色", selection: Binding(
-            get: { swiftUIColor(current ?? .white) },
-            set: { newValue in
-                if let picked = OverlayColor(newValue) {
-                    onPickCustom(picked)
+        ZStack {
+            Circle()
+                .fill(AngularGradient(colors: Self.rainbowHues, center: .center))
+                .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                .overlay(swatchSelectionRing(isSelected))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            ColorPicker("自訂顏色", selection: Binding(
+                get: { swiftUIColor(current ?? .white) },
+                set: { newValue in
+                    if let picked = OverlayColor(newValue) {
+                        onPickCustom(picked)
+                    }
                 }
-            }
-        ), supportsOpacity: false)
-        .labelsHidden()
+            ), supportsOpacity: false)
+            .labelsHidden()
+            .opacity(0.02)
+        }
         .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
     }
 
