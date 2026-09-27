@@ -70,11 +70,27 @@ struct CameraScreenLayoutMetrics {
         screenSize.width * 4 / 3
     }
 
-    /// Where the footer region starts: the 3:4 viewfinder's bottom edge.
-    /// Fixed regardless of aspect ratio or whether the overlay panel is
-    /// open — header and footer never move (issue #101).
+    /// Where the footer region starts when the viewfinder box is full
+    /// screen width — the 3:4 box's own bottom edge there. Fixed regardless
+    /// of aspect ratio; header and footer never move switching ratios
+    /// (issue #101 rule). Equivalent to `footerRegionTop(boxWidth:
+    /// screenSize.width)`; while the overlay panel is open, 3:4/1:1's box
+    /// shrinks (PRD 0.2 FR-8.2) and callers should use that overload with
+    /// the shrunk width instead — this property alone is only correct for
+    /// a full-width box (panel closed, or any 9:16 box, which is never
+    /// shrunk).
     var footerRegionTop: CGFloat {
-        headerBottom + threeByFourHeight
+        footerRegionTop(boxWidth: screenSize.width)
+    }
+
+    /// Where the footer region starts for a viewfinder box that is
+    /// `boxWidth` wide (and therefore `boxWidth * 4/3` tall, since the box
+    /// is always 3:4-shaped, PRD 0.2 FR-7.8) — the box's own bottom edge.
+    /// Passing the panel-open-shrunk width here keeps the footer/panel
+    /// region starting flush against a shrunk box (code review finding,
+    /// #110) instead of leaving a gap at the full-width position.
+    func footerRegionTop(boxWidth: CGFloat) -> CGFloat {
+        headerBottom + boxWidth * 4 / 3
     }
 
     /// The viewfinder box's frame for `ratio`, given the on-screen width it

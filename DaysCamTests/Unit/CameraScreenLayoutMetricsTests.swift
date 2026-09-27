@@ -26,15 +26,20 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(frame.width, 393, accuracy: accuracy)
     }
 
-    func testIPhone16OneByOneFrameCentersInsideThreeByFour() {
+    /// Rule ② (1:1 centers inside 3:4) is achieved by construction, not by
+    /// `viewfinderFrame` reporting a different box for `.oneByOne`: it
+    /// returns the *exact same* 3:4-shaped rect either way, and
+    /// `CameraScreen` draws the smaller square content inside that box via
+    /// a plain `ZStack` (which centers a smaller child by default) —
+    /// `viewfinderContentSize(for:boxSize:)`, not this type, decides the
+    /// square's own side length. So the meaningful assertion here is frame
+    /// equality, not a re-derivation of `ZStack`'s own centering (code
+    /// review finding on an earlier, always-true version of this test).
+    func testIPhone16OneByOneFrameEqualsThreeByFourFrame() {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
-        let frame = metrics.viewfinderFrame(for: .oneByOne, boxWidth: 393)
-        // Same box as 3:4 — the smaller square centers inside it via ZStack,
-        // not via a different reported frame (rule ②).
-        XCTAssertEqual(frame.minY, 119.333, accuracy: accuracy)
-        XCTAssertEqual(frame.height, 524, accuracy: accuracy)
-        let content = CameraScreenLayoutMetricsTests.squareSize(in: frame)
-        XCTAssertEqual(content, 393, accuracy: accuracy)
+        let threeByFour = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 393)
+        let oneByOne = metrics.viewfinderFrame(for: .oneByOne, boxWidth: 393)
+        assertRectsEqual(oneByOne, threeByFour)
     }
 
     func testIPhone16NineBySixteenFrame() {
@@ -49,6 +54,23 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         XCTAssertEqual(metrics.footerRegionTop, 643.333, accuracy: accuracy)
         XCTAssertEqual(metrics.footerBase, 818.0, accuracy: accuracy)
+    }
+
+    /// Code review finding on #101/#110: while the overlay panel is open,
+    /// 3:4/1:1's box shrinks to 80% width (PRD 0.2 FR-8.2) — and height
+    /// with it, since the box stays 3:4-shaped — so the footer/panel region
+    /// has to start further up too, or it leaves a gap below the shrunk
+    /// box. `footerRegionTop(boxWidth:)` is what `CameraScreen.footerColumn`
+    /// calls with that shrunk width to track it.
+    func testIPhone16FooterRegionTopTracksAShrunkBoxWidth() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        let shrunkWidth: CGFloat = 393 * 0.8
+        let regionTop = metrics.footerRegionTop(boxWidth: shrunkWidth)
+        // Bottom edge of an 0.8×-width, still-3:4-shaped box starting at
+        // headerBottom — strictly above (smaller y than) the full-width
+        // regionTop, since the shrunk box is shorter.
+        XCTAssertEqual(regionTop, metrics.headerBottom + shrunkWidth * 4 / 3, accuracy: accuracy)
+        XCTAssertLessThan(regionTop, metrics.footerRegionTop)
     }
 
     // MARK: - iPhone 16 Pro Max (440×956, top 59, bottom 34)
@@ -114,14 +136,6 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {
         CameraScreenLayoutMetrics(screenSize: CGSize(width: width, height: height),
                                   safeAreaInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
-    }
-
-    /// `CameraScreen.viewfinderContentSize(for:boxSize:)` isn't exposed to
-    /// tests (it's a tiny, private, one-line switch on the box's own size),
-    /// so this mirrors just enough of it to assert the 1:1 case still fits
-    /// its square content inside the 3:4 box `viewfinderFrame` reports.
-    private static func squareSize(in box: CGRect) -> CGFloat {
-        box.width
     }
 }
 
