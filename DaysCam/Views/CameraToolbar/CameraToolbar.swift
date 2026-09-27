@@ -125,25 +125,40 @@ struct CameraToolbar: View {
 
     /// One ratio's SF Symbol outline (`rectangle.ratio.3.to.4`, `square`, or
     /// `rectangle.ratio.9.to.16` — human choice 2026-09-27, not self-drawn)
-    /// with the ratio text centered inside it. The outline is capped to
-    /// 20pt on its longest edge to read at roughly the same size as the
-    /// other 18pt toolbar icons, and the text shrinks (`minimumScaleFactor`)
-    /// so it still fits inside the narrow 9:16 frame.
+    /// with the ratio text centered inside it.
+    ///
+    /// The outline's longest edge is capped to 20pt (to read at roughly the
+    /// same size as the other 18pt toolbar icons) and its shorter edge is
+    /// computed from `ratio.shortToLongRatio`, rather than just fitting the
+    /// image into a 20x20 square: the `Text` overlay below is proposed
+    /// *this* content frame's size, so it needs to match the outline's true
+    /// drawn width for the text to size/truncate against, not the outer
+    /// square. Overlaying against the square let the text (esp. 9:16's,
+    /// whose drawn rectangle is only ~11pt wide inside that square) size
+    /// itself as if it had ~20pt to fill and overflow past the actual
+    /// outline (PR #98 review, qa on-device screenshot) — `lineLimit(1)`
+    /// only truncates when the *proposed* width is already too small, and a
+    /// too-generous proposed width means it never truncates at all.
     ///
     /// `static` and parameterized over `ratio` (rather than reading
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
     /// preview below can render all three side by side without duplicating
     /// these layout numbers.
     fileprivate static func ratioIcon(for ratio: CaptureAspectRatio) -> some View {
-        Image(systemName: ratio.sfSymbolName)
+        let contentHeight: CGFloat = 20
+        let contentWidth = contentHeight * ratio.shortToLongRatio
+        return Image(systemName: ratio.sfSymbolName)
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .frame(width: 20, height: 20)
+            .frame(width: contentWidth, height: contentHeight)
             .overlay(
                 Text(ratio.displayLabel)
                     .font(.system(size: 7, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5)
+                    .minimumScaleFactor(0.25)
                     .lineLimit(1)
+                    // A little inset so the text never touches the outline
+                    // itself, not just avoids overflowing past it.
+                    .padding(.horizontal, 1.5)
             )
             .foregroundColor(CameraTheme.ink)
             .frame(width: 38, height: 38)
