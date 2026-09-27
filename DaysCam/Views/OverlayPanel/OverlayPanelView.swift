@@ -23,15 +23,17 @@ struct OverlayPanelView: View {
             // The tab body scrolls within whatever space is left, rather
             // than growing the panel or getting clipped, on a tab whose
             // content is taller than the panel (#75, T.8) — e.g. the format
-            // tab on a narrow phone. Padding matches D-2's `.tabbody{padding:
-            // 12px 14px}` (#105) — the gap between it and `segmentedControl`
-            // above comes from this same top inset (no separate `VStack`
-            // spacing on top of it).
+            // tab on a narrow phone.
+            //
+            // No padding here (#105/#111 coordination, Lead 2026-09-27):
+            // D-2's `.tabbody{padding:12px 14px}` looked like this
+            // container's job, but each tab already applies its own
+            // D-3/D-4-specific inset (e.g. the style tab's `.tabbody{
+            // padding:4px 10px 6px}`, PR #111) — adding a second, generic
+            // one here would double it up on every tab.
             ScrollView {
                 tabContent
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
         }
         // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
         // fills whatever vertical space frees up below the viewfinder — a
