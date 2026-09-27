@@ -30,7 +30,11 @@ struct FormatTabView: View {
     // MARK: - 第二層：顯示內容｜天數格式 (FR-8.5, 24.1)
 
     private var subTabRow: some View {
-        HStack(spacing: 20) {
+        // 14pt gap, left-aligned, unselected uses the tertiary/t3 shade
+        // (design A, `D3-tab-options.html:71-73`) — was 20pt spacing with
+        // the secondary/t2 shade, both mismatched with the style tab's
+        // equivalent second-layer row (#76).
+        HStack(spacing: 14) {
             ForEach(FormatTabModel.SubTab.allCases, id: \.self) { subTab in
                 let isSelected = model.selectedSubTab == subTab
                 Button {
@@ -38,7 +42,7 @@ struct FormatTabView: View {
                 } label: {
                     Text(subTab.title)
                         .font(CameraTheme.toolFont(.subheadline))
-                        .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
+                        .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
                 }
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
