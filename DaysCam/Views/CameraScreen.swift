@@ -306,7 +306,11 @@ struct CameraScreen: View {
     private var rightBottomBarButton: some View {
         switch model.panelModel.rightBottomBarAction {
         case .openOverlayPanel:
-            iconButton(systemName: "textformat", accessibilityLabel: "疊字設定") {
+            // `pencil.tip.crop.circle`, not `textformat`: the style tab's
+            // own 字型 sub-tab already uses `textformat` (PRD FR-10.1), and
+            // having both on screen at once while the panel is open reads
+            // as the same button twice (human decision, 2026-09-27, #84).
+            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定") {
                 model.panelModel.open()
             }
         case .collapse:
