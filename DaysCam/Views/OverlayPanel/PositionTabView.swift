@@ -64,7 +64,14 @@ struct PositionTabView: View {
         // width (#108 P.1) rather than pinning it to the leading edge with a
         // trailing `Spacer` the way this view did before.
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
+        // This tab's own `.tabbody` outer inset — the generic D-4 value
+        // (`.tabbody{padding:12px 14px}`, #106 R2, the human's 2026-09-27
+        // call: each tab owns its own `.tabbody` padding rather than a
+        // generic one shared by all four — `ui-shell` is dropping the panel
+        // container's own generic inset in #105 to avoid stacking both).
+        // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }

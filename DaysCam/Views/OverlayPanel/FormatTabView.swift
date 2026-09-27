@@ -22,7 +22,14 @@ struct FormatTabView: View {
             subTabRow
             content
         }
-        .padding(.horizontal, 16)
+        // This tab's own `.tabbody` outer inset — the generic D-4 value
+        // (`.tabbody{padding:12px 14px}`, #106 R2, the human's 2026-09-27
+        // call: each tab owns its own `.tabbody` padding rather than a
+        // generic one shared by all four — `ui-shell` is dropping the panel
+        // container's own generic inset in #105 to avoid stacking both).
+        // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .alert("無法儲存", isPresented: Binding(get: { model.displaySettings.lastError != nil },
                                              set: { if !$0 { model.displaySettings.lastError = nil } })) {
             Button("好") { model.displaySettings.lastError = nil }
@@ -52,7 +59,7 @@ struct FormatTabView: View {
             Spacer(minLength: 0)
         }
         // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
-        // into the body's own `.padding(.horizontal, 16)` already (#106).
+        // into the body's own `.tabbody` padding already (#106).
         .padding(.top, 6)
         .padding(.bottom, 4)
     }
@@ -74,10 +81,15 @@ struct FormatTabView: View {
         // this view's own judgment call, not a design value (#106, "待人類
         // 決定" if 0 reads too tight in a screenshot).
         VStack(alignment: .leading, spacing: 6) {
-            // The three toggles spread evenly across the full row
-            // (`.swrow{justify-content:space-around}`, #106 — was a fixed
-            // 28pt gap): (N+1) equal flexible spacers around N fixed-width
-            // groups approximates `space-around`.
+            // The three toggles spread evenly across the full row, CSS
+            // `space-around` exactly (`.swrow{justify-content:space-around}`,
+            // #106 R3 — was a fixed 28pt gap): two consecutive plain
+            // `Spacer`s between items occupy exactly double the width of the
+            // lone `Spacer` at each edge (`HStack` gives every flexible
+            // child an equal share of the leftover space, so N instances
+            // together always claim N times what one does) — precisely
+            // `space-around`'s "full gap between items, half a gap at each
+            // edge" rhythm, not an approximation.
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 displayToggle(label: "天數",
@@ -86,11 +98,13 @@ struct FormatTabView: View {
                     model.displaySettings.setShowDayCount($0)
                 }
                 Spacer(minLength: 0)
+                Spacer(minLength: 0)
                 displayToggle(label: "日期",
                              isOn: model.displaySettings.profile.showDate,
                              isDisabled: model.displaySettings.isShowDateToggleDisabled) {
                     model.displaySettings.setShowDate($0)
                 }
+                Spacer(minLength: 0)
                 Spacer(minLength: 0)
                 displayToggle(label: "名稱",
                              isOn: model.displaySettings.profile.showName,
@@ -133,14 +147,21 @@ struct FormatTabView: View {
         // 12 — no design token names this gap directly, so 4 is this view's
         // own reading of those two paddings, not a restated design value).
         VStack(alignment: .leading, spacing: 4) {
-            // Evenly spread, not left-aligned (`.cbrow{justify-content:
-            // space-around}`, #106 — was a fixed 14pt gap).
+            // Evenly spread, CSS `space-around` exactly
+            // (`.cbrow{justify-content:space-around}`, #106 R3 — was a fixed
+            // 14pt gap): see `displayContentSection` above for why two
+            // consecutive `Spacer`s between items, one at each edge, is
+            // `space-around` exactly rather than an approximation.
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                ForEach(DisplayUnit.allCases, id: \.self) { unit in
+                ForEach(Array(DisplayUnit.allCases.enumerated()), id: \.offset) { index, unit in
+                    if index > 0 {
+                        Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
                     unitCheckbox(unit)
-                    Spacer(minLength: 0)
                 }
+                Spacer(minLength: 0)
             }
             HStack {
                 Spacer(minLength: 0)

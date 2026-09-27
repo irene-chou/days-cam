@@ -40,7 +40,16 @@ struct StyleTabView: View {
             subTabRow
             content
         }
-        .padding(.horizontal, 16)
+        // This tab's own `.tabbody` outer inset (`D3-style-tab.html`'s
+        // style-tab-specific override, `.tabbody{padding:4px 10px 6px}` —
+        // #106 R2, the human's 2026-09-27 call: each tab owns its own
+        // `.tabbody` padding rather than a generic one shared by all four
+        // — `ui-shell` is dropping the panel container's own generic inset
+        // in #105 to avoid stacking both). Was a flat `.padding(.horizontal,
+        // 16)` with no vertical inset at all.
+        .padding(.top, 4)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }
@@ -52,15 +61,24 @@ struct StyleTabView: View {
     // MARK: - 第二層：五個純圖示 (FR-10.1)
 
     private var subTabRow: some View {
-        // Evenly spread across the full row width with no fixed gap
+        // Evenly spread across the full row width, `space-around` exactly
         // (`D3-style-tab.html`'s final `.subA{justify-content:space-around;
-        // gap:0}` override for the icon-only "第 11 版" sub-tabs, #106):
-        // (N+1) equal flexible spacers around N fixed-size icons approximates
-        // `space-around` — SwiftUI has no literal equivalent. Each icon's own
-        // tap target is 44×30 (`.subA .stab{width:44px;height:30px}`).
+        // gap:0}` override for the icon-only "第 11 版" sub-tabs, #106 R3):
+        // CSS `space-around` gives each item half a gap-worth of space on
+        // its own edge and a full gap-worth between adjacent items — two
+        // consecutive plain `Spacer`s occupy exactly double the width of a
+        // lone one (`HStack` gives every flexible child an equal share of
+        // the leftover space, so N spacer instances together always claim N
+        // times what one does), which is exactly that 2:1 ratio; a single
+        // `Spacer` at each end supplies the half-width edge gap. Each icon's
+        // own tap target is 44×30 (`.subA .stab{width:44px;height:30px}`).
         HStack(spacing: 0) {
             Spacer(minLength: 0)
-            ForEach(StyleTabModel.SubTab.allCases, id: \.self) { subTab in
+            ForEach(Array(StyleTabModel.SubTab.allCases.enumerated()), id: \.offset) { index, subTab in
+                if index > 0 {
+                    Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
                 Button {
                     model.selectedSubTab = subTab
                 } label: {
@@ -71,11 +89,11 @@ struct StyleTabView: View {
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
-                Spacer(minLength: 0)
             }
+            Spacer(minLength: 0)
         }
         // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
-        // into the body's own `.padding(.horizontal, 16)` already.
+        // into the body's own `.tabbody` padding already.
         .padding(.top, 6)
         .padding(.bottom, 4)
     }

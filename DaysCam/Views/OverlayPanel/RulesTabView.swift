@@ -32,7 +32,14 @@ struct RulesTabView: View {
                     .padding(.top, 10)
             }
         }
-        .padding(.horizontal, 16)
+        // This tab's own `.tabbody` outer inset — the generic D-4 value
+        // (`.tabbody{padding:12px 14px}`, #106 R2, the human's 2026-09-27
+        // call: each tab owns its own `.tabbody` padding rather than a
+        // generic one shared by all four — `ui-shell` is dropping the panel
+        // container's own generic inset in #105 to avoid stacking both).
+        // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .onChange(of: isNameFieldFocused) { _, isFocused in
             if !isFocused {
                 model.endEditingName()
