@@ -84,6 +84,36 @@ extension PositionTabModel {
         case .bottomTrailing: return "右下"
         }
     }
+
+    /// Upper bound for the nine-point grid box's side: 44pt per cell
+    /// (`132 / 3`), the iOS minimum recommended tap target (#108 P.3).
+    static let gridBoxMaxSide: CGFloat = 132
+
+    /// Vertical clearance the box's side is derived to leave above and below
+    /// itself within the panel's tab-content scroll viewport, matching
+    /// `.tabbody`'s own top/bottom padding (`D4-format-position-rules.html`,
+    /// `.tabbody{padding:12px 14px}`) so the box never claims more height
+    /// than that padding leaves it (#108).
+    static let gridBoxVerticalInset: CGFloat = 12
+
+    /// The square nine-point grid box's side, derived from `availableHeight`
+    /// — the panel's tab-content scroll viewport height — instead of a fixed
+    /// constant (FR-12.4, #108).
+    ///
+    /// Capped at `gridBoxMaxSide`. Deliberately has no hard floor: per the
+    /// human's 2026-09-27 call (#108's "假設 1"), a genuinely short viewport
+    /// (e.g. iPhone SE) shrinks the box further rather than clipping it, even
+    /// below the 96pt the ticket otherwise names as a target minimum.
+    ///
+    /// `availableHeight` being non-finite (`.infinity`, `PositionTabView`'s
+    /// "not measured yet" default before `ui-shell` wires up real
+    /// measurement — see that view's doc comment) resolves to the max, so
+    /// every caller renders sensibly before that lands.
+    static func gridBoxSide(forAvailableHeight availableHeight: CGFloat) -> CGFloat {
+        guard availableHeight.isFinite else { return gridBoxMaxSide }
+        let side = availableHeight - gridBoxVerticalInset * 2
+        return max(0, min(side, gridBoxMaxSide))
+    }
 }
 
 // MARK: - 觀景窗拖曳換算 (FR-12.1–FR-12.3, FR-12.6)

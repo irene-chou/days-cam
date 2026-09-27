@@ -101,6 +101,36 @@ final class PositionTabModelTests: XCTestCase {
         XCTAssertEqual(names, ["左上", "中上", "右上", "左中", "正中", "右中", "左下", "中下", "右下"])
     }
 
+    // MARK: - #108 九宮格小框邊長：依可用高度、上限 132、無下限
+
+    func testGridBoxSideCapsAtMaxWhenAvailableHeightIsAmple() {
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 300), 132, "P.3: 高度充裕時封頂 132")
+    }
+
+    func testGridBoxSideBoundaryExactlyReachesMax() {
+        // 156 = 132(box) + 12*2(上下留白) — 剛好落在上限邊界。
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 156), 132)
+    }
+
+    func testGridBoxSideShrinksLinearlyWithAvailableHeight() {
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 140), 116, "140 - 12*2 = 116")
+    }
+
+    func testGridBoxSideHasNoFloorBelow96() {
+        // #108「假設 1」：可用高度不足 96 時照樣收縮，不設下限，避免被裁切。
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 100), 76, "100 - 24 = 76 < 96，仍照收縮")
+    }
+
+    func testGridBoxSideNeverGoesNegative() {
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 10), 0)
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: 0), 0)
+    }
+
+    func testGridBoxSideFallsBackToMaxWhenNotYetMeasured() {
+        // `.infinity`：`PositionTabView`「尚未量到真高度」的預設值。
+        XCTAssertEqual(PositionTabModel.gridBoxSide(forAvailableHeight: .infinity), 132)
+    }
+
     // MARK: - 失敗回報為 lastError
 
     func testUpdateProfileFailureIsSurfacedAsLastError() {
