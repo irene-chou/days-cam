@@ -20,7 +20,7 @@
 - UI 元件、業務邏輯、資料層分開資料夾放,避免所有邏輯塞在單一 View 檔案裡
 
 ## Git / 任務流程【硬規則】
-- 分支命名:`feature/<簡述>`、`fix/<簡述>`、`chore/<簡述>`
+- 分支命名:`feature/<簡述>`、`fix/<簡述>`、`chore/<簡述>`、`docs/<簡述>`
 - 每個 PR 只做一件事,PR 描述需包含:改了什麼、為什麼改、怎麼驗證
 - commit message 第一行簡短說明,不需要嚴格遵守 Conventional Commits 格式,但要讓人一眼看懂改了什麼
 - 禁止直接 push 到 `main`,一律透過 PR
