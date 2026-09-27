@@ -15,17 +15,28 @@ import UIKit
 struct StyleTabView: View {
     @ObservedObject var model: StyleTabModel
 
-    /// Swatch diameter for the color rows. The longest row (outline color:
-    /// auto + nine swatches + rainbow = eleven items) must fit inside a
-    /// 375pt-wide screen without horizontal scrolling (FR-10.4, acceptance
-    /// 23.12); at 26pt with 5pt spacing that is 11*26 + 10*5 = 336pt, inside
-    /// a 343pt content width (375 - 16*2).
-    private static let swatchDiameter: CGFloat = 26
-    /// Gap between items in a color row; see `swatchDiameter`.
-    private static let swatchSpacing: CGFloat = 5
+    /// Swatch diameter for the color rows (`.prow .dot{width:28px}`, #106 —
+    /// was 26). The longest row (outline color: auto + nine swatches +
+    /// rainbow = eleven items) must still fit inside a 375pt-wide screen
+    /// without horizontal scrolling (FR-10.4, acceptance 23.12): at 28pt
+    /// with zero gap that is already only 11*28 = 308pt, inside a 343pt
+    /// content width (375 - 16*2) — the row's `space-between` layout
+    /// (`colorPalette` below) only ever turns that slack into gaps, never
+    /// overflow, so 23.12 holds regardless of how many swatches a given row
+    /// has.
+    private static let swatchDiameter: CGFloat = 28
+    /// Gap between items in the "recent" row, the one row that stays
+    /// left-aligned with a fixed gap rather than `space-between`
+    /// (`.prow:last-child{justify-content:flex-start;gap:10px}`, #106 — was
+    /// 5, shared with the first row before this).
+    private static let recentRowSpacing: CGFloat = 10
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        // No gap of its own between `subTabRow` and `content` (#106): the
+        // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
+        // puts the whole visual gap inside `subTabRow`'s own bottom padding
+        // instead — see that view's `.padding(.top:.bottom:)`.
+        VStack(alignment: .leading, spacing: 0) {
             subTabRow
             content
         }
@@ -41,10 +52,14 @@ struct StyleTabView: View {
     // MARK: - 第二層：五個純圖示 (FR-10.1)
 
     private var subTabRow: some View {
-        // 14pt gap, left-aligned (design A, `D3-tab-options.html:71`) —
-        // was 30pt, wide enough on an iPhone 16 Pro to read as evenly
-        // spread across the row instead of a tight left-aligned group.
-        HStack(spacing: 14) {
+        // Evenly spread across the full row width with no fixed gap
+        // (`D3-style-tab.html`'s final `.subA{justify-content:space-around;
+        // gap:0}` override for the icon-only "第 11 版" sub-tabs, #106):
+        // (N+1) equal flexible spacers around N fixed-size icons approximates
+        // `space-around` — SwiftUI has no literal equivalent. Each icon's own
+        // tap target is 44×30 (`.subA .stab{width:44px;height:30px}`).
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
             ForEach(StyleTabModel.SubTab.allCases, id: \.self) { subTab in
                 Button {
                     model.selectedSubTab = subTab
@@ -52,12 +67,17 @@ struct StyleTabView: View {
                     subTabIcon(subTab)
                         .frame(width: 24, height: 24)
                         .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
+                        .frame(width: 44, height: 30)
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
+        // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
+        // into the body's own `.padding(.horizontal, 16)` already.
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -106,7 +126,10 @@ struct StyleTabView: View {
 
     private var fontRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 22) {
+            // 6pt gap between chips, each with its own 10/8pt tap-target
+            // padding (`.hs{gap:6px}`, `.fch{padding:8px 10px}`, #106 — was
+            // a bare 22pt gap with no per-chip padding at all).
+            HStack(spacing: 6) {
                 ForEach(model.fontOptions, id: \.self) { fontID in
                     let isSelected = model.profile.style.fontID == fontID
                     Button {
@@ -119,6 +142,8 @@ struct StyleTabView: View {
                             // the secondary/t2 shade, not the tertiary one
                             // the second-layer nav row uses.
                             .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
                     }
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
@@ -143,7 +168,8 @@ struct StyleTabView: View {
     private var outlineContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                // `.hs{gap:6px}` (#106) — was 14.
+                HStack(spacing: 6) {
                     ForEach(model.outlineOptions, id: \.self) { outline in
                         let previewStyle: OverlayStyle = {
                             var style = model.profile.style
@@ -178,7 +204,8 @@ struct StyleTabView: View {
 
     private var shadowContent: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            // `.hs{gap:6px}` (#106) — was 14.
+            HStack(spacing: 6) {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
                     // Isolates the shadow, clearing outline, mirroring
                     // `outlineContent`'s swatches (which isolate the outline
@@ -207,7 +234,8 @@ struct StyleTabView: View {
     // MARK: - 字級 (FR-10.9)
 
     private var sizeSlider: some View {
-        HStack(spacing: 12) {
+        // `.zrow{gap:8px}` (#106) — was 12.
+        HStack(spacing: 8) {
             Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
             Slider(
                 value: Binding(
@@ -239,8 +267,14 @@ struct StyleTabView: View {
                               onSelectSwatch: @escaping (OverlayColor) -> Void,
                               onSelectAuto: @escaping () -> Void = {},
                               onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: Self.swatchSpacing) {
+        // `.pal{gap:6px}` between the two rows (#106) — was 10.
+        VStack(alignment: .leading, spacing: 6) {
+            // First row fills the full content width edge-to-edge, gaps
+            // sized automatically (`.prow{justify-content:space-between}`,
+            // #106 — was a fixed 5pt gap): (N-1) equal flexible spacers
+            // between N fixed-size swatches is `space-between`'s exact
+            // SwiftUI equivalent for a known, non-scrolling item count.
+            HStack(spacing: 0) {
                 if showAutoButton {
                     Button {
                         onSelectAuto()
@@ -252,10 +286,13 @@ struct StyleTabView: View {
                     }
                     .accessibilityLabel("自動（黑或白）")
                     .accessibilityAddTraits(current == nil ? .isSelected : [])
+                    Spacer(minLength: 0)
                 }
-                ForEach(swatches, id: \.hexString) { swatch in
+                ForEach(Array(swatches.enumerated()), id: \.element.hexString) { index, swatch in
+                    if index > 0 { Spacer(minLength: 0) }
                     colorDot(swatch, isSelected: current == swatch) { onSelectSwatch(swatch) }
                 }
+                Spacer(minLength: 0)
                 // The rainbow swatch is "selected" when `current` is a custom
                 // color that does not match any preset or recent swatch —
                 // those already show their own ring, so this only fires for
@@ -265,7 +302,12 @@ struct StyleTabView: View {
                     && !model.recentColors.contains(current!)
                 customColorPicker(current: current, isSelected: isCustomSelected, onPickCustom: onPickCustom)
             }
-            HStack(spacing: Self.swatchSpacing) {
+            // Second ("recent") row stays left-aligned with a fixed gap
+            // (`.prow:last-child{justify-content:flex-start;gap:10px}`,
+            // #106) rather than `space-between` — it can have anywhere from
+            // zero to seven items, so stretching it to fill the row would
+            // leave huge, uneven gaps instead of a steady 10pt rhythm.
+            HStack(spacing: Self.recentRowSpacing) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 14))
                     .foregroundColor(CameraTheme.inkSecondary)
@@ -403,9 +445,10 @@ struct StyleTabView: View {
             }
         }
 
+        // `.och{min-width:48px;height:44px}` (#106) — was 46×36.
         return layered
             .padding(6)
-            .frame(width: 46, height: 36)
+            .frame(width: 48, height: 44)
     }
 
     private func outlineName(_ outline: OverlayOutline) -> String {

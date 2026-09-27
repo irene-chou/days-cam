@@ -14,7 +14,11 @@ struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        // No gap of its own between `subTabRow` and `content` (#106): the
+        // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
+        // puts the whole visual gap inside `subTabRow`'s own bottom padding
+        // instead — see that view's `.padding(.top:.bottom:)`.
+        VStack(alignment: .leading, spacing: 0) {
             subTabRow
             content
         }
@@ -30,11 +34,10 @@ struct FormatTabView: View {
     // MARK: - 第二層：顯示內容｜天數格式 (FR-8.5, 24.1)
 
     private var subTabRow: some View {
-        // 14pt gap, left-aligned, unselected uses the tertiary/t3 shade
-        // (design A, `D3-tab-options.html:71-73`) — was 20pt spacing with
-        // the secondary/t2 shade, both mismatched with the style tab's
-        // equivalent second-layer row (#76).
-        HStack(spacing: 14) {
+        // 16pt gap, left-aligned, unselected uses the tertiary/t3 shade
+        // (design A, `D4-format-position-rules.html`'s `.subA{gap:16px}` —
+        // #106, was 14pt gap with the same shade).
+        HStack(spacing: 16) {
             ForEach(FormatTabModel.SubTab.allCases, id: \.self) { subTab in
                 let isSelected = model.selectedSubTab == subTab
                 Button {
@@ -48,6 +51,10 @@ struct FormatTabView: View {
             }
             Spacer(minLength: 0)
         }
+        // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
+        // into the body's own `.padding(.horizontal, 16)` already (#106).
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -61,18 +68,30 @@ struct FormatTabView: View {
     // MARK: - 顯示內容 (FR-11.1, FR-11.2)
 
     private var displayContentSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 28) {
+        // `.cbrow`/`.swrow`-style gap between the toggle row and the hint
+        // text below it: the design leaves it at the default block-flow
+        // margin (0), not restated as a token anywhere in D-4 — 6pt here is
+        // this view's own judgment call, not a design value (#106, "待人類
+        // 決定" if 0 reads too tight in a screenshot).
+        VStack(alignment: .leading, spacing: 6) {
+            // The three toggles spread evenly across the full row
+            // (`.swrow{justify-content:space-around}`, #106 — was a fixed
+            // 28pt gap): (N+1) equal flexible spacers around N fixed-width
+            // groups approximates `space-around`.
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
                 displayToggle(label: "天數",
                              isOn: model.displaySettings.profile.showDayCount,
                              isDisabled: model.displaySettings.isShowDayCountToggleDisabled) {
                     model.displaySettings.setShowDayCount($0)
                 }
+                Spacer(minLength: 0)
                 displayToggle(label: "日期",
                              isOn: model.displaySettings.profile.showDate,
                              isDisabled: model.displaySettings.isShowDateToggleDisabled) {
                     model.displaySettings.setShowDate($0)
                 }
+                Spacer(minLength: 0)
                 displayToggle(label: "名稱",
                              isOn: model.displaySettings.profile.showName,
                              isDisabled: false) {
@@ -92,7 +111,10 @@ struct FormatTabView: View {
                                isOn: Bool,
                                isDisabled: Bool,
                                onChange: @escaping (Bool) -> Void) -> some View {
-        VStack(spacing: 4) {
+        // Label beside the switch, not above it (`.swr{display:flex;
+        // align-items:center;gap:6px}`, #106 — was a `VStack` with the
+        // label stacked on top and a 4pt gap).
+        HStack(spacing: 6) {
             Text(label).font(.footnote).foregroundColor(CameraTheme.ink)
             Toggle("", isOn: Binding(get: { isOn }, set: onChange))
                 .labelsHidden()
@@ -106,12 +128,19 @@ struct FormatTabView: View {
     // MARK: - 天數格式 (FR-11.3, FR-11.4, FR-11.5)
 
     private var dayCountFormatSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
+        // `.cbrow{padding:4px 0 2px}` + `.frow2{padding:2px 10px 0}` leave
+        // only ~4pt of gap between the two rows via block-flow (#106, was
+        // 12 — no design token names this gap directly, so 4 is this view's
+        // own reading of those two paddings, not a restated design value).
+        VStack(alignment: .leading, spacing: 4) {
+            // Evenly spread, not left-aligned (`.cbrow{justify-content:
+            // space-around}`, #106 — was a fixed 14pt gap).
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
                 ForEach(DisplayUnit.allCases, id: \.self) { unit in
                     unitCheckbox(unit)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
             }
             HStack {
                 Spacer(minLength: 0)
@@ -133,7 +162,8 @@ struct FormatTabView: View {
         return Button {
             model.displaySettings.toggleUnit(unit)
         } label: {
-            HStack(spacing: 4) {
+            // `.cb{gap:6px}` (#106) — was 4.
+            HStack(spacing: 6) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .foregroundColor(isChecked ? CameraTheme.active : CameraTheme.inkTertiary)
                 Text(unitName(unit)).font(.footnote).foregroundColor(CameraTheme.ink)

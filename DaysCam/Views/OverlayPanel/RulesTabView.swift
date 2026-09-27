@@ -51,7 +51,8 @@ struct RulesTabView: View {
     private var nameRow: some View {
         HStack {
             Text("名稱").foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 12)
+            // `.rr{gap:10px}` (#106) — was 12.
+            Spacer(minLength: 10)
             TextField("名稱", text: Binding(
                 get: { model.nameDraft },
                 set: { model.setName($0) }
@@ -62,7 +63,9 @@ struct RulesTabView: View {
             .onSubmit { model.endEditingName() }
             .accessibilityLabel("名稱")
         }
-        .padding(.vertical, 12)
+        // `.rr{min-height:32px}`, no row padding of its own (#106) — was 12,
+        // which with this row's own text line height totaled ~44pt.
+        .padding(.vertical, 6)
     }
 
     // MARK: - 起始日 (FR-13.3)
@@ -70,7 +73,7 @@ struct RulesTabView: View {
     private var startDateRow: some View {
         HStack {
             Text("起始日").foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
             DatePicker("起始日", selection: Binding(
                 get: { model.startDateAsDate },
                 set: { model.setStartDate($0) }
@@ -78,7 +81,7 @@ struct RulesTabView: View {
             .labelsHidden()
             .datePickerStyle(.compact)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
     }
 
     // MARK: - 起算 (FR-13.4)
@@ -86,13 +89,13 @@ struct RulesTabView: View {
     private var countingRuleRow: some View {
         HStack {
             Text("起算").foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
             HStack(spacing: 8) {
                 countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
                 countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
     }
 
     private func countingRuleButton(_ rule: CountingRule, label: String) -> some View {
