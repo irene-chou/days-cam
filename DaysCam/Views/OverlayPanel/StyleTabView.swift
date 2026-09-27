@@ -58,55 +58,17 @@ struct StyleTabView: View {
     private func subTabIcon(_ subTab: StyleTabModel.SubTab) -> some View {
         switch subTab {
         case .font:
-            // A single "A" glyph (FR-10.1) — decorative, the accessibility
-            // label above is what actually names the button.
-            Text("A").font(.system(size: 18, weight: .semibold)).accessibilityHidden(true)
+            // Icon per the decided SF Symbol set for this row (design
+            // decision table, `docs/design/icon-options.html:97`).
+            Image(systemName: "textformat.characters").accessibilityHidden(true)
         case .color:
             Image(systemName: "paintpalette").accessibilityHidden(true)
         case .outline:
             Image(systemName: "square.dashed").accessibilityHidden(true)
         case .shadow:
-            ShadowIcon()
-                .stroke(style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-                .accessibilityHidden(true)
+            Image(systemName: "shadow").accessibilityHidden(true)
         case .size:
             Image(systemName: "textformat.size").accessibilityHidden(true)
-        }
-    }
-
-    // MARK: - 陰影圖示
-
-    /// Hand-drawn icon for the 陰影 sub-tab: a rounded square with an
-    /// L-shaped shadow line trailing off its lower-right corner. SF Symbols
-    /// has no equivalent, so this traces the mockup's SVG path directly
-    /// (`docs/design/D3-tab-options.html`, `docs/design/icon-options.html`;
-    /// viewBox 0 0 24 24, stroke width 2, no fill):
-    /// `<rect x="4" y="4" width="12" height="12" rx="3"/>`
-    /// `<path d="M19 8.5V17a2 2 0 0 1-2 2H8.5" stroke-linecap="round"/>`
-    private struct ShadowIcon: Shape {
-        func path(in rect: CGRect) -> Path {
-            let scale = min(rect.width, rect.height) / 24
-            var path = Path()
-
-            path.addRoundedRect(
-                in: CGRect(x: 4 * scale, y: 4 * scale, width: 12 * scale, height: 12 * scale),
-                cornerSize: CGSize(width: 3 * scale, height: 3 * scale)
-            )
-
-            // L-shaped shadow line, traced as a vertical segment, a quarter
-            // circle rounding the corner, then a horizontal segment.
-            let cornerCenter = CGPoint(x: 17 * scale, y: 17 * scale)
-            path.move(to: CGPoint(x: 19 * scale, y: 8.5 * scale))
-            path.addLine(to: CGPoint(x: 19 * scale, y: 17 * scale))
-            // `clockwise: false` here — verified against a rendered sample —
-            // is what SwiftUI's `Path.addArc` needs to trace this corner in
-            // the intended direction; its `clockwise` flag does not follow
-            // the view's y-down screen coordinates the way one might expect.
-            path.addArc(center: cornerCenter, radius: 2 * scale,
-                        startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
-            path.addLine(to: CGPoint(x: 8.5 * scale, y: 19 * scale))
-
-            return path
         }
     }
 
