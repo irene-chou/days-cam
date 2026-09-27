@@ -270,7 +270,7 @@
 
 | # | 需求 |
 |---|---|
-| FR-10.1 | 第二層是 5 個純圖示：字型（`textformat.characters`）、顏色（`paintpalette`）、外框（`square.dashed`）、陰影（`shadow`）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
+| FR-10.1 | 第二層是 5 個純圖示：字型（`textformat`）、顏色（`circle.inset.filled`，palette 分層上色：內圓為目前文字顏色、外圈同其他圖示的選中／未選中色）、外框（`square.dashed`）、陰影（`shadow`）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
 | FR-10.2 | **字型**：以下 10 種，橫向捲動，每個選項用**該字型寫出自己的名稱**（英文原名）；選中的名稱變 active 色，**不加底線或框** |
 
 | `fontID` | 顯示名稱 | iOS 取得方式 |
