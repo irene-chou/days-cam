@@ -12,9 +12,13 @@ import SwiftUI
 /// `CameraTheme`'s Asset Catalog entries (which themselves carry no dark
 /// variant) plus `.preferredColorScheme(.light)` at the root, which also
 /// forces system chrome (this screen's own `.alert`s) light. The one
-/// exception is `PermissionGuidanceView` (human decision 2026-09-27), which
-/// clears that preference back to `nil` for its own subtree so it can
-/// follow the system appearance instead.
+/// exception is `PermissionGuidanceView` (human decision 2026-09-27),
+/// which follows the system appearance instead — it does *not* try to
+/// escape this root's `.preferredColorScheme(.light)` by setting it back
+/// to `nil` on itself, since that does not actually cancel an ancestor's
+/// value (confirmed in `ColorSchemeEscapeTests`, PR #103 review); instead
+/// it reads the real system appearance itself and applies it as an
+/// `Environment(\.colorScheme)` override, which does reliably escape.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
@@ -241,12 +245,12 @@ struct CameraScreen: View {
             if model.needsPermissionGuidance {
                 // PRD 0.2 FR-14.1's sole exception (human decision
                 // 2026-09-27): this one screen follows the system
-                // appearance. `.preferredColorScheme(nil)` clears the
-                // `.light` preference the screen's root sets below, letting
-                // this subtree read the real system setting again — every
-                // other view here stays fixed-light.
+                // appearance — every other view here stays fixed-light.
+                // `PermissionGuidanceView` handles escaping this screen's
+                // `.preferredColorScheme(.light)` (set below) itself; see
+                // its own doc comment for why `.preferredColorScheme(nil)`
+                // here would not have worked.
                 PermissionGuidanceView()
-                    .preferredColorScheme(nil)
             }
         }
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
