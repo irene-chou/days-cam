@@ -34,6 +34,11 @@ enum CameraTheme {
     /// used in exactly one place and does not need an Asset Catalog entry.
     static let shutterRing = Color(red: 0xEA / 255, green: 0xDF / 255, blue: 0xD3 / 255)
 
+    /// The save-confirmation toast's background (`#1E1C1A` at 90%, design
+    /// token `.toast`), stated directly since it is used in exactly one
+    /// place and does not need an Asset Catalog entry.
+    static let toastBackground = Color(red: 0x1E / 255, green: 0x1C / 255, blue: 0x1A / 255).opacity(0.9)
+
     /// Bold, rounded system font for buttons and segmented-control labels
     /// (PRD 0.2 FR-14 table).
     static func toolFont(_ style: Font.TextStyle = .subheadline) -> Font {
