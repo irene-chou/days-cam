@@ -90,15 +90,19 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// `sizeScale` must be a multiple of this (FR-10.9).
     static let sizeScaleStep = 5
 
-    /// The seven preset colors of the first color row, in order (FR-10.4).
+    /// The nine preset colors of the first color row, in order (FR-10.4):
+    /// Instagram's text palette — white, black, blue, green, yellow, orange,
+    /// red, magenta, purple.
     static let swatches: [OverlayColor] = [
         OverlayColor(red8: 0xFF, green8: 0xFF, blue8: 0xFF),
-        OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
-        OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
-        OverlayColor(red8: 0xFF, green8: 0xC2, blue8: 0x7A),
-        OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
-        OverlayColor(red8: 0xFF, green8: 0xD6, blue8: 0x0A),
-        OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
+        OverlayColor(red8: 0x00, green8: 0x00, blue8: 0x00),
+        OverlayColor(red8: 0x38, green8: 0x97, blue8: 0xF0),
+        OverlayColor(red8: 0x70, green8: 0xC0, blue8: 0x50),
+        OverlayColor(red8: 0xFD, green8: 0xCB, blue8: 0x5C),
+        OverlayColor(red8: 0xFD, green8: 0x8D, blue8: 0x32),
+        OverlayColor(red8: 0xED, green8: 0x49, blue8: 0x56),
+        OverlayColor(red8: 0xD1, green8: 0x08, blue8: 0x69),
+        OverlayColor(red8: 0xA3, green8: 0x07, blue8: 0xBA)
     ]
 
     var fontID: OverlayFontID

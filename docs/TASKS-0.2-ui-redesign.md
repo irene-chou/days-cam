@@ -97,7 +97,7 @@
 - PRD §4.1 新增的樣式與位置不變條件加進 `validate(calendar:)`
 - 自訂 `init(from:)`：讀到 0.1 欄位時依 PRD §4.3 轉換；未知 `fontID` 退回 `sfRounded`
 - `OverlayFontID` 提供 `displayName`（英文原名）與 `postScriptName: String?`（系統字型為 `nil`）
-- 色票常數 `OverlayStyle.swatches`（7 色，PRD FR-10.4）
+- 色票常數 `OverlayStyle.swatches`（9 色，PRD FR-10.4）
 - `Services/RecentColorsStore.swift`：`recentCustomColors`，規則照 PRD FR-10.7，存 `UserDefaults`
 
 **驗收 — A. QA 可自動跑**
@@ -118,7 +118,7 @@
 | 17.12 | 在 iOS 18 模擬器上，對每個 `postScriptName != nil` 的字型呼叫 `UIFont(name:size:)` | 全部非 `nil`。**有任何一個是 `nil`：從清單移除並回報 Lead，不要自行換成別的字型**（PRD A-6）。本條取代 0.1 驗收 5.11 |
 | 17.13 | `RecentColorsStore`：依序加入 `#111111`…`#888888`（8 個） | 保留 7 個，第一個是 `#888888`，`#111111` 被丟掉 |
 | 17.14 | 已有 `[#222222, #111111]` 時再加入 `#111111` | 變成 `[#111111, #222222]`，不重複 |
-| 17.15 | 加入色票裡的 `#FF9500` | 不加入 |
+| 17.15 | 加入色票裡的 `#FD8D32` | 不加入 |
 | 17.16 | `grep -rn -e 'import UIKit' -e 'import SwiftUI' DaysCam/Models/OverlayStyle.swift DaysCam/Models/OverlayPlacement.swift` | 無結果 |
 | 17.17 | `grep -rn 'themeID' DaysCam/` | 只出現在舊檔轉換的程式碼與其註解中 |
 
@@ -350,8 +350,8 @@ PRD FR-10。
 | 23.1 | 第二層項目的無障礙標籤 | 恰好 `["字型","顏色","外框","陰影","字級"]`，且都沒有可見文字 |
 | 23.2 | 字型選項數與順序 | 同 17.1 |
 | 23.3 | 選 Futura | 設定檔 `style.fontID == .futura` 並已持久化（重新 load 仍是） |
-| 23.4 | 文字顏色第一排 | 7 色（順序同 PRD FR-10.4）＋ 1 個自訂入口，共 8 項 |
-| 23.5 | 外框顏色第一排 | 自動 ＋ 前 6 色 ＋ 自訂入口，共 8 項；初始選中「自動」 |
+| 23.4 | 文字顏色第一排 | 9 色（順序同 PRD FR-10.4）＋ 1 個自訂入口，共 10 項 |
+| 23.5 | 外框顏色第一排 | 自動 ＋ 9 色 ＋ 自訂入口，共 11 項；初始選中「自動」 |
 | 23.6 | ColorPicker 選 `#123456` 當文字顏色 | `style.textColor == #123456`；`recentCustomColors` 第一個是 `#123456`；外框顏色的「最近」排也出現它 |
 | 23.7 | 外框為「無」 | 外框顏色整塊 disabled |
 | 23.8 | 外框、陰影都選無 | 寫入成功，沒有任何警告狀態（FR-10.10） |
