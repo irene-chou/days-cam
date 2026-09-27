@@ -9,12 +9,12 @@ struct PermissionGuidanceView: View {
         VStack(spacing: 12) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 32))
-                .foregroundColor(.secondary)
+                .foregroundColor(.white.opacity(0.7))
             Text("需要相機權限")
                 .font(.headline)
             Text("DaysCam 需要相機權限才能拍照並疊上天數。")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
             Button("前往設定") {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }

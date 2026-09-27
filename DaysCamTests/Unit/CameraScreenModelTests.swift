@@ -1449,6 +1449,33 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertFalse(model.isGridToolActive)
     }
 
+    // MARK: - Ratio button cycling (PRD 0.2 FR-7.7, acceptance 90/B.2/B.5)
+
+    func testCycleAspectRatioStepsThroughAllCasesInDeclaredOrder() throws {
+        let (model, _, _, _) = makeModel(now: try fixedNow())
+        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .threeByFour)
+
+        model.cycleAspectRatio()
+        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .oneByOne)
+
+        model.cycleAspectRatio()
+        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .nineBySixteen)
+
+        model.cycleAspectRatio()
+        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .threeByFour)
+    }
+
+    func testCycleAspectRatioPersistsAcrossRelaunch() throws {
+        // 90/B.5: still backed by `CaptureSettingsStore`'s existing
+        // `UserDefaults` persistence — cycling doesn't bypass it.
+        let settings = CaptureSettingsStore(defaults: defaults)
+        let (model, _, _, _) = makeModel(now: try fixedNow(), captureSettingsStore: settings)
+        model.cycleAspectRatio()
+
+        let relaunchedSettings = CaptureSettingsStore(defaults: defaults)
+        XCTAssertEqual(relaunchedSettings.captureAspectRatio, .oneByOne)
+    }
+
     // MARK: - Bottom-bar thumbnail (PRD 0.2 FR-15.2, TASK-21 acceptance 21.4/21.5)
 
     func testLatestThumbnailIsNilBeforeAnyCaptureThisLaunch() throws {

@@ -620,6 +620,17 @@ extension CameraScreenModel {
         captureSettingsStore.setAspectRatio(ratio)
     }
 
+    /// Cycles to the next ratio in `CaptureAspectRatio.allCases`' declared
+    /// order (3:4 → 1:1 → 9:16 → 3:4…), wrapping back to the first after the
+    /// last (PRD 0.2 FR-7.7, human decision 2026-09-27: the ratio button now
+    /// cycles on tap instead of opening a picker menu).
+    func cycleAspectRatio() {
+        let ratios = CaptureAspectRatio.allCases
+        let currentIndex = ratios.firstIndex(of: captureSettingsStore.captureAspectRatio) ?? 0
+        let nextIndex = (currentIndex + 1) % ratios.count
+        selectAspectRatio(ratios[nextIndex])
+    }
+
     /// Flips the grid overlay (PRD 0.2 FR-7.9).
     func toggleGrid() {
         captureSettingsStore.toggleGrid()

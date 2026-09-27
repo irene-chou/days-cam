@@ -9,20 +9,31 @@ import SwiftUI
 struct CameraToolbar: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// Both side groups get `.frame(maxWidth: .infinity, alignment:)` rather
+    /// than a `Spacer` on each side of `profileChip`: two views with the
+    /// same "infinitely flexible" width split whatever's left over the chip
+    /// equally between them, so the two boxes stay the same width — and the
+    /// chip stays on the true horizontal midline — no matter how many
+    /// buttons sit in either box (D-1's CSS mirrors this with a
+    /// `grid-template-columns: 1fr auto 1fr` top bar). A pair of `Spacer`s
+    /// cannot do this: they split the *leftover* space evenly, which only
+    /// centers the chip when both button groups already have equal width.
     var body: some View {
         HStack(spacing: 4) {
             HStack(spacing: 4) {
                 flashButton
                 timerButton
             }
-            Spacer(minLength: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             profileChip
-            Spacer(minLength: 12)
+
             HStack(spacing: 4) {
                 ratioButton
                 gridButton
                 flipButton
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -97,24 +108,45 @@ struct CameraToolbar: View {
 
     // MARK: - Right: ratio, grid, flip
 
+    /// Taps cycle straight to the next ratio (human decision 2026-09-27):
+    /// no menu, since there are only three ratios and the icon itself shows
+    /// which one is current. Never rendered `active`-colored — a ratio is a
+    /// mode, not a toggled-on tool (PRD 0.2 FR-7.7).
     private var ratioButton: some View {
-        Menu {
-            ForEach(CaptureAspectRatio.allCases, id: \.self) { ratio in
-                Button {
-                    model.selectAspectRatio(ratio)
-                } label: {
-                    if ratio == model.captureSettingsStore.captureAspectRatio {
-                        Label(ratio.displayLabel, systemImage: "checkmark")
-                    } else {
-                        Text(ratio.displayLabel)
-                    }
-                }
-            }
-        } label: {
-            Text(model.captureSettingsStore.captureAspectRatio.displayLabel)
-                .toolbarIcon(isActive: false)
+        Button(action: model.cycleAspectRatio) {
+            ratioIcon
         }
-        .accessibilityLabel("比例")
+        .accessibilityLabel("比例：\(model.captureSettingsStore.captureAspectRatio.displayLabel)")
+    }
+
+    private var ratioIcon: some View {
+        Self.ratioIcon(for: model.captureSettingsStore.captureAspectRatio)
+    }
+
+    /// One ratio's SF Symbol outline (`rectangle.ratio.3.to.4`, `square`, or
+    /// `rectangle.ratio.9.to.16` — human choice 2026-09-27, not self-drawn)
+    /// with the ratio text centered inside it. The outline is capped to
+    /// 20pt on its longest edge to read at roughly the same size as the
+    /// other 18pt toolbar icons, and the text shrinks (`minimumScaleFactor`)
+    /// so it still fits inside the narrow 9:16 frame.
+    ///
+    /// `static` and parameterized over `ratio` (rather than reading
+    /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
+    /// preview below can render all three side by side without duplicating
+    /// these layout numbers.
+    fileprivate static func ratioIcon(for ratio: CaptureAspectRatio) -> some View {
+        Image(systemName: ratio.sfSymbolName)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 20, height: 20)
+            .overlay(
+                Text(ratio.displayLabel)
+                    .font(.system(size: 7, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            )
+            .foregroundColor(CameraTheme.ink)
+            .frame(width: 38, height: 38)
     }
 
     private var gridButton: some View {
@@ -157,12 +189,23 @@ private extension View {
 }
 
 private extension CaptureAspectRatio {
-    /// The label the ratio button and its menu show (PRD 0.2 FR-7.7, D-1).
+    /// The label shown inside the ratio button's icon (PRD 0.2 FR-7.7, D-1).
     var displayLabel: String {
         switch self {
         case .threeByFour: return "3:4"
         case .oneByOne: return "1:1"
         case .nineBySixteen: return "9:16"
+        }
+    }
+
+    /// The SF Symbol drawing this ratio's outline (human choice 2026-09-27,
+    /// PRD 0.2 FR-7.7): an actual SF Symbol per §0.2 PRD §1, never
+    /// self-drawn.
+    var sfSymbolName: String {
+        switch self {
+        case .threeByFour: return "rectangle.ratio.3.to.4"
+        case .oneByOne: return "square"
+        case .nineBySixteen: return "rectangle.ratio.9.to.16"
         }
     }
 }
@@ -176,6 +219,41 @@ private extension CaptureAspectRatio {
         VStack {
             CameraToolbar(model: model)
             Spacer()
+        }
+    }
+}
+
+/// Acceptance 91/B.3: a maximum-length (20-character) profile name should
+/// still leave the chip centered and truncate to one line instead of
+/// pushing into the side buttons.
+#Preview("Long profile name") {
+    let store = ProfileStore()
+    store.load()
+    if let longNamed = try? store.add(CameraProfile(name: "小寶的一百天紀念日超級無敵長名稱測試中",
+                                                      startDate: DateComponents(year: 2026, month: 1, day: 1))) {
+        store.select(id: longNamed.id)
+    }
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    return ZStack {
+        CameraTheme.background.ignoresSafeArea()
+        VStack {
+            CameraToolbar(model: model)
+            Spacer()
+        }
+    }
+}
+
+/// Acceptance 90/B.3–B.4: all three ratio icons at their real 38x38 tap
+/// target size, so a screenshot can be compared straight against the
+/// outline shapes/sizes without tapping through the live button three
+/// times in the simulator.
+#Preview("Ratio icons") {
+    ZStack {
+        CameraTheme.background.ignoresSafeArea()
+        HStack(spacing: 24) {
+            ForEach(CaptureAspectRatio.allCases, id: \.self) { ratio in
+                CameraToolbar.ratioIcon(for: ratio)
+            }
         }
     }
 }

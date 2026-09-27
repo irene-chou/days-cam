@@ -366,7 +366,7 @@
 | FR-14.2 | 非必要不加框線或底色塊。允許的例外只有：分段控制軌道、快門、管理設定檔面板底色、開關、勾選框、位置分頁的照片小框、外框／陰影選項的預覽色塊、照片縮圖 |
 | FR-14.3 | 「完成」「關閉」一律用打勾圖示鍵（`checkmark`），不用文字按鈕 |
 | FR-14.4 | 疊字本身的顏色與裝飾與主題無關，照 0.1 FR-4.11 的原則不受淺深色影響 |
-| FR-14.5 | 介面顏色一律使用上表 token（`CameraTheme`）：選中／啟用用 `active`，主要文字與圖示用 `ink`，次要 `inkSecondary`，未選或停用 `inkTertiary`。**不得使用 SwiftUI 系統色**（`.accentColor`、`.primary`、`.secondary`、`Color.blue`、`Color.black` 等）——app 未設全域強調色，`.accentColor` 會顯示成 iOS 預設藍色。例外：疊字本身的顏色（FR-14.4）與其轉換。驗收：`grep -rnE '\.accentColor\|Color\.primary\|\.primary\b\|Color\.secondary\|\.secondary\b\|Color\.blue\|Color\.black' DaysCam/Views/` 無結果（0.1 舊畫面 TASK-26 刪除前除外） |
+| FR-14.5 | 介面顏色一律使用上表 token（`CameraTheme`）：選中／啟用用 `active`，主要文字與圖示用 `ink`，次要 `inkSecondary`，未選或停用 `inkTertiary`。**不得使用 SwiftUI 系統色**（`.accentColor`、`.primary`、`.secondary`、`Color.blue`、`Color.black` 等）——app 未設全域強調色，`.accentColor` 會顯示成 iOS 預設藍色。例外：疊字本身的顏色（FR-14.4）與其轉換。驗收：`grep -rn -e '\.accentColor' -e 'Color\.primary' -e '\.primary\b' -e 'Color\.secondary' -e '\.secondary\b' -e 'Color\.blue' -e 'Color\.black' DaysCam/Views/` 無結果（0.1 舊畫面 `ProfileListView`、`ProfileEditView`、`DisplaySettingsSheet` 在 TASK-26 刪除前除外）。此指令已用 main 上的實際違規檔案驗證會命中；不要改寫成 `-E` 加 `\|`，在 `-E` 下 `\|` 是字面字元，會讓驗收永遠通過 |
 
 ### 5.9 FR-15：照片瀏覽（D-5）
 

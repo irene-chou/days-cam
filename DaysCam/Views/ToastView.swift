@@ -53,15 +53,15 @@ struct ToastView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             Text(state.message)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.white)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.black.opacity(0.75))
+            Capsule(style: .continuous)
+                .fill(CameraTheme.toastBackground)
         )
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
