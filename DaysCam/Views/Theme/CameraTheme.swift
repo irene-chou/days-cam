@@ -8,6 +8,10 @@ import SwiftUI
 /// add `.preferredColorScheme(.light)` (FR-14.1). `CameraScreen` still adds
 /// that modifier at its root, since it also has to force system controls
 /// (alerts, action sheets) light, which Asset Catalog colors alone cannot do.
+/// The `permission*` tokens below are the sole exception (PRD 0.2 FR-14.1,
+/// human decision 2026-09-27): the permission-guidance overlay (S-5) is the
+/// one screen that *does* follow the system appearance, so those three are
+/// backed by Asset Catalog entries with both an Any and a Dark variant.
 ///
 /// Pure tokens: no view code lives here, so `CameraScreen`/`CameraToolbar`
 /// stay the only places that lay anything out (PRD 0.2 FR-14 table).
@@ -38,6 +42,18 @@ enum CameraTheme {
     /// token `.toast`), stated directly since it is used in exactly one
     /// place and does not need an Asset Catalog entry.
     static let toastBackground = Color(red: 0x1E / 255, green: 0x1C / 255, blue: 0x1A / 255).opacity(0.9)
+
+    /// `PermissionGuidanceView`'s background: light `#F7F3EE` (same as
+    /// `background`), dark `#000000` at 85% — the one screen that follows
+    /// the system appearance instead of staying fixed-light (PRD 0.2
+    /// FR-14.1's sole exception, human decision 2026-09-27).
+    static let permissionBackground = Color("permissionBackground")
+    /// `PermissionGuidanceView`'s primary text/icon color: light `#2A2622`
+    /// (same as `ink`), dark `#FFFFFF`.
+    static let permissionInk = Color("permissionInk")
+    /// `PermissionGuidanceView`'s secondary text/icon color: light `ink` at
+    /// 62% (same as `inkSecondary`), dark white at 70%.
+    static let permissionInkSecondary = Color("permissionInkSecondary")
 
     /// Bold, rounded system font for buttons and segmented-control labels
     /// (PRD 0.2 FR-14 table).

@@ -11,7 +11,10 @@ import SwiftUI
 /// system's Light/Dark Mode setting, so every color here comes from
 /// `CameraTheme`'s Asset Catalog entries (which themselves carry no dark
 /// variant) plus `.preferredColorScheme(.light)` at the root, which also
-/// forces system chrome (this screen's own `.alert`s) light.
+/// forces system chrome (this screen's own `.alert`s) light. The one
+/// exception is `PermissionGuidanceView` (human decision 2026-09-27), which
+/// clears that preference back to `nil` for its own subtree so it can
+/// follow the system appearance instead.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
@@ -236,7 +239,14 @@ struct CameraScreen: View {
             }
 
             if model.needsPermissionGuidance {
+                // PRD 0.2 FR-14.1's sole exception (human decision
+                // 2026-09-27): this one screen follows the system
+                // appearance. `.preferredColorScheme(nil)` clears the
+                // `.light` preference the screen's root sets below, letting
+                // this subtree read the real system setting again — every
+                // other view here stays fixed-light.
                 PermissionGuidanceView()
+                    .preferredColorScheme(nil)
             }
         }
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
