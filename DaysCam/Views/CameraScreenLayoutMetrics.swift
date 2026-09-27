@@ -65,11 +65,6 @@ struct CameraScreenLayoutMetrics {
         screenSize.height - bottomInset
     }
 
-    /// The 3:4 viewfinder's height at the screen's own width.
-    var threeByFourHeight: CGFloat {
-        screenSize.width * 4 / 3
-    }
-
     /// Where the footer region starts when the viewfinder box is full
     /// screen width — the 3:4 box's own bottom edge there. Fixed regardless
     /// of aspect ratio; header and footer never move switching ratios

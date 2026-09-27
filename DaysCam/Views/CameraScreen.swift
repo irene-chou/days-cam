@@ -175,9 +175,17 @@ struct CameraScreen: View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isNineBySixteen = ratio == .nineBySixteen
         let isOpen = model.panelModel.isOpen
+        // D-2's panel-open padding below is 3:4/1:1-only (#105): 9:16's own
+        // panel-open layout is the pre-existing 220pt-fixed-height special
+        // case this issue leaves untouched (see doc comment above), so it
+        // keeps the closed-panel's zero padding instead (code review
+        // finding, #112 — an earlier version of this line applied the new
+        // padding whenever `isOpen`, regardless of ratio, which shrank and
+        // shifted the 9:16 panel too, contradicting that same doc comment).
+        let appliesPanelOpenSpacing = isOpen && !isNineBySixteen
         let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
         let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
-        return VStack(spacing: isOpen ? 6 : 0) {
+        return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
             if isOpen {
                 if isNineBySixteen {
                     OverlayPanelView(model: model)
@@ -196,9 +204,9 @@ struct CameraScreen: View {
         // them, on top of `bottomBar`'s own row padding below — closed,
         // there is none (D-1's plain `.bottom` has no padding of its own,
         // only `.row`'s and the 16pt bottom margin `bottomBar` applies).
-        .padding(.horizontal, isOpen ? 6 : 0)
-        .padding(.top, isOpen ? 6 : 0)
-        .padding(.bottom, isOpen ? 14 : 0)
+        .padding(.horizontal, appliesPanelOpenSpacing ? 6 : 0)
+        .padding(.top, appliesPanelOpenSpacing ? 6 : 0)
+        .padding(.bottom, appliesPanelOpenSpacing ? 14 : 0)
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
