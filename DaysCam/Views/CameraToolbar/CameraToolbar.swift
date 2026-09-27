@@ -9,20 +9,31 @@ import SwiftUI
 struct CameraToolbar: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// Both side groups get `.frame(maxWidth: .infinity, alignment:)` rather
+    /// than a `Spacer` on each side of `profileChip`: two views with the
+    /// same "infinitely flexible" width split whatever's left over the chip
+    /// equally between them, so the two boxes stay the same width — and the
+    /// chip stays on the true horizontal midline — no matter how many
+    /// buttons sit in either box (D-1's CSS mirrors this with a
+    /// `grid-template-columns: 1fr auto 1fr` top bar). A pair of `Spacer`s
+    /// cannot do this: they split the *leftover* space evenly, which only
+    /// centers the chip when both button groups already have equal width.
     var body: some View {
         HStack(spacing: 4) {
             HStack(spacing: 4) {
                 flashButton
                 timerButton
             }
-            Spacer(minLength: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             profileChip
-            Spacer(minLength: 12)
+
             HStack(spacing: 4) {
                 ratioButton
                 gridButton
                 flipButton
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -170,6 +181,26 @@ private extension CaptureAspectRatio {
 #Preview {
     let store = ProfileStore()
     store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    return ZStack {
+        CameraTheme.background.ignoresSafeArea()
+        VStack {
+            CameraToolbar(model: model)
+            Spacer()
+        }
+    }
+}
+
+/// Acceptance 91/B.3: a maximum-length (20-character) profile name should
+/// still leave the chip centered and truncate to one line instead of
+/// pushing into the side buttons.
+#Preview("Long profile name") {
+    let store = ProfileStore()
+    store.load()
+    if let longNamed = try? store.add(CameraProfile(name: "小寶的一百天紀念日超級無敵長名稱測試中",
+                                                      startDate: DateComponents(year: 2026, month: 1, day: 1))) {
+        store.select(id: longNamed.id)
+    }
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
