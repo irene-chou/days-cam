@@ -50,6 +50,8 @@
 
 > 線上版是私人連結，teammate 打不開，所以定案版 HTML 另存一份在 `docs/design/`。檔案是頁面片段（沒有 `<html>`／`<body>`），用瀏覽器直接開即可看。D-2 的樣式分頁內容是早期版本，以 D-3 為準。
 
+> **圖示一律以 SF Symbols 為準**：設計稿（HTML）無法直接顯示 SF Symbols，稿內的 SVG 圖示只是近似，實作時以本文件或 `icon-options.html` 標註的 **SF Symbol 名稱**為準，不要照 SVG 形狀自繪。只有 SF Symbols 找不到合適圖示時才自繪，且須在本文件明確寫「自訂圖示」並經人類確認。
+
 ---
 
 ## 2. 範圍
@@ -268,7 +270,7 @@
 
 | # | 需求 |
 |---|---|
-| FR-10.1 | 第二層是 5 個純圖示：字型（單一個「A」字形）、顏色（`paintpalette`）、外框（`square.dashed`）、陰影（自訂圖示：空心圓角方塊＋右下 L 形陰影線，照 `docs/design/D3-tab-options.html` 的 SVG 繪製；SF Symbols 無對應）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
+| FR-10.1 | 第二層是 5 個純圖示：字型（`textformat.characters`）、顏色（`paintpalette`）、外框（`square.dashed`）、陰影（`shadow`）、字級（`textformat.size`）。名稱放在無障礙標籤。**沒有預設樣式或模板** |
 | FR-10.2 | **字型**：以下 10 種，橫向捲動，每個選項用**該字型寫出自己的名稱**（英文原名）；選中的名稱變 active 色，**不加底線或框** |
 
 | `fontID` | 顯示名稱 | iOS 取得方式 |
