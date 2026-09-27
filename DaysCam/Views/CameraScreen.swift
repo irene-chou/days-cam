@@ -153,8 +153,9 @@ struct CameraScreen: View {
     /// fixed height here rather than filling this region like 3:4/1:1 do.
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let isNineBySixteen = model.captureSettingsStore.captureAspectRatio == .nineBySixteen
-        return VStack(spacing: 0) {
-            if model.panelModel.isOpen {
+        let isOpen = model.panelModel.isOpen
+        return VStack(spacing: isOpen ? 6 : 0) {
+            if isOpen {
                 if isNineBySixteen {
                     OverlayPanelView(model: model)
                         .frame(height: 220)
@@ -167,6 +168,14 @@ struct CameraScreen: View {
             }
             bottomBar
         }
+        // D-2's panel-open state (#105) wraps panel+row in its own outer
+        // inset (`.l2 .bottom{padding:6px 6px 14px}`) with a 6pt gap between
+        // them, on top of `bottomBar`'s own row padding below — closed,
+        // there is none (D-1's plain `.bottom` has no padding of its own,
+        // only `.row`'s and the 16pt bottom margin `bottomBar` applies).
+        .padding(.horizontal, isOpen ? 6 : 0)
+        .padding(.top, isOpen ? 6 : 0)
+        .padding(.bottom, isOpen ? 14 : 0)
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - metrics.footerRegionTop,
                alignment: .bottom)
@@ -290,6 +299,14 @@ struct CameraScreen: View {
     /// profiles／shrunk shutter／collapse. The shutter stays tappable either
     /// way (FR-8.3: "快門照常可拍"). No text labels, no background — every
     /// button is just an icon (FR-14.2).
+    ///
+    /// Padding matches D-1/D-2 (#105): `.row{padding:0 22px}` either way;
+    /// vertically the row sits flush at the *bottom* of the footer region
+    /// (`footerColumn`'s own `alignment: .bottom`), not centered in it —
+    /// closed, D-1's `.bottom{padding-bottom:16px}` is the only vertical
+    /// inset, so 16pt bottom/0 top; open, D-2's `.l2 .row{padding:6px 22px
+    /// 0}` puts that same 16pt-ish breathing room above the row instead
+    /// (`footerColumn`'s own gap to the panel), so 0 bottom/6pt top here.
     private var bottomBar: some View {
         ZStack {
             HStack {
@@ -303,8 +320,9 @@ struct CameraScreen: View {
                 rightBottomBarButton
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, model.panelModel.isOpen ? 12 : 24)
+        .padding(.horizontal, 22)
+        .padding(.top, model.panelModel.isOpen ? 6 : 0)
+        .padding(.bottom, model.panelModel.isOpen ? 0 : 16)
     }
 
     @ViewBuilder
@@ -337,12 +355,15 @@ struct CameraScreen: View {
         }
     }
 
+    /// 50×50 tap target, matching D-1/D-2's `.bubble` (#105) — every bottom
+    /// bar icon button except `thumbnailButton`, which is its own smaller
+    /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
     private func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(CameraTheme.ink)
-                .frame(width: 44, height: 44)
+                .frame(width: 50, height: 50)
         }
         .accessibilityLabel(accessibilityLabel)
     }
