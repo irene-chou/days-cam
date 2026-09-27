@@ -80,8 +80,7 @@ struct CameraScreen: View {
     /// separate, pre-existing special case, unchanged by this issue).
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
-        let fullWidth = metrics.screenSize.width
-        let boxWidth = (ratio != .nineBySixteen && model.panelModel.isOpen) ? fullWidth * 0.8 : fullWidth
+        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
         let rect = metrics.viewfinderFrame(for: ratio, boxWidth: boxWidth)
         let vfSize = viewfinderContentSize(for: ratio, boxSize: rect.size)
         return ZStack {
@@ -91,6 +90,21 @@ struct CameraScreen: View {
         }
         .frame(width: rect.width, height: rect.height)
         .offset(x: rect.minX, y: rect.minY)
+    }
+
+    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
+    /// is open (PRD 0.2 FR-8.2), full screen width otherwise. 9:16 is never
+    /// shrunk. Shared by `viewfinderBox` and `footerColumn` — both need the
+    /// exact same value, since `footerColumn` has to start right where the
+    /// (possibly shrunk) box actually ends, not at the closed-panel box's
+    /// unscaled bottom edge (code review finding on #101/#110: with the box
+    /// shrunk to 80% width — and height following it, since the box stays
+    /// 3:4-shaped — its bottom edge moves up by 20% of its height; anchoring
+    /// the panel/bottom bar to the closed-panel `metrics.footerRegionTop`
+    /// instead left a gap between the shrunk box and the panel).
+    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics, ratio: CaptureAspectRatio) -> CGFloat {
+        let fullWidth = metrics.screenSize.width
+        return (ratio != .nineBySixteen && model.panelModel.isOpen) ? fullWidth * 0.8 : fullWidth
     }
 
     /// The on-screen size of the viewfinder itself within `boxSize` (which
@@ -136,15 +150,21 @@ struct CameraScreen: View {
     // MARK: - Footer
 
     /// Panel (if open) and the bottom bar, anchored to the bottom of a
-    /// fixed region from `metrics.footerRegionTop` to `metrics.footerBase`
-    /// (issue #101 rule ③ — the footer's own bottom edge is the home
-    /// indicator's top, not the screen's physical bottom) — the exact same
-    /// region regardless of aspect ratio, so header/footer never move when
-    /// switching ratios, only the viewfinder does. Transparent for 3:4/1:1
-    /// (nothing draws behind it there — `CameraScreen`'s own root
-    /// background already shows through); 9:16 floats this whole column
-    /// over the viewfinder's bottom sliver behind a gradient, same as
-    /// before #101 (PRD 0.2 FR-7.8).
+    /// region that starts right where the viewfinder box's own bottom edge
+    /// is and ends at `metrics.footerBase` (issue #101 rule ③ — the
+    /// footer's own bottom edge is the home indicator's top, not the
+    /// screen's physical bottom). Closed, that start is
+    /// `metrics.footerRegionTop` (the *unscaled* 3:4 box's bottom) exactly
+    /// as issue #101 fixed it — header/footer never move switching ratios,
+    /// only the viewfinder does. Open, 3:4/1:1's box has shrunk to 80% width
+    /// (`viewfinderBoxWidth`), and this region's start shrinks up right
+    /// along with it (`footerRegionTop(boxWidth:)`) so the panel still
+    /// starts flush against the box instead of leaving a gap (code review
+    /// finding, #110) — 9:16's box is never shrunk, so its start never
+    /// moves either way. Transparent for 3:4/1:1 (nothing draws behind it
+    /// there — `CameraScreen`'s own root background already shows through);
+    /// 9:16 floats this whole column over the viewfinder's bottom sliver
+    /// behind a gradient, same as before #101 (PRD 0.2 FR-7.8).
     ///
     /// Assumption (carried over from before #101, out of this issue's
     /// scope per its own assumption 3): PRD 0.2 FR-8.2/D-2 only ever show
@@ -152,8 +172,11 @@ struct CameraScreen: View {
     /// documented layout, so it keeps floating over the bottom bar at a
     /// fixed height here rather than filling this region like 3:4/1:1 do.
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
-        let isNineBySixteen = model.captureSettingsStore.captureAspectRatio == .nineBySixteen
+        let ratio = model.captureSettingsStore.captureAspectRatio
+        let isNineBySixteen = ratio == .nineBySixteen
         let isOpen = model.panelModel.isOpen
+        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
+        let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
         return VStack(spacing: isOpen ? 6 : 0) {
             if isOpen {
                 if isNineBySixteen {
@@ -177,10 +200,10 @@ struct CameraScreen: View {
         .padding(.top, isOpen ? 6 : 0)
         .padding(.bottom, isOpen ? 14 : 0)
         .frame(width: metrics.screenSize.width,
-               height: metrics.footerBase - metrics.footerRegionTop,
+               height: metrics.footerBase - regionTop,
                alignment: .bottom)
         .background(isNineBySixteen ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
-        .offset(x: 0, y: metrics.footerRegionTop)
+        .offset(x: 0, y: regionTop)
         .animation(CameraTheme.spring, value: model.panelModel.isOpen)
     }
 
