@@ -43,123 +43,140 @@ struct CameraScreen: View {
             }
     }
 
-    /// Picks between the two layouts PRD 0.2 FR-7.8 describes: 9:16 is full
-    /// bleed with floating chrome, 3:4/1:1 keep the toolbar and bottom bar in
-    /// normal flow around a fixed-ratio box.
-    @ViewBuilder
+    /// Header, viewfinder box and footer, positioned from
+    /// `CameraScreenLayoutMetrics` (issue #101): header and footer sit at
+    /// fixed screen coordinates that never move when the aspect ratio (or
+    /// the overlay panel) changes — only the viewfinder box between them
+    /// does. `.ignoresSafeArea()` here (and nowhere else in this file) is
+    /// what makes `proxy.size`/`proxy.safeAreaInsets` below describe the
+    /// *whole* screen rather than an already safe-area-reduced one, which
+    /// is exactly what `CameraScreenLayoutMetrics`'s formulas expect.
     private var content: some View {
-        if isFullBleed {
-            fullBleedLayout
-        } else {
-            standardLayout
-        }
-    }
-
-    private var isFullBleed: Bool {
-        model.captureSettingsStore.captureAspectRatio == .nineBySixteen
-    }
-
-    // MARK: - 3:4 / 1:1 layout
-
-    /// The toolbar sits in normal flow above the viewfinder box (matching
-    /// D-1's own column layout — it is not an overlay floating over the
-    /// live picture at this ratio; 9:16 is the one case that does that).
-    ///
-    /// The box itself is always 3:4 (PRD 0.2 FR-7.8), so the toolbar and
-    /// bottom bar never move when switching ratios — only what's *inside*
-    /// shrinks: at 1:1 the inner square centers vertically for free, since a
-    /// `ZStack` centers a smaller child by default. While the overlay panel
-    /// is open (PRD 0.2 FR-8.2), the *whole box* additionally scales to 80%
-    /// width (height following, since the box keeps its 3:4 shape) and
-    /// centers horizontally — the panel then fills the vertical space that
-    /// frees up between it and the bottom bar, exactly the way a plain
-    /// `VStack` hands unclaimed height to a flexible sibling.
-    private var standardLayout: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
-                CameraToolbar(model: model)
-
-                viewfinderBox(containerWidth: proxy.size.width)
-                    .frame(maxWidth: .infinity)
+            let metrics = CameraScreenLayoutMetrics(screenSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+            ZStack(alignment: .topLeading) {
+                viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
 
-                if model.panelModel.isOpen {
-                    OverlayPanelView(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity)
-                }
+                headerBar(metrics: metrics)
 
-                bottomBar
+                footerColumn(metrics: metrics)
             }
         }
+        .ignoresSafeArea()
     }
 
-    /// The viewfinder box sized for a `containerWidth`-wide screen: full
-    /// width normally, 80% and centered while the panel is open (FR-8.2).
-    /// Height always follows from width to keep the box's 3:4 shape.
-    private func viewfinderBox(containerWidth: CGFloat) -> some View {
-        let boxWidth = model.panelModel.isOpen ? containerWidth * 0.8 : containerWidth
-        let boxHeight = boxWidth * 4.0 / 3.0
-        let vfSize = viewfinderSize(boxWidth: boxWidth, boxHeight: boxHeight)
+    // MARK: - Viewfinder box
+
+    /// The viewfinder box's frame comes straight from `metrics`: 3:4 and
+    /// 9:16 both start at the header's bottom edge (issue #101 rule ①); 1:1
+    /// reuses the exact same 3:4-shaped box and lets its smaller square
+    /// content center inside for free, since a `ZStack` centers a smaller
+    /// child by default (rule ②, unchanged from before #101). While the
+    /// overlay panel is open (PRD 0.2 FR-8.2), 3:4/1:1's box additionally
+    /// scales to 80% width (height following, since the box keeps its 3:4
+    /// shape) and centers horizontally — 9:16 is never shrunk (see
+    /// `footerColumn`'s doc comment for why opening the panel at 9:16 is a
+    /// separate, pre-existing special case, unchanged by this issue).
+    private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
+        let ratio = model.captureSettingsStore.captureAspectRatio
+        let fullWidth = metrics.screenSize.width
+        let boxWidth = (ratio != .nineBySixteen && model.panelModel.isOpen) ? fullWidth * 0.8 : fullWidth
+        let rect = metrics.viewfinderFrame(for: ratio, boxWidth: boxWidth)
+        let vfSize = viewfinderContentSize(for: ratio, boxSize: rect.size)
         return ZStack {
             viewfinderContent(frameSize: vfSize)
                 .frame(width: vfSize.width, height: vfSize.height)
                 .clipped()
         }
-        .frame(width: boxWidth, height: boxHeight)
+        .frame(width: rect.width, height: rect.height)
+        .offset(x: rect.minX, y: rect.minY)
     }
 
-    /// The on-screen size of the viewfinder itself within a box that is
-    /// always 3:4 (PRD 0.2 FR-7.8): unchanged for 3:4, the full box width
-    /// squared for 1:1. Never called for 9:16 — that ratio uses
-    /// `fullBleedLayout` instead, not this box.
-    private func viewfinderSize(boxWidth: CGFloat, boxHeight: CGFloat) -> CGSize {
-        switch model.captureSettingsStore.captureAspectRatio {
-        case .threeByFour:
-            return CGSize(width: boxWidth, height: boxHeight)
+    /// The on-screen size of the viewfinder itself within `boxSize` (which
+    /// is always 3:4-shaped for 3:4/1:1, PRD 0.2 FR-7.8): unchanged for 3:4
+    /// and 9:16, the box's width squared for 1:1.
+    private func viewfinderContentSize(for ratio: CaptureAspectRatio, boxSize: CGSize) -> CGSize {
+        switch ratio {
+        case .threeByFour, .nineBySixteen:
+            return boxSize
         case .oneByOne:
-            return CGSize(width: boxWidth, height: boxWidth)
-        case .nineBySixteen:
-            return CGSize(width: boxWidth, height: boxHeight)
+            return CGSize(width: boxSize.width, height: boxSize.width)
         }
     }
 
-    // MARK: - 9:16 layout
+    // MARK: - Header
 
-    /// Fills the screen edge to edge; the toolbar and bottom bar float over
-    /// it, each behind a gradient fading to `CameraTheme.background` so they
-    /// stay legible over whatever the camera is pointed at (PRD 0.2 FR-7.8,
-    /// D-1).
-    ///
-    /// Assumption: PRD 0.2 FR-8.2/D-2 only ever show the panel against a 3:4
-    /// viewfinder; opening it while at 9:16 has no documented layout. Rather
-    /// than shrink an already-full-bleed viewfinder (which would need its
-    /// own bespoke centering rules nothing describes), the panel simply
-    /// floats over the bottom bar at a fixed height here — flagged in this
-    /// PR's description for a human/B′ call on whether that is good enough.
-    private var fullBleedLayout: some View {
-        GeometryReader { proxy in
-            viewfinderContent(frameSize: proxy.size)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .clipped()
-                .ignoresSafeArea()
-                .overlay(alignment: .top) {
-                    CameraToolbar(model: model)
-                        .background(topFadeGradient.ignoresSafeArea(edges: .top))
-                }
-                .overlay(alignment: .bottom) {
-                    VStack(spacing: 0) {
-                        if model.panelModel.isOpen {
-                            OverlayPanelView(model: model)
-                                .frame(height: 220)
-                                .transition(.opacity)
-                        }
-                        bottomBar
-                    }
-                    .background(bottomFadeGradient.ignoresSafeArea(edges: .bottom))
-                    .animation(CameraTheme.spring, value: model.panelModel.isOpen)
-                }
+    /// The toolbar, vertically centered within the header region below the
+    /// status bar (issue #101's own suggested approach — exact padding is
+    /// #105's job). Solid background in every case except the one where the
+    /// viewfinder still runs *behind* the header: 9:16's small-screen
+    /// fallback (`metrics.isFallback`, issue #101 assumption 2), which
+    /// reverts to the pre-#101 full-bleed look and needs the header legible
+    /// over a live picture instead of `CameraTheme.background`.
+    private func headerBar(metrics: CameraScreenLayoutMetrics) -> some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: metrics.topInset)
+            CameraToolbar(model: model)
+                .frame(maxHeight: .infinity, alignment: .center)
         }
+        .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
+        .background(headerBackground(metrics: metrics))
+    }
+
+    @ViewBuilder
+    private func headerBackground(metrics: CameraScreenLayoutMetrics) -> some View {
+        if isNineBySixteenFallback(metrics: metrics) {
+            topFadeGradient
+        } else {
+            CameraTheme.background
+        }
+    }
+
+    // MARK: - Footer
+
+    /// Panel (if open) and the bottom bar, anchored to the bottom of a
+    /// fixed region from `metrics.footerRegionTop` to `metrics.footerBase`
+    /// (issue #101 rule ③ — the footer's own bottom edge is the home
+    /// indicator's top, not the screen's physical bottom) — the exact same
+    /// region regardless of aspect ratio, so header/footer never move when
+    /// switching ratios, only the viewfinder does. Transparent for 3:4/1:1
+    /// (nothing draws behind it there — `CameraScreen`'s own root
+    /// background already shows through); 9:16 floats this whole column
+    /// over the viewfinder's bottom sliver behind a gradient, same as
+    /// before #101 (PRD 0.2 FR-7.8).
+    ///
+    /// Assumption (carried over from before #101, out of this issue's
+    /// scope per its own assumption 3): PRD 0.2 FR-8.2/D-2 only ever show
+    /// the panel against a 3:4 viewfinder; opening it while at 9:16 has no
+    /// documented layout, so it keeps floating over the bottom bar at a
+    /// fixed height here rather than filling this region like 3:4/1:1 do.
+    private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
+        let isNineBySixteen = model.captureSettingsStore.captureAspectRatio == .nineBySixteen
+        return VStack(spacing: 0) {
+            if model.panelModel.isOpen {
+                if isNineBySixteen {
+                    OverlayPanelView(model: model)
+                        .frame(height: 220)
+                        .transition(.opacity)
+                } else {
+                    OverlayPanelView(model: model)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity)
+                }
+            }
+            bottomBar
+        }
+        .frame(width: metrics.screenSize.width,
+               height: metrics.footerBase - metrics.footerRegionTop,
+               alignment: .bottom)
+        .background(isNineBySixteen ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
+        .offset(x: 0, y: metrics.footerRegionTop)
+        .animation(CameraTheme.spring, value: model.panelModel.isOpen)
+    }
+
+    private func isNineBySixteenFallback(metrics: CameraScreenLayoutMetrics) -> Bool {
+        model.captureSettingsStore.captureAspectRatio == .nineBySixteen && metrics.isFallback
     }
 
     private var topFadeGradient: some View {
@@ -172,7 +189,7 @@ struct CameraScreen: View {
                        startPoint: .top, endPoint: .bottom)
     }
 
-    // MARK: - Viewfinder contents (shared by both layouts)
+    // MARK: - Viewfinder contents
 
     /// Everything drawn inside the viewfinder box, sized to `frameSize`: the
     /// live preview (or placeholder), the optional three-by-three grid
@@ -473,4 +490,33 @@ private struct GridLinesView: View {
     model.panelModel.open()
     model.panelModel.selectedTab = .rules
     return CameraScreen(model: model)
+}
+
+/// 驗收 L.7（issue #101）：iPhone 16 Pro Max 上規則同樣成立，header 下緣 ≈ 139.8。
+#Preview("iPhone 16 Pro Max・3:4（L.7）") {
+    let store = ProfileStore()
+    store.load()
+    return CameraScreen(model: CameraScreenModel(cameraService: CameraService(), profileStore: store))
+        .previewDevice("iPhone 16 Pro Max")
+}
+
+/// 驗收 L.8（issue #101）：iPhone SE 退回最小 header 高度（66pt），不破版。
+#Preview("iPhone SE・3:4（L.8，假設 2 退回）") {
+    let store = ProfileStore()
+    store.load()
+    return CameraScreen(model: CameraScreenModel(cameraService: CameraService(), profileStore: store))
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+/// 驗收 L.8：iPhone SE 的 9:16 退回現況（鋪滿、header 浮在上面）。
+#Preview("iPhone SE・9:16（L.8，假設 2 退回）") {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.se.9x16") ?? .standard)
+    settings.setAspectRatio(.nineBySixteen)
+    let model = CameraScreenModel(cameraService: CameraService(),
+                                  profileStore: store,
+                                  captureSettingsStore: settings)
+    return CameraScreen(model: model)
+        .previewDevice("iPhone SE (3rd generation)")
 }
