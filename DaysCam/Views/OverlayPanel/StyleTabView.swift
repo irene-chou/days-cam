@@ -60,7 +60,7 @@ struct StyleTabView: View {
         case .font:
             // Icon per the decided SF Symbol set for this row (design
             // decision table, `docs/design/icon-options.html:97`).
-            Image(systemName: "textformat.characters").accessibilityHidden(true)
+            Image(systemName: "textformat").accessibilityHidden(true)
         case .color:
             Image(systemName: "paintpalette").accessibilityHidden(true)
         case .outline:
