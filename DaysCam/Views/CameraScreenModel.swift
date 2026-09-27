@@ -279,6 +279,22 @@ final class CameraScreenModel: ObservableObject {
     ///
     /// All four are rebuilt together, gated on the same check, so they can
     /// never point at four different profiles at once.
+    ///
+    /// Each tab model holds its own full `CameraProfile` copy and always
+    /// calls its `updateProfile` closure with that *entire* copy, even
+    /// though any one mutation only ever touches the handful of fields that
+    /// tab actually owns (樣式 → `style`; 位置 → `position`; 格式 →
+    /// `showDayCount`/`showDate`/`showName`/`displayUnits`/`useAgeWording`,
+    /// and also `position`/`style` — `DisplaySettingsModel` is shared with
+    /// the 0.1 sheet TASK-26 will remove; 天數規則 → `name`/`startDate`/
+    /// `countingRule`). Passing that closure straight to
+    /// `profileStore.update` would blindly overwrite the store's current
+    /// record with this tab's own copy, silently reverting whatever fields
+    /// a *different* tab (or `profileListModel`'s own rename) wrote in the
+    /// meantime — exactly #70's reported bug. Every closure below instead
+    /// goes through a `TabProfileWriter` (this file's own type, just below),
+    /// which merges only the fields that changed since that tab's own last
+    /// write onto the store's current record.
     private func refreshOverlayPanelTabModelsIfNeeded() {
         guard rulesTabModel?.profile.id != selectedProfileID else { return }
         guard let selectedProfile else {
@@ -291,32 +307,30 @@ final class CameraScreenModel: ObservableObject {
             return
         }
 
-        styleTabModel = StyleTabModel(profile: selectedProfile) { [weak self] updated in
-            try self?.profileStore.update(updated)
-        }
+        let styleWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
+        styleTabModel = StyleTabModel(profile: selectedProfile, updateProfile: styleWriter.write)
 
+        let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
         let displaySettings = DisplaySettingsModel(profile: selectedProfile,
                                                    calendar: calendar,
                                                    calculator: calculator,
-                                                   renderer: renderer) { [weak self] updated in
-            try self?.profileStore.update(updated)
-        }
+                                                   renderer: renderer,
+                                                   updateProfile: formatWriter.write)
         formatTabModel = FormatTabModel(displaySettings: displaySettings)
 
-        let newPositionTabModel = PositionTabModel(profile: selectedProfile) { [weak self] updated in
-            try self?.profileStore.update(updated)
-        }
+        let positionWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
+        let newPositionTabModel = PositionTabModel(profile: selectedProfile, updateProfile: positionWriter.write)
         positionTabModel = newPositionTabModel
         let adapter = PositionDragAdapter(positionTabModel: newPositionTabModel)
         positionDragAdapter = adapter
         panelModel.overlayDragHandler = adapter
 
+        let rulesWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
         rulesTabModel = RulesTabModel(profile: selectedProfile,
                                      calendar: calendar,
                                      calculator: calculator,
-                                     renderer: renderer) { [weak self] updated in
-            try self?.profileStore.update(updated)
-        }
+                                     renderer: renderer,
+                                     updateProfile: rulesWriter.write)
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
@@ -876,5 +890,78 @@ extension CameraScreenModel {
             guard self?.toastState?.id == state.id else { return }
             self?.toastState = nil
         }
+    }
+}
+
+// MARK: - Overlay-panel write-through (#70)
+
+/// One overlay-panel tab's `updateProfile` closure, wrapped so a write only
+/// applies the fields *that tab itself* actually changed since its own last
+/// write, merged onto whatever `profileStore` currently holds for the same
+/// profile — instead of blindly overwriting the whole record with that
+/// tab's own (possibly stale, since another tab — or `profileListModel`'s
+/// own rename — could have written since this tab's model was built) full
+/// `CameraProfile` copy.
+///
+/// Every tab model (`StyleTabModel`, `DisplaySettingsModel`,
+/// `PositionTabModel`, `RulesTabModel` — three of those four owned by
+/// ui-panel, off-limits for this card per #70) always calls its
+/// `updateProfile` closure with its *entire* working copy on every change,
+/// even though a single mutation only ever touches the handful of fields
+/// that tab owns. Diffing that copy against `baseline` — this tab's own
+/// copy immediately before the mutation that just happened — recovers which
+/// fields actually changed without needing any of those types to expose
+/// that themselves.
+///
+/// Assumes only one tab writes at a time (this card's own stated
+/// assumption, matching how the panel's UI only ever has one tab active) —
+/// not built to reconcile two genuinely concurrent writes to the same
+/// profile.
+@MainActor
+private final class TabProfileWriter {
+    private var baseline: CameraProfile
+    private let profileStore: ProfileStore
+
+    init(baseline: CameraProfile, profileStore: ProfileStore) {
+        self.baseline = baseline
+        self.profileStore = profileStore
+    }
+
+    /// Merges whatever changed between `baseline` and `updated` onto the
+    /// store's current record for the same profile, persists that, and
+    /// advances `baseline` to `updated` so the next write from this same tab
+    /// diffs against this one.
+    func write(_ updated: CameraProfile) throws {
+        guard let latest = profileStore.profiles.first(where: { $0.id == updated.id }) else {
+            // The profile was deleted out from under this tab (e.g. from the
+            // management list) — nothing sane to merge into. Let the tab
+            // surface this as its own `lastError`, same as any other
+            // `updateProfile` failure.
+            throw ProfileStoreError.profileNotFound(id: updated.id)
+        }
+        try profileStore.update(Self.merging(updated, from: baseline, onto: latest))
+        baseline = updated
+    }
+
+    /// `latest` with every field that differs between `baseline` and
+    /// `updated` replaced by `updated`'s value — i.e. only the fields the
+    /// tab that produced `updated` actually touched since its own last
+    /// write, leaving everything else exactly as `profileStore` currently
+    /// has it. `id`/`createdAt`/`updatedAt` are deliberately left out:
+    /// `id` never changes, and `profileStore.update` already stamps
+    /// `createdAt`/`updatedAt` itself.
+    private static func merging(_ updated: CameraProfile, from baseline: CameraProfile, onto latest: CameraProfile) -> CameraProfile {
+        var merged = latest
+        if updated.name != baseline.name { merged.name = updated.name }
+        if updated.startDate != baseline.startDate { merged.startDate = updated.startDate }
+        if updated.countingRule != baseline.countingRule { merged.countingRule = updated.countingRule }
+        if updated.showDayCount != baseline.showDayCount { merged.showDayCount = updated.showDayCount }
+        if updated.showDate != baseline.showDate { merged.showDate = updated.showDate }
+        if updated.showName != baseline.showName { merged.showName = updated.showName }
+        if updated.displayUnits != baseline.displayUnits { merged.displayUnits = updated.displayUnits }
+        if updated.useAgeWording != baseline.useAgeWording { merged.useAgeWording = updated.useAgeWording }
+        if updated.position != baseline.position { merged.position = updated.position }
+        if updated.style != baseline.style { merged.style = updated.style }
+        return merged
     }
 }
