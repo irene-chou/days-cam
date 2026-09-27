@@ -41,14 +41,17 @@ struct StyleTabView: View {
     // MARK: - 第二層：五個純圖示 (FR-10.1)
 
     private var subTabRow: some View {
-        HStack(spacing: 30) {
+        // 14pt gap, left-aligned (design A, `D3-tab-options.html:71`) —
+        // was 30pt, wide enough on an iPhone 16 Pro to read as evenly
+        // spread across the row instead of a tight left-aligned group.
+        HStack(spacing: 14) {
             ForEach(StyleTabModel.SubTab.allCases, id: \.self) { subTab in
                 Button {
                     model.selectedSubTab = subTab
                 } label: {
                     subTabIcon(subTab)
                         .frame(width: 24, height: 24)
-                        .foregroundColor(model.selectedSubTab == subTab ? .accentColor : .secondary)
+                        .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
@@ -75,7 +78,7 @@ struct StyleTabView: View {
             Image(systemName: "circle.inset.filled")
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(swiftUIColor(model.profile.style.textColor),
-                                model.selectedSubTab == subTab ? Color.accentColor : Color.secondary)
+                                model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
                 .accessibilityHidden(true)
         case .outline:
             Image(systemName: "square.dashed").accessibilityHidden(true)
@@ -111,7 +114,11 @@ struct StyleTabView: View {
                     } label: {
                         Text(fontID.displayName)
                             .font(Font(OverlayMetrics.font(for: fontID, size: 17)))
-                            .foregroundColor(isSelected ? .accentColor : .primary)
+                            // Matches the design's font-chip token (`.fc`,
+                            // `D3-tab-options.html:54-55`): unselected uses
+                            // the secondary/t2 shade, not the tertiary one
+                            // the second-layer nav row uses.
+                            .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
                     }
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
@@ -201,7 +208,7 @@ struct StyleTabView: View {
 
     private var sizeSlider: some View {
         HStack(spacing: 12) {
-            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(.secondary).accessibilityHidden(true)
+            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
             Slider(
                 value: Binding(
                     get: { Double(model.profile.style.sizeScale) },
@@ -211,7 +218,7 @@ struct StyleTabView: View {
                 step: Double(StyleTabModel.sizeScaleStep)
             )
             .accessibilityLabel("字級")
-            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(.secondary).accessibilityHidden(true)
+            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
             Text("\(model.profile.style.sizeScale)%")
                 .font(.subheadline.monospacedDigit())
                 .frame(minWidth: 46, alignment: .trailing)
@@ -241,7 +248,7 @@ struct StyleTabView: View {
                         Image(systemName: "circle.lefthalf.filled")
                             .font(.system(size: 16))
                             .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                            .overlay(selectionRing(current == nil))
+                            .overlay(swatchSelectionRing(current == nil))
                     }
                     .accessibilityLabel("自動（黑或白）")
                     .accessibilityAddTraits(current == nil ? .isSelected : [])
@@ -254,13 +261,13 @@ struct StyleTabView: View {
             HStack(spacing: Self.swatchSpacing) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 14))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(CameraTheme.inkSecondary)
                     .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                     .accessibilityLabel("最近自訂")
                 if model.recentColors.isEmpty {
                     Text("用彩虹圓自訂的顏色會出現在這裡")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(CameraTheme.inkSecondary)
                 } else {
                     ForEach(model.recentColors, id: \.hexString) { color in
                         colorDot(color, isSelected: current == color) { onSelectSwatch(color) }
@@ -277,7 +284,7 @@ struct StyleTabView: View {
             Circle()
                 .fill(swiftUIColor(color))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                .overlay(selectionRing(isSelected))
+                .overlay(swatchSelectionRing(isSelected))
         }
         .accessibilityLabel(color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -298,7 +305,20 @@ struct StyleTabView: View {
     }
 
     private func selectionRing(_ isSelected: Bool) -> some View {
-        Circle().strokeBorder(Color.primary.opacity(isSelected ? 0.85 : 0), lineWidth: 2)
+        Circle().strokeBorder(CameraTheme.active, lineWidth: isSelected ? 2 : 0)
+    }
+
+    /// Selection halo for the round color swatches (色票), matching the
+    /// design's `.dot[aria-pressed="true"]` (`D3-tab-options.html:58`):
+    /// `box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--act)`, i.e. a 2pt
+    /// gap then a 2pt `active`-colored ring, both outside the dot's edge.
+    /// The gap needs no explicit background-colored stroke of its own —
+    /// leaving it unstroked already shows through to the panel behind,
+    /// which is that same background.
+    private func swatchSelectionRing(_ isSelected: Bool) -> some View {
+        Circle()
+            .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 2 : 0)
+            .frame(width: Self.swatchDiameter + 8, height: Self.swatchDiameter + 8)
     }
 
     // MARK: - 共用：外框／陰影的 "Aa" 預覽

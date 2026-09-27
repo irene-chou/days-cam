@@ -28,7 +28,7 @@ struct RulesTabView: View {
             } else {
                 Text(RulesTabModel.hiddenHintMessage)
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(CameraTheme.inkSecondary)
                     .padding(.top, 10)
             }
         }
@@ -50,7 +50,7 @@ struct RulesTabView: View {
 
     private var nameRow: some View {
         HStack {
-            Text("名稱").foregroundColor(.secondary)
+            Text("名稱").foregroundColor(CameraTheme.inkSecondary)
             Spacer(minLength: 12)
             TextField("名稱", text: Binding(
                 get: { model.nameDraft },
@@ -69,7 +69,7 @@ struct RulesTabView: View {
 
     private var startDateRow: some View {
         HStack {
-            Text("起始日").foregroundColor(.secondary)
+            Text("起始日").foregroundColor(CameraTheme.inkSecondary)
             Spacer(minLength: 12)
             DatePicker("起始日", selection: Binding(
                 get: { model.startDateAsDate },
@@ -85,7 +85,7 @@ struct RulesTabView: View {
 
     private var countingRuleRow: some View {
         HStack {
-            Text("起算").foregroundColor(.secondary)
+            Text("起算").foregroundColor(CameraTheme.inkSecondary)
             Spacer(minLength: 12)
             HStack(spacing: 8) {
                 countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
@@ -110,9 +110,13 @@ struct RulesTabView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
-                    Capsule().fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                    Capsule().fill(isSelected ? CameraTheme.active.opacity(0.18) : Color.clear)
                 )
-                .foregroundColor(isSelected ? .accentColor : .primary)
+                // Unselected uses the same secondary/t2 shade as the font
+                // chips (`StyleTabView.fontRow`) — this is a selectable
+                // option chip, not the second-layer nav row (which uses the
+                // dimmer tertiary/t3 shade instead).
+                .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
