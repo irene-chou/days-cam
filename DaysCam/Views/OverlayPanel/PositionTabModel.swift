@@ -85,8 +85,18 @@ extension PositionTabModel {
         }
     }
 
-    /// Upper bound for the nine-point grid box's side: 44pt per cell
-    /// (`132 / 3`), the iOS minimum recommended tap target (#108 P.3).
+    /// Upper bound for the nine-point grid box's side: 132pt, matching
+    /// #108's own acceptance table (P.3: "在 96～132 之間").
+    ///
+    /// The ticket's rationale for 132 is "每格 44pt,剛好達到 iOS 點擊範圍"
+    /// (`132 / 3`), but that arithmetic does not account for
+    /// `PositionTabView`'s own 4pt inner padding on each side of the grid
+    /// (`.pgrid`'s `padding:4px`, #108 goal 5): the actual 3×3 grid area at
+    /// this max is `(132 - 4*2) / 3` ≈ 41.3pt per cell, not exactly 44pt.
+    /// Kept at 132 rather than raised to 140 (the value that *would* yield
+    /// an exact 44pt after that padding) since 132 is P.3's own explicit
+    /// upper bound, not something this file should silently change —
+    /// flagged to Lead/human instead (bot review on #111, 2026-09-28).
     static let gridBoxMaxSide: CGFloat = 132
 
     /// Vertical clearance the box's side is derived to leave above and below
