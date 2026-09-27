@@ -61,15 +61,26 @@ struct StyleTabView: View {
     private func subTabIcon(_ subTab: StyleTabModel.SubTab) -> some View {
         switch subTab {
         case .font:
-            // A single "A" glyph (FR-10.1) — decorative, the accessibility
-            // label above is what actually names the button.
-            Text("A").font(.system(size: 18, weight: .semibold)).accessibilityHidden(true)
+            // Final icon set per FR-10.1 / PRD §1 icon rules: SF Symbol
+            // names are the spec, not the mockup's hand-drawn SVG
+            // approximations (design decision, #71).
+            Image(systemName: "textformat").accessibilityHidden(true)
         case .color:
-            Image(systemName: "paintpalette").accessibilityHidden(true)
+            // Two-layer palette icon (design decision, #71): the inner
+            // circle previews the current text color live, the outer ring
+            // follows the same selected/unselected rule as the other four
+            // icons. `symbolRenderingMode(.palette)`'s `foregroundStyle`
+            // colors are ordered inner-then-outer for this symbol — verified
+            // by rendering it, not assumed from AppKit's palette ordering.
+            Image(systemName: "circle.inset.filled")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(swiftUIColor(model.profile.style.textColor),
+                                model.selectedSubTab == subTab ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
         case .outline:
             Image(systemName: "square.dashed").accessibilityHidden(true)
         case .shadow:
-            Image(systemName: "square.filled.on.square").accessibilityHidden(true)
+            Image(systemName: "shadow").accessibilityHidden(true)
         case .size:
             Image(systemName: "textformat.size").accessibilityHidden(true)
         }
