@@ -64,7 +64,7 @@ table.figures td:first-child,table.figures th:first-child{text-align:left}
 <header>
   <div class="eyebrow">DaysCam 介面改版 · 設計稿 · header／footer 高度重分配（配合 D1-camera.html 色票與元件）</div>
   <h1>相機畫面重新分配 header／footer 高度：以 9:16 觀景窗決定 header 下緣</h1>
-  <p>人類 2026-09-27 指定三條幾何規則：<span class="rule">① 3:4 與 9:16 頂端都貼齊 header 下緣</span>、<span class="rule">② 1:1 在 3:4 範圍內垂直置中</span>、<span class="rule">③ 9:16 下緣切齊 footer 下緣</span>。由此推出 header 下緣 y = S − 16W/9（W=螢幕寬、S=螢幕總高）。這份設計稿把公式套到三種裝置、三種比例，並列出兩個待決定的假設。圖示皆為真的 SF Symbols（AppKit 算圖，非手繪 SVG），色票沿用 D1-camera.html。</p>
+  <p>人類 2026-09-27 指定三條幾何規則：<span class="rule">① 3:4 與 9:16 頂端都貼齊 header 下緣</span>、<span class="rule">② 1:1 在 3:4 範圍內垂直置中</span>、<span class="rule">③ 9:16 下緣切齊 footer 下緣</span>。<strong>已定案（2026-09-27）：「footer 下緣」採解讀 B——home indicator 上方</strong>，公式為 header 下緣 y = S − bottomInset − 16W/9（W=螢幕寬、S=螢幕總高、bottomInset=下方安全區域）。這份設計稿把公式套到三種裝置、三種比例，並保留假設 1 兩種解讀的比較（供留存記錄，B 已選定）。圖示皆為真的 SF Symbols（AppKit 算圖，非手繪 SVG），色票沿用 D1-camera.html。</p>
   <div class="legend-key">
     <span><i style="background:rgba(42,38,34,.08)"></i>header</span>
     <span><i style="background:linear-gradient(135deg,#8FB3C9,#C9B79A)"></i>觀景窗</span>
@@ -295,20 +295,20 @@ const app = document.getElementById('app');
   heading(sec, '① iPhone 16（393×852，上 59／下 34）', '三種比例套用新規則，並排「現況」對照。');
   const row = el('div','row',sec);
   const W=393,H=852,top=59,bottom=34;
-  const g = computeGeometry(W,H,top,bottom,'screenBottom',false);
+  const g = computeGeometry(W,H,top,bottom,'aboveHomeIndicator',false);
   buildPhone(row, {label:'現況 · 3:4', sub:'header 下緣≈105（工具列本身高度）', W,H,topInset:top,bottomInset:bottom, ratioMode:'current-3:4', currentHeaderBottom:105});
   buildPhone(row, {label:'現況 · 9:16', sub:'觀景窗鋪滿，header／footer 浮在上面', W,H,topInset:top,bottomInset:bottom, ratioMode:'current-9:16', currentHeaderBottom:105, currentFooterHeight:223});
-  buildPhone(row, {label:'新規則 · 3:4', sub:'header 下緣 = S − 16W/9', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'3:4'});
+  buildPhone(row, {label:'新規則 · 3:4', sub:'header 下緣 = S − bottomInset − 16W/9', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'3:4'});
   buildPhone(row, {label:'新規則 · 1:1', sub:'在 3:4 範圍內垂直置中', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'1:1'});
-  buildPhone(row, {label:'新規則 · 9:16', sub:'下緣切齊 footer 下緣，footer 浮在上面', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'9:16'});
+  buildPhone(row, {label:'新規則 · 9:16', sub:'下緣切齊 home indicator 上緣，footer 浮在上面', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'9:16'});
   figuresTable(sec, [
     ['項目','現況','新規則'],
     ['header 下緣 y','≈105','≈'+g.headerBottom.toFixed(1)],
     ['header 高度（扣安全區域）','≈46','≈'+(g.headerBottom-top).toFixed(1)],
-    ['3:4 範圍','105–629','153.3–677.3'],
-    ['1:1 範圍','（同 3:4 置中）','218.8–611.8'],
-    ['9:16 範圍','0–852（鋪滿）','153.3–852'],
-    ['footer 高度','≈223','≈'+g.footerHeight.toFixed(1)],
+    ['3:4 範圍','105–629', g.headerBottom.toFixed(1)+'–'+g.vf34Bottom.toFixed(1)],
+    ['1:1 範圍','（同 3:4 置中）', g.vf11Top.toFixed(1)+'–'+g.vf11Bottom.toFixed(1)],
+    ['9:16 範圍','0–852（鋪滿）', g.vf916Top.toFixed(1)+'–'+g.vf916Bottom.toFixed(1)],
+    ['footer 高度（到螢幕底端算）','≈223','≈'+g.footerHeight.toFixed(1)],
   ]);
 })();
 
@@ -318,7 +318,7 @@ const app = document.getElementById('app');
   heading(sec, '② iPhone 16 Pro Max（440×956，上 59／下 34）', '同一套公式，螢幕變寬，三個邊界值等比放大。');
   const row = el('div','row',sec);
   const W=440,H=956,top=59,bottom=34;
-  const g = computeGeometry(W,H,top,bottom,'screenBottom',false);
+  const g = computeGeometry(W,H,top,bottom,'aboveHomeIndicator',false);
   buildPhone(row, {label:'3:4', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'3:4'});
   buildPhone(row, {label:'1:1', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'1:1'});
   buildPhone(row, {label:'9:16', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'9:16'});
@@ -335,10 +335,10 @@ const app = document.getElementById('app');
 // ===================== Section 3: iPhone SE（假設 2） =====================
 (function(){
   const sec = el('section','block',app);
-  heading(sec, '③ iPhone SE 第 3 代（375×667，上 20／下 0）— 假設 2 的退回行為', '算出來的 header 下緣只有 0.3pt，放不下工具列，所以 header 退回最小高度（上方安全區域 20 ＋ 工具列最小高度 46 = 66pt）；3:4／1:1 貼著這個最小 header 排；9:16 退回現況做法（鋪滿、header 浮在上面）。');
+  heading(sec, '③ iPhone SE 第 3 代（375×667，上 20／下 0）— 定案：假設 2 的退回行為', '算出來的 header 下緣只有 0.3pt，放不下工具列，所以 header 退回最小高度（上方安全區域 20 ＋ 工具列最小高度 46 = 66pt）；3:4／1:1 貼著這個最小 header 排；9:16 退回現況做法（鋪滿、header 浮在上面）。人類已於 2026-09-27 確認這個退回規則。');
   const row = el('div','row',sec);
   const W=375,H=667,top=20,bottom=0;
-  const g = computeGeometry(W,H,top,bottom,'screenBottom',false);
+  const g = computeGeometry(W,H,top,bottom,'aboveHomeIndicator',false);
   buildPhone(row, {label:'3:4（header 退回最小高度）', sub:'header 下緣 = 66pt', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'3:4'});
   buildPhone(row, {label:'1:1（header 退回最小高度）', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'1:1'});
   buildPhone(row, {label:'9:16（退回現況鋪滿）', sub:'算出來的 header 下緣太小，9:16 這裡直接退回現況：鋪滿＋header 浮在畫面上', W,H,topInset:top,bottomInset:bottom, g, ratioMode:'9:16'});
@@ -356,7 +356,7 @@ const app = document.getElementById('app');
 // ===================== Section 4: 假設 1 的兩種解讀 =====================
 (function(){
   const sec = el('section','block',app);
-  heading(sec, '④ 待決定：假設 1 —「footer 下緣」指哪裡？（iPhone 16, 9:16 為例）', '這決定 header 下緣、footer 高度整體怎麼分配，不只影響 9:16——3:4／1:1 的 header 下緣也會跟著變。');
+  heading(sec, '④ 已定案：假設 1 —「footer 下緣」指哪裡？選了解讀 B（iPhone 16, 9:16 為例）', '這決定 header 下緣、footer 高度整體怎麼分配，不只影響 9:16——3:4／1:1 的 header 下緣也會跟著變。人類已於 2026-09-27 選定解讀 B（home indicator 上方），本頁其餘章節與實作皆採用此解讀；這裡保留 A／B 並排比較供記錄查閱。');
   const row = el('div','row',sec);
   const W=393,H=852,top=59,bottom=34;
   const gA = computeGeometry(W,H,top,bottom,'screenBottom',false);
@@ -374,9 +374,9 @@ const app = document.getElementById('app');
 })();
 
 const decisionSec = el('section','block',app);
-heading(decisionSec, '待人類決定的項目', '');
+heading(decisionSec, '人類已定案的項目（2026-09-27）', '');
 const dec1 = el('div','decision',decisionSec);
-dec1.innerHTML = '<h3>假設 1：footer 下緣指哪裡？</h3><p>見上方第 ④ 節兩種解讀並排比較與數值表。選 A 或 B？</p>';
+dec1.innerHTML = '<h3>假設 1：footer 下緣指哪裡？—— 已選解讀 B</h3><p>「footer 下緣」＝ home indicator 上方（見上方第 ④ 節兩種解讀並排比較與數值表）。</p>';
 const dec2 = el('div','decision',decisionSec);
-dec2.innerHTML = '<h3>假設 2：小螢幕（iPhone SE）退回行為是否同意？</h3><p>見上方第 ③ 節：header 退回最小高度（上方安全區域＋46pt），3:4／1:1 貼著退回後的 header 排，9:16 整個退回現況鋪滿＋header 浮動。同意這個退回規則嗎？門檻「46pt」是否合理？</p>';
+dec2.innerHTML = '<h3>假設 2：小螢幕（iPhone SE）退回行為 —— 已同意</h3><p>見上方第 ③ 節：header 退回最小高度（上方安全區域＋46pt），3:4／1:1 貼著退回後的 header 排，9:16 整個退回現況鋪滿＋header 浮動。門檻 46pt 已確認合理。</p>';
 </script>
