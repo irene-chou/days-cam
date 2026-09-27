@@ -56,6 +56,20 @@ struct PermissionGuidanceView: View {
         .foregroundColor(CameraTheme.permissionInk)
         .environment(\.colorScheme, colorSchemeOverride ?? liveSystemColorScheme)
         .background(SystemAppearanceReader(colorScheme: $liveSystemColorScheme))
+        // Belt-and-suspenders (PR #103 review, [必修]): this subtree's own
+        // `traitCollectionDidChange` sits under `CameraScreen`'s window,
+        // which `.preferredColorScheme(.light)` pins to `overrideUserInterfaceStyle
+        // = .light` — plausible that UIKit then never bothers delivering a
+        // trait-change callback down this branch at all when only the
+        // *system's* style flips, since this branch's own *effective*
+        // style never actually changes. Re-reading on every foreground
+        // transition sidesteps that entirely: it doesn't depend on trait
+        // propagation, so it catches a Dark Mode toggle made from Settings
+        // or Control Center (which back-grounds this app either way)
+        // regardless of whether the callback above fires.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            liveSystemColorScheme = SystemAppearance.current
+        }
     }
 }
 
@@ -76,8 +90,11 @@ private enum SystemAppearance {
 /// `Binding` via `traitCollectionDidChange`, the standard UIKit mechanism
 /// for observing appearance changes — there's no equivalent SwiftUI-only
 /// API that isn't itself subject to the same ancestor-override problem this
-/// type exists to work around. Zero-sized and non-interactive: it exists
-/// purely to host the callback, never to draw or receive touches.
+/// type exists to work around. Attached via `.background(_:)`, so it ends
+/// up stretched to fill its sibling content rather than zero-sized — never
+/// visible either way, since its own view is transparent and
+/// `isUserInteractionEnabled = false`, existing purely to host the
+/// callback, never to draw or receive touches.
 private struct SystemAppearanceReader: UIViewControllerRepresentable {
     @Binding var colorScheme: ColorScheme
 
