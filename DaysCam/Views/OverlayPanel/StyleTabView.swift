@@ -62,7 +62,17 @@ struct StyleTabView: View {
             // decision table, `docs/design/icon-options.html:97`).
             Image(systemName: "textformat").accessibilityHidden(true)
         case .color:
-            Image(systemName: "paintpalette").accessibilityHidden(true)
+            // Two-layer palette icon (design decision, #71): the inner
+            // circle previews the current text color live, the outer ring
+            // follows the same selected/unselected rule as the other four
+            // icons (`symbolRenderingMode(.palette)`'s first color is the
+            // inner shape, second is the outer ring — verified by rendering
+            // this exact symbol, not assumed from AppKit behavior).
+            Image(systemName: "circle.inset.filled")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(swiftUIColor(model.profile.style.textColor),
+                                model.selectedSubTab == subTab ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
         case .outline:
             Image(systemName: "square.dashed").accessibilityHidden(true)
         case .shadow:
