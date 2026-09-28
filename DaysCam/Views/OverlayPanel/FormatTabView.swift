@@ -130,7 +130,9 @@ struct FormatTabView: View {
         // label stacked on top and a 4pt gap).
         HStack(spacing: 6) {
             Text(label).font(.footnote).foregroundColor(CameraTheme.ink)
+            // #F0A64A, not the system default green (PRD FR-14, #114).
             Toggle("", isOn: Binding(get: { isOn }, set: onChange))
+                .tint(CameraTheme.accentControl)
                 .labelsHidden()
                 .disabled(isDisabled)
         }
@@ -185,8 +187,11 @@ struct FormatTabView: View {
         } label: {
             // `.cb{gap:6px}` (#106) — was 4.
             HStack(spacing: 6) {
+                // Checked uses #F0A64A, the switch/checkbox "on" token, not
+                // `active` — that's a darker orange reserved for selection
+                // highlights elsewhere (PRD FR-14, #114).
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .foregroundColor(isChecked ? CameraTheme.active : CameraTheme.inkTertiary)
+                    .foregroundColor(isChecked ? CameraTheme.accentControl : CameraTheme.inkTertiary)
                 Text(unitName(unit)).font(.footnote).foregroundColor(CameraTheme.ink)
             }
         }
@@ -198,8 +203,10 @@ struct FormatTabView: View {
     private var ageWordingToggle: some View {
         HStack(spacing: 6) {
             Text("年改成歲").font(.footnote).foregroundColor(CameraTheme.ink)
+            // #F0A64A, not the system default green (PRD FR-14, #114).
             Toggle("", isOn: Binding(get: { model.displaySettings.profile.useAgeWording },
                                      set: { model.displaySettings.setUseAgeWording($0) }))
+                .tint(CameraTheme.accentControl)
                 .labelsHidden()
                 .disabled(model.displaySettings.isAgeWordingToggleDisabled)
         }
