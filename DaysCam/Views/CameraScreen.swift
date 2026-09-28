@@ -56,26 +56,38 @@ struct CameraScreen: View {
     /// the overlay panel) changes — only the viewfinder box between them
     /// does.
     ///
-    /// `.ignoresSafeArea()` is applied to the `ZStack` *inside* the
-    /// `GeometryReader`'s closure, never to the `GeometryReader` itself
-    /// (regression fix, #101 reopened after qa found it live): applying the
-    /// modifier straight to a `GeometryReader` makes that same reader
-    /// report its own `proxy.safeAreaInsets` as zero — it now considers
-    /// itself to have already handled the safe area, so there is nothing
-    /// left to report — even though `proxy.size` still correctly covers the
-    /// whole screen either way. `CameraScreenLayoutMetrics`'s formulas need
-    /// *both* a full-screen `size` and the real (non-zero) insets, so only
-    /// a descendant of this `GeometryReader` may ignore the safe area, not
-    /// the reader itself. (In the simulator/preview this went unnoticed —
+    /// Regression fix, #101 reopened after qa found it live on every real
+    /// device tested: a `GeometryReader` that has `.ignoresSafeArea()`
+    /// applied *anywhere in its own ancestor chain* — directly on it, or on
+    /// any view wrapping it, not just a descendant — reports its own
+    /// `proxy.safeAreaInsets` as zero (it now considers the safe area its
+    /// own responsibility to have already handled) *and* its `proxy.size`
+    /// grows to the full screen. A `GeometryReader` that instead has
+    /// nothing in its ancestor chain ignoring the safe area gets the
+    /// opposite pairing: a `proxy.size` already *reduced* by the safe area,
+    /// alongside the real, non-zero insets that were subtracted from it.
+    /// Neither pairing alone gives what `CameraScreenLayoutMetrics` needs —
+    /// a full-screen size *and* the real insets, together — so this reader
+    /// deliberately takes the second (reduced-size) pairing and adds the
+    /// insets back to reconstruct the full screen size itself
+    /// (`screenSize` below); `.ignoresSafeArea()` is applied only to the
+    /// `ZStack` this reader's own closure returns, a descendant with no
+    /// further descendants of its own reading `GeometryProxy`, so it can
+    /// still visually extend full-bleed without affecting what this reader
+    /// itself measured. (In the simulator/preview this went unnoticed —
     /// `CameraScreenLayoutMetricsTests` covers the formulas directly with
     /// hand-supplied insets, not this wiring — but on a real device/full
     /// app run the header ended up 34pt/20pt too low on every size tested,
     /// dropping the iPhone 16 shutter into the home indicator's gesture
-    /// area. `CameraScreenSafeAreaLayoutTests` now hosts this view for real
-    /// in a `UIWindow` to catch this class of bug.)
+    /// area. `CameraScreenSafeAreaLayoutTests` now hosts real views in a
+    /// real `UIWindow` to catch this class of bug, including this exact
+    /// reduced-size-plus-insets reconstruction.)
     private var content: some View {
         GeometryReader { proxy in
-            let metrics = CameraScreenLayoutMetrics(screenSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+            let insets = proxy.safeAreaInsets
+            let screenSize = CGSize(width: proxy.size.width + insets.leading + insets.trailing,
+                                    height: proxy.size.height + insets.top + insets.bottom)
+            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets)
             ZStack(alignment: .topLeading) {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)

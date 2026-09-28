@@ -4,14 +4,19 @@ import XCTest
 @testable import DaysCam
 
 /// Regression coverage for the exact class of bug qa found live on every
-/// device tested (#101 reopened after PR #110 merged): `.ignoresSafeArea()`
-/// applied straight to a `GeometryReader` makes that same reader report its
-/// own `proxy.safeAreaInsets` as *zero*, even though `proxy.size` still
-/// correctly covers the whole screen either way — `CameraScreen.content`
-/// briefly did exactly that, so every header/footer position it fed into
-/// `CameraScreenLayoutMetrics` came out 34pt (bottom inset) or 20pt (top
-/// inset) off, dropping the iPhone 16 shutter into the home indicator's
-/// gesture area.
+/// device tested (#101 reopened after PR #110 merged): a `GeometryReader`
+/// that has `.ignoresSafeArea()` applied *anywhere in its own ancestor
+/// chain* — directly on it, or on any view wrapping it — reports its own
+/// `proxy.safeAreaInsets` as zero (it now considers the safe area its own
+/// responsibility to have already handled) *and* its `proxy.size` grows to
+/// the full screen; a reader with nothing in its ancestor chain ignoring
+/// the safe area gets the opposite pairing instead — a `proxy.size` already
+/// *reduced* by the safe area, alongside the real, non-zero insets that
+/// were subtracted from it. `CameraScreen.content` briefly took the first
+/// pairing (full size, zero insets), so every header/footer position it fed
+/// into `CameraScreenLayoutMetrics` came out 34pt (bottom inset) or 20pt
+/// (top inset) off, dropping the iPhone 16 shutter into the home
+/// indicator's gesture area.
 ///
 /// `CameraScreenLayoutMetricsTests` alone can't catch this class of bug: it
 /// hand-supplies insets straight to the formulas and never exercises the
@@ -23,19 +28,16 @@ import XCTest
 /// (deliberately *not* a hand-picked value — an attempt at forcing an exact
 /// one via `UIHostingController.additionalSafeAreaInsets`/a `UIWindow`
 /// subclass turned out to double up with, rather than replace, the real
-/// device chrome, making the numbers depend on internals this file
-/// shouldn't need to know about). Every assertion below only depends on the
-/// window actually having *some* non-zero safe area, true for any
-/// notched/home-indicator iPhone simulator — the same kind this project's
-/// own `xcodebuild test` instructions always target.
+/// device chrome, or not propagate at all, making the numbers depend on
+/// internals this file shouldn't need to know about). Every assertion below
+/// only depends on the window actually having *some* non-zero safe area,
+/// true for any notched/home-indicator iPhone simulator — the same kind
+/// this project's own `xcodebuild test` instructions always target.
 @MainActor
 final class CameraScreenSafeAreaLayoutTests: XCTestCase {
     /// The buggy wiring: `.ignoresSafeArea()` chained directly onto the
-    /// `GeometryReader` itself. The reader now considers the safe area its
-    /// own responsibility to have already handled, so it has nothing left
-    /// to report, regardless of whatever real safe area the host window
-    /// has — this is the exact mechanism behind every measurement qa took
-    /// coming out too low.
+    /// `GeometryReader` itself. Zero insets, full size — this is the exact
+    /// mechanism behind every measurement qa took coming out too low.
     func testIgnoresSafeAreaOnTheReaderItselfZeroesItsOwnInsets() {
         let captured = CapturedGeometry()
         let probe = GeometryReader { proxy in
@@ -50,12 +52,36 @@ final class CameraScreenSafeAreaLayoutTests: XCTestCase {
         XCTAssertEqual(captured.value?.insets.bottom, 0)
     }
 
-    /// The fixed wiring: `.ignoresSafeArea()` on a *child* of the
-    /// `GeometryReader`, never the reader itself — matching
-    /// `CameraScreen.content` after this fix. The reader keeps reporting
-    /// its real, non-zero insets, while its child still visually extends
-    /// full-bleed under the status bar/home indicator.
-    func testIgnoresSafeAreaOnAChildPreservesTheReadersOwnInsets() {
+    /// The same zeroing happens even when `.ignoresSafeArea()` sits on an
+    /// *ancestor* wrapping the `GeometryReader`, not the reader itself —
+    /// ruling out "move it to any ancestor" as a fix, which an earlier
+    /// version of this file's actual fix briefly assumed would work.
+    func testIgnoresSafeAreaOnAWrappingAncestorAlsoZeroesTheReadersInsets() {
+        let captured = CapturedGeometry()
+        let probe = ZStack {
+            GeometryReader { proxy in
+                captured.value = (proxy.size, proxy.safeAreaInsets)
+                return Color.clear
+            }
+        }
+        .ignoresSafeArea()
+
+        host(probe)
+
+        XCTAssertEqual(captured.value?.insets.top, 0)
+        XCTAssertEqual(captured.value?.insets.bottom, 0)
+    }
+
+    /// The fixed wiring: nothing in the `GeometryReader`'s own ancestor
+    /// chain ignores the safe area (only a plain *descendant* of its
+    /// content does, which doesn't feed back into what the reader itself
+    /// measured) — matching `CameraScreen.content` after this fix. The
+    /// reader reports its real, non-zero insets, but at the cost of
+    /// `proxy.size` itself coming out *reduced* by them rather than
+    /// covering the full screen — `CameraScreen.content` adds the insets
+    /// back to reconstruct the full screen size itself, covered by
+    /// `testReconstructedFullSizeMatchesTheBuggyWiringsAndHeaderBottomDiffersMeaningfully` below.
+    func testUnprotectedReaderReportsRealInsetsButAReducedSize() {
         let captured = CapturedGeometry()
         let probe = GeometryReader { proxy in
             captured.value = (proxy.size, proxy.safeAreaInsets)
@@ -64,35 +90,49 @@ final class CameraScreenSafeAreaLayoutTests: XCTestCase {
 
         host(probe)
 
-        // Only the top inset (status bar) is asserted: a bare `UIWindow`
-        // like `host(_:)` builds reliably reports one, but the bottom inset
+        guard let geometry = captured.value else {
+            return XCTFail("GeometryReader never reported a geometry")
+        }
+        // Only the top inset (status bar) is asserted non-zero: this
+        // minimal a host window reliably reports one, but the bottom inset
         // (home indicator) measured zero here even on a notched simulator —
-        // it apparently needs more real scene plumbing than this minimal a
-        // host provides. That asymmetry doesn't weaken what this test is
-        // actually checking: the *mechanism* (reader vs. child) is what
-        // zeroes insets, not this environment's own limits, and the top
-        // inset alone is already non-zero proof the reader wasn't zeroed.
-        XCTAssertGreaterThan(captured.value?.insets.top ?? 0, 0, "expected a real, non-zero top inset from the host window")
+        // it apparently needs more real scene plumbing than a bare
+        // `UIWindow` provides. That asymmetry doesn't weaken what this test
+        // checks: the *mechanism* (nothing ignoring the safe area above
+        // this reader) is what preserves a non-zero inset at all.
+        XCTAssertGreaterThan(geometry.insets.top, 0)
+        // `proxy.size` is missing exactly its own reported top inset off
+        // the full 852pt-tall window this test hosts in.
+        XCTAssertEqual(geometry.size.height, 852 - geometry.insets.top, accuracy: 0.5)
     }
 
-    /// Ties the mechanism above straight to the direction of the real
-    /// regression qa reported: `CameraScreenLayoutMetrics.headerBottom`
-    /// computed from the buggy wiring's (zero) insets came out *larger*
-    /// (further down the screen) than the confirmed value on every device
-    /// qa tested, because a zeroed `bottomInset` inflates `footerBase`
-    /// (`S − bottomInset`) straight into the formula. Reproduces that same
-    /// relationship off a real window's real insets, rather than
-    /// hand-supplied ones `CameraScreenLayoutMetricsTests` already covers,
-    /// and requires a meaningful gap (not just a rounding-sized one) so a
-    /// future regression that zeroes only one of the two insets still fails
-    /// this test.
-    func testBuggyWiringProducesAMeaningfullyLargerHeaderBottomThanTheFixedWiringDoes() {
-        let fixedCaptured = CapturedGeometry()
-        let fixedProbe = GeometryReader { proxy in
-            fixedCaptured.value = (proxy.size, proxy.safeAreaInsets)
+    /// Reconstructs the full screen size the same way `CameraScreen.content`
+    /// now does (`proxy.size` plus its own `safeAreaInsets`, matching the
+    /// unprotected reader's reduced-size/real-insets pairing above) and
+    /// checks it against the buggy wiring's own (already-full) size — they
+    /// describe the same physical window, so they should agree — then
+    /// checks that feeding each into `CameraScreenLayoutMetrics` still
+    /// produces a meaningfully different `headerBottom`, reproducing the
+    /// direction of the regression qa reported (the buggy, zero-inset
+    /// reading always lands further down the screen).
+    /// Uses a small, iPhone-SE-shaped window (375×667): its 9:16-ish
+    /// dimensions push `CameraScreenLayoutMetrics` into its small-screen
+    /// fallback branch either way (issue #101 assumption 2), where
+    /// `headerBottom` becomes exactly `topInset + 46` — the one branch
+    /// where `topInset` alone (not `bottomInset`, which this bare-window
+    /// host, per `testUnprotectedReaderReportsRealInsetsButAReducedSize`'s
+    /// own doc comment, can't reliably report as non-zero) decides the
+    /// result, so this test doesn't depend on getting a real bottom inset
+    /// out of the harness at all.
+    func testReconstructedFullSizeMatchesTheBuggyWiringsAndHeaderBottomDiffersMeaningfully() {
+        let size = CGSize(width: 375, height: 667)
+
+        let unprotectedCaptured = CapturedGeometry()
+        let unprotectedProbe = GeometryReader { proxy in
+            unprotectedCaptured.value = (proxy.size, proxy.safeAreaInsets)
             return Color.clear.ignoresSafeArea()
         }
-        host(fixedProbe)
+        host(unprotectedProbe, size: size)
 
         let buggyCaptured = CapturedGeometry()
         let buggyProbe = GeometryReader { proxy in
@@ -100,15 +140,24 @@ final class CameraScreenSafeAreaLayoutTests: XCTestCase {
             return Color.clear
         }
         .ignoresSafeArea()
-        host(buggyProbe)
+        host(buggyProbe, size: size)
 
-        guard let fixedGeometry = fixedCaptured.value, let buggyGeometry = buggyCaptured.value else {
+        guard let unprotectedGeometry = unprotectedCaptured.value, let buggyGeometry = buggyCaptured.value else {
             return XCTFail("GeometryReader never reported a geometry")
         }
-        let fixedMetrics = CameraScreenLayoutMetrics(screenSize: fixedGeometry.size, safeAreaInsets: fixedGeometry.insets)
+        XCTAssertGreaterThan(unprotectedGeometry.insets.top, 0, "need a real top inset for this test to mean anything")
+
+        // `CameraScreen.content`'s own reconstruction: reduced size + its
+        // own insets = the full screen.
+        let insets = unprotectedGeometry.insets
+        let reconstructedSize = CGSize(width: unprotectedGeometry.size.width + insets.leading + insets.trailing,
+                                       height: unprotectedGeometry.size.height + insets.top + insets.bottom)
+        XCTAssertEqual(reconstructedSize.height, buggyGeometry.size.height, accuracy: 0.5)
+
+        let fixedMetrics = CameraScreenLayoutMetrics(screenSize: reconstructedSize, safeAreaInsets: insets)
         let buggyMetrics = CameraScreenLayoutMetrics(screenSize: buggyGeometry.size, safeAreaInsets: buggyGeometry.insets)
-        XCTAssertGreaterThan(buggyMetrics.headerBottom - fixedMetrics.headerBottom, 10,
-                             "the buggy (zero-inset) wiring should read a header bottom well below the fixed one's")
+        XCTAssertGreaterThan(fixedMetrics.headerBottom - buggyMetrics.headerBottom, 10,
+                             "the fixed wiring's real top inset should push its header bottom well below the buggy (zero-inset) one's minimum")
     }
 
     // MARK: - Helpers
@@ -117,14 +166,14 @@ final class CameraScreenSafeAreaLayoutTests: XCTestCase {
         var value: (size: CGSize, insets: EdgeInsets)?
     }
 
-    /// Hosts `view` full-screen in a real, key `UIWindow` sized like an
-    /// iPhone 16 (393×852) and forces one real layout pass. Uses whatever
-    /// safe area insets the simulator running the test itself reports for
-    /// a key window on this size — see this file's own doc comment for why
-    /// forcing a specific value didn't pan out.
-    private func host<V: View>(_ view: V) {
+    /// Hosts `view` full-screen in a real, key `UIWindow` (default size:
+    /// an iPhone 16's own point size, 393×852) and forces one real layout
+    /// pass. Uses whatever safe area insets the simulator running the test
+    /// itself reports for a key window of `size` — see this file's own doc
+    /// comment for why forcing a specific value didn't pan out.
+    private func host<V: View>(_ view: V, size: CGSize = CGSize(width: 393, height: 852)) {
         let hosting = UIHostingController(rootView: view)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
         window.rootViewController = hosting
         window.isHidden = false
         window.makeKeyAndVisible()
