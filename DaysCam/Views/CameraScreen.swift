@@ -54,10 +54,25 @@ struct CameraScreen: View {
     /// `CameraScreenLayoutMetrics` (issue #101): header and footer sit at
     /// fixed screen coordinates that never move when the aspect ratio (or
     /// the overlay panel) changes — only the viewfinder box between them
-    /// does. `.ignoresSafeArea()` here (and nowhere else in this file) is
-    /// what makes `proxy.size`/`proxy.safeAreaInsets` below describe the
-    /// *whole* screen rather than an already safe-area-reduced one, which
-    /// is exactly what `CameraScreenLayoutMetrics`'s formulas expect.
+    /// does.
+    ///
+    /// `.ignoresSafeArea()` is applied to the `ZStack` *inside* the
+    /// `GeometryReader`'s closure, never to the `GeometryReader` itself
+    /// (regression fix, #101 reopened after qa found it live): applying the
+    /// modifier straight to a `GeometryReader` makes that same reader
+    /// report its own `proxy.safeAreaInsets` as zero — it now considers
+    /// itself to have already handled the safe area, so there is nothing
+    /// left to report — even though `proxy.size` still correctly covers the
+    /// whole screen either way. `CameraScreenLayoutMetrics`'s formulas need
+    /// *both* a full-screen `size` and the real (non-zero) insets, so only
+    /// a descendant of this `GeometryReader` may ignore the safe area, not
+    /// the reader itself. (In the simulator/preview this went unnoticed —
+    /// `CameraScreenLayoutMetricsTests` covers the formulas directly with
+    /// hand-supplied insets, not this wiring — but on a real device/full
+    /// app run the header ended up 34pt/20pt too low on every size tested,
+    /// dropping the iPhone 16 shutter into the home indicator's gesture
+    /// area. `CameraScreenSafeAreaLayoutTests` now hosts this view for real
+    /// in a `UIWindow` to catch this class of bug.)
     private var content: some View {
         GeometryReader { proxy in
             let metrics = CameraScreenLayoutMetrics(screenSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
@@ -69,8 +84,8 @@ struct CameraScreen: View {
 
                 footerColumn(metrics: metrics)
             }
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea()
     }
 
     // MARK: - Viewfinder box
