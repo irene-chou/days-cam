@@ -7,31 +7,63 @@ import SwiftUI
 /// not landed when this was written. Once it does, `ui-shell` drops this
 /// view into the panel body for the 位置 segment.
 ///
-/// Left: a photo-shaped light box with the nine-point quick-align grid,
-/// selected point in the active color (FR-12.4). Right: only the position's
-/// name — no caption text, overturning this screen's earlier `D-4` draft
-/// (FR-12.4 is explicit: "不加說明文字"; PRD wins over the design note here).
-/// The free-drag gesture itself lives on `CameraScreen` (`ui-shell`); this
-/// view only reflects whatever `model.profile.position` currently is.
+/// Left: a square, fixed-1:1 light box with the nine-point quick-align grid
+/// (overturning this file's own earlier 3:4 "photo-shaped" box — #108, the
+/// human's 2026-09-27 call: the box is a quick-align control, not a photo
+/// preview, so it does not follow the capture aspect ratio), selected point
+/// in the active color (FR-12.4). Right: only the position's name — no
+/// caption text, overturning this screen's earlier `D-4` draft (FR-12.4 is
+/// explicit: "不加說明文字"; PRD wins over the design note here). The two
+/// together are centered as one group within the tab's content width
+/// (`D4-format-position-rules.html`'s `.posw`), so the box shifts left/right
+/// with the name's length while the group's own center never moves (#108
+/// P.1, P.5). The free-drag gesture itself lives on `CameraScreen`
+/// (`ui-shell`); this view only reflects whatever `model.profile.position`
+/// currently is.
 struct PositionTabView: View {
     @ObservedObject var model: PositionTabModel
 
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 3)
+    /// The panel's tab-content scroll viewport height, as measured by
+    /// `OverlayPanelView` (`ui-shell`) via a `GeometryReader` on its
+    /// `ScrollView` and threaded down through this parameter — this view
+    /// cannot measure it itself: a `GeometryReader` placed anywhere inside
+    /// that `ScrollView`'s content (i.e. inside this view, however it is
+    /// wrapped) is proposed an unbounded height and reports an arbitrary,
+    /// not-actually-representative size instead (confirmed empirically for
+    /// #108 with a `UIHostingController` test), so only something *outside*
+    /// the `ScrollView` can read its real viewport height.
+    ///
+    /// `.infinity` — the default, and what every `#Preview` below uses — is
+    /// the "not measured yet" sentinel `PositionTabModel.gridBoxSide`
+    /// resolves to its max, so this view renders sensibly on its own before
+    /// `ui-shell` wires the real measurement through (flagged to them, #108).
+    var availableHeight: CGFloat = .infinity
+
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
+
+    /// The square grid box's side, derived from `availableHeight` rather
+    /// than fixed (#108 P.2, P.3).
+    private var gridBoxSide: CGFloat {
+        PositionTabModel.gridBoxSide(forAvailableHeight: availableHeight)
+    }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 24) {
+        HStack(alignment: .center, spacing: 18) {
             grid
-                .padding(14)
-                .frame(width: 120, height: 160)
+                .padding(4)
+                .frame(width: gridBoxSide, height: gridBoxSide)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(CameraTheme.fill)
                 )
             Text(model.positionName)
                 .font(CameraTheme.toolFont(.headline))
                 .foregroundColor(CameraTheme.ink)
-            Spacer(minLength: 0)
         }
+        // Centers the box+name group as one unit within the full content
+        // width (#108 P.1) rather than pinning it to the leading edge with a
+        // trailing `Spacer` the way this view did before.
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
@@ -43,9 +75,12 @@ struct PositionTabView: View {
 
     /// The nine points, in `OverlayPosition.allCases`' order — top row then
     /// middle row then bottom row, which is exactly row-major order for a
-    /// 3-column grid (FR-12.4, FR-12.5).
+    /// 3-column grid (FR-12.4, FR-12.5). No inter-cell spacing: the box's
+    /// area is split evenly into nine equal cells (`D4-format-position-rules.html`'s
+    /// `.pgrid`, #108 goal 5), each fully tappable via `contentShape` rather
+    /// than only its visible dot (#108 goal 4, P.4).
     private var grid: some View {
-        LazyVGrid(columns: gridColumns, spacing: 16) {
+        LazyVGrid(columns: gridColumns, spacing: 0) {
             ForEach(OverlayPosition.allCases, id: \.self) { position in
                 let isSelected = model.profile.position == .anchor(position)
                 Button {
@@ -53,8 +88,9 @@ struct PositionTabView: View {
                 } label: {
                     Circle()
                         .fill(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
-                        .frame(width: isSelected ? 14 : 8, height: isSelected ? 14 : 8)
-                        .frame(width: 24, height: 24)
+                        .frame(width: isSelected ? 14 : 7, height: isSelected ? 14 : 7)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(PositionTabModel.anchorName(position))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -92,6 +128,13 @@ private func previewModel(position: OverlayPlacement = .anchor(.bottomTrailing))
 
 #Preview("自訂位置（拖曳後）") {
     PositionTabView(model: previewModel(position: .custom(x: 0.5, y: 0.5)))
+        .frame(width: 375)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+}
+
+#Preview("可用高度受限（模擬 SE 上小框收縮，#108 假設 1）") {
+    PositionTabView(model: previewModel(), availableHeight: 80)
         .frame(width: 375)
         .padding(.vertical, 12)
         .background(Color(.systemBackground))

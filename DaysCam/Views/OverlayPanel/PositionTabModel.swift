@@ -84,6 +84,46 @@ extension PositionTabModel {
         case .bottomTrailing: return "右下"
         }
     }
+
+    /// Upper bound for the nine-point grid box's side: 132pt, matching
+    /// #108's own acceptance table (P.3: "在 96～132 之間").
+    ///
+    /// The ticket's rationale for 132 is "每格 44pt,剛好達到 iOS 點擊範圍"
+    /// (`132 / 3`), but that arithmetic does not account for
+    /// `PositionTabView`'s own 4pt inner padding on each side of the grid
+    /// (`.pgrid`'s `padding:4px`, #108 goal 5): the actual 3×3 grid area at
+    /// this max is `(132 - 4*2) / 3` ≈ 41.3pt per cell, not exactly 44pt.
+    /// Kept at 132 rather than raised to 140 (the value that *would* yield
+    /// an exact 44pt after that padding) since 132 is P.3's own explicit
+    /// upper bound, not something this file should silently change —
+    /// flagged to Lead/human instead (bot review on #111, 2026-09-28).
+    static let gridBoxMaxSide: CGFloat = 132
+
+    /// Vertical clearance the box's side is derived to leave above and below
+    /// itself within the panel's tab-content scroll viewport, matching
+    /// `.tabbody`'s own top/bottom padding (`D4-format-position-rules.html`,
+    /// `.tabbody{padding:12px 14px}`) so the box never claims more height
+    /// than that padding leaves it (#108).
+    static let gridBoxVerticalInset: CGFloat = 12
+
+    /// The square nine-point grid box's side, derived from `availableHeight`
+    /// — the panel's tab-content scroll viewport height — instead of a fixed
+    /// constant (FR-12.4, #108).
+    ///
+    /// Capped at `gridBoxMaxSide`. Deliberately has no hard floor: per the
+    /// human's 2026-09-27 call (#108's "假設 1"), a genuinely short viewport
+    /// (e.g. iPhone SE) shrinks the box further rather than clipping it, even
+    /// below the 96pt the ticket otherwise names as a target minimum.
+    ///
+    /// `availableHeight` being non-finite (`.infinity`, `PositionTabView`'s
+    /// "not measured yet" default before `ui-shell` wires up real
+    /// measurement — see that view's doc comment) resolves to the max, so
+    /// every caller renders sensibly before that lands.
+    static func gridBoxSide(forAvailableHeight availableHeight: CGFloat) -> CGFloat {
+        guard availableHeight.isFinite else { return gridBoxMaxSide }
+        let side = availableHeight - gridBoxVerticalInset * 2
+        return max(0, min(side, gridBoxMaxSide))
+    }
 }
 
 // MARK: - 觀景窗拖曳換算 (FR-12.1–FR-12.3, FR-12.6)
