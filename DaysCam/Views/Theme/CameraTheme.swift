@@ -33,6 +33,10 @@ enum CameraTheme {
     /// Selected/active state — the toolbar icons a tool being on turns this
     /// color (`#C9772A`).
     static let active = Color("active")
+    /// Toggles and checkboxes when on (`#F0A64A`, PRD 0.2 FR-14 table) — a
+    /// distinct token from `accent`, which is the shutter's own color
+    /// (`#FFC27A`) and not what on-state controls elsewhere use (#114).
+    static let accentControl = Color("accentControl")
 
     /// The shutter's outer ring (`#EADFD3`), stated directly since it is
     /// used in exactly one place and does not need an Asset Catalog entry.
