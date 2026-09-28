@@ -17,6 +17,19 @@ import SwiftUI
 struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// The `ScrollView` below's own real visible height (#108) — some tab
+    /// content (the position tab's nine-point grid) needs to size itself to
+    /// fit without scrolling rather than just wrapping, so it needs this
+    /// number, not just "however tall it wants to be".
+    ///
+    /// Measured off the `ScrollView` itself via `.background(GeometryReader
+    /// ...)`, not from inside its `content` (a `GeometryReader` nested
+    /// inside `ScrollView`'s content reports a bogus, tiny value there —
+    /// confirmed by measurement, see #108) — `.infinity` (matching
+    /// `PositionTabView`'s own default) until the first layout pass reports
+    /// a real one.
+    @State private var tabContentHeight: CGFloat = .infinity
+
     var body: some View {
         VStack(spacing: 10) {
             segmentedControl
@@ -27,6 +40,12 @@ struct OverlayPanelView: View {
             ScrollView {
                 tabContent
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: TabContentHeightKey.self, value: proxy.size.height)
+                }
+            )
+            .onPreferenceChange(TabContentHeightKey.self) { tabContentHeight = $0 }
         }
         .padding(.top, 4)
         // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
@@ -109,7 +128,7 @@ struct OverlayPanelView: View {
             }
         case .position:
             if let positionTabModel = model.positionTabModel {
-                PositionTabView(model: positionTabModel)
+                PositionTabView(model: positionTabModel, availableHeight: tabContentHeight)
             } else {
                 placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
             }
@@ -134,6 +153,19 @@ struct OverlayPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
+    }
+}
+
+/// Carries the tab body `ScrollView`'s real visible height back up to
+/// `OverlayPanelView.tabContentHeight` (#108) — a plain `CGFloat`
+/// `PreferenceKey` rather than reading a `GeometryReader` inline, since the
+/// value has to come from `.background` on the `ScrollView` itself (see
+/// `OverlayPanelView`'s own doc comment on `tabContentHeight`).
+private struct TabContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = .infinity
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
