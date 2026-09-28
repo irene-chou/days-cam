@@ -18,17 +18,23 @@ struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             segmentedControl
             // The tab body scrolls within whatever space is left, rather
             // than growing the panel or getting clipped, on a tab whose
             // content is taller than the panel (#75, T.8) — e.g. the format
             // tab on a narrow phone.
+            //
+            // No padding here (#105/#111 coordination, Lead 2026-09-27):
+            // D-2's `.tabbody{padding:12px 14px}` looked like this
+            // container's job, but each tab already applies its own
+            // D-3/D-4-specific inset (e.g. the style tab's `.tabbody{
+            // padding:4px 10px 6px}`, PR #111) — adding a second, generic
+            // one here would double it up on every tab.
             ScrollView {
                 tabContent
             }
         }
-        .padding(.top, 4)
         // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
         // fills whatever vertical space frees up below the viewfinder — a
         // plain `VStack` centers a shorter child inside that by default, so
@@ -44,6 +50,14 @@ struct OverlayPanelView: View {
     /// The gray track (`rgba(42,38,34,.07)` — `CameraTheme.fill`, already
     /// documented there for exactly this use), corner radius 10, 2pt inset
     /// on every side (`D3-tab-options.html:68`, `.A .seg`).
+    ///
+    /// #105 re-checked this against `D2-overlay-panel.html`'s own `.tabs`/
+    /// `.tab` rules (`padding:8px 10px`/`6px 4px`, no background, a bottom
+    /// hairline) and left it unchanged: those numbers describe the exact
+    /// borderless style `D3-tab-options.html` superseded per the doc comment
+    /// above (#75) — `D2-overlay-panel.html` itself never got that follow-up
+    /// edit, so its numbers are stale for this one element, not a gap #105
+    /// should close.
     private var segmentedControl: some View {
         HStack(spacing: 0) {
             ForEach(OverlayPanelModel.Tab.allCases, id: \.self) { tab in

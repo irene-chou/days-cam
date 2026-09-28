@@ -19,8 +19,8 @@ struct CameraToolbar: View {
     /// cannot do this: they split the *leftover* space evenly, which only
     /// centers the chip when both button groups already have equal width.
     var body: some View {
-        HStack(spacing: 4) {
-            HStack(spacing: 4) {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
                 flashButton
                 timerButton
             }
@@ -28,7 +28,7 @@ struct CameraToolbar: View {
 
             profileChip
 
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 ratioButton
                 gridButton
                 flipButton
@@ -36,7 +36,6 @@ struct CameraToolbar: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
     }
 
     // MARK: - Left: flash, timer
@@ -81,6 +80,11 @@ struct CameraToolbar: View {
     /// Lists only names, in `ProfileStore`'s order, with the current one
     /// checked — no "管理設定檔" entry (that moves out to its own entry
     /// point in TASK-26).
+    ///
+    /// Padding matches D-1's final borderless chip (`.chip{padding:7px 6px}`,
+    /// #105) — an earlier revision of that same rule had a filled pill
+    /// background (`padding:7px 14px`), superseded once PRD 0.2 FR-14.2
+    /// dropped every button's background except the shutter's.
     private var profileChip: some View {
         Menu {
             ForEach(model.profileMenuItems) { profile in
@@ -103,6 +107,8 @@ struct CameraToolbar: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundColor(CameraTheme.ink)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 7)
         }
     }
 
