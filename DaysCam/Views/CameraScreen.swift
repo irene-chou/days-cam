@@ -54,13 +54,40 @@ struct CameraScreen: View {
     /// `CameraScreenLayoutMetrics` (issue #101): header and footer sit at
     /// fixed screen coordinates that never move when the aspect ratio (or
     /// the overlay panel) changes — only the viewfinder box between them
-    /// does. `.ignoresSafeArea()` here (and nowhere else in this file) is
-    /// what makes `proxy.size`/`proxy.safeAreaInsets` below describe the
-    /// *whole* screen rather than an already safe-area-reduced one, which
-    /// is exactly what `CameraScreenLayoutMetrics`'s formulas expect.
+    /// does.
+    ///
+    /// Regression fix, #101 reopened after qa found it live on every real
+    /// device tested: a `GeometryReader` that has `.ignoresSafeArea()`
+    /// applied *anywhere in its own ancestor chain* — directly on it, or on
+    /// any view wrapping it, not just a descendant — reports its own
+    /// `proxy.safeAreaInsets` as zero (it now considers the safe area its
+    /// own responsibility to have already handled) *and* its `proxy.size`
+    /// grows to the full screen. A `GeometryReader` that instead has
+    /// nothing in its ancestor chain ignoring the safe area gets the
+    /// opposite pairing: a `proxy.size` already *reduced* by the safe area,
+    /// alongside the real, non-zero insets that were subtracted from it.
+    /// Neither pairing alone gives what `CameraScreenLayoutMetrics` needs —
+    /// a full-screen size *and* the real insets, together — so this reader
+    /// deliberately takes the second (reduced-size) pairing and adds the
+    /// insets back to reconstruct the full screen size itself
+    /// (`screenSize` below); `.ignoresSafeArea()` is applied only to the
+    /// `ZStack` this reader's own closure returns, a descendant with no
+    /// further descendants of its own reading `GeometryProxy`, so it can
+    /// still visually extend full-bleed without affecting what this reader
+    /// itself measured. (In the simulator/preview this went unnoticed —
+    /// `CameraScreenLayoutMetricsTests` covers the formulas directly with
+    /// hand-supplied insets, not this wiring — but on a real device/full
+    /// app run the header ended up 34pt/20pt too low on every size tested,
+    /// dropping the iPhone 16 shutter into the home indicator's gesture
+    /// area. `CameraScreenSafeAreaLayoutTests` now hosts real views in a
+    /// real `UIWindow` to catch this class of bug, including this exact
+    /// reduced-size-plus-insets reconstruction.)
     private var content: some View {
         GeometryReader { proxy in
-            let metrics = CameraScreenLayoutMetrics(screenSize: proxy.size, safeAreaInsets: proxy.safeAreaInsets)
+            let insets = proxy.safeAreaInsets
+            let screenSize = CGSize(width: proxy.size.width + insets.leading + insets.trailing,
+                                    height: proxy.size.height + insets.top + insets.bottom)
+            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets)
             ZStack(alignment: .topLeading) {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
@@ -69,8 +96,8 @@ struct CameraScreen: View {
 
                 footerColumn(metrics: metrics)
             }
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea()
     }
 
     // MARK: - Viewfinder box
@@ -181,10 +208,19 @@ struct CameraScreen: View {
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isNineBySixteen = ratio == .nineBySixteen
+        let isOpen = model.panelModel.isOpen
+        // D-2's panel-open padding below is 3:4/1:1-only (#105): 9:16's own
+        // panel-open layout is the pre-existing 220pt-fixed-height special
+        // case this issue leaves untouched (see doc comment above), so it
+        // keeps the closed-panel's zero padding instead (code review
+        // finding, #112 — an earlier version of this line applied the new
+        // padding whenever `isOpen`, regardless of ratio, which shrank and
+        // shifted the 9:16 panel too, contradicting that same doc comment).
+        let appliesPanelOpenSpacing = isOpen && !isNineBySixteen
         let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
         let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
-        return VStack(spacing: 0) {
-            if model.panelModel.isOpen {
+        return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
+            if isOpen {
                 if isNineBySixteen {
                     OverlayPanelView(model: model)
                         .frame(height: 220)
@@ -197,6 +233,14 @@ struct CameraScreen: View {
             }
             bottomBar
         }
+        // D-2's panel-open state (#105) wraps panel+row in its own outer
+        // inset (`.l2 .bottom{padding:6px 6px 14px}`) with a 6pt gap between
+        // them, on top of `bottomBar`'s own row padding below — closed,
+        // there is none (D-1's plain `.bottom` has no padding of its own,
+        // only `.row`'s and the 16pt bottom margin `bottomBar` applies).
+        .padding(.horizontal, appliesPanelOpenSpacing ? 6 : 0)
+        .padding(.top, appliesPanelOpenSpacing ? 6 : 0)
+        .padding(.bottom, appliesPanelOpenSpacing ? 14 : 0)
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
@@ -327,6 +371,14 @@ struct CameraScreen: View {
     /// profiles／shrunk shutter／collapse. The shutter stays tappable either
     /// way (FR-8.3: "快門照常可拍"). No text labels, no background — every
     /// button is just an icon (FR-14.2).
+    ///
+    /// Padding matches D-1/D-2 (#105): `.row{padding:0 22px}` either way;
+    /// vertically the row sits flush at the *bottom* of the footer region
+    /// (`footerColumn`'s own `alignment: .bottom`), not centered in it —
+    /// closed, D-1's `.bottom{padding-bottom:16px}` is the only vertical
+    /// inset, so 16pt bottom/0 top; open, D-2's `.l2 .row{padding:6px 22px
+    /// 0}` puts that same 16pt-ish breathing room above the row instead
+    /// (`footerColumn`'s own gap to the panel), so 0 bottom/6pt top here.
     private var bottomBar: some View {
         ZStack {
             HStack {
@@ -340,8 +392,9 @@ struct CameraScreen: View {
                 rightBottomBarButton
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, model.panelModel.isOpen ? 12 : 24)
+        .padding(.horizontal, 22)
+        .padding(.top, model.panelModel.isOpen ? 6 : 0)
+        .padding(.bottom, model.panelModel.isOpen ? 0 : 16)
     }
 
     @ViewBuilder
@@ -374,12 +427,15 @@ struct CameraScreen: View {
         }
     }
 
+    /// 50×50 tap target, matching D-1/D-2's `.bubble` (#105) — every bottom
+    /// bar icon button except `thumbnailButton`, which is its own smaller
+    /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
     private func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(CameraTheme.ink)
-                .frame(width: 44, height: 44)
+                .frame(width: 50, height: 50)
         }
         .accessibilityLabel(accessibilityLabel)
     }
