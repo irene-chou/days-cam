@@ -85,35 +85,39 @@ extension PositionTabModel {
         }
     }
 
-    /// Upper bound for the nine-point grid box's side: 132pt, matching
-    /// #108's own acceptance table (P.3: "在 96～132 之間").
-    ///
-    /// The ticket's rationale for 132 is "每格 44pt,剛好達到 iOS 點擊範圍"
-    /// (`132 / 3`), but that arithmetic does not account for
-    /// `PositionTabView`'s own 4pt inner padding on each side of the grid
-    /// (`.pgrid`'s `padding:4px`, #108 goal 5): the actual 3×3 grid area at
-    /// this max is `(132 - 4*2) / 3` ≈ 41.3pt per cell, not exactly 44pt.
-    /// Kept at 132 rather than raised to 140 (the value that *would* yield
-    /// an exact 44pt after that padding) since 132 is P.3's own explicit
-    /// upper bound, not something this file should silently change —
-    /// flagged to Lead/human instead (bot review on #111, 2026-09-28).
-    static let gridBoxMaxSide: CGFloat = 132
+    /// Upper bound for the nine-point grid box's side: 96pt (human's
+    /// 2026-09-30 call, #126). The position tab must not scroll inside the
+    /// fixed-height panel (#120/#128), and 96pt fits the regular 120pt
+    /// content area with `gridBoxRegularInset` above and below.
+    static let gridBoxMaxSide: CGFloat = 96
 
-    /// Vertical clearance the box's side is derived to leave above and below
-    /// itself within the panel's tab-content scroll viewport, matching
-    /// `.tabbody`'s own top/bottom padding (`D4-format-position-rules.html`,
-    /// `.tabbody{padding:12px 14px}`) so the box never claims more height
-    /// than that padding leaves it (#108).
-    static let gridBoxVerticalInset: CGFloat = 12
+    /// Vertical clearance above and below the box when the content area is
+    /// at least `gridBoxRegularHeight` tall.
+    static let gridBoxRegularInset: CGFloat = 12
+
+    /// Tighter clearance used on short content areas (iPhone SE's 104pt), so
+    /// the box stays at 88pt rather than 80pt (#126).
+    static let gridBoxCompactInset: CGFloat = 8
+
+    /// Content height from which `gridBoxRegularInset` applies.
+    static let gridBoxRegularHeight: CGFloat = 120
+
+    /// Vertical clearance the box leaves above and below itself: 12pt when
+    /// `availableHeight` is at least 120pt (or not measured yet), else 8pt.
+    /// `PositionTabView` pads with this same value, so the box side and the
+    /// padding can never disagree.
+    static func gridBoxVerticalInset(forAvailableHeight availableHeight: CGFloat) -> CGFloat {
+        guard availableHeight.isFinite else { return gridBoxRegularInset }
+        return availableHeight >= gridBoxRegularHeight ? gridBoxRegularInset : gridBoxCompactInset
+    }
 
     /// The square nine-point grid box's side, derived from `availableHeight`
     /// — the panel's tab-content scroll viewport height — instead of a fixed
     /// constant (FR-12.4, #108).
     ///
-    /// Capped at `gridBoxMaxSide`. Deliberately has no hard floor: per the
-    /// human's 2026-09-27 call (#108's "假設 1"), a genuinely short viewport
-    /// (e.g. iPhone SE) shrinks the box further rather than clipping it, even
-    /// below the 96pt the ticket otherwise names as a target minimum.
+    /// Capped at `gridBoxMaxSide`. Deliberately has no hard floor: a
+    /// genuinely short viewport shrinks the box rather than clipping it
+    /// (#108's "假設 1"). Expected values: 120 -> 96, 104 -> 88.
     ///
     /// `availableHeight` being non-finite (`.infinity`, `PositionTabView`'s
     /// "not measured yet" default before `ui-shell` wires up real
@@ -121,7 +125,7 @@ extension PositionTabModel {
     /// every caller renders sensibly before that lands.
     static func gridBoxSide(forAvailableHeight availableHeight: CGFloat) -> CGFloat {
         guard availableHeight.isFinite else { return gridBoxMaxSide }
-        let side = availableHeight - gridBoxVerticalInset * 2
+        let side = availableHeight - gridBoxVerticalInset(forAvailableHeight: availableHeight) * 2
         return max(0, min(side, gridBoxMaxSide))
     }
 }
