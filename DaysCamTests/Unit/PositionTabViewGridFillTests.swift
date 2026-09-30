@@ -50,11 +50,15 @@ final class PositionTabViewGridFillTests: XCTestCase {
     }
 
     func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() {
-        // Matches #108's iPhone SE QA report almost exactly: a small
-        // `availableHeight` (SE's real panel is short) produced a box
-        // measured 131×84 — not square — even though `gridBoxSide` is one
-        // `CGFloat` fed into both `width:` and `height:` of the same
-        // `.frame(...)` call, which should make that impossible on its own.
+        // A moderate, non-max `availableHeight`, sanity-checking that the
+        // box stays square once `gridBoxSide` is no longer pinned at
+        // `gridBoxMaxSide` the way `testNineDotsSpreadAcross...` above always
+        // clamps to. Not a claim that this covers every real iPhone SE
+        // scenario: a *separate*, real-device #122 QA report found the box
+        // non-square at SE's actual (much smaller, ~36pt) `gridBoxSide` —
+        // the human's 2026-09-29 call was to track that as its own,
+        // not-yet-diagnosed issue rather than fold a fix into this PR, so
+        // this test intentionally does not attempt to reproduce it.
         let profile = CameraProfile(name: "測試",
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
@@ -77,20 +81,32 @@ final class PositionTabViewGridFillTests: XCTestCase {
     /// Hosts `view` in a real window and returns every rendered dot's frame
     /// (in window coordinates) — a small (`<= 16pt`), roughly-square view is
     /// one of the nine `Circle` dots (14pt selected, 7pt unselected).
+    ///
+    /// Polls until all nine dots have appeared (or a generous 3s timeout),
+    /// rather than a single fixed short wait — a bot review on #111 already
+    /// flagged the earlier fixed `0.1s × 5` wait as fragile on a slower CI,
+    /// and QA later hit exactly that on #122: 0 dots found on their machine.
+    /// A fixed wait can be too short under contention (this project's
+    /// simulators are shared across several agents at once); polling costs
+    /// nothing extra when the layout settles quickly, the way it does here.
     private func renderedDotFrames(hosting view: PositionTabView, hostWidth: CGFloat, hostHeight: CGFloat) -> [CGRect] {
         let hosting = UIHostingController(rootView: view.frame(width: hostWidth))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: hostWidth, height: hostHeight))
         window.rootViewController = hosting
         window.makeKeyAndVisible()
         hosting.view.frame = CGRect(x: 0, y: 0, width: hostWidth, height: hostHeight)
-        for _ in 0..<5 {
-            hosting.view.setNeedsLayout()
-            hosting.view.layoutIfNeeded()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
 
         var frames: [CGRect] = []
-        collectDotFrames(in: hosting.view, into: &frames)
+        let deadline = Date().addingTimeInterval(3)
+        repeat {
+            hosting.view.setNeedsLayout()
+            hosting.view.layoutIfNeeded()
+            frames = []
+            collectDotFrames(in: hosting.view, into: &frames)
+            if frames.count == 9 { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
         return frames
     }
 
