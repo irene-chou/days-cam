@@ -24,9 +24,8 @@ final class PositionTabViewGridFillTests: XCTestCase {
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
         let model = PositionTabModel(profile: profile) { _ in }
-        // 300 clamps to `gridBoxMaxSide` (132) — matches #108's iPhone 16 QA
-        // report, where the box itself was already correctly sized (~132pt
-        // square) but the dots inside it were not spread across it.
+        // 300 clamps to `gridBoxMaxSide` (96) — the dots must spread
+        // across the whole box, not cluster near one edge (#108 QA report).
         let view = PositionTabView(model: model, availableHeight: 300)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 400)
@@ -44,13 +43,13 @@ final class PositionTabViewGridFillTests: XCTestCase {
         XCTAssertEqual(rowCenters.count, 3, "九個點應該落在三個不同的列上，量到的列中心：\(rowCenters)")
 
         // The box's own grid area is `gridBoxSide - 2*4` (the `.padding(4)`
-        // on each side, `PositionTabView.body`) — 124pt here. Each row
+        // on each side, `PositionTabView.body`) — 88pt here. Each row
         // should own roughly a third of that, so the top and bottom row
         // centers should be far apart, not clustered together the way the
         // pre-fix `LazyVGrid` left them (under 25pt apart in the original
         // bug report).
         let rowSpan = try XCTUnwrap(rowCenters.last) - XCTUnwrap(rowCenters.first)
-        XCTAssertGreaterThan(rowSpan, 60, "三列應該分散在小框的整個高度，不是擠在一小段範圍內")
+        XCTAssertGreaterThan(rowSpan, 40, "三列應該分散在小框的整個高度，不是擠在一小段範圍內")
     }
 
     func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() throws {
@@ -67,7 +66,7 @@ final class PositionTabViewGridFillTests: XCTestCase {
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
         let model = PositionTabModel(profile: profile) { _ in }
-        let availableHeight: CGFloat = 108 // gridBoxSide = 108 - 24 = 84
+        let availableHeight: CGFloat = 104 // gridBoxSide = 104 - 8*2 = 88
         let view = PositionTabView(model: model, availableHeight: availableHeight)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 200)

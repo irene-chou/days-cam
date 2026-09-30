@@ -36,9 +36,20 @@ struct StyleTabView: View {
         // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
         // puts the whole visual gap inside `subTabRow`'s own bottom padding
         // instead — see that view's `.padding(.top:.bottom:)`.
-        VStack(alignment: .leading, spacing: 0) {
-            subTabRow
-            content
+        //
+        // `subTabRow` is a pinned section header (#129): this view sits
+        // inside the panel's own vertical `ScrollView`, and a `LazyVStack`
+        // with `pinnedViews` pins against that enclosing scroll view, so the
+        // icon row stays on top while the (taller) font grid scrolls under
+        // it. The header's opaque panel-colored background hides content
+        // passing beneath it.
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            Section {
+                content
+            } header: {
+                subTabRow
+                    .background(CameraTheme.background)
+            }
         }
         // This tab's own `.tabbody` outer inset (`D3-style-tab.html`'s
         // style-tab-specific override, `.tabbody{padding:4px 10px 6px}` —
@@ -142,32 +153,41 @@ struct StyleTabView: View {
 
     // MARK: - 字型 (FR-10.2, FR-10.3)
 
+    /// Height of one font cell; the whole cell is the tap target (#129).
+    static let fontCellHeight: CGFloat = 44
+    /// Font name size inside a cell (#129 — was 17 in the old chip row).
+    static let fontCellTextSize: CGFloat = 15
+
+    /// Three equal-width columns, rows in `fontOptions` order, the last row
+    /// left-aligned. Scrolls vertically with the panel instead of
+    /// horizontally (#129).
     private var fontRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            // 6pt gap between chips, each with its own 10/8pt tap-target
-            // padding (`.hs{gap:6px}`, `.fch{padding:8px 10px}`, #106 — was
-            // a bare 22pt gap with no per-chip padding at all).
-            HStack(spacing: 6) {
-                ForEach(model.fontOptions, id: \.self) { fontID in
-                    let isSelected = model.profile.style.fontID == fontID
-                    Button {
-                        model.selectFont(fontID)
-                    } label: {
-                        Text(fontID.displayName)
-                            .font(Font(OverlayMetrics.font(for: fontID, size: 17)))
-                            // Matches the design's font-chip token (`.fc`,
-                            // `D3-tab-options.html:54-55`): unselected uses
-                            // the secondary/t2 shade, not the tertiary one
-                            // the second-layer nav row uses.
-                            .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                    }
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                  alignment: .leading,
+                  spacing: 8) {
+            ForEach(model.fontOptions, id: \.self) { fontID in
+                let isSelected = model.profile.style.fontID == fontID
+                Button {
+                    model.selectFont(fontID)
+                } label: {
+                    Text(fontID.displayName)
+                        .font(Font(OverlayMetrics.font(for: fontID, size: Self.fontCellTextSize)))
+                        .foregroundColor(CameraTheme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.fontCellHeight)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 1.5 : 0)
+                        )
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
-            .padding(.vertical, 4)
         }
+        .padding(.vertical, 4)
     }
 
     // MARK: - 顏色 (FR-10.4, FR-10.7)
@@ -184,7 +204,7 @@ struct StyleTabView: View {
     // MARK: - 外框、外框顏色 (FR-10.5, FR-10.6, FR-10.10)
 
     private var outlineContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 // `.hs{gap:6px}` (#106) — was 14.
                 HStack(spacing: 6) {
@@ -574,4 +594,14 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
         .frame(width: 375)
         .padding(.vertical, 12)
         .background(Color(.systemBackground))
+}
+
+#Preview("字型 · 面板高度 120 可捲動，圖示列固定 (375pt)") {
+    let model = previewModel()
+    model.selectedSubTab = .font
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 120)
+    .background(CameraTheme.background)
 }
