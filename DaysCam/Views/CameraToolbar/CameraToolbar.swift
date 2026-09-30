@@ -9,6 +9,19 @@ import SwiftUI
 struct CameraToolbar: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// Whether the viewfinder currently renders behind this toolbar (issue
+    /// #121, `CameraScreenLayoutMetrics.isViewfinderBehindHeader` decides
+    /// this — `CameraScreen` computes it, not this view, since it needs the
+    /// same layout metrics that already decide everything else about where
+    /// this toolbar sits). Every icon/text here switches to
+    /// `CameraTheme.inkOnPhoto` (plus a faint shadow to stay legible over a
+    /// bright part of the photo) instead of `CameraTheme.ink` while true —
+    /// a tool that is *on* still uses `CameraTheme.active` either way
+    /// (PRD 0.2 FR-7.10 unaffected by this). Defaults to `false` so the
+    /// previews below (and any other caller with nothing behind the
+    /// toolbar) don't have to spell it out.
+    var isOnPhoto: Bool = false
+
     /// Both side groups get `.frame(maxWidth: .infinity, alignment:)` rather
     /// than a `Spacer` on each side of `profileChip`: two views with the
     /// same "infinitely flexible" width split whatever's left over the chip
@@ -43,7 +56,7 @@ struct CameraToolbar: View {
     private var flashButton: some View {
         Button(action: model.cycleFlash) {
             Image(systemName: flashIconName)
-                .toolbarIcon(isActive: model.isFlashToolActive)
+                .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: isOnPhoto)
         }
         .disabled(model.isFlashToolDisabled)
         .opacity(model.isFlashToolDisabled ? 0.35 : 1)
@@ -68,7 +81,7 @@ struct CameraToolbar: View {
                         .font(CameraTheme.toolFont(.footnote))
                 }
             }
-            .toolbarIcon(isActive: model.isTimerToolActive)
+            .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: isOnPhoto)
         }
         .accessibilityLabel(model.captureSettingsStore.timerSeconds == .off
                             ? "計時器：關"
@@ -106,7 +119,8 @@ struct CameraToolbar: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundColor(CameraTheme.ink)
+            .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+            .legibleOverPhoto(isOnPhoto)
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
         }
@@ -126,7 +140,7 @@ struct CameraToolbar: View {
     }
 
     private var ratioIcon: some View {
-        Self.ratioIcon(for: model.captureSettingsStore.captureAspectRatio)
+        Self.ratioIcon(for: model.captureSettingsStore.captureAspectRatio, isOnPhoto: isOnPhoto)
     }
 
     /// One ratio's SF Symbol outline (`rectangle.ratio.3.to.4`, `square`, or
@@ -150,7 +164,7 @@ struct CameraToolbar: View {
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
     /// preview below can render all three side by side without duplicating
     /// these layout numbers.
-    fileprivate static func ratioIcon(for ratio: CaptureAspectRatio) -> some View {
+    fileprivate static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
         let contentHeight: CGFloat = 20
         let contentWidth = contentHeight * ratio.shortToLongRatio
         return Image(systemName: ratio.sfSymbolName)
@@ -166,14 +180,15 @@ struct CameraToolbar: View {
                     // itself, not just avoids overflowing past it.
                     .padding(.horizontal, 1.5)
             )
-            .foregroundColor(CameraTheme.ink)
+            .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
             .frame(width: 38, height: 38)
+            .legibleOverPhoto(isOnPhoto)
     }
 
     private var gridButton: some View {
         Button(action: model.toggleGrid) {
             Image(systemName: "grid")
-                .toolbarIcon(isActive: model.isGridToolActive)
+                .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: isOnPhoto)
         }
         .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
     }
@@ -181,7 +196,7 @@ struct CameraToolbar: View {
     private var flipButton: some View {
         Button(action: model.switchCamera) {
             Image(systemName: "arrow.triangle.2.circlepath.camera")
-                .toolbarIcon(isActive: false)
+                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
         }
         .disabled(model.isCaptureUnsupported)
         .opacity(model.isCaptureUnsupported ? 0.35 : 1)
@@ -190,22 +205,42 @@ struct CameraToolbar: View {
 }
 
 /// One SF Symbol/text label at the toolbar's fixed 38x38 tap target, colored
-/// `active` when the tool it belongs to is on and `ink` otherwise (PRD 0.2
-/// FR-7.10, FR-14.2 — no button background or border).
+/// `active` when the tool it belongs to is on, otherwise `ink`/`inkOnPhoto`
+/// depending on `isOnPhoto` (PRD 0.2 FR-7.10, FR-14.2 — no button
+/// background or border; issue #121 for the `inkOnPhoto` half).
 private struct ToolbarIconModifier: ViewModifier {
     let isActive: Bool
+    let isOnPhoto: Bool
 
     func body(content: Content) -> some View {
         content
             .font(.system(size: 18, weight: .medium))
-            .foregroundColor(isActive ? CameraTheme.active : CameraTheme.ink)
+            .foregroundColor(isActive ? CameraTheme.active : (isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink))
             .frame(width: 38, height: 38)
+            .legibleOverPhoto(isOnPhoto)
     }
 }
 
 private extension View {
-    func toolbarIcon(isActive: Bool) -> some View {
-        modifier(ToolbarIconModifier(isActive: isActive))
+    func toolbarIcon(isActive: Bool, isOnPhoto: Bool) -> some View {
+        modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto))
+    }
+}
+
+/// A faint shadow (black 30%, radius 3) so light, on-photo chrome
+/// (`CameraTheme.inkOnPhoto`) stays legible over a bright part of the photo
+/// (issue #121 assumption 1) — a no-op while `isOnPhoto` is false, so this
+/// is safe to chain onto anything unconditionally. Shared with
+/// `CameraScreen`'s own footer icons, which switch between the same two
+/// tokens for the same reason; not `private` for that reason.
+extension View {
+    @ViewBuilder
+    func legibleOverPhoto(_ isOnPhoto: Bool) -> some View {
+        if isOnPhoto {
+            shadow(color: .black.opacity(0.3), radius: 3)
+        } else {
+            self
+        }
     }
 }
 
@@ -275,6 +310,23 @@ private extension CaptureAspectRatio {
             ForEach(CaptureAspectRatio.allCases, id: \.self) { ratio in
                 CameraToolbar.ratioIcon(for: ratio)
             }
+        }
+    }
+}
+
+/// 驗收 T.3/T.6（issue #121）：`isOnPhoto: true` over a photo-like
+/// gradient, so qa can compare the light chrome + shadow against a bright
+/// background without needing the live camera feed.
+#Preview("isOnPhoto（T.3/T.6）") {
+    let store = ProfileStore()
+    store.load()
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
+    return ZStack {
+        LinearGradient(colors: [.white, .gray], startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+        VStack {
+            CameraToolbar(model: model, isOnPhoto: true)
+            Spacer()
         }
     }
 }
