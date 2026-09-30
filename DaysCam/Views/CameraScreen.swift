@@ -102,21 +102,31 @@ struct CameraScreen: View {
 
     // MARK: - Viewfinder box
 
-    /// The viewfinder box's frame comes straight from `metrics`: 3:4 and
-    /// 9:16 both start at the header's bottom edge (issue #101 rule ①); 1:1
-    /// reuses the exact same 3:4-shaped box and lets its smaller square
-    /// content center inside for free, since a `ZStack` centers a smaller
-    /// child by default (rule ②, unchanged from before #101). While the
-    /// overlay panel is open (PRD 0.2 FR-8.2), 3:4/1:1's box additionally
-    /// scales to 80% width (height following, since the box keeps its 3:4
-    /// shape) and centers horizontally — 9:16 is never shrunk (see
-    /// `footerColumn`'s doc comment for why opening the panel at 9:16 is a
-    /// separate, pre-existing special case, unchanged by this issue).
+    /// The viewfinder box's frame while the panel is closed comes straight
+    /// from `metrics`: 3:4 and 9:16 both start at the header's bottom edge
+    /// (issue #101 rule ①); 1:1 reuses the exact same 3:4-shaped box and
+    /// lets its smaller square content center inside for free, since a
+    /// `ZStack` centers a smaller child by default (rule ②).
+    ///
+    /// While the overlay panel is open (PRD 0.2 FR-8.2), every ratio instead
+    /// shares one box: the same 80%-width, 3:4-shaped, horizontally-centered
+    /// box 3:4/1:1 already used here — 9:16 fits a 9:16 rectangle to that
+    /// box's height and centers horizontally the same way 1:1 centers
+    /// vertically (issue #120, `CameraScreenLayoutMetrics
+    /// .viewfinderContentSize(for:boxSize:isPanelOpen:)`), rather than
+    /// keeping its own pre-#120 full-bleed frame, which put roughly half the
+    /// photo (and the default bottom-right overlay position) behind the
+    /// panel with no way to drag it out.
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
-        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
-        let rect = metrics.viewfinderFrame(for: ratio, boxWidth: boxWidth)
-        let vfSize = viewfinderContentSize(for: ratio, boxSize: rect.size)
+        let isOpen = model.panelModel.isOpen
+        let rect: CGRect
+        if ratio == .nineBySixteen && isOpen {
+            rect = metrics.viewfinderFrame(for: .threeByFour, boxWidth: sharedPanelOpenBoxWidth(metrics: metrics))
+        } else {
+            rect = metrics.viewfinderFrame(for: ratio, boxWidth: viewfinderBoxWidth(metrics: metrics))
+        }
+        let vfSize = metrics.viewfinderContentSize(for: ratio, boxSize: rect.size, isPanelOpen: isOpen)
         return ZStack {
             viewfinderContent(frameSize: vfSize)
                 .frame(width: vfSize.width, height: vfSize.height)
@@ -126,59 +136,55 @@ struct CameraScreen: View {
         .offset(x: rect.minX, y: rect.minY)
     }
 
-    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
-    /// is open (PRD 0.2 FR-8.2), full screen width otherwise. 9:16 is never
-    /// shrunk. Shared by `viewfinderBox` and `footerColumn` — both need the
-    /// exact same value, since `footerColumn` has to start right where the
-    /// (possibly shrunk) box actually ends, not at the closed-panel box's
-    /// unscaled bottom edge (code review finding on #101/#110: with the box
-    /// shrunk to 80% width — and height following it, since the box stays
-    /// 3:4-shaped — its bottom edge moves up by 20% of its height; anchoring
-    /// the panel/bottom bar to the closed-panel `metrics.footerRegionTop`
-    /// instead left a gap between the shrunk box and the panel).
-    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics, ratio: CaptureAspectRatio) -> CGFloat {
-        let fullWidth = metrics.screenSize.width
-        return (ratio != .nineBySixteen && model.panelModel.isOpen) ? fullWidth * 0.8 : fullWidth
+    /// The shared panel-open box's own width (issue #120): 80% of the
+    /// screen, regardless of ratio — separated out from `viewfinderBoxWidth`
+    /// below only because that one still special-cases "9:16 while closed"
+    /// (unaffected by this issue) and reads oddly applied to the always-open
+    /// 9:16 case this helper exists for.
+    private func sharedPanelOpenBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        metrics.screenSize.width * 0.8
     }
 
-    /// The on-screen size of the viewfinder itself within `boxSize` (which
-    /// is always 3:4-shaped for 3:4/1:1, PRD 0.2 FR-7.8): unchanged for 3:4
-    /// and 9:16, the box's width squared for 1:1.
-    private func viewfinderContentSize(for ratio: CaptureAspectRatio, boxSize: CGSize) -> CGSize {
-        switch ratio {
-        case .threeByFour, .nineBySixteen:
-            return boxSize
-        case .oneByOne:
-            return CGSize(width: boxSize.width, height: boxSize.width)
-        }
+    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
+    /// is open (PRD 0.2 FR-8.2), full screen width otherwise — every ratio
+    /// alike since issue #120 (9:16 used to be excluded here, back when
+    /// opening the panel at 9:16 kept its own pre-#120 full-bleed frame
+    /// instead of sharing this box). Shared by `viewfinderBox` and
+    /// `footerColumn` — both need the exact same value, since `footerColumn`
+    /// has to start right where the (possibly shrunk) box actually ends,
+    /// not at the closed-panel box's unscaled bottom edge (code review
+    /// finding on #101/#110: with the box shrunk to 80% width — and height
+    /// following it, since the box stays 3:4-shaped — its bottom edge moves
+    /// up by 20% of its height; anchoring the panel/bottom bar to the
+    /// closed-panel `metrics.footerRegionTop` instead left a gap between the
+    /// shrunk box and the panel).
+    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        model.panelModel.isOpen ? sharedPanelOpenBoxWidth(metrics: metrics) : metrics.screenSize.width
     }
 
     // MARK: - Header
 
     /// The toolbar, vertically centered within the header region below the
     /// status bar (issue #101's own suggested approach — exact padding is
-    /// #105's job). Solid background in every case except the one where the
-    /// viewfinder still runs *behind* the header: 9:16's small-screen
-    /// fallback (`metrics.isFallback`, issue #101 assumption 2), which
-    /// reverts to the pre-#101 full-bleed look and needs the header legible
-    /// over a live picture instead of `CameraTheme.background`.
+    /// #105's job). Always a transparent background (issue #121 — this used
+    /// to fade to `CameraTheme.background` behind the one case where the
+    /// viewfinder runs behind the header, 9:16's small-screen fallback,
+    /// `metrics.isFallback`; human decision 2026-09-28 dropped every such
+    /// gradient in favor of the toolbar's own icons simply switching to a
+    /// light color when they need to stay legible over a photo instead,
+    /// via `CameraScreenLayoutMetrics.isViewfinderBehindHeader` —
+    /// `CameraToolbar.isOnPhoto` below).
     private func headerBar(metrics: CameraScreenLayoutMetrics) -> some View {
-        VStack(spacing: 0) {
+        let isOnPhoto = metrics.isViewfinderBehindHeader(ratio: model.captureSettingsStore.captureAspectRatio,
+                                                         isPanelOpen: model.panelModel.isOpen)
+        return VStack(spacing: 0) {
             Spacer().frame(height: metrics.topInset)
-            CameraToolbar(model: model)
+            CameraToolbar(model: model, isOnPhoto: isOnPhoto)
                 .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
-        .background(headerBackground(metrics: metrics))
-    }
-
-    @ViewBuilder
-    private func headerBackground(metrics: CameraScreenLayoutMetrics) -> some View {
-        if isNineBySixteenFallback(metrics: metrics) {
-            topFadeGradient
-        } else {
-            CameraTheme.background
-        }
+        .background(Color.clear)
+        .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
     // MARK: - Footer
@@ -190,48 +196,31 @@ struct CameraScreen: View {
     /// screen's physical bottom). Closed, that start is
     /// `metrics.footerRegionTop` (the *unscaled* 3:4 box's bottom) exactly
     /// as issue #101 fixed it — header/footer never move switching ratios,
-    /// only the viewfinder does. Open, 3:4/1:1's box has shrunk to 80% width
-    /// (`viewfinderBoxWidth`), and this region's start shrinks up right
-    /// along with it (`footerRegionTop(boxWidth:)`) so the panel still
-    /// starts flush against the box instead of leaving a gap (code review
-    /// finding, #110) — 9:16's box is never shrunk, so its start never
-    /// moves either way. Transparent for 3:4/1:1 (nothing draws behind it
-    /// there — `CameraScreen`'s own root background already shows through);
-    /// 9:16 floats this whole column over the viewfinder's bottom sliver
-    /// behind a gradient, same as before #101 (PRD 0.2 FR-7.8).
+    /// only the viewfinder does. Open, every ratio's box has shrunk to 80%
+    /// width alike (`viewfinderBoxWidth`, issue #120), and this region's
+    /// start shrinks up right along with it (`footerRegionTop(boxWidth:)`)
+    /// so the panel still starts flush against the box instead of leaving a
+    /// gap (code review finding, #110).
     ///
-    /// Assumption (carried over from before #101, out of this issue's
-    /// scope per its own assumption 3): PRD 0.2 FR-8.2/D-2 only ever show
-    /// the panel against a 3:4 viewfinder; opening it while at 9:16 has no
-    /// documented layout, so it keeps floating over the bottom bar at a
-    /// fixed height here rather than filling this region like 3:4/1:1 do.
+    /// Always a transparent background (issue #121 — this used to fade to
+    /// `CameraTheme.background` behind the one case where the viewfinder
+    /// runs behind the footer, closed-panel 9:16; see `headerBar`'s own doc
+    /// comment for why: the bottom bar's icons switch to a light color
+    /// instead, via `CameraScreenLayoutMetrics.isViewfinderBehindFooter`).
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
-        let isNineBySixteen = ratio == .nineBySixteen
         let isOpen = model.panelModel.isOpen
-        // D-2's panel-open padding below is 3:4/1:1-only (#105): 9:16's own
-        // panel-open layout is the pre-existing 220pt-fixed-height special
-        // case this issue leaves untouched (see doc comment above), so it
-        // keeps the closed-panel's zero padding instead (code review
-        // finding, #112 — an earlier version of this line applied the new
-        // padding whenever `isOpen`, regardless of ratio, which shrank and
-        // shifted the 9:16 panel too, contradicting that same doc comment).
-        let appliesPanelOpenSpacing = isOpen && !isNineBySixteen
-        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
+        let appliesPanelOpenSpacing = isOpen
+        let boxWidth = viewfinderBoxWidth(metrics: metrics)
         let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
+        let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
         return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
             if isOpen {
-                if isNineBySixteen {
-                    OverlayPanelView(model: model)
-                        .frame(height: 220)
-                        .transition(.opacity)
-                } else {
-                    OverlayPanelView(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity)
-                }
+                OverlayPanelView(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             }
-            bottomBar
+            bottomBar(isOnPhoto: isOnPhoto)
         }
         // D-2's panel-open state (#105) wraps panel+row in its own outer
         // inset (`.l2 .bottom{padding:6px 6px 14px}`) with a 6pt gap between
@@ -244,23 +233,10 @@ struct CameraScreen: View {
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
-        .background(isNineBySixteen ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
+        .background(Color.clear)
         .offset(x: 0, y: regionTop)
         .animation(CameraTheme.spring, value: model.panelModel.isOpen)
-    }
-
-    private func isNineBySixteenFallback(metrics: CameraScreenLayoutMetrics) -> Bool {
-        model.captureSettingsStore.captureAspectRatio == .nineBySixteen && metrics.isFallback
-    }
-
-    private var topFadeGradient: some View {
-        LinearGradient(colors: [CameraTheme.background.opacity(0.85), .clear],
-                       startPoint: .top, endPoint: .bottom)
-    }
-
-    private var bottomFadeGradient: some View {
-        LinearGradient(colors: [.clear, CameraTheme.background.opacity(0.9)],
-                       startPoint: .top, endPoint: .bottom)
+        .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
     // MARK: - Viewfinder contents
@@ -379,7 +355,7 @@ struct CameraScreen: View {
     /// inset, so 16pt bottom/0 top; open, D-2's `.l2 .row{padding:6px 22px
     /// 0}` puts that same 16pt-ish breathing room above the row instead
     /// (`footerColumn`'s own gap to the panel), so 0 bottom/6pt top here.
-    private var bottomBar: some View {
+    private func bottomBar(isOnPhoto: Bool) -> some View {
         ZStack {
             HStack {
                 Spacer()
@@ -387,9 +363,9 @@ struct CameraScreen: View {
                 Spacer()
             }
             HStack {
-                leftBottomBarButton
+                leftBottomBarButton(isOnPhoto: isOnPhoto)
                 Spacer()
-                rightBottomBarButton
+                rightBottomBarButton(isOnPhoto: isOnPhoto)
             }
         }
         .padding(.horizontal, 22)
@@ -398,30 +374,30 @@ struct CameraScreen: View {
     }
 
     @ViewBuilder
-    private var leftBottomBarButton: some View {
+    private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.leftBottomBarAction {
         case .latestPhoto:
-            thumbnailButton
+            thumbnailButton(isOnPhoto: isOnPhoto)
         case .manageProfiles:
-            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔") {
+            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔", isOnPhoto: isOnPhoto) {
                 model.presentProfileManagement()
             }
         }
     }
 
     @ViewBuilder
-    private var rightBottomBarButton: some View {
+    private func rightBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.rightBottomBarAction {
         case .openOverlayPanel:
             // `pencil.tip.crop.circle`, not `textformat`: the style tab's
             // own 字型 sub-tab already uses `textformat` (PRD FR-10.1), and
             // having both on screen at once while the panel is open reads
             // as the same button twice (human decision, 2026-09-27, #84).
-            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定") {
+            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
                 model.panelModel.open()
             }
         case .collapse:
-            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板") {
+            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
                 model.panelModel.close()
             }
         }
@@ -430,20 +406,30 @@ struct CameraScreen: View {
     /// 50×50 tap target, matching D-1/D-2's `.bubble` (#105) — every bottom
     /// bar icon button except `thumbnailButton`, which is its own smaller
     /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
-    private func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+    /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
+    /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
+    /// only ever appears while the panel is open (`.manageProfiles`/
+    /// `.collapse`, PRD 0.2 FR-8.3), where the viewfinder is never behind
+    /// the footer (issue #120), so callers always pass `false` today; still
+    /// threaded through properly rather than assumed, so it stays correct
+    /// if that ever changes.
+    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundColor(CameraTheme.ink)
+                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                 .frame(width: 50, height: 50)
+                .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel(accessibilityLabel)
     }
 
     /// Left key while closed: the newest DaysCam photo, or a placeholder
     /// icon (PRD 0.2 FR-15.2). Tapping it does nothing yet — TASK-29 wires
-    /// up requesting read access and opening the gallery.
-    private var thumbnailButton: some View {
+    /// up requesting read access and opening the gallery. `isOnPhoto` only
+    /// ever affects the placeholder icon (issue #121) — an actual thumbnail
+    /// image is unaffected either way (assumption 4).
+    private func thumbnailButton(isOnPhoto: Bool) -> some View {
         Button {
             // TASK-29: request read access, then open the gallery.
         } label: {
@@ -455,7 +441,8 @@ struct CameraScreen: View {
                 } else {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(CameraTheme.ink)
+                        .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+                        .legibleOverPhoto(isOnPhoto)
                 }
             }
             .frame(width: 44, height: 44)
@@ -611,5 +598,54 @@ private struct GridLinesView: View {
                                   profileStore: store,
                                   captureSettingsStore: settings)
     return CameraScreen(model: model)
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+// MARK: - Issue #120 (panel-open viewfinder, position tab, qa screenshots for G.9)
+
+@MainActor
+private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSuffix: String) -> CameraScreenModel {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.\(suiteSuffix)") ?? .standard)
+    settings.setAspectRatio(ratio)
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
+    model.panelModel.open()
+    model.panelModel.selectedTab = .position
+    return model
+}
+
+/// 驗收 G.1/G.5（issue #120）：3:4 開面板・位置分頁，作為跟 9:16 比較的基準畫面。
+#Preview("3:4 疊字面板打開・位置分頁（G.1 基準）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.34"))
+}
+
+/// 驗收 G.5：1:1 開面板・位置分頁，跟 3:4/9:16 共用同一個開面板觀景區。
+#Preview("1:1 疊字面板打開・位置分頁（G.5）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.11"))
+}
+
+/// 驗收 G.1（issue #120）：整張 9:16 觀景窗都在面板上方，不再被面板／底部列蓋住，
+/// 疊字（預設右下）拖得到、看得到。iPhone 16 參考值：觀景窗 ≈236×419，水平置中。
+#Preview("9:16 疊字面板打開・位置分頁（G.1）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.916"))
+}
+
+/// 驗收 G.7：iPhone SE 上重跑 G.1，開面板觀景區、9:16 內容都不重疊、不裁切。
+#Preview("iPhone SE・3:4 疊字面板打開・位置分頁（G.7 基準）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.se.34"))
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+/// 驗收 G.7：iPhone SE、1:1。
+#Preview("iPhone SE・1:1 疊字面板打開・位置分頁（G.7）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.se.11"))
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+/// 驗收 G.7：iPhone SE、9:16——小螢幕也走 #120 的規則（跟面板收起時的「假設 2」退回
+/// 行為是分開的兩件事：退回只影響面板收起時的 9:16，見 #101）。
+#Preview("iPhone SE・9:16 疊字面板打開・位置分頁（G.7）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
 }

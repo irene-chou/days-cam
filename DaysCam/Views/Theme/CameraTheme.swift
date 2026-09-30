@@ -38,6 +38,24 @@ enum CameraTheme {
     /// (`#FFC27A`) and not what on-state controls elsewhere use (#114).
     static let accentControl = Color("accentControl")
 
+    /// Primary text/icon color for chrome drawn directly over the live
+    /// photo — the header/footer while the viewfinder is behind them
+    /// (issue #121, `CameraScreenLayoutMetrics.isViewfinderBehindHeader/
+    /// Footer` decide *when*). Plain white, stated directly rather than as
+    /// an Asset Catalog entry: this is **not** a Dark-appearance variant of
+    /// `ink` and must never become one (PRD 0.2 FR-14.1 forbids the header/
+    /// footer following system Light/Dark Mode) — it is a wholly separate
+    /// token this screen picks between explicitly, by hand, based on its
+    /// own layout, the same way it already picks `active` over `ink` for a
+    /// tool that is on.
+    static let inkOnPhoto = Color.white
+    /// Secondary on-photo text/icon color: `inkOnPhoto` at 62%, mirroring
+    /// `inkSecondary`'s own opacity.
+    static let inkOnPhotoSecondary = inkOnPhoto.opacity(0.62)
+    /// Tertiary on-photo text/icon color: `inkOnPhoto` at 38%, mirroring
+    /// `inkTertiary`'s own opacity.
+    static let inkOnPhotoTertiary = inkOnPhoto.opacity(0.38)
+
     /// The shutter's outer ring (`#EADFD3`), stated directly since it is
     /// used in exactly one place and does not need an Asset Catalog entry.
     static let shutterRing = Color(red: 0xEA / 255, green: 0xDF / 255, blue: 0xD3 / 255)
