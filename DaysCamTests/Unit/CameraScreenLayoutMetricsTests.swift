@@ -131,6 +131,62 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         assertRectsEqual(frame, CGRect(x: 0, y: 0, width: 375, height: 667))
     }
 
+    // MARK: - Panel-open viewfinder content size (issue #120)
+
+    /// Reference value from issue #120 itself: iPhone 16's shared
+    /// panel-open box (80% of 393 = 314.4 wide, 419.2 tall, 3:4-shaped) fits
+    /// a 9:16 rectangle sized to that box's height.
+    func testIPhone16PanelOpenNineBySixteenContentSize() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 393 * 0.8)
+        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
+        XCTAssertEqual(content.height, 419.2, accuracy: accuracy)
+        XCTAssertEqual(content.width, 235.8, accuracy: 0.05)
+    }
+
+    func testProMaxPanelOpenNineBySixteenContentSize() {
+        let metrics = makeMetrics(width: 440, height: 956, top: 59, bottom: 34)
+        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 440 * 0.8)
+        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
+        XCTAssertEqual(content.height, 469.333, accuracy: accuracy)
+        XCTAssertEqual(content.width, 264.0, accuracy: 0.05)
+    }
+
+    func testSEPanelOpenNineBySixteenContentSize() {
+        let metrics = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 375 * 0.8)
+        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
+        XCTAssertEqual(content.height, 400.0, accuracy: accuracy)
+        XCTAssertEqual(content.width, 225.0, accuracy: 0.05)
+    }
+
+    /// Closed, 9:16's box already *is* the 9:16 shape (from
+    /// `viewfinderFrame(for: .nineBySixteen, boxWidth:)`), so content fills
+    /// it as-is — `isPanelOpen: false` must not re-fit it as if it were the
+    /// shared 3:4 box.
+    func testNineBySixteenContentSizeFillsItsOwnBoxWhenPanelIsClosed() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        let box = metrics.viewfinderFrame(for: .nineBySixteen, boxWidth: 393)
+        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: false)
+        XCTAssertEqual(content.width, box.size.width, accuracy: accuracy)
+        XCTAssertEqual(content.height, box.size.height, accuracy: accuracy)
+    }
+
+    /// 3:4/1:1 are unaffected by `isPanelOpen` — only 9:16 branches on it.
+    func testThreeByFourAndOneByOneContentSizeIgnorePanelOpenFlag() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        let boxSize = CGSize(width: 314.4, height: 419.2)
+        for isPanelOpen in [true, false] {
+            let threeByFour = metrics.viewfinderContentSize(for: .threeByFour, boxSize: boxSize, isPanelOpen: isPanelOpen)
+            XCTAssertEqual(threeByFour.width, boxSize.width, accuracy: accuracy)
+            XCTAssertEqual(threeByFour.height, boxSize.height, accuracy: accuracy)
+
+            let oneByOne = metrics.viewfinderContentSize(for: .oneByOne, boxSize: boxSize, isPanelOpen: isPanelOpen)
+            XCTAssertEqual(oneByOne.width, boxSize.width, accuracy: accuracy)
+            XCTAssertEqual(oneByOne.height, boxSize.width, accuracy: accuracy)
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {
