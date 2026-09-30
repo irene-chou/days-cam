@@ -42,7 +42,11 @@
 8. **Code review 迴圈**:每個 PR 開啟與每次 push 後,`claude[bot]` 會自動 review,送出 Approve 或 Request changes;有新 commit 時會先撤銷 bot 對舊 commit 的 approve。審核狀態看 PR 的 Review decision(`gh pr view <N> --json reviewDecision`)。
    - **Dev teammate**:收到 Lead 通知(或自己看到 Changes requested)後,讀 bot 的 review 總結與行內留言(`gh pr view <N> --comments`、`gh api repos/irene-chou/days-cam/pulls/<N>/comments`)。`[必修]` 逐條處理:同意就在同一分支修正、跑完整測試、push,並回覆該留言「已修正:<commit>」;不同意就回覆理由並告知 Lead,不要為了拿到 approve 硬改(同第 7 條精神)。`[建議]` 可自行判斷,不採納時簡短回覆原因即可
    - **Lead**:定期(例如 `/loop 10m`)檢查開著的 PR;bot 對最新 commit 要求修改時,依 TASKS-0.2「檔案所有權」通知負責的 teammate。同一個 PR 來回 **3 輪**仍未 approve,就停下來交給人類判斷,不要讓 bot 與 dev 無限往返
-   - **合併條件**:bot 對最新 commit 已 approve(`reviewDecision` 為 `APPROVED`),且 qa 驗收通過;bot 被 dev 以理由駁回的條目需由 Lead 或人類確認
+   - **Lead**:需要人類決定的事(截圖待確認、3 輪未 approve、dev 駁回 bot 的條目待裁決)在 PR 加 label `needs-human`,人類回覆後由 Lead 移除
+   - **合併條件**:bot 對最新 commit 已 approve(`reviewDecision` 為 `APPROVED`),且最新 commit 的 commit status `qa` 為 `success`;bot 被 dev 以理由駁回的條目需由 Lead 或人類確認
+   - **qa 狀態寫成 commit status**:qa 對 PR 最新 commit 設 context 為 `qa` 的 status(開始驗收設 `pending`,全部通過設 `success`,有失敗設 `failure`,只剩 B 級待人類驗時維持 `pending` 並在 description 註明),PR 列表的 ✓/●/✗ 會直接顯示。status 綁在 commit 上,dev push 新 commit 後舊結果自動失效,qa 需對新 commit 重驗後重設:
+     `gh api repos/irene-chou/days-cam/statuses/$(gh pr view <N> --json headRefOid -q .headRefOid) -f state=success -f context=qa -f description="A1–A6 通過"`(description 上限 140 字元,詳細結果仍留言在 PR)
+   - **人類的看板**(GitHub 搜尋書籤):可合併 `is:pr is:open review:approved status:success`;等人類處理 `is:pr is:open label:needs-human`
    - review workflow 修改前開的分支,若沒 merge 最新 `main`,不會跑新版 review(workflow 檔與 `main` 不同會被跳過),先 merge `main` 再 push
 9. **驗證截圖貼在 PR 上**:`gh` 不能上傳圖片,所以截圖 commit 到專用的孤兒分支 `qa-screenshots`(與 `main` 無共同歷史,**永遠不要合併**),路徑 `pr-<PR編號>/<PR編號>_<驗收編號>_<裝置>_<說明>.png`,push 後在 PR 留言用 `<img src="https://github.com/irene-chou/days-cam/blob/qa-screenshots/pr-<N>/<檔名>?raw=true" width="280">` 引用(可放進表格並排),並寫明每張對應的驗收編號。操作方式:用獨立 worktree `git switch qa-screenshots`(不存在時用 `git switch --orphan qa-screenshots` 建立),只加圖片、不動其他檔案,不要 force push。需要與設計稿並排比較或人類要一次看多個 PR 時,Lead 另做確認頁(Artifact)。人類在 PR 或對話中回覆通過或修改,Lead 記到 PR。任務卡寫法:「截圖推 `qa-screenshots` 並貼 PR」
 
