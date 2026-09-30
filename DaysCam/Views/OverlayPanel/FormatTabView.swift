@@ -75,12 +75,10 @@ struct FormatTabView: View {
     // MARK: - 顯示內容 (FR-11.1, FR-11.2)
 
     private var displayContentSection: some View {
-        // `.cbrow`/`.swrow`-style gap between the toggle row and the hint
-        // text below it: the design leaves it at the default block-flow
-        // margin (0), not restated as a token anywhere in D-4 — 6pt here is
-        // this view's own judgment call, not a design value (#106, "待人類
-        // 決定" if 0 reads too tight in a screenshot).
-        VStack(alignment: .leading, spacing: 6) {
+        // 12pt row gap (#116 方案②, the human's 2026-09-28 call after
+        // comparing rendered Previews at three label sizes — was 6pt, a
+        // guess this view made itself before that comparison existed).
+        VStack(alignment: .leading, spacing: 12) {
             // The three toggles spread evenly across the full row, CSS
             // `space-around` exactly (`.swrow{justify-content:space-around}`,
             // #106 R3 — was a fixed 28pt gap): two consecutive plain
@@ -127,9 +125,12 @@ struct FormatTabView: View {
                                onChange: @escaping (Bool) -> Void) -> some View {
         // Label beside the switch, not above it (`.swr{display:flex;
         // align-items:center;gap:6px}`, #106 — was a `VStack` with the
-        // label stacked on top and a 4pt gap).
-        HStack(spacing: 6) {
-            Text(label).font(.footnote).foregroundColor(CameraTheme.ink)
+        // label stacked on top and a 4pt gap). Label size/gap: #116 方案②
+        // (15pt `.subheadline`, 8pt gap — was `.footnote`/6pt, sized against
+        // #106's own guess rather than the native 51×31 `Toggle` the human
+        // decided to keep, #116's whole point).
+        HStack(spacing: 8) {
+            Text(label).font(.subheadline).foregroundColor(CameraTheme.ink)
             // #F0A64A, not the system default green (PRD FR-14, #114).
             Toggle("", isOn: Binding(get: { isOn }, set: onChange))
                 .tint(CameraTheme.accentControl)
@@ -144,11 +145,10 @@ struct FormatTabView: View {
     // MARK: - 天數格式 (FR-11.3, FR-11.4, FR-11.5)
 
     private var dayCountFormatSection: some View {
-        // `.cbrow{padding:4px 0 2px}` + `.frow2{padding:2px 10px 0}` leave
-        // only ~4pt of gap between the two rows via block-flow (#106, was
-        // 12 — no design token names this gap directly, so 4 is this view's
-        // own reading of those two paddings, not a restated design value).
-        VStack(alignment: .leading, spacing: 4) {
+        // 12pt row gap (#116 方案②) — was 4pt (#106's own reading of
+        // `.cbrow`/`.frow2`'s padding, superseded by the human's 2026-09-28
+        // call once the native-`Toggle`-sized labels made 4pt read cramped).
+        VStack(alignment: .leading, spacing: 12) {
             // Evenly spread, CSS `space-around` exactly
             // (`.cbrow{justify-content:space-around}`, #106 R3 — was a fixed
             // 14pt gap): see `displayContentSection` above for why two
@@ -185,14 +185,17 @@ struct FormatTabView: View {
         return Button {
             model.displaySettings.toggleUnit(unit)
         } label: {
-            // `.cb{gap:6px}` (#106) — was 4.
-            HStack(spacing: 6) {
+            // Checkbox icon/label size and gap: #116 方案②（20pt icon, 15pt
+            // `.subheadline` label, 8pt gap — was unset-size (inherited
+            // ~17pt body), `.footnote`, 6pt gap, #106's own guess).
+            HStack(spacing: 8) {
                 // Checked uses #F0A64A, the switch/checkbox "on" token, not
                 // `active` — that's a darker orange reserved for selection
                 // highlights elsewhere (PRD FR-14, #114).
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 20))
                     .foregroundColor(isChecked ? CameraTheme.accentControl : CameraTheme.inkTertiary)
-                Text(unitName(unit)).font(.footnote).foregroundColor(CameraTheme.ink)
+                Text(unitName(unit)).font(.subheadline).foregroundColor(CameraTheme.ink)
             }
         }
         .disabled(isDisabled)
@@ -201,8 +204,9 @@ struct FormatTabView: View {
     }
 
     private var ageWordingToggle: some View {
-        HStack(spacing: 6) {
-            Text("年改成歲").font(.footnote).foregroundColor(CameraTheme.ink)
+        // #116 方案②（15pt `.subheadline`, 8pt gap） — was `.footnote`/6pt.
+        HStack(spacing: 8) {
+            Text("年改成歲").font(.subheadline).foregroundColor(CameraTheme.ink)
             // #F0A64A, not the system default green (PRD FR-14, #114).
             Toggle("", isOn: Binding(get: { model.displaySettings.profile.useAgeWording },
                                      set: { model.displaySettings.setUseAgeWording($0) }))
