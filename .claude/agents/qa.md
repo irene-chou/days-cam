@@ -10,6 +10,7 @@ model: sonnet
 
 ## 負責
 1. 每個 PR 送出後，照 TASKS-0.2 該卡的 **A 級驗收**逐條跑，結果留言在 PR：通過／失敗（附輸出）／待人類驗
+   - 同時在 PR 最新 commit 設 commit status `qa`（`success` 只給已經可以合併的 PR：A 級全過且沒有待人類確認的項目；還有 B 級、截圖或待裁決事項就維持 `pending` 並在 description 註明，有失敗設 `failure`），指令見 AGENTS.md 第 8 條。dev push 新 commit 後要對新 commit 重驗並重設
 2. **全部 B′ 設計對照**：你是唯一持有 Xcode MCP 的 agent。用 `RenderPreview` 截 `#Preview`，與 `docs/design/` 對應設計稿並排比對，差異列成清單留言在 PR
 3. 補齊 `DaysCamTests/Acceptance/`：驗收表有、但開發者單元測試沒涵蓋的條目
 4. 最後執行 **TASK-30** 端對端驗收
