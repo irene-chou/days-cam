@@ -19,7 +19,7 @@ import XCTest
 /// avoids that path too.
 @MainActor
 final class PositionTabViewGridFillTests: XCTestCase {
-    func testNineDotsSpreadAcrossTheFullBoxHeightNotClusteredNearOneEdge() {
+    func testNineDotsSpreadAcrossTheFullBoxHeightNotClusteredNearOneEdge() throws {
         let profile = CameraProfile(name: "測試",
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
@@ -29,7 +29,11 @@ final class PositionTabViewGridFillTests: XCTestCase {
         let view = PositionTabView(model: model, availableHeight: 300)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 400)
+        // Fail fast rather than crash on the force-unwraps below: on iOS 27
+        // SwiftUI no longer exposes `Circle` as a `UIView` (the hosting view
+        // has no subviews), so this finds 0 dots there.
         XCTAssertEqual(dotFrames.count, 9)
+        guard dotFrames.count == 9 else { return }
 
         // Bucket to the nearest 5pt: the selected dot is 14pt across versus
         // 7pt for the other eight, so their centers can differ by a
@@ -44,16 +48,20 @@ final class PositionTabViewGridFillTests: XCTestCase {
         // centers should be far apart, not clustered together the way the
         // pre-fix `LazyVGrid` left them (under 25pt apart in the original
         // bug report).
-        let rowSpan = rowCenters.last! - rowCenters.first!
+        let rowSpan = try XCTUnwrap(rowCenters.last) - XCTUnwrap(rowCenters.first)
         XCTAssertGreaterThan(rowSpan, 40, "三列應該分散在小框的整個高度，不是擠在一小段範圍內")
     }
 
-    func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() {
-        // Matches #108's iPhone SE QA report almost exactly: a small
-        // `availableHeight` (SE's real panel is short) produced a box
-        // measured 131×84 — not square — even though `gridBoxSide` is one
-        // `CGFloat` fed into both `width:` and `height:` of the same
-        // `.frame(...)` call, which should make that impossible on its own.
+    func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() throws {
+        // A moderate, non-max `availableHeight`, sanity-checking that the
+        // box stays square once `gridBoxSide` is no longer pinned at
+        // `gridBoxMaxSide` the way `testNineDotsSpreadAcross...` above always
+        // clamps to. Not a claim that this covers every real iPhone SE
+        // scenario: a *separate*, real-device #122 QA report found the box
+        // non-square at SE's actual (much smaller, ~36pt) `gridBoxSide` —
+        // the human's 2026-09-29 call was to track that as its own,
+        // not-yet-diagnosed issue rather than fold a fix into this PR, so
+        // this test intentionally does not attempt to reproduce it.
         let profile = CameraProfile(name: "測試",
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
@@ -62,10 +70,14 @@ final class PositionTabViewGridFillTests: XCTestCase {
         let view = PositionTabView(model: model, availableHeight: availableHeight)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 200)
+        // Fail fast rather than crash on the force-unwraps below: on iOS 27
+        // SwiftUI no longer exposes `Circle` as a `UIView` (the hosting view
+        // has no subviews), so this finds 0 dots there.
         XCTAssertEqual(dotFrames.count, 9)
+        guard dotFrames.count == 9 else { return }
 
-        let xSpan = dotFrames.map(\.midX).max()! - dotFrames.map(\.midX).min()!
-        let ySpan = dotFrames.map(\.midY).max()! - dotFrames.map(\.midY).min()!
+        let xSpan = try XCTUnwrap(dotFrames.map(\.midX).max()) - XCTUnwrap(dotFrames.map(\.midX).min())
+        let ySpan = try XCTUnwrap(dotFrames.map(\.midY).max()) - XCTUnwrap(dotFrames.map(\.midY).min())
         // Both spans should be close to each other (the box is square) and
         // comfortably above a "clustered in a sliver" span like the ~25pt
         // `ySpan` the pre-fix bug produced.
@@ -73,33 +85,96 @@ final class PositionTabViewGridFillTests: XCTestCase {
         XCTAssertGreaterThan(ySpan, 30, "縱向不該被壓縮成一小段")
     }
 
-    /// Hosts `view` in a real window and returns every rendered dot's frame
-    /// (in window coordinates) — a small (`<= 16pt`), roughly-square view is
-    /// one of the nine `Circle` dots (14pt selected, 7pt unselected).
+    /// Hosts `view` in a real window, draws it to a bitmap and returns every
+    /// dot's frame (in window coordinates).
+    ///
+    /// Pixel-based on purpose: from iOS 27 the hosting view has no `UIView`
+    /// subviews at all (SwiftUI draws into a single layer), so the earlier
+    /// view-hierarchy walk found 0 dots there. A dot is a connected blob of
+    /// pixels darker than the box fill and the page, at most 16pt across,
+    /// nearly square and mostly filled (a circle fills about 78% of its
+    /// bounding box; glyphs of the position name next to the box fill far
+    /// less).
+    ///
+    /// Polls until nine dots appear (or a 3s timeout) instead of a single
+    /// fixed wait; the simulators are shared by several agents at once.
     private func renderedDotFrames(hosting view: PositionTabView, hostWidth: CGFloat, hostHeight: CGFloat) -> [CGRect] {
         let hosting = UIHostingController(rootView: view.frame(width: hostWidth))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: hostWidth, height: hostHeight))
+        window.overrideUserInterfaceStyle = .light
         window.rootViewController = hosting
         window.makeKeyAndVisible()
         hosting.view.frame = CGRect(x: 0, y: 0, width: hostWidth, height: hostHeight)
-        for _ in 0..<5 {
-            hosting.view.setNeedsLayout()
-            hosting.view.layoutIfNeeded()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
 
         var frames: [CGRect] = []
-        collectDotFrames(in: hosting.view, into: &frames)
+        let deadline = Date().addingTimeInterval(3)
+        repeat {
+            hosting.view.setNeedsLayout()
+            hosting.view.layoutIfNeeded()
+            frames = dotFrames(in: hosting.view)
+            if frames.count == 9 { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+
         return frames
     }
 
-    private func collectDotFrames(in view: UIView, into result: inout [CGRect]) {
-        let bounds = view.bounds
-        if bounds.width > 0, bounds.width <= 16, abs(bounds.width - bounds.height) < 1 {
-            result.append(view.convert(bounds, to: nil))
+    private func dotFrames(in view: UIView) -> [CGRect] {
+        let width = Int(view.bounds.width)
+        let height = Int(view.bounds.height)
+        guard width > 0, height > 0 else { return [] }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: view.bounds.size, format: format).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
         }
-        for subview in view.subviews {
-            collectDotFrames(in: subview, into: &result)
+        guard let cgImage = image.cgImage else { return [] }
+
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let drewPixels = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
         }
+        guard drewPixels else { return [] }
+
+        func isDark(_ x: Int, _ y: Int) -> Bool {
+            let offset = (y * width + x) * 4
+            let luminance = (0.299 * Double(pixels[offset]) + 0.587 * Double(pixels[offset + 1])
+                             + 0.114 * Double(pixels[offset + 2])) / 255
+            return luminance < 0.8
+        }
+
+        var visited = [Bool](repeating: false, count: width * height)
+        var result: [CGRect] = []
+        for startY in 0..<height {
+            for startX in 0..<width where !visited[startY * width + startX] && isDark(startX, startY) {
+                var stack = [(startX, startY)]
+                visited[startY * width + startX] = true
+                var minX = startX, maxX = startX, minY = startY, maxY = startY, count = 0
+                while let (x, y) = stack.popLast() {
+                    count += 1
+                    minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+                    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let nx = x + dx, ny = y + dy
+                        guard nx >= 0, ny >= 0, nx < width, ny < height,
+                              !visited[ny * width + nx], isDark(nx, ny) else { continue }
+                        visited[ny * width + nx] = true
+                        stack.append((nx, ny))
+                    }
+                }
+                let blobWidth = maxX - minX + 1, blobHeight = maxY - minY + 1
+                let fillRatio = Double(count) / Double(blobWidth * blobHeight)
+                if blobWidth >= 5, blobWidth <= 16, abs(blobWidth - blobHeight) <= 1, fillRatio >= 0.7 {
+                    result.append(CGRect(x: minX, y: minY, width: blobWidth, height: blobHeight))
+                }
+            }
+        }
+        return result
     }
 }
