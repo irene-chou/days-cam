@@ -143,4 +143,32 @@ struct CameraScreenLayoutMetrics {
             return CGSize(width: height * 9 / 16, height: height)
         }
     }
+
+    // MARK: - Chrome-over-photo (issue #121)
+
+    /// True when the viewfinder currently renders *behind* the header —
+    /// only the 9:16 small-screen fallback while the panel is closed
+    /// (`isFallback`, issue #101 assumption 2): that viewfinder fills the
+    /// whole screen edge to edge, with the header floating over the top of
+    /// it. Every other combination has the header sitting above either an
+    /// empty area (nothing behind it) or, once the panel is open, #120's
+    /// shared panel-open viewfinder, which never reaches up behind the
+    /// header regardless of ratio. `CameraScreen` reads this to decide
+    /// between `CameraTheme.ink`/`inkOnPhoto` for the toolbar rather than
+    /// hard-coding "9:16 means light chrome" itself, so the two stay in
+    /// sync as this layout's own rules evolve (a real risk: issue #120
+    /// already changed what "9:16, panel open" means once).
+    func isViewfinderBehindHeader(ratio: CaptureAspectRatio, isPanelOpen: Bool) -> Bool {
+        guard ratio == .nineBySixteen, !isPanelOpen else { return false }
+        return isFallback
+    }
+
+    /// True when the viewfinder currently renders *behind* the footer —
+    /// 9:16 while the panel is closed, fallback or not: its viewfinder
+    /// always reaches down to (fallback) or past (rule ③, non-fallback)
+    /// `footerRegionTop` either way. Once the panel is open, #120's shared
+    /// panel-open viewfinder never reaches the footer regardless of ratio.
+    func isViewfinderBehindFooter(ratio: CaptureAspectRatio, isPanelOpen: Bool) -> Bool {
+        ratio == .nineBySixteen && !isPanelOpen
+    }
 }

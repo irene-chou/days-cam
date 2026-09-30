@@ -166,28 +166,25 @@ struct CameraScreen: View {
 
     /// The toolbar, vertically centered within the header region below the
     /// status bar (issue #101's own suggested approach — exact padding is
-    /// #105's job). Solid background in every case except the one where the
-    /// viewfinder still runs *behind* the header: 9:16's small-screen
-    /// fallback (`metrics.isFallback`, issue #101 assumption 2), which
-    /// reverts to the pre-#101 full-bleed look and needs the header legible
-    /// over a live picture instead of `CameraTheme.background`.
+    /// #105's job). Always a transparent background (issue #121 — this used
+    /// to fade to `CameraTheme.background` behind the one case where the
+    /// viewfinder runs behind the header, 9:16's small-screen fallback,
+    /// `metrics.isFallback`; human decision 2026-09-28 dropped every such
+    /// gradient in favor of the toolbar's own icons simply switching to a
+    /// light color when they need to stay legible over a photo instead,
+    /// via `CameraScreenLayoutMetrics.isViewfinderBehindHeader` —
+    /// `CameraToolbar.isOnPhoto` below).
     private func headerBar(metrics: CameraScreenLayoutMetrics) -> some View {
-        VStack(spacing: 0) {
+        let isOnPhoto = metrics.isViewfinderBehindHeader(ratio: model.captureSettingsStore.captureAspectRatio,
+                                                         isPanelOpen: model.panelModel.isOpen)
+        return VStack(spacing: 0) {
             Spacer().frame(height: metrics.topInset)
-            CameraToolbar(model: model)
+            CameraToolbar(model: model, isOnPhoto: isOnPhoto)
                 .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
-        .background(headerBackground(metrics: metrics))
-    }
-
-    @ViewBuilder
-    private func headerBackground(metrics: CameraScreenLayoutMetrics) -> some View {
-        if isNineBySixteenFallback(metrics: metrics) {
-            topFadeGradient
-        } else {
-            CameraTheme.background
-        }
+        .background(Color.clear)
+        .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
     // MARK: - Footer
@@ -205,29 +202,25 @@ struct CameraScreen: View {
     /// so the panel still starts flush against the box instead of leaving a
     /// gap (code review finding, #110).
     ///
-    /// Transparent unless the viewfinder is actually behind this column —
-    /// closed-panel 9:16 is the only such case since issue #120 put 9:16's
-    /// panel-open viewfinder above the panel like every other ratio,
-    /// closing the "no documented layout" gap PRD 0.2 FR-8.2/D-2 used to
-    /// leave open for it (issue #120's own background: the panel used to
-    /// float over 9:16's still-full-bleed photo at a fixed 220pt height,
-    /// covering roughly its bottom half — including the default
-    /// bottom-right overlay position — with no way to drag the overlay text
-    /// out from under it).
+    /// Always a transparent background (issue #121 — this used to fade to
+    /// `CameraTheme.background` behind the one case where the viewfinder
+    /// runs behind the footer, closed-panel 9:16; see `headerBar`'s own doc
+    /// comment for why: the bottom bar's icons switch to a light color
+    /// instead, via `CameraScreenLayoutMetrics.isViewfinderBehindFooter`).
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isOpen = model.panelModel.isOpen
         let appliesPanelOpenSpacing = isOpen
         let boxWidth = viewfinderBoxWidth(metrics: metrics)
         let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
-        let viewfinderBehindFooter = ratio == .nineBySixteen && !isOpen
+        let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
         return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
             if isOpen {
                 OverlayPanelView(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
             }
-            bottomBar
+            bottomBar(isOnPhoto: isOnPhoto)
         }
         // D-2's panel-open state (#105) wraps panel+row in its own outer
         // inset (`.l2 .bottom{padding:6px 6px 14px}`) with a 6pt gap between
@@ -240,23 +233,10 @@ struct CameraScreen: View {
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
-        .background(viewfinderBehindFooter ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
+        .background(Color.clear)
         .offset(x: 0, y: regionTop)
         .animation(CameraTheme.spring, value: model.panelModel.isOpen)
-    }
-
-    private func isNineBySixteenFallback(metrics: CameraScreenLayoutMetrics) -> Bool {
-        model.captureSettingsStore.captureAspectRatio == .nineBySixteen && metrics.isFallback
-    }
-
-    private var topFadeGradient: some View {
-        LinearGradient(colors: [CameraTheme.background.opacity(0.85), .clear],
-                       startPoint: .top, endPoint: .bottom)
-    }
-
-    private var bottomFadeGradient: some View {
-        LinearGradient(colors: [.clear, CameraTheme.background.opacity(0.9)],
-                       startPoint: .top, endPoint: .bottom)
+        .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
     // MARK: - Viewfinder contents
@@ -375,7 +355,7 @@ struct CameraScreen: View {
     /// inset, so 16pt bottom/0 top; open, D-2's `.l2 .row{padding:6px 22px
     /// 0}` puts that same 16pt-ish breathing room above the row instead
     /// (`footerColumn`'s own gap to the panel), so 0 bottom/6pt top here.
-    private var bottomBar: some View {
+    private func bottomBar(isOnPhoto: Bool) -> some View {
         ZStack {
             HStack {
                 Spacer()
@@ -383,9 +363,9 @@ struct CameraScreen: View {
                 Spacer()
             }
             HStack {
-                leftBottomBarButton
+                leftBottomBarButton(isOnPhoto: isOnPhoto)
                 Spacer()
-                rightBottomBarButton
+                rightBottomBarButton(isOnPhoto: isOnPhoto)
             }
         }
         .padding(.horizontal, 22)
@@ -394,30 +374,30 @@ struct CameraScreen: View {
     }
 
     @ViewBuilder
-    private var leftBottomBarButton: some View {
+    private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.leftBottomBarAction {
         case .latestPhoto:
-            thumbnailButton
+            thumbnailButton(isOnPhoto: isOnPhoto)
         case .manageProfiles:
-            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔") {
+            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔", isOnPhoto: isOnPhoto) {
                 model.presentProfileManagement()
             }
         }
     }
 
     @ViewBuilder
-    private var rightBottomBarButton: some View {
+    private func rightBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.rightBottomBarAction {
         case .openOverlayPanel:
             // `pencil.tip.crop.circle`, not `textformat`: the style tab's
             // own 字型 sub-tab already uses `textformat` (PRD FR-10.1), and
             // having both on screen at once while the panel is open reads
             // as the same button twice (human decision, 2026-09-27, #84).
-            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定") {
+            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
                 model.panelModel.open()
             }
         case .collapse:
-            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板") {
+            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
                 model.panelModel.close()
             }
         }
@@ -426,20 +406,30 @@ struct CameraScreen: View {
     /// 50×50 tap target, matching D-1/D-2's `.bubble` (#105) — every bottom
     /// bar icon button except `thumbnailButton`, which is its own smaller
     /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
-    private func iconButton(systemName: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+    /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
+    /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
+    /// only ever appears while the panel is open (`.manageProfiles`/
+    /// `.collapse`, PRD 0.2 FR-8.3), where the viewfinder is never behind
+    /// the footer (issue #120), so callers always pass `false` today; still
+    /// threaded through properly rather than assumed, so it stays correct
+    /// if that ever changes.
+    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundColor(CameraTheme.ink)
+                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                 .frame(width: 50, height: 50)
+                .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel(accessibilityLabel)
     }
 
     /// Left key while closed: the newest DaysCam photo, or a placeholder
     /// icon (PRD 0.2 FR-15.2). Tapping it does nothing yet — TASK-29 wires
-    /// up requesting read access and opening the gallery.
-    private var thumbnailButton: some View {
+    /// up requesting read access and opening the gallery. `isOnPhoto` only
+    /// ever affects the placeholder icon (issue #121) — an actual thumbnail
+    /// image is unaffected either way (assumption 4).
+    private func thumbnailButton(isOnPhoto: Bool) -> some View {
         Button {
             // TASK-29: request read access, then open the gallery.
         } label: {
@@ -451,7 +441,8 @@ struct CameraScreen: View {
                 } else {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(CameraTheme.ink)
+                        .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+                        .legibleOverPhoto(isOnPhoto)
                 }
             }
             .frame(width: 44, height: 44)

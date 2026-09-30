@@ -187,6 +187,53 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         }
     }
 
+    // MARK: - Chrome-over-photo (issue #121)
+
+    /// 3:4/1:1 never have the viewfinder behind the header/footer, open or
+    /// closed panel alike — only 9:16 ever does.
+    func testThreeByFourAndOneByOneAreNeverBehindHeaderOrFooter() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        for ratio: CaptureAspectRatio in [.threeByFour, .oneByOne] {
+            for isPanelOpen in [true, false] {
+                XCTAssertFalse(metrics.isViewfinderBehindHeader(ratio: ratio, isPanelOpen: isPanelOpen))
+                XCTAssertFalse(metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isPanelOpen))
+            }
+        }
+    }
+
+    /// iPhone 16 (non-fallback): closed-panel 9:16 fills the screen behind
+    /// the footer (rule ③, its viewfinder reaches `footerBase`) but not the
+    /// header (`headerBottom` is comfortably below the formula's minimum,
+    /// issue #101 assumption 2's fallback never triggers).
+    func testIPhone16NineBySixteenClosedPanelIsBehindFooterOnlyNotHeader() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        XCTAssertFalse(metrics.isViewfinderBehindHeader(ratio: .nineBySixteen, isPanelOpen: false))
+        XCTAssertTrue(metrics.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: false))
+    }
+
+    /// iPhone SE (fallback, issue #101 assumption 2): closed-panel 9:16
+    /// reverts to full-bleed edge to edge, so it is behind *both* the
+    /// header and the footer.
+    func testSENineBySixteenClosedPanelIsBehindBothHeaderAndFooter() {
+        let metrics = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        XCTAssertTrue(metrics.isFallback)
+        XCTAssertTrue(metrics.isViewfinderBehindHeader(ratio: .nineBySixteen, isPanelOpen: false))
+        XCTAssertTrue(metrics.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: false))
+    }
+
+    /// Issue #120 put 9:16's panel-open viewfinder above the panel like
+    /// every other ratio — behind neither the header nor the footer, on
+    /// both a non-fallback (iPhone 16) and a fallback (iPhone SE) screen.
+    func testNineBySixteenIsNeverBehindHeaderOrFooterWhilePanelIsOpen() {
+        let iPhone16 = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        XCTAssertFalse(iPhone16.isViewfinderBehindHeader(ratio: .nineBySixteen, isPanelOpen: true))
+        XCTAssertFalse(iPhone16.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: true))
+
+        let se = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        XCTAssertFalse(se.isViewfinderBehindHeader(ratio: .nineBySixteen, isPanelOpen: true))
+        XCTAssertFalse(se.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: true))
+    }
+
     // MARK: - Helpers
 
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {
