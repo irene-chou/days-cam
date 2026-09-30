@@ -39,8 +39,6 @@ struct PositionTabView: View {
     /// `ui-shell` wires the real measurement through (flagged to them, #108).
     var availableHeight: CGFloat = .infinity
 
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
-
     /// The square grid box's side, derived from `availableHeight` rather
     /// than fixed (#108 P.2, P.3).
     private var gridBoxSide: CGFloat {
@@ -86,23 +84,46 @@ struct PositionTabView: View {
     /// area is split evenly into nine equal cells (`D4-format-position-rules.html`'s
     /// `.pgrid`, #108 goal 5), each fully tappable via `contentShape` rather
     /// than only its visible dot (#108 goal 4, P.4).
+    ///
+    /// A plain `VStack` of `HStack` rows, not `LazyVGrid` — confirmed
+    /// empirically (#108, real-device QA report + a `UIHostingController`
+    /// regression test, `PositionTabViewGridFillTests`) that `LazyVGrid`
+    /// reliably stretches its *columns* to fill an imposed width but does
+    /// **not** stretch its *rows* to fill an imposed height, even when every
+    /// cell declares `.frame(maxHeight: .infinity)`: each row instead
+    /// collapses to its content's tiny intrinsic height (the dots ended up
+    /// clustered in roughly a quarter of the box, in real testing), leaving
+    /// blank space in whatever remained of `gridBoxSide`. Plain `VStack`/
+    /// `HStack` reliably divides an imposed size evenly among flexible
+    /// children — the ordinary, well-established behavior `LazyVGrid`
+    /// (designed for large/scrolling collections, not a fixed 3×3 layout)
+    /// turned out not to share here.
     private var grid: some View {
-        LazyVGrid(columns: gridColumns, spacing: 0) {
-            ForEach(OverlayPosition.allCases, id: \.self) { position in
-                let isSelected = model.profile.position == .anchor(position)
-                Button {
-                    model.selectAnchor(position)
-                } label: {
-                    Circle()
-                        .fill(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
-                        .frame(width: isSelected ? 14 : 7, height: isSelected ? 14 : 7)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { row in
+                HStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { column in
+                        gridCell(OverlayPosition.allCases[row * 3 + column])
+                    }
                 }
-                .accessibilityLabel(PositionTabModel.anchorName(position))
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .frame(maxHeight: .infinity)
             }
         }
+    }
+
+    private func gridCell(_ position: OverlayPosition) -> some View {
+        let isSelected = model.profile.position == .anchor(position)
+        return Button {
+            model.selectAnchor(position)
+        } label: {
+            Circle()
+                .fill(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
+                .frame(width: isSelected ? 14 : 7, height: isSelected ? 14 : 7)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(PositionTabModel.anchorName(position))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
