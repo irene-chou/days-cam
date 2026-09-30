@@ -44,7 +44,7 @@
    - **Lead**:定期(例如 `/loop 10m`)檢查開著的 PR;bot 對最新 commit 要求修改時,依 TASKS-0.2「檔案所有權」通知負責的 teammate。同一個 PR 來回 **3 輪**仍未 approve,就停下來交給人類判斷,不要讓 bot 與 dev 無限往返
    - **Lead**:需要人類決定的事(截圖待確認、3 輪未 approve、dev 駁回 bot 的條目待裁決)在 PR 加 label `needs-human`,人類回覆後由 Lead 移除
    - **合併條件**:bot 對最新 commit 已 approve(`reviewDecision` 為 `APPROVED`),且最新 commit 的 commit status `qa` 為 `success`;bot 被 dev 以理由駁回的條目需由 Lead 或人類確認
-   - **qa 狀態寫成 commit status**:qa 對 PR 最新 commit 設 context 為 `qa` 的 status(開始驗收設 `pending`,全部通過設 `success`,有失敗設 `failure`,只剩 B 級待人類驗時維持 `pending` 並在 description 註明),PR 列表的 ✓/●/✗ 會直接顯示。status 綁在 commit 上,dev push 新 commit 後舊結果自動失效,qa 需對新 commit 重驗後重設:
+   - **qa 狀態寫成 commit status**:workflow `qa-status.yml` 在 PR 每次 push 時自動設初始值(只改 `docs/`、`.claude/`、`*.md` 的純文件 PR 設 `success`「純文件，免 qa」,其餘設 `pending`「等待 qa 驗收」);qa 對 PR 最新 commit 更新 context 為 `qa` 的 status(全部通過設 `success`,有失敗設 `failure`,只剩 B 級待人類驗時維持 `pending` 並在 description 註明),PR 列表的 ✓/●/✗ 會直接顯示。status 綁在 commit 上,dev push 新 commit 後舊結果自動失效,qa 需對新 commit 重驗後重設:
      `gh api repos/irene-chou/days-cam/statuses/$(gh pr view <N> --json headRefOid -q .headRefOid) -f state=success -f context=qa -f description="A1–A6 通過"`(description 上限 140 字元,詳細結果仍留言在 PR)
    - **人類的看板**(GitHub 搜尋書籤):可合併 `is:pr is:open review:approved status:success`;等人類處理 `is:pr is:open label:needs-human`
    - review workflow 修改前開的分支,若沒 merge 最新 `main`,不會跑新版 review(workflow 檔與 `main` 不同會被跳過),先 merge `main` 再 push
