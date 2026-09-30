@@ -45,6 +45,11 @@ struct PositionTabView: View {
         PositionTabModel.gridBoxSide(forAvailableHeight: availableHeight)
     }
 
+    /// Top/bottom clearance around the box, from the same rule as its side.
+    private var gridBoxVerticalInset: CGFloat {
+        PositionTabModel.gridBoxVerticalInset(forAvailableHeight: availableHeight)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 18) {
             grid
@@ -68,7 +73,7 @@ struct PositionTabView: View {
         // generic one shared by all four — `ui-shell` is dropping the panel
         // container's own generic inset in #105 to avoid stacking both).
         // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
-        .padding(.vertical, 12)
+        .padding(.vertical, gridBoxVerticalInset)
         .padding(.horizontal, 14)
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {

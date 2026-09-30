@@ -184,7 +184,7 @@ struct StyleTabView: View {
     // MARK: - 外框、外框顏色 (FR-10.5, FR-10.6, FR-10.10)
 
     private var outlineContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 // `.hs{gap:6px}` (#106) — was 14.
                 HStack(spacing: 6) {
