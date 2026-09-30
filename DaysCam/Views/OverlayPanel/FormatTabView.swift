@@ -13,6 +13,11 @@ import SwiftUI
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
 
+    /// Minimum height of every content row (display toggles, unit
+    /// checkboxes, age-wording toggle), the same 44pt tap target the rules
+    /// tab uses (#116, Z.8).
+    static let rowMinHeight: CGFloat = 44
+
     var body: some View {
         // No gap of its own between `subTabRow` and `content` (#106): the
         // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
@@ -61,7 +66,8 @@ struct FormatTabView: View {
         // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
         // into the body's own `.tabbody` padding already (#106).
         .padding(.top, 6)
-        .padding(.bottom, 4)
+        // 8pt between this row and the first content row (#116 card).
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -75,10 +81,11 @@ struct FormatTabView: View {
     // MARK: - 顯示內容 (FR-11.1, FR-11.2)
 
     private var displayContentSection: some View {
-        // 12pt row gap (#116 方案②, the human's 2026-09-28 call after
-        // comparing rendered Previews at three label sizes — was 6pt, a
-        // guess this view made itself before that comparison existed).
-        VStack(alignment: .leading, spacing: 12) {
+        // No gap between rows: each row is at least `rowMinHeight` tall with
+        // its content vertically centered, matching the rules tab's rhythm
+        // (#116, the human's 2026-09-30 call — replaces the earlier 12pt row
+        // gap, which still left rows ~28pt tall and read as cramped).
+        VStack(alignment: .leading, spacing: 0) {
             // The three toggles spread evenly across the full row, CSS
             // `space-around` exactly (`.swrow{justify-content:space-around}`,
             // #106 R3 — was a fixed 28pt gap): two consecutive plain
@@ -111,10 +118,12 @@ struct FormatTabView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .frame(minHeight: Self.rowMinHeight)
             if model.displaySettings.isShowDayCountToggleDisabled || model.displaySettings.isShowDateToggleDisabled {
                 Text(DisplaySettingsModel.mustShowAtLeastOneMessage)
                     .font(.footnote)
                     .foregroundColor(CameraTheme.inkSecondary)
+                    .padding(.top, 4)
             }
         }
     }
@@ -145,10 +154,9 @@ struct FormatTabView: View {
     // MARK: - 天數格式 (FR-11.3, FR-11.4, FR-11.5)
 
     private var dayCountFormatSection: some View {
-        // 12pt row gap (#116 方案②) — was 4pt (#106's own reading of
-        // `.cbrow`/`.frow2`'s padding, superseded by the human's 2026-09-28
-        // call once the native-`Toggle`-sized labels made 4pt read cramped).
-        VStack(alignment: .leading, spacing: 12) {
+        // No gap between rows; each row is at least `rowMinHeight` tall and
+        // vertically centered (#116, 2026-09-30) — see `displayContentSection`.
+        VStack(alignment: .leading, spacing: 0) {
             // Evenly spread, CSS `space-around` exactly
             // (`.cbrow{justify-content:space-around}`, #106 R3 — was a fixed
             // 14pt gap): see `displayContentSection` above for why two
@@ -165,14 +173,17 @@ struct FormatTabView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .frame(minHeight: Self.rowMinHeight)
             HStack {
                 Spacer(minLength: 0)
                 ageWordingToggle
             }
+            .frame(minHeight: Self.rowMinHeight)
             if model.displaySettings.isDayCountFormatSectionDisabled {
                 Text(FormatTabModel.dayCountFormatHiddenHintMessage)
                     .font(.footnote)
                     .foregroundColor(CameraTheme.inkSecondary)
+                    .padding(.top, 4)
             }
         }
         .opacity(model.displaySettings.isDayCountFormatSectionDisabled ? 0.4 : 1)
@@ -197,6 +208,8 @@ struct FormatTabView: View {
                     .foregroundColor(isChecked ? CameraTheme.accentControl : CameraTheme.inkTertiary)
                 Text(unitName(unit)).font(.subheadline).foregroundColor(CameraTheme.ink)
             }
+            .frame(minHeight: Self.rowMinHeight)
+            .contentShape(Rectangle())
         }
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
