@@ -17,6 +17,10 @@ import SwiftUI
 struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// The scrolling area's fixed height below the segmented control
+    /// (issue #128); taller tab content scrolls inside it.
+    var contentHeight: CGFloat = 120
+
     /// The `ScrollView` below's own real visible height (#108) — some tab
     /// content (the position tab's nine-point grid) needs to size itself to
     /// fit without scrolling rather than just wrapping, so it needs this
@@ -47,6 +51,8 @@ struct OverlayPanelView: View {
             ScrollView {
                 tabContent
             }
+            .frame(height: contentHeight)
+            .overlay(alignment: .bottom) { scrollFade }
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: TabContentHeightKey.self, value: proxy.size.height)
@@ -54,13 +60,8 @@ struct OverlayPanelView: View {
             )
             .onPreferenceChange(TabContentHeightKey.self) { tabContentHeight = $0 }
         }
-        // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
-        // fills whatever vertical space frees up below the viewfinder — a
-        // plain `VStack` centers a shorter child inside that by default, so
-        // without pinning `.top` here, switching to a tab with different
-        // content height visibly shifted the segmented control up or down
-        // (#75's second bug). Pinning it top-aligned keeps its y position
-        // identical across every tab (T.7).
+        // Pinned top-aligned so the segmented control's y position stays
+        // identical across every tab (#75, T.7).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -89,6 +90,16 @@ struct OverlayPanelView: View {
                 .fill(CameraTheme.fill)
         )
         .padding(.horizontal, 2)
+        .frame(height: CameraScreenLayoutMetrics.panelTabBarHeight)
+    }
+
+    /// 16pt fade from transparent to the panel's own background at the
+    /// content area's bottom edge, hinting that it scrolls (issue #128).
+    private var scrollFade: some View {
+        LinearGradient(colors: [CameraTheme.background.opacity(0), CameraTheme.background],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: 16)
+            .allowsHitTesting(false)
     }
 
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,

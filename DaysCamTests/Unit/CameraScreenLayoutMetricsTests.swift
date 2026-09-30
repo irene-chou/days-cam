@@ -56,23 +56,6 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.footerBase, 818.0, accuracy: accuracy)
     }
 
-    /// Code review finding on #101/#110: while the overlay panel is open,
-    /// 3:4/1:1's box shrinks to 80% width (PRD 0.2 FR-8.2) — and height
-    /// with it, since the box stays 3:4-shaped — so the footer/panel region
-    /// has to start further up too, or it leaves a gap below the shrunk
-    /// box. `footerRegionTop(boxWidth:)` is what `CameraScreen.footerColumn`
-    /// calls with that shrunk width to track it.
-    func testIPhone16FooterRegionTopTracksAShrunkBoxWidth() {
-        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
-        let shrunkWidth: CGFloat = 393 * 0.8
-        let regionTop = metrics.footerRegionTop(boxWidth: shrunkWidth)
-        // Bottom edge of an 0.8×-width, still-3:4-shaped box starting at
-        // headerBottom — strictly above (smaller y than) the full-width
-        // regionTop, since the shrunk box is shorter.
-        XCTAssertEqual(regionTop, metrics.headerBottom + shrunkWidth * 4 / 3, accuracy: accuracy)
-        XCTAssertLessThan(regionTop, metrics.footerRegionTop)
-    }
-
     // MARK: - iPhone 16 Pro Max (440×956, top 59, bottom 34)
 
     func testProMaxHeaderBottom() {
@@ -131,33 +114,78 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         assertRectsEqual(frame, CGRect(x: 0, y: 0, width: 375, height: 667))
     }
 
-    // MARK: - Panel-open viewfinder content size (issue #120)
+    // MARK: - Panel-open layout (issue #128)
 
-    /// Reference value from issue #120 itself: iPhone 16's shared
-    /// panel-open box (80% of 393 = 314.4 wide, 419.2 tall, 3:4-shaped) fits
-    /// a 9:16 rectangle sized to that box's height.
-    func testIPhone16PanelOpenNineBySixteenContentSize() {
+    private struct Device {
+        let width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat
+        let viewfinderHeight: CGFloat, boxWidth: CGFloat
+    }
+
+    /// 375×667, 375×812, 393×852, 440×956 with the expected 3:4 box (H.12).
+    /// Box values derived from the issue's formulas; reference table is ±6pt.
+    private var devices: [Device] {
+        [Device(width: 375, height: 667, top: 20, bottom: 0, viewfinderHeight: 405, boxWidth: 303.75),
+         Device(width: 375, height: 812, top: 50, bottom: 34, viewfinderHeight: 453.3, boxWidth: 340),
+         Device(width: 393, height: 852, top: 59, bottom: 34, viewfinderHeight: 484.7, boxWidth: 363.5),
+         Device(width: 440, height: 956, top: 59, bottom: 34, viewfinderHeight: 568, boxWidth: 426)]
+    }
+
+    func testPanelOpenBoxMatchesReferenceValuesOnEveryDevice() {
+        for device in devices {
+            let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
+            let box = metrics.panelOpenViewfinderFrame
+            XCTAssertEqual(box.minY, metrics.headerBottom, accuracy: accuracy)
+            XCTAssertEqual(box.height, device.viewfinderHeight, accuracy: 1)
+            XCTAssertEqual(box.width, device.boxWidth, accuracy: 1)
+            XCTAssertEqual(box.midX, device.width / 2, accuracy: accuracy)
+            // Gap above the panel, and the panel never overlaps the box.
+            XCTAssertEqual(metrics.panelTop - box.maxY, metrics.panelGapAboveBox, accuracy: 1)
+        }
+    }
+
+    func testPanelOpenContentSizePerRatioOnEveryDevice() {
+        for device in devices {
+            let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
+            let box = metrics.panelOpenViewfinderFrame
+            let threeByFour = metrics.viewfinderContentSize(for: .threeByFour, boxSize: box.size, isPanelOpen: true)
+            XCTAssertEqual(threeByFour, box.size)
+            let square = metrics.viewfinderContentSize(for: .oneByOne, boxSize: box.size, isPanelOpen: true)
+            XCTAssertEqual(square.width, box.width, accuracy: accuracy)
+            XCTAssertEqual(square.height, box.width, accuracy: accuracy)
+            let tall = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
+            XCTAssertEqual(tall.height, box.height, accuracy: accuracy)
+            XCTAssertEqual(tall.width, box.height * 9 / 16, accuracy: accuracy)
+        }
+    }
+
+    func testPanelHeightsAndSmallScreenBoundary() {
+        let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        XCTAssertFalse(regular.isSmallScreen)
+        XCTAssertEqual(regular.panelContentHeight, 120)
+        XCTAssertEqual(regular.panelHeight, 152)
+        XCTAssertEqual(regular.panelGapAboveBox, 6)
+
+        let small = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        XCTAssertTrue(small.isSmallScreen)
+        XCTAssertEqual(small.panelContentHeight, 104)
+        XCTAssertEqual(small.panelHeight, 136)
+        XCTAssertEqual(small.panelGapAboveBox, 4)
+
+        XCTAssertTrue(makeMetrics(width: 375, height: 699, top: 20, bottom: 0).isSmallScreen)
+        XCTAssertFalse(makeMetrics(width: 375, height: 700, top: 20, bottom: 0).isSmallScreen)
+    }
+
+    func testPanelStackingFromFooterBase() {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
-        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 393 * 0.8)
-        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
-        XCTAssertEqual(content.height, 419.2, accuracy: accuracy)
-        XCTAssertEqual(content.width, 235.8, accuracy: 0.05)
+        // footerBase 818: 8pt, 44pt row, 4pt gap, then the panel.
+        XCTAssertEqual(metrics.panelBottom, 762, accuracy: accuracy)
+        XCTAssertEqual(metrics.panelTop, 610, accuracy: accuracy)
     }
 
-    func testProMaxPanelOpenNineBySixteenContentSize() {
-        let metrics = makeMetrics(width: 440, height: 956, top: 59, bottom: 34)
-        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 440 * 0.8)
-        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
-        XCTAssertEqual(content.height, 469.333, accuracy: accuracy)
-        XCTAssertEqual(content.width, 264.0, accuracy: 0.05)
-    }
-
-    func testSEPanelOpenNineBySixteenContentSize() {
-        let metrics = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
-        let box = metrics.viewfinderFrame(for: .threeByFour, boxWidth: 375 * 0.8)
-        let content = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
-        XCTAssertEqual(content.height, 400.0, accuracy: accuracy)
-        XCTAssertEqual(content.width, 225.0, accuracy: 0.05)
+    func testFooterSideButtonCenterInset() {
+        XCTAssertEqual(makeMetrics(width: 393, height: 852, top: 59, bottom: 34).footerSideButtonCenterInset, 79.25, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 375, height: 667, top: 20, bottom: 0).footerSideButtonCenterInset, 74.75, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 440, height: 956, top: 59, bottom: 34).footerSideButtonCenterInset, 91, accuracy: 0.05)
     }
 
     /// Closed, 9:16's box already *is* the 9:16 shape (from
