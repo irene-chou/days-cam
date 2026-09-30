@@ -102,21 +102,31 @@ struct CameraScreen: View {
 
     // MARK: - Viewfinder box
 
-    /// The viewfinder box's frame comes straight from `metrics`: 3:4 and
-    /// 9:16 both start at the header's bottom edge (issue #101 rule ①); 1:1
-    /// reuses the exact same 3:4-shaped box and lets its smaller square
-    /// content center inside for free, since a `ZStack` centers a smaller
-    /// child by default (rule ②, unchanged from before #101). While the
-    /// overlay panel is open (PRD 0.2 FR-8.2), 3:4/1:1's box additionally
-    /// scales to 80% width (height following, since the box keeps its 3:4
-    /// shape) and centers horizontally — 9:16 is never shrunk (see
-    /// `footerColumn`'s doc comment for why opening the panel at 9:16 is a
-    /// separate, pre-existing special case, unchanged by this issue).
+    /// The viewfinder box's frame while the panel is closed comes straight
+    /// from `metrics`: 3:4 and 9:16 both start at the header's bottom edge
+    /// (issue #101 rule ①); 1:1 reuses the exact same 3:4-shaped box and
+    /// lets its smaller square content center inside for free, since a
+    /// `ZStack` centers a smaller child by default (rule ②).
+    ///
+    /// While the overlay panel is open (PRD 0.2 FR-8.2), every ratio instead
+    /// shares one box: the same 80%-width, 3:4-shaped, horizontally-centered
+    /// box 3:4/1:1 already used here — 9:16 fits a 9:16 rectangle to that
+    /// box's height and centers horizontally the same way 1:1 centers
+    /// vertically (issue #120, `CameraScreenLayoutMetrics
+    /// .viewfinderContentSize(for:boxSize:isPanelOpen:)`), rather than
+    /// keeping its own pre-#120 full-bleed frame, which put roughly half the
+    /// photo (and the default bottom-right overlay position) behind the
+    /// panel with no way to drag it out.
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
-        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
-        let rect = metrics.viewfinderFrame(for: ratio, boxWidth: boxWidth)
-        let vfSize = viewfinderContentSize(for: ratio, boxSize: rect.size)
+        let isOpen = model.panelModel.isOpen
+        let rect: CGRect
+        if ratio == .nineBySixteen && isOpen {
+            rect = metrics.viewfinderFrame(for: .threeByFour, boxWidth: sharedPanelOpenBoxWidth(metrics: metrics))
+        } else {
+            rect = metrics.viewfinderFrame(for: ratio, boxWidth: viewfinderBoxWidth(metrics: metrics))
+        }
+        let vfSize = metrics.viewfinderContentSize(for: ratio, boxSize: rect.size, isPanelOpen: isOpen)
         return ZStack {
             viewfinderContent(frameSize: vfSize)
                 .frame(width: vfSize.width, height: vfSize.height)
@@ -126,31 +136,30 @@ struct CameraScreen: View {
         .offset(x: rect.minX, y: rect.minY)
     }
 
-    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
-    /// is open (PRD 0.2 FR-8.2), full screen width otherwise. 9:16 is never
-    /// shrunk. Shared by `viewfinderBox` and `footerColumn` — both need the
-    /// exact same value, since `footerColumn` has to start right where the
-    /// (possibly shrunk) box actually ends, not at the closed-panel box's
-    /// unscaled bottom edge (code review finding on #101/#110: with the box
-    /// shrunk to 80% width — and height following it, since the box stays
-    /// 3:4-shaped — its bottom edge moves up by 20% of its height; anchoring
-    /// the panel/bottom bar to the closed-panel `metrics.footerRegionTop`
-    /// instead left a gap between the shrunk box and the panel).
-    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics, ratio: CaptureAspectRatio) -> CGFloat {
-        let fullWidth = metrics.screenSize.width
-        return (ratio != .nineBySixteen && model.panelModel.isOpen) ? fullWidth * 0.8 : fullWidth
+    /// The shared panel-open box's own width (issue #120): 80% of the
+    /// screen, regardless of ratio — separated out from `viewfinderBoxWidth`
+    /// below only because that one still special-cases "9:16 while closed"
+    /// (unaffected by this issue) and reads oddly applied to the always-open
+    /// 9:16 case this helper exists for.
+    private func sharedPanelOpenBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        metrics.screenSize.width * 0.8
     }
 
-    /// The on-screen size of the viewfinder itself within `boxSize` (which
-    /// is always 3:4-shaped for 3:4/1:1, PRD 0.2 FR-7.8): unchanged for 3:4
-    /// and 9:16, the box's width squared for 1:1.
-    private func viewfinderContentSize(for ratio: CaptureAspectRatio, boxSize: CGSize) -> CGSize {
-        switch ratio {
-        case .threeByFour, .nineBySixteen:
-            return boxSize
-        case .oneByOne:
-            return CGSize(width: boxSize.width, height: boxSize.width)
-        }
+    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
+    /// is open (PRD 0.2 FR-8.2), full screen width otherwise — every ratio
+    /// alike since issue #120 (9:16 used to be excluded here, back when
+    /// opening the panel at 9:16 kept its own pre-#120 full-bleed frame
+    /// instead of sharing this box). Shared by `viewfinderBox` and
+    /// `footerColumn` — both need the exact same value, since `footerColumn`
+    /// has to start right where the (possibly shrunk) box actually ends,
+    /// not at the closed-panel box's unscaled bottom edge (code review
+    /// finding on #101/#110: with the box shrunk to 80% width — and height
+    /// following it, since the box stays 3:4-shaped — its bottom edge moves
+    /// up by 20% of its height; anchoring the panel/bottom bar to the
+    /// closed-panel `metrics.footerRegionTop` instead left a gap between the
+    /// shrunk box and the panel).
+    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        model.panelModel.isOpen ? sharedPanelOpenBoxWidth(metrics: metrics) : metrics.screenSize.width
     }
 
     // MARK: - Header
@@ -190,46 +199,33 @@ struct CameraScreen: View {
     /// screen's physical bottom). Closed, that start is
     /// `metrics.footerRegionTop` (the *unscaled* 3:4 box's bottom) exactly
     /// as issue #101 fixed it — header/footer never move switching ratios,
-    /// only the viewfinder does. Open, 3:4/1:1's box has shrunk to 80% width
-    /// (`viewfinderBoxWidth`), and this region's start shrinks up right
-    /// along with it (`footerRegionTop(boxWidth:)`) so the panel still
-    /// starts flush against the box instead of leaving a gap (code review
-    /// finding, #110) — 9:16's box is never shrunk, so its start never
-    /// moves either way. Transparent for 3:4/1:1 (nothing draws behind it
-    /// there — `CameraScreen`'s own root background already shows through);
-    /// 9:16 floats this whole column over the viewfinder's bottom sliver
-    /// behind a gradient, same as before #101 (PRD 0.2 FR-7.8).
+    /// only the viewfinder does. Open, every ratio's box has shrunk to 80%
+    /// width alike (`viewfinderBoxWidth`, issue #120), and this region's
+    /// start shrinks up right along with it (`footerRegionTop(boxWidth:)`)
+    /// so the panel still starts flush against the box instead of leaving a
+    /// gap (code review finding, #110).
     ///
-    /// Assumption (carried over from before #101, out of this issue's
-    /// scope per its own assumption 3): PRD 0.2 FR-8.2/D-2 only ever show
-    /// the panel against a 3:4 viewfinder; opening it while at 9:16 has no
-    /// documented layout, so it keeps floating over the bottom bar at a
-    /// fixed height here rather than filling this region like 3:4/1:1 do.
+    /// Transparent unless the viewfinder is actually behind this column —
+    /// closed-panel 9:16 is the only such case since issue #120 put 9:16's
+    /// panel-open viewfinder above the panel like every other ratio,
+    /// closing the "no documented layout" gap PRD 0.2 FR-8.2/D-2 used to
+    /// leave open for it (issue #120's own background: the panel used to
+    /// float over 9:16's still-full-bleed photo at a fixed 220pt height,
+    /// covering roughly its bottom half — including the default
+    /// bottom-right overlay position — with no way to drag the overlay text
+    /// out from under it).
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
-        let isNineBySixteen = ratio == .nineBySixteen
         let isOpen = model.panelModel.isOpen
-        // D-2's panel-open padding below is 3:4/1:1-only (#105): 9:16's own
-        // panel-open layout is the pre-existing 220pt-fixed-height special
-        // case this issue leaves untouched (see doc comment above), so it
-        // keeps the closed-panel's zero padding instead (code review
-        // finding, #112 — an earlier version of this line applied the new
-        // padding whenever `isOpen`, regardless of ratio, which shrank and
-        // shifted the 9:16 panel too, contradicting that same doc comment).
-        let appliesPanelOpenSpacing = isOpen && !isNineBySixteen
-        let boxWidth = viewfinderBoxWidth(metrics: metrics, ratio: ratio)
+        let appliesPanelOpenSpacing = isOpen
+        let boxWidth = viewfinderBoxWidth(metrics: metrics)
         let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
+        let viewfinderBehindFooter = ratio == .nineBySixteen && !isOpen
         return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
             if isOpen {
-                if isNineBySixteen {
-                    OverlayPanelView(model: model)
-                        .frame(height: 220)
-                        .transition(.opacity)
-                } else {
-                    OverlayPanelView(model: model)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity)
-                }
+                OverlayPanelView(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
             }
             bottomBar
         }
@@ -244,7 +240,7 @@ struct CameraScreen: View {
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
-        .background(isNineBySixteen ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
+        .background(viewfinderBehindFooter ? AnyView(bottomFadeGradient) : AnyView(Color.clear))
         .offset(x: 0, y: regionTop)
         .animation(CameraTheme.spring, value: model.panelModel.isOpen)
     }
@@ -611,5 +607,54 @@ private struct GridLinesView: View {
                                   profileStore: store,
                                   captureSettingsStore: settings)
     return CameraScreen(model: model)
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+// MARK: - Issue #120 (panel-open viewfinder, position tab, qa screenshots for G.9)
+
+@MainActor
+private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSuffix: String) -> CameraScreenModel {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.\(suiteSuffix)") ?? .standard)
+    settings.setAspectRatio(ratio)
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
+    model.panelModel.open()
+    model.panelModel.selectedTab = .position
+    return model
+}
+
+/// 驗收 G.1/G.5（issue #120）：3:4 開面板・位置分頁，作為跟 9:16 比較的基準畫面。
+#Preview("3:4 疊字面板打開・位置分頁（G.1 基準）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.34"))
+}
+
+/// 驗收 G.5：1:1 開面板・位置分頁，跟 3:4/9:16 共用同一個開面板觀景區。
+#Preview("1:1 疊字面板打開・位置分頁（G.5）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.11"))
+}
+
+/// 驗收 G.1（issue #120）：整張 9:16 觀景窗都在面板上方，不再被面板／底部列蓋住，
+/// 疊字（預設右下）拖得到、看得到。iPhone 16 參考值：觀景窗 ≈236×419，水平置中。
+#Preview("9:16 疊字面板打開・位置分頁（G.1）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.916"))
+}
+
+/// 驗收 G.7：iPhone SE 上重跑 G.1，開面板觀景區、9:16 內容都不重疊、不裁切。
+#Preview("iPhone SE・3:4 疊字面板打開・位置分頁（G.7 基準）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.se.34"))
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+/// 驗收 G.7：iPhone SE、1:1。
+#Preview("iPhone SE・1:1 疊字面板打開・位置分頁（G.7）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.se.11"))
+        .previewDevice("iPhone SE (3rd generation)")
+}
+
+/// 驗收 G.7：iPhone SE、9:16——小螢幕也走 #120 的規則（跟面板收起時的「假設 2」退回
+/// 行為是分開的兩件事：退回只影響面板收起時的 9:16，見 #101）。
+#Preview("iPhone SE・9:16 疊字面板打開・位置分頁（G.7）") {
+    CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
 }
