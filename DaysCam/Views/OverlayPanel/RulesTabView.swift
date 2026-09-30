@@ -70,9 +70,11 @@ struct RulesTabView: View {
             .onSubmit { model.endEditingName() }
             .accessibilityLabel("名稱")
         }
-        // `.rr{min-height:32px}`, no row padding of its own (#106) — was 12,
-        // which with this row's own text line height totaled ~44pt.
-        .padding(.vertical, 6)
+        // 12pt (#116, the human's 2026-09-28 call): brings each row's tap
+        // height to Apple's recommended 44pt minimum — was 6pt/#106's own
+        // reading of `.rr{min-height:32px}`, superseded once the human
+        // picked 44pt over matching the design pixel-for-pixel here.
+        .padding(.vertical, 12)
     }
 
     // MARK: - 起始日 (FR-13.3)
@@ -88,7 +90,8 @@ struct RulesTabView: View {
             .labelsHidden()
             .datePickerStyle(.compact)
         }
-        .padding(.vertical, 6)
+        // 12pt (#116) — was 6.
+        .padding(.vertical, 12)
     }
 
     // MARK: - 起算 (FR-13.4)
@@ -102,7 +105,8 @@ struct RulesTabView: View {
                 countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
             }
         }
-        .padding(.vertical, 6)
+        // 12pt (#116) — was 6.
+        .padding(.vertical, 12)
     }
 
     private func countingRuleButton(_ rule: CountingRule, label: String) -> some View {
