@@ -44,7 +44,7 @@
    - **Lead**:定期(例如 `/loop 10m`)檢查開著的 PR;bot 對最新 commit 要求修改時,依 TASKS-0.2「檔案所有權」通知負責的 teammate。同一個 PR 來回 **3 輪**仍未 approve,就停下來交給人類判斷,不要讓 bot 與 dev 無限往返
    - **合併條件**:bot 對最新 commit 已 approve(`reviewDecision` 為 `APPROVED`),且 qa 驗收通過;bot 被 dev 以理由駁回的條目需由 Lead 或人類確認
    - review workflow 修改前開的分支,若沒 merge 最新 `main`,不會跑新版 review(workflow 檔與 `main` 不同會被跳過),先 merge `main` 再 push
-9. **需要人類確認的截圖一律走確認頁**:agent 無法用 `gh` 把圖片貼進 PR 或 Issue,所以驗收條目不要寫「截圖貼 PR」。qa 把每張截圖依「PR 編號_驗收編號_裝置_說明.png」命名,存到 Lead 指定的資料夾並回報清單;Lead 把截圖與對應設計稿並排做成確認頁(Artifact)給人類看,人類在對話中回覆通過或修改,Lead 再把結果留言記到 PR。任務卡寫法:「截圖交 Lead 製作人類確認頁」
+9. **驗證截圖貼在 PR 上**:`gh` 不能上傳圖片,所以截圖 commit 到專用的孤兒分支 `qa-screenshots`(與 `main` 無共同歷史,**永遠不要合併**),路徑 `pr-<PR編號>/<PR編號>_<驗收編號>_<裝置>_<說明>.png`,push 後在 PR 留言用 `<img src="https://github.com/irene-chou/days-cam/blob/qa-screenshots/pr-<N>/<檔名>?raw=true" width="280">` 引用(可放進表格並排),並寫明每張對應的驗收編號。操作方式:用獨立 worktree `git switch qa-screenshots`(不存在時用 `git switch --orphan qa-screenshots` 建立),只加圖片、不動其他檔案,不要 force push。需要與設計稿並排比較或人類要一次看多個 PR 時,Lead 另做確認頁(Artifact)。人類在 PR 或對話中回覆通過或修改,Lead 記到 PR。任務卡寫法:「截圖推 `qa-screenshots` 並貼 PR」
 
 ## 測試【可調整】
 - 新增功能需附上對應的 XCTest 單元測試,涵蓋主要邏輯(尤其是天數計算這種容易出錯的核心邏輯)

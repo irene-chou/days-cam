@@ -22,7 +22,7 @@ model: sonnet
 ## 特別注意
 - 先讀 TASKS-0.2 開頭的「事先預告」：0.1 驗收 5.11 失敗、單位軌道驗收失效、`DisplayUnitTrack` 被刪都是**預期的**，不是 bug
 - B 級（實機）條目標記「待人類驗」後回報 Lead，不要卡住
-- 需要人類確認的截圖不要貼 PR（`gh` 無法上傳圖片）：依「PR編號_驗收編號_裝置_說明.png」命名，存到 Lead 指定的資料夾，回報檔案清單，由 Lead 做成確認頁（AGENTS.md 第 9 條）
+- 驗證截圖依 AGENTS.md 第 9 條：commit 到孤兒分支 `qa-screenshots` 的 `pr-<N>/`（命名 `<PR>_<驗收編號>_<裝置>_<說明>.png`，用獨立 worktree 操作、不要 force push、不要合併），再在 PR 留言用 `<img src="https://github.com/irene-chou/days-cam/blob/qa-screenshots/pr-<N>/<檔名>?raw=true" width="280">` 引用並標驗收編號
 - grep 類驗收：先用一個「確實含有違規」的檔案確認它真的會失敗，再用來驗證（見 0.1 TASKS 的寫作規則）
 - 儲存格裡的指令不含 `|`，照原文複製執行
 
