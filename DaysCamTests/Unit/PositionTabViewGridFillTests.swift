@@ -19,7 +19,7 @@ import XCTest
 /// avoids that path too.
 @MainActor
 final class PositionTabViewGridFillTests: XCTestCase {
-    func testNineDotsSpreadAcrossTheFullBoxHeightNotClusteredNearOneEdge() {
+    func testNineDotsSpreadAcrossTheFullBoxHeightNotClusteredNearOneEdge() throws {
         let profile = CameraProfile(name: "測試",
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
                                      position: .anchor(.bottomTrailing))
@@ -30,7 +30,11 @@ final class PositionTabViewGridFillTests: XCTestCase {
         let view = PositionTabView(model: model, availableHeight: 300)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 400)
+        // Fail fast rather than crash on the force-unwraps below: on iOS 27
+        // SwiftUI no longer exposes `Circle` as a `UIView` (the hosting view
+        // has no subviews), so this finds 0 dots there.
         XCTAssertEqual(dotFrames.count, 9)
+        guard dotFrames.count == 9 else { return }
 
         // Bucket to the nearest 5pt: the selected dot is 14pt across versus
         // 7pt for the other eight, so their centers can differ by a
@@ -45,11 +49,11 @@ final class PositionTabViewGridFillTests: XCTestCase {
         // centers should be far apart, not clustered together the way the
         // pre-fix `LazyVGrid` left them (under 25pt apart in the original
         // bug report).
-        let rowSpan = rowCenters.last! - rowCenters.first!
+        let rowSpan = try XCTUnwrap(rowCenters.last) - XCTUnwrap(rowCenters.first)
         XCTAssertGreaterThan(rowSpan, 60, "三列應該分散在小框的整個高度，不是擠在一小段範圍內")
     }
 
-    func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() {
+    func testDotsFillBothAxesEquallyOnAConstrainedHeightLikeIPhoneSE() throws {
         // A moderate, non-max `availableHeight`, sanity-checking that the
         // box stays square once `gridBoxSide` is no longer pinned at
         // `gridBoxMaxSide` the way `testNineDotsSpreadAcross...` above always
@@ -67,10 +71,14 @@ final class PositionTabViewGridFillTests: XCTestCase {
         let view = PositionTabView(model: model, availableHeight: availableHeight)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 200)
+        // Fail fast rather than crash on the force-unwraps below: on iOS 27
+        // SwiftUI no longer exposes `Circle` as a `UIView` (the hosting view
+        // has no subviews), so this finds 0 dots there.
         XCTAssertEqual(dotFrames.count, 9)
+        guard dotFrames.count == 9 else { return }
 
-        let xSpan = dotFrames.map(\.midX).max()! - dotFrames.map(\.midX).min()!
-        let ySpan = dotFrames.map(\.midY).max()! - dotFrames.map(\.midY).min()!
+        let xSpan = try XCTUnwrap(dotFrames.map(\.midX).max()) - XCTUnwrap(dotFrames.map(\.midX).min())
+        let ySpan = try XCTUnwrap(dotFrames.map(\.midY).max()) - XCTUnwrap(dotFrames.map(\.midY).min())
         // Both spans should be close to each other (the box is square) and
         // comfortably above a "clustered in a sliver" span like the ~25pt
         // `ySpan` the pre-fix bug produced.
