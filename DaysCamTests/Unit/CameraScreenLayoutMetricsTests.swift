@@ -177,16 +177,17 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
 
     /// `OverlayPanelView` passes `panelContentHeight` straight to
     /// `PositionTabView(availableHeight:)` (no measurement), so the grid fits
-    /// without scrolling: the box plus its insets never exceeds the content height on either class.
+    /// without scrolling: iPhone SE (104) gets 88 with the compact 8pt inset, and the box plus its insets never exceeds the content height on either class.
     @MainActor
     func testPositionGridFitsPanelContentHeight() {
         let small = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
         let smallSide = PositionTabModel.gridBoxSide(forAvailableHeight: small.panelContentHeight)
-        XCTAssertLessThanOrEqual(smallSide + PositionTabModel.gridBoxVerticalInset * 2, small.panelContentHeight)
+        XCTAssertEqual(smallSide, 88, accuracy: accuracy)
+        XCTAssertLessThanOrEqual(smallSide + PositionTabModel.gridBoxVerticalInset(forAvailableHeight: small.panelContentHeight) * 2, small.panelContentHeight)
 
         let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         let regularSide = PositionTabModel.gridBoxSide(forAvailableHeight: regular.panelContentHeight)
-        XCTAssertLessThanOrEqual(regularSide + PositionTabModel.gridBoxVerticalInset * 2, regular.panelContentHeight)
+        XCTAssertLessThanOrEqual(regularSide + PositionTabModel.gridBoxVerticalInset(forAvailableHeight: regular.panelContentHeight) * 2, regular.panelContentHeight)
     }
 
     func testPanelStackingFromFooterBase() {
