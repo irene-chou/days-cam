@@ -357,6 +357,8 @@
 | `accent`（快門、開關與勾選框開啟） | `#FFC27A`／開關與勾選框用 `#F0A64A` | Asset Catalog color |
 | `active`（選中、啟用） | `#C9772A` | Asset Catalog color |
 | `danger` | `#E0503F` | `Button(role: .destructive)` + tint |
+| `popoverBackground`（相機設定膠囊等浮層底色） | 白 @94% | `Color.white.opacity(0.94)` |
+| `popoverShadow`（浮層陰影，`0 8 24`） | `rgba(60,40,20,.14)` | `Color(red:green:blue:).opacity(0.14)` |
 | 字體 | SF Pro Rounded，按鈕與分頁 bold | `.font(.system(.subheadline, design: .rounded).weight(.bold))` |
 | 圖示 | SF Symbols，weight `.medium` | — |
 | 動效 | 彈簧；按下縮到 0.94 | `.spring(response: 0.35, dampingFraction: 0.8)` |
