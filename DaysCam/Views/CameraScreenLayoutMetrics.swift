@@ -65,27 +65,91 @@ struct CameraScreenLayoutMetrics {
         screenSize.height - bottomInset
     }
 
-    /// Where the footer region starts when the viewfinder box is full
-    /// screen width — the 3:4 box's own bottom edge there. Fixed regardless
-    /// of aspect ratio; header and footer never move switching ratios
-    /// (issue #101 rule). Equivalent to `footerRegionTop(boxWidth:
-    /// screenSize.width)`; while the overlay panel is open, 3:4/1:1's box
-    /// shrinks (PRD 0.2 FR-8.2) and callers should use that overload with
-    /// the shrunk width instead — this property alone is only correct for
-    /// a full-width box (panel closed, or any 9:16 box, which is never
-    /// shrunk).
+    /// Where the footer region starts while the panel is closed — the
+    /// full-width 3:4 box's own bottom edge. Fixed regardless of aspect
+    /// ratio; header and footer never move switching ratios (issue #101
+    /// rule). While the panel is open the footer region is laid out from
+    /// the bottom instead (`panelTop`, issue #128).
     var footerRegionTop: CGFloat {
-        footerRegionTop(boxWidth: screenSize.width)
+        headerBottom + screenSize.width * 4 / 3
     }
 
-    /// Where the footer region starts for a viewfinder box that is
-    /// `boxWidth` wide (and therefore `boxWidth * 4/3` tall, since the box
-    /// is always 3:4-shaped, PRD 0.2 FR-7.8) — the box's own bottom edge.
-    /// Passing the panel-open-shrunk width here keeps the footer/panel
-    /// region starting flush against a shrunk box (code review finding,
-    /// #110) instead of leaving a gap at the full-width position.
-    func footerRegionTop(boxWidth: CGFloat) -> CGFloat {
-        headerBottom + boxWidth * 4 / 3
+    // MARK: - Panel-open layout (issue #128)
+
+    /// Screens shorter than this (iPhone SE, 667pt) use the compact panel.
+    static let smallScreenHeightThreshold: CGFloat = 700
+
+    /// The segmented control's fixed height; `OverlayPanelView` pins it.
+    static let panelTabBarHeight: CGFloat = 32
+
+    /// Footer row height while the panel is open (two 44×44 buttons).
+    static let panelOpenFooterRowHeight: CGFloat = 44
+
+    /// Gap between the panel's bottom edge and the footer row.
+    static let panelToFooterGap: CGFloat = 4
+
+    /// Gap between the footer row and `footerBase`.
+    static let footerToBaseGap: CGFloat = 8
+
+    /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
+    static let shutterRadius: CGFloat = 38
+
+    /// True for iPhone SE-class heights (< 700pt).
+    var isSmallScreen: Bool {
+        screenSize.height < Self.smallScreenHeightThreshold
+    }
+
+    /// The scrolling area's height below the tab bar — fixed per screen
+    /// class, independent of which tab is selected.
+    var panelContentHeight: CGFloat {
+        isSmallScreen ? 104 : 120
+    }
+
+    /// Tab bar plus content area.
+    var panelHeight: CGFloat {
+        Self.panelTabBarHeight + panelContentHeight
+    }
+
+    /// Gap between the viewfinder box's bottom edge and the panel's top.
+    var panelGapAboveBox: CGFloat {
+        isSmallScreen ? 4 : 6
+    }
+
+    /// The panel's bottom edge (screen y, top-down).
+    var panelBottom: CGFloat {
+        footerBase - Self.footerToBaseGap - Self.panelOpenFooterRowHeight - Self.panelToFooterGap
+    }
+
+    /// The panel's top edge.
+    var panelTop: CGFloat {
+        panelBottom - panelHeight
+    }
+
+    /// Height available to the viewfinder while the panel is open: header
+    /// bottom to the gap above the panel.
+    var panelOpenViewfinderAreaHeight: CGFloat {
+        panelTop - panelGapAboveBox - headerBottom
+    }
+
+    /// The shared 3:4 box every ratio uses while the panel is open: height
+    /// = the available area, width = 3/4 of it; capped to the screen width
+    /// (then height follows). Top-aligned to the header, horizontally centered.
+    var panelOpenViewfinderFrame: CGRect {
+        let areaHeight = max(panelOpenViewfinderAreaHeight, 0)
+        var width = areaHeight * 3 / 4
+        var height = areaHeight
+        if width > screenSize.width {
+            width = screenSize.width
+            height = width * 4 / 3
+        }
+        return CGRect(x: (screenSize.width - width) / 2, y: headerBottom, width: width, height: height)
+    }
+
+    /// Distance from each screen edge to the center of the footer's side
+    /// buttons: midway between the edge and the shutter's edge, so the
+    /// buttons stay put whether or not the shutter is shown.
+    var footerSideButtonCenterInset: CGFloat {
+        (screenSize.width / 2 - Self.shutterRadius) / 2
     }
 
     // MARK: - Tools capsule (issue #135)
@@ -105,11 +169,9 @@ struct CameraScreenLayoutMetrics {
     }
 
     /// The viewfinder box's frame for `ratio`, given the on-screen width it
-    /// should render at (`boxWidth` — full screen width normally, 80% and
-    /// horizontally centered while the overlay panel is open, PRD 0.2
-    /// FR-8.2; ignored for `.nineBySixteen`, which is never shrunk).
+    /// should render at (`boxWidth` — full screen width; ignored for `.nineBySixteen`, which is never shrunk).
     ///
-    /// 3:4 and 1:1 both report a box shaped like 3:4 (`boxWidth` ×
+    /// Closed-panel 3:4 and 1:1 both report a box shaped like 3:4 (`boxWidth` ×
     /// `boxWidth * 4/3`) — 1:1's *content* is the inner square centered
     /// inside it, matching FR-8.2's "1:1 在 3:4 範圍內垂直置中" (rule ②):
     /// callers draw the smaller square via `viewfinderContentSize(for:)`

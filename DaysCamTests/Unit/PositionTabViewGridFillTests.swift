@@ -35,11 +35,23 @@ final class PositionTabViewGridFillTests: XCTestCase {
         XCTAssertEqual(dotFrames.count, 9)
         guard dotFrames.count == 9 else { return }
 
-        // Bucket to the nearest 5pt: the selected dot is 14pt across versus
-        // 7pt for the other eight, so their centers can differ by a
-        // sub-point rounding amount within the *same* row without that
-        // meaning a fourth row actually exists.
-        let rowCenters = Set(dotFrames.map { ($0.midY / 5).rounded() * 5 }).sorted()
+        // Group centers into rows by gap, not by rounding to a fixed grid:
+        // the selected dot is 14pt across versus 7pt for the other eight, so
+        // their measured centers can differ by a sub-point amount within the
+        // *same* row, and a fixed 5pt bucket splits such a row in two
+        // whenever that center lands on a bucket boundary (seen as four
+        // rows on one simulator). Rows are at least ~25pt apart, so any gap
+        // under 10pt means "same row".
+        var rowCenters: [CGFloat] = []
+        var previousMidY: CGFloat?
+        for midY in dotFrames.map(\.midY).sorted() {
+            if let previous = previousMidY, midY - previous < 10 {
+                previousMidY = midY
+                continue
+            }
+            rowCenters.append(midY)
+            previousMidY = midY
+        }
         XCTAssertEqual(rowCenters.count, 3, "九個點應該落在三個不同的列上，量到的列中心：\(rowCenters)")
 
         // The box's own grid area is `gridBoxSide - 2*4` (the `.padding(4)`

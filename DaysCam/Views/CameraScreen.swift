@@ -105,30 +105,19 @@ struct CameraScreen: View {
 
     // MARK: - Viewfinder box
 
-    /// The viewfinder box's frame while the panel is closed comes straight
-    /// from `metrics`: 3:4 and 9:16 both start at the header's bottom edge
-    /// (issue #101 rule ①); 1:1 reuses the exact same 3:4-shaped box and
-    /// lets its smaller square content center inside for free, since a
-    /// `ZStack` centers a smaller child by default (rule ②).
-    ///
-    /// While the overlay panel is open (PRD 0.2 FR-8.2), every ratio instead
-    /// shares one box: the same 80%-width, 3:4-shaped, horizontally-centered
-    /// box 3:4/1:1 already used here — 9:16 fits a 9:16 rectangle to that
-    /// box's height and centers horizontally the same way 1:1 centers
-    /// vertically (issue #120, `CameraScreenLayoutMetrics
-    /// .viewfinderContentSize(for:boxSize:isPanelOpen:)`), rather than
-    /// keeping its own pre-#120 full-bleed frame, which put roughly half the
-    /// photo (and the default bottom-right overlay position) behind the
-    /// panel with no way to drag it out.
+    /// Closed, the box's frame comes straight from `metrics`: 3:4 and 9:16
+    /// both start at the header's bottom edge (issue #101 rule ①); 1:1 reuses
+    /// the same 3:4-shaped box and its smaller square content centers inside
+    /// (rule ②). Open (issue #128), every ratio shares the box that fills
+    /// the space between the header and the fixed-height panel
+    /// (`metrics.panelOpenViewfinderFrame`); 1:1 centers vertically in it and
+    /// 9:16 fits its height and centers horizontally.
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isOpen = model.panelModel.isOpen
-        let rect: CGRect
-        if ratio == .nineBySixteen && isOpen {
-            rect = metrics.viewfinderFrame(for: .threeByFour, boxWidth: sharedPanelOpenBoxWidth(metrics: metrics))
-        } else {
-            rect = metrics.viewfinderFrame(for: ratio, boxWidth: viewfinderBoxWidth(metrics: metrics))
-        }
+        let rect = isOpen
+            ? metrics.panelOpenViewfinderFrame
+            : metrics.viewfinderFrame(for: ratio, boxWidth: metrics.screenSize.width)
         let vfSize = metrics.viewfinderContentSize(for: ratio, boxSize: rect.size, isPanelOpen: isOpen)
         return ZStack {
             viewfinderContent(frameSize: vfSize)
@@ -137,32 +126,6 @@ struct CameraScreen: View {
         }
         .frame(width: rect.width, height: rect.height)
         .offset(x: rect.minX, y: rect.minY)
-    }
-
-    /// The shared panel-open box's own width (issue #120): 80% of the
-    /// screen, regardless of ratio — separated out from `viewfinderBoxWidth`
-    /// below only because that one still special-cases "9:16 while closed"
-    /// (unaffected by this issue) and reads oddly applied to the always-open
-    /// 9:16 case this helper exists for.
-    private func sharedPanelOpenBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
-        metrics.screenSize.width * 0.8
-    }
-
-    /// The viewfinder box's on-screen width: shrunk to 80% while the panel
-    /// is open (PRD 0.2 FR-8.2), full screen width otherwise — every ratio
-    /// alike since issue #120 (9:16 used to be excluded here, back when
-    /// opening the panel at 9:16 kept its own pre-#120 full-bleed frame
-    /// instead of sharing this box). Shared by `viewfinderBox` and
-    /// `footerColumn` — both need the exact same value, since `footerColumn`
-    /// has to start right where the (possibly shrunk) box actually ends,
-    /// not at the closed-panel box's unscaled bottom edge (code review
-    /// finding on #101/#110: with the box shrunk to 80% width — and height
-    /// following it, since the box stays 3:4-shaped — its bottom edge moves
-    /// up by 20% of its height; anchoring the panel/bottom bar to the
-    /// closed-panel `metrics.footerRegionTop` instead left a gap between the
-    /// shrunk box and the panel).
-    private func viewfinderBoxWidth(metrics: CameraScreenLayoutMetrics) -> CGFloat {
-        model.panelModel.isOpen ? sharedPanelOpenBoxWidth(metrics: metrics) : metrics.screenSize.width
     }
 
     // MARK: - Header
@@ -205,47 +168,31 @@ struct CameraScreen: View {
 
     // MARK: - Footer
 
-    /// Panel (if open) and the bottom bar, anchored to the bottom of a
-    /// region that starts right where the viewfinder box's own bottom edge
-    /// is and ends at `metrics.footerBase` (issue #101 rule ③ — the
-    /// footer's own bottom edge is the home indicator's top, not the
-    /// screen's physical bottom). Closed, that start is
-    /// `metrics.footerRegionTop` (the *unscaled* 3:4 box's bottom) exactly
-    /// as issue #101 fixed it — header/footer never move switching ratios,
-    /// only the viewfinder does. Open, every ratio's box has shrunk to 80%
-    /// width alike (`viewfinderBoxWidth`, issue #120), and this region's
-    /// start shrinks up right along with it (`footerRegionTop(boxWidth:)`)
-    /// so the panel still starts flush against the box instead of leaving a
-    /// gap (code review finding, #110).
+    /// Bottom bar, plus the panel above it while open, anchored to the
+    /// bottom of a region that ends at `metrics.footerBase` (issue #101 rule
+    /// ③ — the home indicator's top edge). Closed, the region starts at
+    /// `metrics.footerRegionTop` and holds just the bottom bar. Open (issue
+    /// #128), it starts at `metrics.panelTop`: a fixed-height panel, 4pt, the
+    /// 44pt button row, 8pt to `footerBase` — no shutter.
     ///
-    /// Always a transparent background (issue #121 — this used to fade to
-    /// `CameraTheme.background` behind the one case where the viewfinder
-    /// runs behind the footer, closed-panel 9:16; see `headerBar`'s own doc
-    /// comment for why: the bottom bar's icons switch to a light color
-    /// instead, via `CameraScreenLayoutMetrics.isViewfinderBehindFooter`).
+    /// Always a transparent background (issue #121): the bottom bar's icons
+    /// switch to a light color over a photo instead, via
+    /// `CameraScreenLayoutMetrics.isViewfinderBehindFooter`.
     private func footerColumn(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isOpen = model.panelModel.isOpen
-        let appliesPanelOpenSpacing = isOpen
-        let boxWidth = viewfinderBoxWidth(metrics: metrics)
-        let regionTop = metrics.footerRegionTop(boxWidth: boxWidth)
+        let regionTop = isOpen ? metrics.panelTop : metrics.footerRegionTop
         let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
-        return VStack(spacing: appliesPanelOpenSpacing ? 6 : 0) {
+        return VStack(spacing: CameraScreenLayoutMetrics.panelToFooterGap) {
             if isOpen {
-                OverlayPanelView(model: model)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight)
+                    .frame(height: metrics.panelHeight)
+                    .padding(.horizontal, 6)
                     .transition(.opacity)
             }
-            bottomBar(isOnPhoto: isOnPhoto)
+            bottomBar(metrics: metrics, isOnPhoto: isOnPhoto)
         }
-        // D-2's panel-open state (#105) wraps panel+row in its own outer
-        // inset (`.l2 .bottom{padding:6px 6px 14px}`) with a 6pt gap between
-        // them, on top of `bottomBar`'s own row padding below — closed,
-        // there is none (D-1's plain `.bottom` has no padding of its own,
-        // only `.row`'s and the 16pt bottom margin `bottomBar` applies).
-        .padding(.horizontal, appliesPanelOpenSpacing ? 6 : 0)
-        .padding(.top, appliesPanelOpenSpacing ? 6 : 0)
-        .padding(.bottom, appliesPanelOpenSpacing ? 14 : 0)
+        .padding(.bottom, isOpen ? CameraScreenLayoutMetrics.footerToBaseGap : 0)
         .frame(width: metrics.screenSize.width,
                height: metrics.footerBase - regionTop,
                alignment: .bottom)
@@ -356,36 +303,37 @@ struct CameraScreen: View {
 
     // MARK: - Bottom bar (PRD 0.2 FR-7.3, FR-8.3)
 
-    /// Left/center/right switch with the panel (PRD 0.2 FR-8.3, acceptance
-    /// 22.5): closed is TASK-21's thumbnail／shutter／Aa; open is manage-
-    /// profiles／shrunk shutter／collapse. The shutter stays tappable either
-    /// way (FR-8.3: "快門照常可拍"). No text labels, no background — every
-    /// button is just an icon (FR-14.2).
+    /// Left/right switch with the panel (PRD 0.2 FR-8.3, issue #128): closed
+    /// is thumbnail／shutter／Aa; open is manage-profiles／(nothing)／collapse
+    /// — the shutter is gone while the panel is open, so nothing can take a
+    /// photo. No text labels, no background — every button is just an icon
+    /// (FR-14.2).
     ///
-    /// Padding matches D-1/D-2 (#105): `.row{padding:0 22px}` either way;
-    /// vertically the row sits flush at the *bottom* of the footer region
-    /// (`footerColumn`'s own `alignment: .bottom`), not centered in it —
-    /// closed, D-1's `.bottom{padding-bottom:16px}` is the only vertical
-    /// inset, so 16pt bottom/0 top; open, D-2's `.l2 .row{padding:6px 22px
-    /// 0}` puts that same 16pt-ish breathing room above the row instead
-    /// (`footerColumn`'s own gap to the panel), so 0 bottom/6pt top here.
-    private func bottomBar(isOnPhoto: Bool) -> some View {
-        ZStack {
-            HStack {
-                Spacer()
+    /// The side buttons' centers sit midway between the screen edge and the
+    /// shutter's edge (`footerSideButtonCenterInset`), open or closed, so
+    /// they never shift when the panel toggles. Closed, the row sits 16pt
+    /// above the bottom of the footer region; open, `footerColumn` supplies
+    /// the 8pt gap itself and the row is exactly 44pt tall.
+    private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
+        let isOpen = model.panelModel.isOpen
+        let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
+        return ZStack {
+            if !isOpen {
                 shutterButton
-                Spacer()
             }
             HStack {
                 leftBottomBarButton(isOnPhoto: isOnPhoto)
                 Spacer()
                 rightBottomBarButton(isOnPhoto: isOnPhoto)
             }
+            .padding(.horizontal, sideInset)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, model.panelModel.isOpen ? 6 : 0)
-        .padding(.bottom, model.panelModel.isOpen ? 0 : 16)
+        .frame(height: isOpen ? CameraScreenLayoutMetrics.panelOpenFooterRowHeight : nil)
+        .padding(.bottom, isOpen ? 0 : 16)
     }
+
+    /// Tap target of every footer side button (issue #128).
+    private static let footerButtonSize: CGFloat = 44
 
     @ViewBuilder
     private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
@@ -417,7 +365,7 @@ struct CameraScreen: View {
         }
     }
 
-    /// 50×50 tap target, matching D-1/D-2's `.bubble` (#105) — every bottom
+    /// 44×44 tap target (issue #128; was 50×50, D-1/D-2's `.bubble`) — every bottom
     /// bar icon button except `thumbnailButton`, which is its own smaller
     /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
@@ -432,7 +380,7 @@ struct CameraScreen: View {
             Image(systemName: systemName)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: 50, height: 50)
+                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
                 .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel(accessibilityLabel)
@@ -466,13 +414,11 @@ struct CameraScreen: View {
     }
 
     /// Center: the shutter — the one place PRD 0.2 FR-14.2 allows a filled
-    /// background (the `accent` circle) plus a ring, matching D-1. Shrinks
-    /// to 64pt while the panel is open (PRD 0.2 FR-8.3) but stays exactly as
-    /// tappable (acceptance 22.4: capturing while the panel is open must
-    /// work normally and must not close it).
+    /// background (the `accent` circle) plus a ring, matching D-1. Only
+    /// shown while the panel is closed (issue #128).
     private var shutterButton: some View {
-        let diameter: CGFloat = model.panelModel.isOpen ? 64 : 76
-        let ringWidth: CGFloat = model.panelModel.isOpen ? 3 : 4
+        let diameter: CGFloat = 76
+        let ringWidth: CGFloat = 4
         return Button(action: model.capturePhoto) {
             ZStack {
                 Circle()
