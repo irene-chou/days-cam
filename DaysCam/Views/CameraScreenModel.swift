@@ -134,6 +134,28 @@ final class CameraScreenModel: ObservableObject {
     /// building. Flagged as an assumption in this PR's description.
     @Published private(set) var latestThumbnailImage: UIImage?
 
+    /// Photos currently flying from the viewfinder into the thumbnail
+    /// button, one entry per capture (issue #148). Replaces the old save-confirmation
+    /// toast on success. `CaptureFlightView` plays each one and reports back
+    /// through `flightDidLand(id:)`/`removeCaptureFlight(id:)`.
+    @Published private(set) var captureFlights: [CaptureFlight] = []
+
+    /// Bumped the instant the shutter really fires — no timer: when the
+    /// button is pressed; with a timer: when the countdown reaches zero.
+    /// Never bumped while counting down or on cancel. The view flashes the
+    /// viewfinder and plays the light haptic off this (issue #148).
+    @Published private(set) var captureTriggerCount = 0
+
+    /// Speaks `message` to VoiceOver (a no-op when it is off). Replaceable so
+    /// tests can observe the call without posting a real notification.
+    var announce: (String) -> Void = { message in
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
+    /// Bumped each time a landed flight replaces `latestThumbnailImage`, so
+    /// the thumbnail button can play its small bounce.
+    @Published private(set) var thumbnailLandingCount = 0
+
     /// Bakes the overlay into a captured image. Defaults to the real
     /// `OverlayRenderer`. Injectable so this model is testable without a
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
@@ -180,7 +202,7 @@ final class CameraScreenModel: ObservableObject {
     /// `profiles` happens to re-publish later for an unrelated reason.
     @Published private(set) var showsCorruptionRecoveredAlert: Bool
 
-    /// The pending "已儲存" toast, if any (PRD FR-5.4). `nil` when nothing
+    /// The pending toast (only "已取消" now), if any (PRD FR-5.4). `nil` when nothing
     /// should be shown.
     @Published private(set) var toastState: ToastState?
 
@@ -786,6 +808,7 @@ extension CameraScreenModel {
     /// countdown reaches zero.
     private func performCapture(profile: CameraProfile) {
         isCapturing = true
+        captureTriggerCount += 1
         // Computed here, synchronously, on the main actor — before the
         // capture even starts, let alone before anything hops to a
         // background queue. `capturedAt` must be the instant the shutter
@@ -870,40 +893,49 @@ extension CameraScreenModel {
                 return
             }
             // Downscaled here, off the main thread, alongside the bake work
-            // it depends on — a 12MP `UIImage` is not something the toast
-            // should hold onto full-size for its 1.5 seconds on screen just
-            // to draw it at 44x44 (review-anticipated finding).
+            // it depends on: a 12MP `UIImage` is not something the thumbnail
+            // (88px) or the flight animation (~600px) should hold on to.
             let thumbnail = Self.thumbnail(of: baked)
+            let flightImage = Self.thumbnail(of: baked, maxDimension: Self.flightImageMaxDimension)
+            let flightID = UUID()
 
-            save(baked) { [weak self] result in
+            // The flight starts as soon as the photo is baked, in parallel
+            // with the library write (issue #148 assumption 2). `save` is
+            // started from main, after the flight exists, so its completion
+            // can never arrive before the flight it updates.
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                // `PhotoSaver.saveReturningIdentifier`'s completion already
-                // guarantees main — deliberately not wrapped in another
-                // `DispatchQueue.main.async` here, or the toast would appear
-                // one run-loop turn after `isCapturing` resets, rather than
-                // in the same update.
-                switch result {
-                case let .success(assetID):
-                    // PRD 0.2 FR-15.1/FR-15.2: record the new asset so the
-                    // gallery (TASK-29) can find it later, and update the
-                    // in-memory thumbnail immediately — this is the "captured
-                    // this launch" branch FR-15.2 wants shown without any
-                    // read permission.
-                    self.capturedPhotoStore.recordCapturedAsset(assetID)
-                    self.latestThumbnailImage = thumbnail
-                    self.showToast(message: "已儲存", thumbnail: thumbnail)
-                case let .failure(error):
-                    self.captureError = CaptureAlertError(message: error.displayMessage,
-                                                          showsSettingsAction: error.showsSettingsAction)
+                self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail))
+                save(baked) { [weak self] result in
+                    guard let self else { return }
+                    // `PhotoSaver.saveReturningIdentifier`'s completion
+                    // already guarantees main.
+                    switch result {
+                    case let .success(assetID):
+                        // PRD 0.2 FR-15.1/FR-15.2: record the new asset so
+                        // the gallery (TASK-29) can find it later.
+                        self.capturedPhotoStore.recordCapturedAsset(assetID)
+                        self.markFlightSaved(id: flightID)
+                        // Nothing is shown on screen for a save any more, so
+                        // VoiceOver users hear it instead (issue #148).
+                        self.announce("已儲存")
+                    case let .failure(error):
+                        self.markFlightFailed(id: flightID)
+                        self.captureError = CaptureAlertError(message: error.displayMessage,
+                                                              showsSettingsAction: error.showsSettingsAction)
+                    }
+                    self.isCapturing = false
                 }
-                self.isCapturing = false
             }
         }
     }
 
+    /// Longest side of the picture used for the flight animation.
+    static let flightImageMaxDimension: CGFloat = 600
+
     /// A small copy of `image`, for the toast (PRD FR-5.4) — never the
     /// full-resolution baked photo.
-    private static func thumbnail(of image: UIImage, maxDimension: CGFloat = 88) -> UIImage {
+    static func thumbnail(of image: UIImage, maxDimension: CGFloat = 88) -> UIImage {
         let largestSide = max(image.size.width, image.size.height)
         guard largestSide > maxDimension else { return image }
         let scale = maxDimension / largestSide
@@ -1019,5 +1051,69 @@ private final class TabProfileWriter {
         if updated.position != baseline.position { merged.position = updated.position }
         if updated.style != baseline.style { merged.style = updated.style }
         return merged
+    }
+}
+
+
+// MARK: - Capture flight (issue #148)
+
+/// One captured photo's trip from the viewfinder to the thumbnail button.
+struct CaptureFlight: Identifiable {
+    enum Status: Equatable {
+        /// Still being written to the library.
+        case saving
+        case saved
+        case failed
+    }
+
+    let id: UUID
+    /// ~600px copy used for the animation.
+    let image: UIImage
+    /// 88px copy that becomes `latestThumbnailImage` once the flight lands.
+    let thumbnail: UIImage
+    fileprivate(set) var status: Status = .saving
+    fileprivate(set) var hasLanded = false
+
+    init(id: UUID = UUID(), image: UIImage, thumbnail: UIImage) {
+        self.id = id
+        self.image = image
+        self.thumbnail = thumbnail
+    }
+}
+
+extension CameraScreenModel {
+    /// The view reports the flight reached the thumbnail button. The
+    /// thumbnail is only replaced once the photo is also saved; until then
+    /// the flight waits at its landing spot.
+    func flightDidLand(id: UUID) {
+        guard let index = captureFlights.firstIndex(where: { $0.id == id }) else { return }
+        captureFlights[index].hasLanded = true
+        commitFlightIfFinished(at: index)
+    }
+
+    /// Drops a flight once its (failure) fade-out is done.
+    func removeCaptureFlight(id: UUID) {
+        captureFlights.removeAll { $0.id == id }
+    }
+
+    fileprivate func markFlightSaved(id: UUID) {
+        guard let index = captureFlights.firstIndex(where: { $0.id == id }) else { return }
+        captureFlights[index].status = .saved
+        commitFlightIfFinished(at: index)
+    }
+
+    fileprivate func markFlightFailed(id: UUID) {
+        guard let index = captureFlights.firstIndex(where: { $0.id == id }) else { return }
+        captureFlights[index].status = .failed
+    }
+
+    /// Saved and landed: the new photo becomes the thumbnail and the flight
+    /// is done.
+    private func commitFlightIfFinished(at index: Int) {
+        let flight = captureFlights[index]
+        guard flight.status == .saved, flight.hasLanded else { return }
+        latestThumbnailImage = flight.thumbnail
+        thumbnailLandingCount += 1
+        captureFlights.remove(at: index)
     }
 }

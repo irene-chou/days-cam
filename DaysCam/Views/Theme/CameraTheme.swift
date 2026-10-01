@@ -65,6 +65,15 @@ enum CameraTheme {
     /// place and does not need an Asset Catalog entry.
     static let toastBackground = Color(red: 0x1E / 255, green: 0x1C / 255, blue: 0x1A / 255).opacity(0.9)
 
+    /// The viewfinder's shutter-flash overlay color (white, design token
+    /// `.flash` in D-1; issue #148). Its opacity is animated by the caller.
+    static let shutterFlash = Color.white
+
+    /// The drop shadow under a captured photo while it lifts off the
+    /// viewfinder (black at 25%, issue #148), stated directly since it is
+    /// used in one place.
+    static let flightShadow = Color.black.opacity(0.25)
+
     /// The tools capsule's floating background (white at 94%, design token
     /// `.pop` in D-1), stated directly since it is used in one place.
     static let popoverBackground = Color.white.opacity(0.94)
