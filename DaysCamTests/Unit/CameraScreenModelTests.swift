@@ -1032,7 +1032,8 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(receivedImage === bakedImage)
     }
 
-    func testProcessCapturedImagePresentsSavedToastOnSaveSuccess() throws {
+    func testProcessCapturedImageStartsAFlightInsteadOfAToastOnSaveSuccess() throws {
+        // Issue #148 (S.10): no "已儲存" toast; one flight instead.
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
                                          bake: { _, _, _, _ in UIImage() },
@@ -1040,17 +1041,67 @@ final class CameraScreenModelTests: XCTestCase {
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
-        waitUntil { model.toastState != nil }
-        XCTAssertEqual(model.toastState?.message, "已儲存")
+        waitUntil { model.captureFlights.count == 1 }
+        XCTAssertEqual(model.captureFlights.first?.status, .saved)
+        XCTAssertNil(model.toastState)
         XCTAssertNil(model.captureError)
+        // The thumbnail only changes once the flight lands.
+        XCTAssertNil(model.latestThumbnailImage)
         waitUntil { model.isCapturing == false }
     }
 
-    func testProcessCapturedImageDownscalesTheThumbnailForTheToast() throws {
-        // Review-anticipated finding: the toast must not hold the
-        // full-resolution baked photo just to draw it at 44x44.
+    func testLandingASavedFlightReplacesTheThumbnailAndRemovesIt() throws {
         let now = try fixedNow()
-        let largeSize = CGSize(width: 1000, height: 800)
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.success("asset-1")) })
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 }
+        let id = try XCTUnwrap(model.captureFlights.first?.id)
+
+        model.flightDidLand(id: id)
+
+        XCTAssertNotNil(model.latestThumbnailImage)
+        XCTAssertTrue(model.captureFlights.isEmpty)
+        XCTAssertEqual(model.thumbnailLandingCount, 1)
+    }
+
+    func testFlightLandingBeforeSaveCompletesWaitsForTheSave() throws {
+        let now = try fixedNow()
+        var finishSave: ((Result<String, PhotoSaveError>) -> Void)?
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in finishSave = completion })
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 && finishSave != nil }
+        let id = try XCTUnwrap(model.captureFlights.first?.id)
+
+        model.flightDidLand(id: id)
+        XCTAssertNil(model.latestThumbnailImage)
+        XCTAssertEqual(model.captureFlights.count, 1)
+
+        finishSave?(.success("asset-1"))
+        XCTAssertNotNil(model.latestThumbnailImage)
+        XCTAssertTrue(model.captureFlights.isEmpty)
+    }
+
+    func testBackToBackCapturesEachGetTheirOwnFlight() throws {
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.success("asset")) })
+        for _ in 0..<3 {
+            model.processCapturedImage(UIImage(), context: sampleContext(now))
+        }
+        waitUntil { model.captureFlights.count == 3 }
+        XCTAssertEqual(Set(model.captureFlights.map(\.id)).count, 3)
+    }
+
+    func testProcessCapturedImageDownscalesTheThumbnailAndFlightImage() throws {
+        // The thumbnail (88px) and flight picture (600px) must not hold the
+        // full-resolution baked photo.
+        let now = try fixedNow()
+        let largeSize = CGSize(width: 2000, height: 1600)
         let large = UIGraphicsImageRenderer(size: largeSize).image { context in
             UIColor.black.setFill()
             context.fill(CGRect(origin: .zero, size: largeSize))
@@ -1061,11 +1112,10 @@ final class CameraScreenModelTests: XCTestCase {
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
-        waitUntil { model.toastState != nil }
-        let thumbnail = try XCTUnwrap(model.toastState?.thumbnail)
-        XCTAssertLessThan(thumbnail.size.width, largeSize.width)
-        XCTAssertLessThan(thumbnail.size.height, largeSize.height)
-        XCTAssertEqual(max(thumbnail.size.width, thumbnail.size.height), 88, accuracy: 0.5)
+        waitUntil { model.captureFlights.count == 1 }
+        let flight = try XCTUnwrap(model.captureFlights.first)
+        XCTAssertEqual(max(flight.thumbnail.size.width, flight.thumbnail.size.height), 88, accuracy: 0.5)
+        XCTAssertEqual(max(flight.image.size.width, flight.image.size.height), 600, accuracy: 0.5)
     }
 
     func testProcessCapturedImageSurfacesCaptureErrorOnPermissionDenied() throws {
@@ -1080,6 +1130,9 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
         XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
         XCTAssertNil(model.toastState)
+        // Issue #148 (S.10): the flight is marked failed and the thumbnail never changes.
+        XCTAssertEqual(model.captureFlights.first?.status, .failed)
+        XCTAssertNil(model.latestThumbnailImage)
         waitUntil { model.isCapturing == false }
     }
 
@@ -1494,7 +1547,9 @@ final class CameraScreenModelTests: XCTestCase {
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
-        waitUntil { model.latestThumbnailImage != nil }
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: model.captureFlights[0].id)
+        XCTAssertNotNil(model.latestThumbnailImage)
     }
 
     func testSuccessfulSaveRecordsTheAssetInCapturedPhotoStore() throws {

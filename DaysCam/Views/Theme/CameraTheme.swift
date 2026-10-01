@@ -65,6 +65,11 @@ enum CameraTheme {
     /// place and does not need an Asset Catalog entry.
     static let toastBackground = Color(red: 0x1E / 255, green: 0x1C / 255, blue: 0x1A / 255).opacity(0.9)
 
+    /// The drop shadow under a captured photo while it lifts off the
+    /// viewfinder (black at 25%, issue #148), stated directly since it is
+    /// used in one place.
+    static let flightShadow = Color.black.opacity(0.25)
+
     /// `PermissionGuidanceView`'s background: light `#F7F3EE` (same as
     /// `background`), dark `#000000` at 85% — the one screen that follows
     /// the system appearance instead of staying fixed-light (PRD 0.2

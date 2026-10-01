@@ -94,6 +94,19 @@ struct CameraScreenLayoutMetrics {
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
 
+    /// Gap between the footer row and `footerBase` while the panel is closed.
+    static let closedFooterBottomPadding: CGFloat = 16
+
+    /// Where the footer's left button (thumbnail, or manage-profiles while
+    /// the panel is open) is centered — the landing spot for a capture
+    /// flight (issue #148). Closed, the 76pt shutter sets the row height.
+    func leftFooterButtonCenter(isPanelOpen: Bool) -> CGPoint {
+        let rowCenterFromBase = isPanelOpen
+            ? Self.footerToBaseGap + Self.panelOpenFooterRowHeight / 2
+            : Self.closedFooterBottomPadding + Self.shutterRadius
+        return CGPoint(x: footerSideButtonCenterInset, y: footerBase - rowCenterFromBase)
+    }
+
     /// True for iPhone SE-class heights (< 700pt).
     var isSmallScreen: Bool {
         screenSize.height < Self.smallScreenHeightThreshold

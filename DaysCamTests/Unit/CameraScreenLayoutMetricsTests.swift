@@ -277,6 +277,20 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertFalse(se.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: true))
     }
 
+    // MARK: - Capture flight landing spot (issue #148)
+
+    func testLeftFooterButtonCenterClosedAndOpen() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        // footerBase 818: closed, 16pt padding + half the 76pt shutter row.
+        let closed = metrics.leftFooterButtonCenter(isPanelOpen: false)
+        XCTAssertEqual(closed.x, 79.25, accuracy: 0.05)
+        XCTAssertEqual(closed.y, 818 - 16 - 38, accuracy: 0.05)
+        // Open, 8pt gap + half the 44pt row; same x so the button never shifts.
+        let open = metrics.leftFooterButtonCenter(isPanelOpen: true)
+        XCTAssertEqual(open.x, closed.x, accuracy: 0.05)
+        XCTAssertEqual(open.y, 818 - 8 - 22, accuracy: 0.05)
+    }
+
     // MARK: - Helpers
 
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {
