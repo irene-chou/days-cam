@@ -12,6 +12,11 @@ final class RatioIconRenderTests: XCTestCase {
         var stroke: CGFloat      // points
         var clearanceLeft: CGFloat
         var clearanceRight: CGFloat
+        /// Edge thickness on each side (issue #169).
+        var strokeLeft: CGFloat
+        var strokeRight: CGFloat
+        var strokeTop: CGFloat
+        var strokeBottom: CGFloat
     }
 
     static let scale: CGFloat = 6
@@ -50,12 +55,66 @@ final class RatioIconRenderTests: XCTestCase {
             textMinX = min(textMinX, x); textMaxX = max(textMaxX, x)
         } }
         let s = Self.scale
+        // Top/bottom edges: opaque run down/up a column just inside the corner radius.
+        let probeX = minX + (maxX - minX) / 2 - (maxX - minX) / 2 + Int(5 * s)
+        var top = 0
+        while minY + top <= maxY && opaque(min(probeX, maxX), minY + top) { top += 1 }
+        var bottom = 0
+        while maxY - bottom >= minY && opaque(min(probeX, maxX), maxY - bottom) { bottom += 1 }
         return Measurement(
             outline: CGRect(x: CGFloat(minX) / s, y: CGFloat(minY) / s,
                             width: CGFloat(maxX - minX + 1) / s, height: CGFloat(maxY - minY + 1) / s),
             stroke: CGFloat(run) / s,
             clearanceLeft: CGFloat(textMinX - innerMinX) / s,
-            clearanceRight: CGFloat(innerMaxX - textMaxX) / s)
+            clearanceRight: CGFloat(innerMaxX - textMaxX) / s,
+            strokeLeft: CGFloat(run) / s, strokeRight: CGFloat(rightRun) / s,
+            strokeTop: CGFloat(top) / s, strokeBottom: CGFloat(bottom) / s)
+    }
+
+    /// W.1: all four edges of the outline are the same thickness.
+    func testOutlineEdgesAreEquallyThick() throws {
+        for ratio in CaptureAspectRatio.allCases {
+            let m = try measure(ratio)
+            let edges = [m.strokeLeft, m.strokeRight, m.strokeTop, m.strokeBottom]
+            XCTAssertLessThanOrEqual((edges.max() ?? 0) - (edges.min() ?? 0), 0.25, "\(ratio): \(edges)")
+        }
+    }
+
+    /// W.2: the outline is as thick as a neighboring 22pt medium icon (`grid`).
+    func testOutlineMatchesTheGridIconStroke() throws {
+        let grid = Image(systemName: "grid").font(.system(size: 22, weight: .medium)).foregroundColor(.black)
+        let renderer = ImageRenderer(content: grid)
+        renderer.scale = Self.scale
+        let gridWidth = try gridStroke(try XCTUnwrap(renderer.uiImage?.cgImage))
+        for ratio in CaptureAspectRatio.allCases {
+            let m = try measure(ratio)
+            XCTAssertEqual(m.strokeLeft, gridWidth, accuracy: 0.25, "\(ratio) vs grid \(gridWidth)")
+            XCTAssertEqual(m.strokeTop, gridWidth, accuracy: 0.25, "\(ratio) vs grid \(gridWidth)")
+        }
+    }
+
+    func gridStroke(_ image: CGImage) throws -> CGFloat {
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                                              bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        func opaque(_ x: Int, _ y: Int) -> Bool { pixels[(y * width + x) * 4 + 3] > 128 }
+        var minX = width, maxX = -1, minY = height, maxY = -1
+        for y in 0..<height { for x in 0..<width where opaque(x, y) {
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+        } }
+        // Median left-edge run over the central rows (skips gaps and corners).
+        var runs: [Int] = []
+        for y in (minY + (maxY - minY) / 4)...(maxY - (maxY - minY) / 4) {
+            guard let first = (minX...maxX).first(where: { opaque($0, y) }) else { continue }
+            var run = 0
+            while first + run <= maxX && opaque(first + run, y) { run += 1 }
+            runs.append(run)
+        }
+        runs.sort()
+        return CGFloat(runs[runs.count / 2]) / Self.scale
     }
 
     func testLabelClearsTheOutlineByAtLeastOnePointForEveryRatio() throws {
@@ -75,9 +134,15 @@ final class RatioIconRenderTests: XCTestCase {
         XCTAssertEqual(try measure(.nineBySixteen).outline.height, 32, accuracy: 0.7)
     }
 
-    func testStrokeStaysNearTheOldThickness() throws {
-        for ratio in CaptureAspectRatio.allCases {
-            XCTAssertLessThanOrEqual(try measure(ratio).stroke, 1.4, "\(ratio)")
+    /// W.3: outline sizes are unchanged from #137 (3:4 21×28, 1:1 28×28, 9:16 18×32).
+    func testOutlineSizesMatchIssue137() throws {
+        let expected: [CaptureAspectRatio: CGSize] = [.threeByFour: CGSize(width: 21, height: 28),
+                                                      .oneByOne: CGSize(width: 28, height: 28),
+                                                      .nineBySixteen: CGSize(width: 18, height: 32)]
+        for (ratio, size) in expected {
+            let m = try measure(ratio)
+            XCTAssertEqual(m.outline.width, size.width, accuracy: 0.5, "\(ratio)")
+            XCTAssertEqual(m.outline.height, size.height, accuracy: 0.5, "\(ratio)")
         }
     }
 }

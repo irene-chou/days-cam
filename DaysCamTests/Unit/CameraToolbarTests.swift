@@ -16,7 +16,7 @@ final class CameraToolbarTests: XCTestCase {
             let height = RatioIconGeometry.outlineHeight(for: ratio)
             let width = height * ratio.shortToLongRatio
             let labelWidth = RatioIconGeometry.labelWidth(for: ratio)
-            XCTAssertLessThanOrEqual(labelWidth * RatioIconGeometry.minimumLabelScale + 2 * RatioIconGeometry.labelInset, width + 0.01,
+            XCTAssertLessThanOrEqual(labelWidth * RatioIconGeometry.shrunkLabelScale + 2 * RatioIconGeometry.labelInset, width + 0.01,
                                      "\(ratio): label \(labelWidth) in outline \(width)")
         }
     }

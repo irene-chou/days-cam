@@ -124,15 +124,19 @@ struct CameraToolbar: View {
         Self.ratioIcon(for: model.captureSettingsStore.captureAspectRatio, isOnPhoto: isOnPhoto)
     }
 
-    /// One ratio's SF Symbol outline (`rectangle.ratio.3.to.4`, `square`, or
-    /// `rectangle.ratio.9.to.16` — human choice 2026-09-27, not self-drawn)
-    /// with the ratio text centered inside it.
+    /// One ratio's outline with the ratio text centered inside it.
     ///
-    /// The outline's height comes from `RatioIconGeometry` (28pt, grown up to
-    /// 32pt only when the label would not fit, issue #137) and its width from
-    /// `ratio.shortToLongRatio`; the `Text` overlay is proposed *this* frame's
-    /// size, not the outer tap target's, so it sizes against the outline's
-    /// true drawn width (PR #98 review).
+    /// The outline is drawn here (issue #169, superseding #90's SF Symbol
+    /// choice): stretching an SF Symbol to the right proportions made its
+    /// edges uneven and forced a lighter weight, so it looked thinner than
+    /// the other 22pt medium icons. A stroked `RoundedRectangle` has the
+    /// same width on all four sides, set to what a 22pt medium symbol
+    /// measures (`RatioIconGeometry.strokeWidth`).
+    ///
+    /// Its height comes from `RatioIconGeometry` (28pt, grown up to 32pt only
+    /// when the label would not fit, issue #137) and its width from
+    /// `ratio.shortToLongRatio`; the label is sized against the outline's
+    /// inner width, not the outer tap target's (PR #98 review).
     ///
     /// `static` and parameterized over `ratio` (rather than reading
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
@@ -141,23 +145,19 @@ struct CameraToolbar: View {
     static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
         let contentHeight = RatioIconGeometry.outlineHeight(for: ratio)
         let contentWidth = contentHeight * ratio.shortToLongRatio
-        return Image(systemName: ratio.sfSymbolName)
-            .resizable()
-            // Stretched to exactly `contentWidth` × `contentHeight`, not
-            // `.fit`: the symbol's own aspect is wider than a true 9:16, so
-            // fitting it into the frame made the 9:16 outline 18×28 (#137, qa).
-            .fontWeight(RatioIconGeometry.outlineWeight)
-            .frame(width: contentWidth, height: contentHeight)
-            .overlay(
-                Text(ratio.displayLabel)
-                    .font(.system(size: RatioIconGeometry.labelFontSize, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(RatioIconGeometry.minimumLabelScale)
-                    .lineLimit(1)
-                    .frame(width: contentWidth - 2 * RatioIconGeometry.labelInset)
-            )
-            .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-            .frame(width: CameraToolbar.buttonSize, height: CameraToolbar.buttonSize)
-            .legibleOverPhoto(isOnPhoto)
+        return ZStack {
+            RoundedRectangle(cornerRadius: RatioIconGeometry.cornerRadius, style: .continuous)
+                .strokeBorder(lineWidth: RatioIconGeometry.strokeWidth)
+                .frame(width: contentWidth, height: contentHeight)
+            Text(ratio.displayLabel)
+                .font(.system(size: RatioIconGeometry.labelFontSize, weight: .bold, design: .rounded))
+                .minimumScaleFactor(RatioIconGeometry.shrunkLabelScale)
+                .lineLimit(1)
+                .frame(width: contentWidth - 2 * RatioIconGeometry.labelInset)
+        }
+        .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+        .frame(width: CameraToolbar.buttonSize, height: CameraToolbar.buttonSize)
+        .legibleOverPhoto(isOnPhoto)
     }
 
     /// Tap target of every toolbar button (issue #137; was 38).
@@ -284,17 +284,21 @@ extension View {
 /// The ratio button's outline geometry (issue #137).
 enum RatioIconGeometry {
     static let labelFontSize: CGFloat = 6.5
-    /// A thin symbol weight keeps the outline's stroke near its old ~1.3pt
-    /// now that the symbol is drawn larger.
-    static let outlineWeight: Font.Weight = .thin
+    /// Outline stroke, measured off a 22pt medium `grid` symbol (~2.17pt) so
+    /// the ratio button matches its neighbors (issue #169).
+    static let strokeWidth: CGFloat = 2.15
+    static let cornerRadius: CGFloat = 4
     static let baseOutlineHeight: CGFloat = 28
     static let maximumOutlineHeight: CGFloat = 32
-    /// Clearance between the label and the inside of the outline: the
-    /// symbol's own ~1pt stroke plus 1pt.
-    static let labelInset: CGFloat = 2
-    /// The label may shrink to this fraction of `labelFontSize` (issue #137);
-    /// below it, the outline grows instead.
+    /// Distance from the outline's outer edge to the label: the stroke plus
+    /// 1pt of clearance.
+    static let labelInset: CGFloat = strokeWidth + 1
+    /// The label may shrink to this fraction of `labelFontSize` before the
+    /// outline grows (issue #137).
     static let minimumLabelScale: CGFloat = 0.9
+    /// Where the label may shrink to once the outline is at its 32pt cap
+    /// (9:16 with the thicker stroke of issue #169 needs this).
+    static let shrunkLabelScale: CGFloat = 0.7
 
     /// Width of `ratio`'s label at `labelFontSize`, bold rounded.
     static func labelWidth(for ratio: CaptureAspectRatio) -> CGFloat {
@@ -318,17 +322,6 @@ private extension CaptureAspectRatio {
         case .threeByFour: return "3:4"
         case .oneByOne: return "1:1"
         case .nineBySixteen: return "9:16"
-        }
-    }
-
-    /// The SF Symbol drawing this ratio's outline (human choice 2026-09-27,
-    /// PRD 0.2 FR-7.7): an actual SF Symbol per §0.2 PRD §1, never
-    /// self-drawn.
-    var sfSymbolName: String {
-        switch self {
-        case .threeByFour: return "rectangle.ratio.3.to.4"
-        case .oneByOne: return "square"
-        case .nineBySixteen: return "rectangle.ratio.9.to.16"
         }
     }
 }
