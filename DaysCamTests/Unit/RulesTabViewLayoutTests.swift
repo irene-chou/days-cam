@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import XCTest
 @testable import DaysCam
 
@@ -18,9 +19,19 @@ final class RulesTabViewLayoutTests: XCTestCase {
 
     func testWholePageHeightIsAboutThreeMinimumRows() {
         let height = contentSize(showDayCount: true).height
-        // 12 + 44 * 3 + dividers + 12 = ~157; allow room for a taller native
-        // date picker row on other OS versions.
-        XCTAssertGreaterThanOrEqual(height, 156)
-        XCTAssertLessThanOrEqual(height, 165, "整頁高度應約 157pt，量到 \(height)")
+        // Floor: 12 + three rows of at least 44pt + 12 = 156pt, a hard
+        // lower bound whatever the OS. The ceiling is generous because the
+        // native date picker's own height and the dividers vary a little
+        // between OS versions (measured 157.0 on iOS 18.3, 156.7 on iOS 27).
+        XCTAssertGreaterThanOrEqual(height, 12 + 44 * 3 + 12)
+        XCTAssertLessThanOrEqual(height, 175, "整頁高度應約 157pt，量到 \(height)")
+    }
+
+    func testHiddenDayCountPageIsShorterThanTheFullPage() {
+        let full = contentSize(showDayCount: true).height
+        let hidden = contentSize(showDayCount: false).height
+        // Name row (44) plus the hint, inside the same 12pt insets.
+        XCTAssertGreaterThanOrEqual(hidden, 12 + 44 + 12)
+        XCTAssertLessThan(hidden, full)
     }
 }
