@@ -95,8 +95,11 @@ struct CameraScreen: View {
                 headerBar(metrics: metrics)
 
                 footerColumn(metrics: metrics)
+
+                toolsCapsule(metrics: metrics)
             }
             .ignoresSafeArea()
+            .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
         }
     }
 
@@ -148,6 +151,19 @@ struct CameraScreen: View {
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
         .background(Color.clear)
         .animation(CameraTheme.spring, value: isOnPhoto)
+    }
+
+    // MARK: - Tools capsule (issue #135)
+
+    /// Floats above the viewfinder, left-aligned with the toolbar's own
+    /// inset and 4pt below the toggle button.
+    @ViewBuilder
+    private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
+        if model.isCameraToolsExpanded {
+            CameraToolsCapsule(model: model)
+                .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
+                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
+        }
     }
 
     // MARK: - Footer
@@ -266,9 +282,7 @@ struct CameraScreen: View {
         // (position tab), so a tap that starts there reaches its drag
         // gesture instead of this one — never both.
         .onTapGesture {
-            if model.panelModel.isOpen {
-                model.panelModel.close()
-            }
+            model.handleViewfinderTap()
         }
     }
 
@@ -342,11 +356,11 @@ struct CameraScreen: View {
             // having both on screen at once while the panel is open reads
             // as the same button twice (human decision, 2026-09-27, #84).
             iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
-                model.panelModel.open()
+                model.openOverlayPanel()
             }
         case .collapse:
             iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
-                model.panelModel.close()
+                model.closeOverlayPanel()
             }
         }
     }
@@ -594,4 +608,18 @@ private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSu
 #Preview("iPhone SE・9:16 疊字面板打開・位置分頁（G.7）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
+}
+
+// MARK: - Issue #135 (tools capsule)
+
+/// 驗收 C.2/C.12（issue #135）：膠囊展開，閃光燈開、計時 3 秒。
+#Preview("相機設定膠囊展開（C.2）") {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.c135") ?? .standard)
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
+    settings.cycleFlash()
+    settings.cycleTimer()
+    model.toggleCameraTools()
+    return CameraScreen(model: model)
 }
