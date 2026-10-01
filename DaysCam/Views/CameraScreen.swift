@@ -609,3 +609,17 @@ private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSu
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
 }
+
+// MARK: - Issue #135 (tools capsule)
+
+/// 驗收 C.2/C.12（issue #135）：膠囊展開，閃光燈開、計時 3 秒。
+#Preview("相機設定膠囊展開（C.2）") {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.c135") ?? .standard)
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
+    settings.cycleFlash()
+    settings.cycleTimer()
+    model.toggleCameraTools()
+    return CameraScreen(model: model)
+}
