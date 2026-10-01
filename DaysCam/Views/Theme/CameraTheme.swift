@@ -74,6 +74,14 @@ enum CameraTheme {
     /// used in one place.
     static let flightShadow = Color.black.opacity(0.25)
 
+    /// The tools capsule's floating background (white at 94%, design token
+    /// `.pop` in D-1), stated directly since it is used in one place.
+    static let popoverBackground = Color.white.opacity(0.94)
+
+    /// The tools capsule's drop shadow color (`rgba(60,40,20,.14)`, design
+    /// token `.pop` in D-1), stated directly since it is used in one place.
+    static let popoverShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.14)
+
     /// `PermissionGuidanceView`'s background: light `#F7F3EE` (same as
     /// `background`), dark `#000000` at 85% — the one screen that follows
     /// the system appearance instead of staying fixed-light (PRD 0.2

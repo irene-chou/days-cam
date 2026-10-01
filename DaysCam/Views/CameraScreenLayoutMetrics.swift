@@ -40,7 +40,14 @@ struct CameraScreenLayoutMetrics {
     /// `headerBottom`/`footerBase`.
     let isFallback: Bool
 
-    init(screenSize: CGSize, safeAreaInsets: EdgeInsets) {
+    /// The segmented control's height (issue #139): `defaultPanelTabBarHeight`
+    /// scaled with Dynamic Type by the caller. Grows the panel's total
+    /// height, never its content area, so the viewfinder gives up the extra.
+    let panelTabBarHeight: CGFloat
+
+    init(screenSize: CGSize, safeAreaInsets: EdgeInsets,
+         panelTabBarHeight: CGFloat = CameraScreenLayoutMetrics.defaultPanelTabBarHeight) {
+        self.panelTabBarHeight = max(panelTabBarHeight, Self.defaultPanelTabBarHeight)
         self.screenSize = screenSize
         self.topInset = safeAreaInsets.top
         self.bottomInset = safeAreaInsets.bottom
@@ -79,8 +86,8 @@ struct CameraScreenLayoutMetrics {
     /// Screens shorter than this (iPhone SE, 667pt) use the compact panel.
     static let smallScreenHeightThreshold: CGFloat = 700
 
-    /// The segmented control's fixed height; `OverlayPanelView` pins it.
-    static let panelTabBarHeight: CGFloat = 32
+    /// The segmented control's height at the default Dynamic Type size.
+    static let defaultPanelTabBarHeight: CGFloat = 32
 
     /// Footer row height while the panel is open (two 44×44 buttons).
     static let panelOpenFooterRowHeight: CGFloat = 44
@@ -120,7 +127,7 @@ struct CameraScreenLayoutMetrics {
 
     /// Tab bar plus content area.
     var panelHeight: CGFloat {
-        Self.panelTabBarHeight + panelContentHeight
+        panelTabBarHeight + panelContentHeight
     }
 
     /// Gap between the viewfinder box's bottom edge and the panel's top.
@@ -163,6 +170,22 @@ struct CameraScreenLayoutMetrics {
     /// buttons stay put whether or not the shutter is shown.
     var footerSideButtonCenterInset: CGFloat {
         (screenSize.width / 2 - Self.shutterRadius) / 2
+    }
+
+    // MARK: - Tools capsule (issue #135)
+
+    /// The toolbar's left/right inset (`CameraToolbar`'s horizontal padding).
+    static let toolbarHorizontalInset: CGFloat = 12
+
+    /// The toolbar's icon button height.
+    static let toolbarButtonHeight: CGFloat = 38
+
+    /// Top edge of the tools capsule: the toggle button is vertically
+    /// centered in the header region below the top inset; the capsule sits
+    /// 4pt under it.
+    var toolsCapsuleTop: CGFloat {
+        let contentHeight = headerBottom - topInset
+        return topInset + (contentHeight - Self.toolbarButtonHeight) / 2 + Self.toolbarButtonHeight + 4
     }
 
     /// The viewfinder box's frame for `ratio`, given the on-screen width it

@@ -190,6 +190,30 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertLessThanOrEqual(regularSide + PositionTabModel.gridBoxVerticalInset(forAvailableHeight: regular.panelContentHeight) * 2, regular.panelContentHeight)
     }
 
+    /// A taller tab bar (large Dynamic Type) grows the panel and shrinks the
+    /// viewfinder by the same amount; the content area stays 120 (#139, D.5).
+    func testTallerTabBarShrinksViewfinderNotContent() {
+        let size = CGSize(width: 393, height: 852)
+        let insets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+        let normal = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 32)
+        let large = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 38)
+        XCTAssertEqual(normal.panelHeight, 152, accuracy: accuracy)
+        XCTAssertEqual(large.panelHeight, 158, accuracy: accuracy)
+        XCTAssertEqual(large.panelContentHeight, 120)
+        XCTAssertEqual(large.panelBottom, normal.panelBottom, accuracy: accuracy)
+        XCTAssertEqual(large.panelOpenViewfinderAreaHeight, normal.panelOpenViewfinderAreaHeight - 6, accuracy: accuracy)
+        XCTAssertEqual(large.panelOpenViewfinderFrame.minY, large.headerBottom, accuracy: accuracy)
+        XCTAssertLessThanOrEqual(large.panelOpenViewfinderFrame.maxY + large.panelGapAboveBox, large.panelTop + accuracy)
+    }
+
+    /// Never smaller than the default, so default Dynamic Type matches #134.
+    func testTabBarHeightIsNeverBelowDefault() {
+        let metrics = CameraScreenLayoutMetrics(screenSize: CGSize(width: 393, height: 852),
+                                                safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0),
+                                                panelTabBarHeight: 20)
+        XCTAssertEqual(metrics.panelTabBarHeight, 32)
+    }
+
     func testPanelStackingFromFooterBase() {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         // footerBase 818: 8pt, 44pt row, 4pt gap, then the panel.
@@ -289,6 +313,16 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let open = metrics.leftFooterButtonCenter(isPanelOpen: true)
         XCTAssertEqual(open.x, closed.x, accuracy: 0.05)
         XCTAssertEqual(open.y, 818 - 8 - 22, accuracy: 0.05)
+    }
+
+    // MARK: - Tools capsule (issue #135)
+
+    func testToolsCapsuleSitsFourPointsBelowTheCenteredToggle() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        // The 38pt toggle is centered in the header content below the top inset.
+        XCTAssertEqual(metrics.toolsCapsuleTop, 59 + (60.333 - 38) / 2 + 38 + 4, accuracy: 0.05)
+        let se = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 38) / 2 + 38 + 4, accuracy: 0.05)
     }
 
     // MARK: - Helpers

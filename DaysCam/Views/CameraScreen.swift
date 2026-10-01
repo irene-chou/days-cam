@@ -24,9 +24,18 @@ struct CameraScreen: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// What the thumbnail button currently shows; follows
+    /// `model.latestThumbnailImage` (see `showThumbnail`).
+    @State private var shownThumbnail: UIImage?
+
     /// The viewfinder's white shutter flash (issue #148): 0 → 90% → 0 over
     /// ~0.15s, softer under Reduce Motion.
     @State private var flashOpacity: Double = 0
+
+    /// The panel's segmented control height, scaled with Dynamic Type
+    /// (issue #139); fed to the layout metrics so the viewfinder yields the
+    /// extra height.
+    @ScaledMetric(relativeTo: .footnote) private var panelTabBarHeight = CameraScreenLayoutMetrics.defaultPanelTabBarHeight
 
     var body: some View {
         content
@@ -97,7 +106,8 @@ struct CameraScreen: View {
             let insets = proxy.safeAreaInsets
             let screenSize = CGSize(width: proxy.size.width + insets.leading + insets.trailing,
                                     height: proxy.size.height + insets.top + insets.bottom)
-            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets)
+            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets,
+                                                  panelTabBarHeight: panelTabBarHeight)
             ZStack(alignment: .topLeading) {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
@@ -106,9 +116,12 @@ struct CameraScreen: View {
 
                 footerColumn(metrics: metrics)
 
+                toolsCapsule(metrics: metrics)
+
                 captureFlights(metrics: metrics)
             }
             .ignoresSafeArea()
+            .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
         }
     }
 
@@ -215,6 +228,19 @@ struct CameraScreen: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - Tools capsule (issue #135)
+
+    /// Floats above the viewfinder, left-aligned with the toolbar's own
+    /// inset and 4pt below the toggle button.
+    @ViewBuilder
+    private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
+        if model.isCameraToolsExpanded {
+            CameraToolsCapsule(model: model)
+                .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
+                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
+        }
+    }
+
     // MARK: - Footer
 
     /// Bottom bar, plus the panel above it while open, anchored to the
@@ -234,7 +260,8 @@ struct CameraScreen: View {
         let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
         return VStack(spacing: CameraScreenLayoutMetrics.panelToFooterGap) {
             if isOpen {
-                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight)
+                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight,
+                                 tabBarHeight: metrics.panelTabBarHeight)
                     .frame(height: metrics.panelHeight)
                     .padding(.horizontal, 6)
                     .transition(.opacity)
@@ -331,9 +358,7 @@ struct CameraScreen: View {
         // (position tab), so a tap that starts there reaches its drag
         // gesture instead of this one — never both.
         .onTapGesture {
-            if model.panelModel.isOpen {
-                model.panelModel.close()
-            }
+            model.handleViewfinderTap()
         }
     }
 
@@ -407,11 +432,11 @@ struct CameraScreen: View {
             // having both on screen at once while the panel is open reads
             // as the same button twice (human decision, 2026-09-27, #84).
             iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
-                model.panelModel.open()
+                model.openOverlayPanel()
             }
         case .collapse:
             iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
-                model.panelModel.close()
+                model.closeOverlayPanel()
             }
         }
     }
@@ -447,7 +472,7 @@ struct CameraScreen: View {
             // TASK-29: request read access, then open the gallery.
         } label: {
             Group {
-                if let image = model.latestThumbnailImage {
+                if let image = shownThumbnail {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -461,14 +486,24 @@ struct CameraScreen: View {
             }
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8);
-            // otherwise the new photo replaces the icon instantly — an
-            // animated if/else here left the old icon fading out behind the
-            // new photo, which showed as a flicker right after landing.
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : nil, value: model.latestThumbnailImage)
+            // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
+            // via an explicit `withAnimation` in `showThumbnail`; otherwise
+            // the new photo replaces the icon instantly — an animated if/else
+            // left the old icon fading out behind the new photo, which showed
+            // as a flicker right after landing.
+            .onAppear { shownThumbnail = model.latestThumbnailImage }
+            .onChange(of: model.latestThumbnailImage) { _, image in showThumbnail(image) }
         }
         .modifier(ThumbnailLandingEffect(landingCount: model.thumbnailLandingCount))
         .accessibilityLabel("查看已拍照片")
+    }
+
+    private func showThumbnail(_ image: UIImage?) {
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.2)) { shownThumbnail = image }
+        } else {
+            shownThumbnail = image
+        }
     }
 
     /// Center: the shutter — the one place PRD 0.2 FR-14.2 allows a filled
@@ -666,4 +701,18 @@ private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSu
 #Preview("iPhone SE・9:16 疊字面板打開・位置分頁（G.7）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
+}
+
+// MARK: - Issue #135 (tools capsule)
+
+/// 驗收 C.2/C.12（issue #135）：膠囊展開，閃光燈開、計時 3 秒。
+#Preview("相機設定膠囊展開（C.2）") {
+    let store = ProfileStore()
+    store.load()
+    let settings = CaptureSettingsStore(defaults: UserDefaults(suiteName: "CameraScreen.preview.c135") ?? .standard)
+    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
+    settings.cycleFlash()
+    settings.cycleTimer()
+    model.toggleCameraTools()
+    return CameraScreen(model: model)
 }

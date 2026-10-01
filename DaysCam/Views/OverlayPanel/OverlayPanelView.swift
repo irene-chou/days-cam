@@ -21,6 +21,10 @@ struct OverlayPanelView: View {
     /// (issue #128); taller tab content scrolls inside it.
     var contentHeight: CGFloat = 120
 
+    /// The segmented control's height, scaled with Dynamic Type by
+    /// `CameraScreen` so the panel's total height accounts for it (#139).
+    var tabBarHeight: CGFloat = CameraScreenLayoutMetrics.defaultPanelTabBarHeight
+
     var body: some View {
         VStack(spacing: 0) {
             segmentedControl
@@ -66,12 +70,12 @@ struct OverlayPanelView: View {
             }
         }
         .padding(2)
+        .frame(height: tabBarHeight)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(CameraTheme.fill)
         )
         .padding(.horizontal, 2)
-        .frame(height: CameraScreenLayoutMetrics.panelTabBarHeight)
     }
 
     /// 16pt fade from transparent to the panel's own background at the
@@ -98,6 +102,10 @@ struct OverlayPanelView: View {
         } label: {
             Text(tab.title)
                 .font(CameraTheme.toolFont(.footnote))
+                // One line that shrinks rather than wraps or overflows at
+                // large Dynamic Type sizes (#139).
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .foregroundColor(isSelected ? CameraTheme.ink : CameraTheme.inkSecondary)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity)
