@@ -285,7 +285,17 @@ final class CameraScreenModel: ObservableObject {
     private func bindToProfileStore() {
         profileStore.$profiles
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.profiles = $0 }
+            .sink { [weak self] profiles in
+                guard let self else { return }
+                self.profiles = profiles
+                // Each tab model holds its own profile copy; keep the rules
+                // tab's read-only fields (e.g. `showDayCount`, owned by the
+                // format tab) in step with the store (#167).
+                if let rulesTabModel = self.rulesTabModel,
+                   let latest = profiles.first(where: { $0.id == rulesTabModel.profile.id }) {
+                    rulesTabModel.applyExternalChanges(from: latest)
+                }
+            }
             .store(in: &cancellables)
         profileStore.$selectedProfileID
             .receive(on: DispatchQueue.main)
