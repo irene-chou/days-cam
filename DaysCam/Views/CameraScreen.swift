@@ -22,6 +22,11 @@ import SwiftUI
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
+    /// The panel's segmented control height, scaled with Dynamic Type
+    /// (issue #139); fed to the layout metrics so the viewfinder yields the
+    /// extra height.
+    @ScaledMetric(relativeTo: .footnote) private var panelTabBarHeight = CameraScreenLayoutMetrics.defaultPanelTabBarHeight
+
     var body: some View {
         content
             .background(CameraTheme.background.ignoresSafeArea())
@@ -87,7 +92,8 @@ struct CameraScreen: View {
             let insets = proxy.safeAreaInsets
             let screenSize = CGSize(width: proxy.size.width + insets.leading + insets.trailing,
                                     height: proxy.size.height + insets.top + insets.bottom)
-            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets)
+            let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets,
+                                                  panelTabBarHeight: panelTabBarHeight)
             ZStack(alignment: .topLeading) {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
@@ -185,7 +191,8 @@ struct CameraScreen: View {
         let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
         return VStack(spacing: CameraScreenLayoutMetrics.panelToFooterGap) {
             if isOpen {
-                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight)
+                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight,
+                                 tabBarHeight: metrics.panelTabBarHeight)
                     .frame(height: metrics.panelHeight)
                     .padding(.horizontal, 6)
                     .transition(.opacity)
