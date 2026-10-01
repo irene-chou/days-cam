@@ -17,18 +17,9 @@ import SwiftUI
 struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
 
-    /// The `ScrollView` below's own real visible height (#108) — some tab
-    /// content (the position tab's nine-point grid) needs to size itself to
-    /// fit without scrolling rather than just wrapping, so it needs this
-    /// number, not just "however tall it wants to be".
-    ///
-    /// Measured off the `ScrollView` itself via `.background(GeometryReader
-    /// ...)`, not from inside its `content` (a `GeometryReader` nested
-    /// inside `ScrollView`'s content reports a bogus, tiny value there —
-    /// confirmed by measurement, see #108) — `.infinity` (matching
-    /// `PositionTabView`'s own default) until the first layout pass reports
-    /// a real one.
-    @State private var tabContentHeight: CGFloat = .infinity
+    /// The scrolling area's fixed height below the segmented control
+    /// (issue #128); taller tab content scrolls inside it.
+    var contentHeight: CGFloat = 120
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,20 +38,11 @@ struct OverlayPanelView: View {
             ScrollView {
                 tabContent
             }
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: TabContentHeightKey.self, value: proxy.size.height)
-                }
-            )
-            .onPreferenceChange(TabContentHeightKey.self) { tabContentHeight = $0 }
+            .frame(height: contentHeight)
+            .overlay(alignment: .bottom) { scrollFade }
         }
-        // `CameraScreen` gives this view `maxHeight: .infinity` so the panel
-        // fills whatever vertical space frees up below the viewfinder — a
-        // plain `VStack` centers a shorter child inside that by default, so
-        // without pinning `.top` here, switching to a tab with different
-        // content height visibly shifted the segmented control up or down
-        // (#75's second bug). Pinning it top-aligned keeps its y position
-        // identical across every tab (T.7).
+        // Pinned top-aligned so the segmented control's y position stays
+        // identical across every tab (#75, T.7).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -89,6 +71,16 @@ struct OverlayPanelView: View {
                 .fill(CameraTheme.fill)
         )
         .padding(.horizontal, 2)
+        .frame(height: CameraScreenLayoutMetrics.panelTabBarHeight)
+    }
+
+    /// 16pt fade from transparent to the panel's own background at the
+    /// content area's bottom edge, hinting that it scrolls (issue #128).
+    private var scrollFade: some View {
+        LinearGradient(colors: [CameraTheme.background.opacity(0), CameraTheme.background],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: 16)
+            .allowsHitTesting(false)
     }
 
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,
@@ -142,7 +134,7 @@ struct OverlayPanelView: View {
             }
         case .position:
             if let positionTabModel = model.positionTabModel {
-                PositionTabView(model: positionTabModel, availableHeight: tabContentHeight)
+                PositionTabView(model: positionTabModel, availableHeight: contentHeight)
             } else {
                 placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
             }
@@ -167,19 +159,6 @@ struct OverlayPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
-    }
-}
-
-/// Carries the tab body `ScrollView`'s real visible height back up to
-/// `OverlayPanelView.tabContentHeight` (#108) — a plain `CGFloat`
-/// `PreferenceKey` rather than reading a `GeometryReader` inline, since the
-/// value has to come from `.background` on the `ScrollView` itself (see
-/// `OverlayPanelView`'s own doc comment on `tabContentHeight`).
-private struct TabContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = .infinity
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
