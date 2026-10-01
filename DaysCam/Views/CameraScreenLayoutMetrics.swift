@@ -178,7 +178,7 @@ struct CameraScreenLayoutMetrics {
     static let toolbarHorizontalInset: CGFloat = 12
 
     /// The toolbar's icon button height.
-    static let toolbarButtonHeight: CGFloat = 38
+    static let toolbarButtonHeight: CGFloat = 44
 
     /// Top edge of the tools capsule: the toggle button is vertically
     /// centered in the header region below the top inset; the capsule sits
