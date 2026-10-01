@@ -61,6 +61,10 @@ final class CameraScreenModel: ObservableObject {
     /// switcher's "管理設定檔" entry) should be shown.
     @Published var isProfileListPresented = false
 
+    /// Whether the flash／timer／grid capsule below the toolbar is showing
+    /// (issue #135). Never persisted: every launch starts collapsed.
+    @Published private(set) var isCameraToolsExpanded = false
+
     /// Drives the management list. Built once and reused — unlike
     /// `displaySettingsModel`, this does not need to be rebuilt per
     /// presentation, since `ProfileListModel` already owns its own
@@ -431,6 +435,7 @@ final class CameraScreenModel: ObservableObject {
     }
 
     func switchCamera() {
+        collapseCameraTools()
         cameraService.switchCamera()
     }
 
@@ -565,10 +570,12 @@ extension CameraScreenModel {
     /// (PRD FR-1.4). Forwards straight to the store, which also persists
     /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
     func selectProfile(id: UUID) {
+        collapseCameraTools()
         profileStore.select(id: id)
     }
 
     func presentProfileManagement() {
+        collapseCameraTools()
         isProfileListPresented = true
     }
 }
@@ -625,10 +632,47 @@ extension CameraScreenModel {
     /// last (PRD 0.2 FR-7.7, human decision 2026-09-27: the ratio button now
     /// cycles on tap instead of opening a picker menu).
     func cycleAspectRatio() {
+        collapseCameraTools()
         let ratios = CaptureAspectRatio.allCases
         let currentIndex = ratios.firstIndex(of: captureSettingsStore.captureAspectRatio) ?? 0
         let nextIndex = (currentIndex + 1) % ratios.count
         selectAspectRatio(ratios[nextIndex])
+    }
+
+    /// Opens or closes the tools capsule (issue #135).
+    func toggleCameraTools() {
+        isCameraToolsExpanded.toggle()
+    }
+
+    /// Closes the tools capsule; a no-op when it is already closed. Called by
+    /// every other control that acts while the capsule is up (issue #135).
+    func collapseCameraTools() {
+        if isCameraToolsExpanded {
+            isCameraToolsExpanded = false
+        }
+    }
+
+    /// Opens the overlay panel, collapsing the tools capsule first (issue #135).
+    func openOverlayPanel() {
+        collapseCameraTools()
+        panelModel.open()
+    }
+
+    /// Closes the overlay panel, collapsing the tools capsule too (issue #135).
+    func closeOverlayPanel() {
+        collapseCameraTools()
+        panelModel.close()
+    }
+
+    /// A tap on the viewfinder (issue #135): while the tools capsule is up it
+    /// only closes the capsule — the tap is consumed, so an open panel stays
+    /// open; otherwise it closes the panel (PRD 0.2 FR-8.7).
+    func handleViewfinderTap() {
+        if isCameraToolsExpanded {
+            collapseCameraTools()
+        } else if panelModel.isOpen {
+            panelModel.close()
+        }
     }
 
     /// Flips the grid overlay (PRD 0.2 FR-7.9).
@@ -678,6 +722,7 @@ extension CameraScreenModel {
     /// capture is already in flight," so this doubles as the FR-5.5
     /// debounce) or before any profile is selected.
     func capturePhoto() {
+        collapseCameraTools()
         guard countdownRemaining == nil else {
             cancelCountdown()
             return

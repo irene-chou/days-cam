@@ -234,6 +234,16 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertFalse(se.isViewfinderBehindFooter(ratio: .nineBySixteen, isPanelOpen: true))
     }
 
+    // MARK: - Tools capsule (issue #135)
+
+    func testToolsCapsuleSitsFourPointsBelowTheCenteredToggle() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        // The 38pt toggle is centered in the header content below the top inset.
+        XCTAssertEqual(metrics.toolsCapsuleTop, 59 + (60.333 - 38) / 2 + 38 + 4, accuracy: 0.05)
+        let se = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
+        XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 38) / 2 + 38 + 4, accuracy: 0.05)
+    }
+
     // MARK: - Helpers
 
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {

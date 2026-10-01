@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The camera screen's top bar (PRD 0.2 FR-7.2, D-1): flash and timer on the
-/// left, the profile switcher centered, ratio/grid/flip on the right.
+/// The camera screen's top bar (PRD 0.2 FR-7.2, D-1; issue #135): the tools
+/// toggle on the left (flash, timer and grid live in `CameraToolsCapsule`),
+/// the profile switcher centered, ratio/flip on the right.
 ///
 /// All state and actions come from `model` (`CameraScreenModel`); this view
 /// only lays it out and never touches `CaptureSettingsStore`/`CameraService`
@@ -33,59 +34,39 @@ struct CameraToolbar: View {
     /// centers the chip when both button groups already have equal width.
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) {
-                flashButton
-                timerButton
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            toolsToggleButton
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             profileChip
 
             HStack(spacing: 0) {
                 ratioButton
-                gridButton
                 flipButton
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, CameraScreenLayoutMetrics.toolbarHorizontalInset)
     }
 
-    // MARK: - Left: flash, timer
+    // MARK: - Left: tools toggle (issue #135)
 
-    private var flashButton: some View {
-        Button(action: model.cycleFlash) {
-            Image(systemName: flashIconName)
-                .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: isOnPhoto)
+    /// Opens/closes `CameraToolsCapsule`. A faint `CameraTheme.fill` disc
+    /// behind the icon marks the expanded state; nothing marks an enabled
+    /// tool while collapsed (human decision 2026-09-30).
+    private var toolsToggleButton: some View {
+        Button {
+            model.toggleCameraTools()
+        } label: {
+            Image(systemName: model.isCameraToolsExpanded ? "chevron.up.circle" : "chevron.down.circle")
+                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
+                .background(
+                    Circle()
+                        .fill(CameraTheme.fill)
+                        .opacity(model.isCameraToolsExpanded ? 1 : 0)
+                )
         }
-        .disabled(model.isFlashToolDisabled)
-        .opacity(model.isFlashToolDisabled ? 0.35 : 1)
-        .accessibilityLabel("閃光燈")
-    }
-
-    private var flashIconName: String {
-        switch model.captureSettingsStore.flashMode {
-        case .off: return "bolt.slash"
-        case .auto: return "bolt.badge.automatic"
-        case .on: return "bolt.fill"
-        }
-    }
-
-    private var timerButton: some View {
-        Button(action: model.cycleTimer) {
-            Group {
-                if model.captureSettingsStore.timerSeconds == .off {
-                    Image(systemName: "timer")
-                } else {
-                    Text("\(model.captureSettingsStore.timerSeconds.rawValue)s")
-                        .font(CameraTheme.toolFont(.footnote))
-                }
-            }
-            .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: isOnPhoto)
-        }
-        .accessibilityLabel(model.captureSettingsStore.timerSeconds == .off
-                            ? "計時器：關"
-                            : "計時器：\(model.captureSettingsStore.timerSeconds.rawValue) 秒")
+        .accessibilityLabel("相機設定")
+        .accessibilityValue(model.isCameraToolsExpanded ? "已展開" : "已收起")
     }
 
     // MARK: - Center: profile switcher (PRD 0.2 FR-7.11)
@@ -126,7 +107,7 @@ struct CameraToolbar: View {
         }
     }
 
-    // MARK: - Right: ratio, grid, flip
+    // MARK: - Right: ratio, flip
 
     /// Taps cycle straight to the next ratio (human decision 2026-09-27):
     /// no menu, since there are only three ratios and the icon itself shows
@@ -185,14 +166,6 @@ struct CameraToolbar: View {
             .legibleOverPhoto(isOnPhoto)
     }
 
-    private var gridButton: some View {
-        Button(action: model.toggleGrid) {
-            Image(systemName: "grid")
-                .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: isOnPhoto)
-        }
-        .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
-    }
-
     private var flipButton: some View {
         Button(action: model.switchCamera) {
             Image(systemName: "arrow.triangle.2.circlepath.camera")
@@ -204,6 +177,72 @@ struct CameraToolbar: View {
     }
 }
 
+/// The horizontal pill that floats below the toolbar's toggle (issue #135,
+/// D-1's `.pop` style) holding flash, timer and grid. Tapping a tool cycles
+/// it and leaves the pill open, so several can be adjusted in a row. The pill
+/// has its own white background, so icons always use `CameraTheme.ink`, never
+/// the on-photo light color.
+struct CameraToolsCapsule: View {
+    @ObservedObject var model: CameraScreenModel
+
+    var body: some View {
+        HStack(spacing: 2) {
+            flashButton
+            timerButton
+            gridButton
+        }
+        .padding(4)
+        .background(
+            Capsule()
+                .fill(CameraTheme.inkOnPhoto.opacity(0.94))
+                .shadow(color: CameraTheme.ink.opacity(0.14), radius: 12, x: 0, y: 8)
+        )
+    }
+
+    private var flashButton: some View {
+        Button(action: model.cycleFlash) {
+            Image(systemName: flashIconName)
+                .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: false, width: 44)
+        }
+        .disabled(model.isFlashToolDisabled)
+        .opacity(model.isFlashToolDisabled ? 0.35 : 1)
+        .accessibilityLabel("閃光燈")
+    }
+
+    private var flashIconName: String {
+        switch model.captureSettingsStore.flashMode {
+        case .off: return "bolt.slash"
+        case .auto: return "bolt.badge.automatic"
+        case .on: return "bolt.fill"
+        }
+    }
+
+    private var timerButton: some View {
+        Button(action: model.cycleTimer) {
+            Group {
+                if model.captureSettingsStore.timerSeconds == .off {
+                    Image(systemName: "timer")
+                } else {
+                    Text("\(model.captureSettingsStore.timerSeconds.rawValue)s")
+                        .font(CameraTheme.toolFont(.footnote))
+                }
+            }
+            .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: false, width: 44)
+        }
+        .accessibilityLabel(model.captureSettingsStore.timerSeconds == .off
+                            ? "計時器：關"
+                            : "計時器：\(model.captureSettingsStore.timerSeconds.rawValue) 秒")
+    }
+
+    private var gridButton: some View {
+        Button(action: model.toggleGrid) {
+            Image(systemName: "grid")
+                .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: false, width: 44)
+        }
+        .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
+    }
+}
+
 /// One SF Symbol/text label at the toolbar's fixed 38x38 tap target, colored
 /// `active` when the tool it belongs to is on, otherwise `ink`/`inkOnPhoto`
 /// depending on `isOnPhoto` (PRD 0.2 FR-7.10, FR-14.2 — no button
@@ -211,19 +250,20 @@ struct CameraToolbar: View {
 private struct ToolbarIconModifier: ViewModifier {
     let isActive: Bool
     let isOnPhoto: Bool
+    let width: CGFloat
 
     func body(content: Content) -> some View {
         content
             .font(.system(size: 18, weight: .medium))
             .foregroundColor(isActive ? CameraTheme.active : (isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink))
-            .frame(width: 38, height: 38)
+            .frame(width: width, height: 38)
             .legibleOverPhoto(isOnPhoto)
     }
 }
 
 private extension View {
-    func toolbarIcon(isActive: Bool, isOnPhoto: Bool) -> some View {
-        modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto))
+    func toolbarIcon(isActive: Bool, isOnPhoto: Bool, width: CGFloat = 38) -> some View {
+        modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto, width: width))
     }
 }
 
