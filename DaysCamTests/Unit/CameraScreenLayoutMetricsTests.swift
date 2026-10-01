@@ -305,10 +305,10 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
 
     func testToolsCapsuleSitsFourPointsBelowTheCenteredToggle() {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
-        // The 38pt toggle is centered in the header content below the top inset.
-        XCTAssertEqual(metrics.toolsCapsuleTop, 59 + (60.333 - 38) / 2 + 38 + 4, accuracy: 0.05)
+        // The 44pt toggle is centered in the header content below the top inset.
+        XCTAssertEqual(metrics.toolsCapsuleTop, 59 + (60.333 - 44) / 2 + 44 + 4, accuracy: 0.05)
         let se = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
-        XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 38) / 2 + 38 + 4, accuracy: 0.05)
+        XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 44) / 2 + 44 + 4, accuracy: 0.05)
     }
 
     // MARK: - Helpers

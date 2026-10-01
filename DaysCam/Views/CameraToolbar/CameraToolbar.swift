@@ -128,25 +128,18 @@ struct CameraToolbar: View {
     /// `rectangle.ratio.9.to.16` — human choice 2026-09-27, not self-drawn)
     /// with the ratio text centered inside it.
     ///
-    /// The outline's longest edge is capped to 20pt (to read at roughly the
-    /// same size as the other 18pt toolbar icons) and its shorter edge is
-    /// computed from `ratio.shortToLongRatio`, rather than just fitting the
-    /// image into a 20x20 square: the `Text` overlay below is proposed
-    /// *this* content frame's size, so it needs to match the outline's true
-    /// drawn width for the text to size/truncate against, not the outer
-    /// square. Overlaying against the square let the text (esp. 9:16's,
-    /// whose drawn rectangle is only ~11pt wide inside that square) size
-    /// itself as if it had ~20pt to fill and overflow past the actual
-    /// outline (PR #98 review, qa on-device screenshot) — `lineLimit(1)`
-    /// only truncates when the *proposed* width is already too small, and a
-    /// too-generous proposed width means it never truncates at all.
+    /// The outline's height comes from `RatioIconGeometry` (28pt, grown up to
+    /// 32pt only when the label would not fit, issue #137) and its width from
+    /// `ratio.shortToLongRatio`; the `Text` overlay is proposed *this* frame's
+    /// size, not the outer tap target's, so it sizes against the outline's
+    /// true drawn width (PR #98 review).
     ///
     /// `static` and parameterized over `ratio` (rather than reading
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
     /// preview below can render all three side by side without duplicating
     /// these layout numbers.
     fileprivate static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
-        let contentHeight: CGFloat = 20
+        let contentHeight = RatioIconGeometry.outlineHeight(for: ratio)
         let contentWidth = contentHeight * ratio.shortToLongRatio
         return Image(systemName: ratio.sfSymbolName)
             .resizable()
@@ -154,17 +147,18 @@ struct CameraToolbar: View {
             .frame(width: contentWidth, height: contentHeight)
             .overlay(
                 Text(ratio.displayLabel)
-                    .font(.system(size: 7, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.25)
+                    .font(.system(size: RatioIconGeometry.labelFontSize, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(RatioIconGeometry.minimumLabelScale)
                     .lineLimit(1)
-                    // A little inset so the text never touches the outline
-                    // itself, not just avoids overflowing past it.
-                    .padding(.horizontal, 1.5)
+                    .frame(width: contentWidth - 2 * RatioIconGeometry.labelInset)
             )
             .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-            .frame(width: 38, height: 38)
+            .frame(width: CameraToolbar.buttonSize, height: CameraToolbar.buttonSize)
             .legibleOverPhoto(isOnPhoto)
     }
+
+    /// Tap target of every toolbar button (issue #137; was 38).
+    static let buttonSize: CGFloat = 44
 
     private var flipButton: some View {
         Button(action: model.switchCamera) {
@@ -202,7 +196,7 @@ struct CameraToolsCapsule: View {
     private var flashButton: some View {
         Button(action: model.cycleFlash) {
             Image(systemName: flashIconName)
-                .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: false, width: 44)
+                .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: false)
         }
         .disabled(model.isFlashToolDisabled)
         .opacity(model.isFlashToolDisabled ? 0.35 : 1)
@@ -224,10 +218,10 @@ struct CameraToolsCapsule: View {
                     Image(systemName: "timer")
                 } else {
                     Text("\(model.captureSettingsStore.timerSeconds.rawValue)s")
-                        .font(CameraTheme.toolFont(.footnote))
+                        .font(CameraTheme.toolFont(.subheadline))
                 }
             }
-            .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: false, width: 44)
+            .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: false)
         }
         .accessibilityLabel(model.captureSettingsStore.timerSeconds == .off
                             ? "計時器：關"
@@ -237,13 +231,13 @@ struct CameraToolsCapsule: View {
     private var gridButton: some View {
         Button(action: model.toggleGrid) {
             Image(systemName: "grid")
-                .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: false, width: 44)
+                .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: false)
         }
         .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
     }
 }
 
-/// One SF Symbol/text label at the toolbar's fixed 38x38 tap target, colored
+/// One SF Symbol/text label at the toolbar's fixed 44x44 tap target, colored
 /// `active` when the tool it belongs to is on, otherwise `ink`/`inkOnPhoto`
 /// depending on `isOnPhoto` (PRD 0.2 FR-7.10, FR-14.2 — no button
 /// background or border; issue #121 for the `inkOnPhoto` half).
@@ -254,15 +248,15 @@ private struct ToolbarIconModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 18, weight: .medium))
+            .font(.system(size: 22, weight: .medium))
             .foregroundColor(isActive ? CameraTheme.active : (isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink))
-            .frame(width: width, height: 38)
+            .frame(width: width, height: CameraToolbar.buttonSize)
             .legibleOverPhoto(isOnPhoto)
     }
 }
 
 private extension View {
-    func toolbarIcon(isActive: Bool, isOnPhoto: Bool, width: CGFloat = 38) -> some View {
+    func toolbarIcon(isActive: Bool, isOnPhoto: Bool, width: CGFloat = CameraToolbar.buttonSize) -> some View {
         modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto, width: width))
     }
 }
@@ -281,6 +275,33 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+/// The ratio button's outline geometry (issue #137).
+enum RatioIconGeometry {
+    static let labelFontSize: CGFloat = 6.5
+    static let baseOutlineHeight: CGFloat = 28
+    static let maximumOutlineHeight: CGFloat = 32
+    /// Clearance between the label and the inside of the outline: the
+    /// symbol's own ~1pt stroke plus 1pt.
+    static let labelInset: CGFloat = 2
+    /// The label may shrink to this fraction of `labelFontSize` (issue #137);
+    /// below it, the outline grows instead.
+    static let minimumLabelScale: CGFloat = 0.9
+
+    /// Width of `ratio`'s label at `labelFontSize`, bold rounded.
+    static func labelWidth(for ratio: CaptureAspectRatio) -> CGFloat {
+        let base = UIFont.systemFont(ofSize: labelFontSize, weight: .bold)
+        let font = base.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: labelFontSize) } ?? base
+        return (ratio.displayLabel as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    /// 28pt, grown just enough (up to 32pt) for the label to clear the
+    /// outline's sides; the font is never shrunk to make it fit.
+    static func outlineHeight(for ratio: CaptureAspectRatio) -> CGFloat {
+        let needed = (labelWidth(for: ratio) * minimumLabelScale + 2 * labelInset) / ratio.shortToLongRatio
+        return min(max(baseOutlineHeight, needed.rounded(.up)), maximumOutlineHeight)
     }
 }
 
@@ -339,7 +360,7 @@ private extension CaptureAspectRatio {
     }
 }
 
-/// Acceptance 90/B.3–B.4: all three ratio icons at their real 38x38 tap
+/// Acceptance 90/B.3–B.4: all three ratio icons at their real 44x44 tap
 /// target size, so a screenshot can be compared straight against the
 /// outline shapes/sizes without tapping through the live button three
 /// times in the simulator.
