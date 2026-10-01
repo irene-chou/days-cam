@@ -152,23 +152,25 @@ struct CameraScreen: View {
     /// the space between the header and the fixed-height panel
     /// (`metrics.panelOpenViewfinderFrame`); 1:1 centers vertically in it and
     /// 9:16 fits its height and centers horizontally.
+    ///
+    /// Issue #153: the content is always laid out at its panel-closed size and
+    /// only scaled about its own center (and moved) while the panel is open,
+    /// so the camera preview's UIKit layer scales with it instead of jumping
+    /// to the final size, pinned top-left, while the spring still runs.
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
-        let ratio = model.captureSettingsStore.captureAspectRatio
-        let isOpen = model.panelModel.isOpen
-        let rect = viewfinderBoxFrame(metrics: metrics)
-        let vfSize = metrics.viewfinderContentSize(for: ratio, boxSize: rect.size, isPanelOpen: isOpen)
-        return ZStack {
-            viewfinderContent(frameSize: vfSize)
-                .frame(width: vfSize.width, height: vfSize.height)
-                .overlay(
-                    CameraTheme.shutterFlash
-                        .opacity(flashOpacity)
-                        .allowsHitTesting(false)
-                )
-                .clipped()
-        }
-        .frame(width: rect.width, height: rect.height)
-        .offset(x: rect.minX, y: rect.minY)
+        let placement = metrics.viewfinderPlacement(for: model.captureSettingsStore.captureAspectRatio,
+                                                    isPanelOpen: model.panelModel.isOpen)
+        let size = placement.layoutSize
+        return viewfinderContent(frameSize: size)
+            .frame(width: size.width, height: size.height)
+            .overlay(
+                CameraTheme.shutterFlash
+                    .opacity(flashOpacity)
+                    .allowsHitTesting(false)
+            )
+            .clipped()
+            .scaleEffect(x: placement.scale.width, y: placement.scale.height, anchor: .center)
+            .offset(x: placement.center.x - size.width / 2, y: placement.center.y - size.height / 2)
     }
 
     // MARK: - Header
