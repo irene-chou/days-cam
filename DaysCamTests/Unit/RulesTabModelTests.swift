@@ -192,4 +192,44 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.countingRule, .dayZero)
     }
+
+    // MARK: - #167 其他畫面對同一設定檔的變更
+
+    func testExternalShowDayCountChangeUpdatesVisibleFields() throws {
+        let spy = Spy()
+        let profile = baselineProfile()
+        let model = makeModel(profile: profile, now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.showsCountingFields)
+
+        var turnedOff = profile
+        turnedOff.showDayCount = false
+        model.applyExternalChanges(from: turnedOff)
+        XCTAssertFalse(model.showsCountingFields, "W.1／W.3")
+
+        model.applyExternalChanges(from: profile)
+        XCTAssertTrue(model.showsCountingFields, "W.2／W.3")
+        XCTAssertEqual(model.profile.startDate, profile.startDate, "起始日保留原值")
+        XCTAssertEqual(model.profile.countingRule, profile.countingRule, "起算保留原值")
+        XCTAssertTrue(spy.updated.isEmpty, "同步外部變更不應寫回")
+    }
+
+    func testExternalChangeFromAnotherProfileIsIgnored() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        let other = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), showDayCount: false)
+        model.applyExternalChanges(from: other)
+        XCTAssertTrue(model.showsCountingFields)
+    }
+
+    func testExternalRenameDoesNotClobberAnInProgressNameEdit() throws {
+        let model = makeModel(profile: baselineProfile(name: "小寶"), now: try fixedNow(), spy: Spy())
+        model.setName("")  // mid-edit: draft differs from the persisted name
+        var renamed = model.profile
+        renamed.name = "大寶"
+        model.applyExternalChanges(from: renamed)
+        XCTAssertEqual(model.nameDraft, "", "編輯中不被覆蓋")
+
+        model.endEditingName()
+        model.applyExternalChanges(from: renamed)
+        XCTAssertEqual(model.nameDraft, "大寶")
+    }
 }
