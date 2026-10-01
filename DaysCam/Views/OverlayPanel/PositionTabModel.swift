@@ -85,6 +85,9 @@ extension PositionTabModel {
         }
     }
 
+    /// Hint shown under the position name (#140; copy from design D-4).
+    static let dragHintMessage = "直接在觀景窗上拖曳疊字，或點左邊快速對齊"
+
     /// Upper bound for the nine-point grid box's side: 96pt (human's
     /// 2026-09-30 call, #126). The position tab must not scroll inside the
     /// fixed-height panel (#120/#128), and 96pt fits the regular 120pt

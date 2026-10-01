@@ -103,10 +103,12 @@ final class PositionTabViewGridFillTests: XCTestCase {
     /// Pixel-based on purpose: from iOS 27 the hosting view has no `UIView`
     /// subviews at all (SwiftUI draws into a single layer), so the earlier
     /// view-hierarchy walk found 0 dots there. A dot is a connected blob of
-    /// pixels darker than the box fill and the page, at most 16pt across,
-    /// nearly square and mostly filled (a circle fills about 78% of its
-    /// bounding box; glyphs of the position name next to the box fill far
-    /// less).
+    /// pixels darker than the box fill and the page, nearly square, mostly
+    /// filled and exactly dot-sized (7pt unselected, 14pt selected, +-1 for
+    /// anti-aliasing) (a circle fills about 78% of its
+    /// bounding box). The size gate matters: the name and hint text beside
+    /// the box contain 10-11pt dense CJK glyphs that are otherwise
+    /// square and filled enough to pass.
     ///
     /// Polls until nine dots appear (or a 3s timeout) instead of a single
     /// fixed wait; the simulators are shared by several agents at once.
@@ -182,7 +184,8 @@ final class PositionTabViewGridFillTests: XCTestCase {
                 }
                 let blobWidth = maxX - minX + 1, blobHeight = maxY - minY + 1
                 let fillRatio = Double(count) / Double(blobWidth * blobHeight)
-                if blobWidth >= 5, blobWidth <= 16, abs(blobWidth - blobHeight) <= 1, fillRatio >= 0.7 {
+                let isDotSized = (6...8).contains(blobWidth) || (13...15).contains(blobWidth)
+                if isDotSized, abs(blobWidth - blobHeight) <= 1, fillRatio >= 0.7 {
                     result.append(CGRect(x: minX, y: minY, width: blobWidth, height: blobHeight))
                 }
             }

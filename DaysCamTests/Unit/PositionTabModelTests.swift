@@ -146,4 +146,10 @@ final class PositionTabModelTests: XCTestCase {
         XCTAssertNotNil(model.lastError)
         XCTAssertEqual(model.profile.position, .anchor(.topLeading))
     }
+
+    // MARK: - #140 提示文字
+
+    func testDragHintMessageCopyMatchesDesign() {
+        XCTAssertEqual(PositionTabModel.dragHintMessage, "直接在觀景窗上拖曳疊字，或點左邊快速對齊", "P.1")
+    }
 }

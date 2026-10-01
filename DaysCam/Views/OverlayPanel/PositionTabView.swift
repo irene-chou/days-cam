@@ -11,9 +11,11 @@ import SwiftUI
 /// (overturning this file's own earlier 3:4 "photo-shaped" box — #108, the
 /// human's 2026-09-27 call: the box is a quick-align control, not a photo
 /// preview, so it does not follow the capture aspect ratio), selected point
-/// in the active color (FR-12.4). Right: only the position's name — no
-/// caption text, overturning this screen's earlier `D-4` draft (FR-12.4 is
-/// explicit: "不加說明文字"; PRD wins over the design note here). The two
+/// in the active color (FR-12.4). Right: the position's name with a one-line
+/// hint below it (`PositionTabModel.dragHintMessage`, up to two lines) that
+/// says the overlay can also be dragged on the viewfinder (#140, the
+/// human's 2026-09-30 call, reversing FR-12.4's earlier "不加說明文字"; the
+/// ticket wins over that old PRD text). The two
 /// together are centered as one group within the tab's content width
 /// (`D4-format-position-rules.html`'s `.posw`), so the box shifts left/right
 /// with the name's length while the group's own center never moves (#108
@@ -59,9 +61,20 @@ struct PositionTabView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(CameraTheme.fill)
                 )
-            Text(model.positionName)
-                .font(CameraTheme.toolFont(.headline))
-                .foregroundColor(CameraTheme.ink)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.positionName)
+                    .font(CameraTheme.toolFont(.headline))
+                    .foregroundColor(CameraTheme.ink)
+                // Always shown, even after the user has dragged once (#140).
+                Text(PositionTabModel.dragHintMessage)
+                    .font(.caption)
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    // Wraps within the width left beside the box instead of
+                    // being clipped to one line.
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         // Centers the box+name group as one unit within the full content
         // width (#108 P.1) rather than pinning it to the leading edge with a
@@ -171,4 +184,10 @@ private func previewModel(position: OverlayPlacement = .anchor(.bottomTrailing))
         .frame(width: 375)
         .padding(.vertical, 12)
         .background(Color(.systemBackground))
+}
+
+#Preview("提示文字 · iPhone SE（內容區 104pt）") {
+    PositionTabView(model: previewModel(position: .custom(x: 0.5, y: 0.5)), availableHeight: 104)
+        .frame(width: 375, height: 104)
+        .background(CameraTheme.background)
 }
