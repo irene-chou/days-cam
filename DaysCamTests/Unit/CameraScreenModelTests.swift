@@ -1087,6 +1087,48 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(model.latestThumbnailImage === landed)
     }
 
+    func testSaveSuccessAnnouncesForVoiceOverAndFailureDoesNot() throws {
+        let now = try fixedNow()
+        var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(results.removeFirst()) })
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { announcements == ["已儲存"] }
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.contains { $0.status == .failed } }
+
+        XCTAssertEqual(announcements, ["已儲存"])
+    }
+
+    func testCaptureTriggerFiresWhenTheShutterReallyFiresNotWhileCountingDownOrCancelling() throws {
+        let now = try fixedNow()
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // 3 seconds
+        let ticker = FakeCountdownTicker()
+        let (model, _, _, store) = makeModel(now: now, captureSettingsStore: settings, countdownTicker: ticker,
+                                             captureImage: { _, _ in })
+        let profile = try XCTUnwrap(store.profiles.first)
+
+        model.beginCapture(profile: profile)
+        XCTAssertEqual(model.captureTriggerCount, 0)
+        ticker.tick()
+        ticker.tick()
+        XCTAssertEqual(model.captureTriggerCount, 0)
+        ticker.tick() // reaches zero
+        XCTAssertEqual(model.captureTriggerCount, 1)
+    }
+
+    func testCaptureTriggerFiresImmediatelyWithoutATimer() throws {
+        let now = try fixedNow()
+        let (model, _, _, store) = makeModel(now: now, captureImage: { _, _ in })
+        model.beginCapture(profile: try XCTUnwrap(store.profiles.first))
+        XCTAssertEqual(model.captureTriggerCount, 1)
+    }
+
     func testFlightLandingBeforeSaveCompletesWaitsForTheSave() throws {
         let now = try fixedNow()
         var finishSave: ((Result<String, PhotoSaveError>) -> Void)?

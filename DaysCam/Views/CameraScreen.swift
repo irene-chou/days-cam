@@ -24,10 +24,18 @@ struct CameraScreen: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The viewfinder's white shutter flash (issue #148): 0 → 90% → 0 over
+    /// ~0.15s, softer under Reduce Motion.
+    @State private var flashOpacity: Double = 0
+
     var body: some View {
         content
             .background(CameraTheme.background.ignoresSafeArea())
             .preferredColorScheme(.light)
+            .onChange(of: model.captureTriggerCount) { _, _ in playShutterFlash() }
+            // Light haptic on the same trigger (issue #148); the simulator
+            // has no haptics, so this call site is the thing to check.
+            .sensoryFeedback(.impact(weight: .light), trigger: model.captureTriggerCount)
             .onAppear { model.onAppear() }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileListPresented) {
@@ -139,6 +147,11 @@ struct CameraScreen: View {
         return ZStack {
             viewfinderContent(frameSize: vfSize)
                 .frame(width: vfSize.width, height: vfSize.height)
+                .overlay(
+                    CameraTheme.shutterFlash
+                        .opacity(flashOpacity)
+                        .allowsHitTesting(false)
+                )
                 .clipped()
         }
         .frame(width: rect.width, height: rect.height)
@@ -170,6 +183,18 @@ struct CameraScreen: View {
         .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
+    // MARK: - Shutter flash (issue #148)
+
+    private func playShutterFlash() {
+        let peak = reduceMotion ? 0.35 : 0.9
+        let rise = reduceMotion ? 0.1 : 0.04
+        withAnimation(.easeOut(duration: rise)) { flashOpacity = peak }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(rise * 1_000_000_000))
+            withAnimation(.easeIn(duration: 0.11)) { flashOpacity = 0 }
+        }
+    }
+
     // MARK: - Capture flights (issue #148)
 
     /// Topmost layer: each captured photo lifts off the viewfinder and flies
@@ -182,7 +207,7 @@ struct CameraScreen: View {
                          width: Self.footerButtonSize, height: Self.footerButtonSize)
         return ZStack(alignment: .topLeading) {
             ForEach(model.captureFlights) { flight in
-                CaptureFlightView(flight: flight, start: start, end: end, fadesOnLanding: isOpen,
+                CaptureFlightView(flight: flight, start: start, end: end, skipsFlightWhenPanelOpen: isOpen,
                                   onLanded: { model.flightDidLand(id: flight.id) },
                                   onFinished: { model.removeCaptureFlight(id: flight.id) })
             }

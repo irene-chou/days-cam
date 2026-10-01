@@ -136,6 +136,18 @@ final class CameraScreenModel: ObservableObject {
     /// through `flightDidLand(id:)`/`removeCaptureFlight(id:)`.
     @Published private(set) var captureFlights: [CaptureFlight] = []
 
+    /// Bumped the instant the shutter really fires — no timer: when the
+    /// button is pressed; with a timer: when the countdown reaches zero.
+    /// Never bumped while counting down or on cancel. The view flashes the
+    /// viewfinder and plays the light haptic off this (issue #148).
+    @Published private(set) var captureTriggerCount = 0
+
+    /// Speaks `message` to VoiceOver (a no-op when it is off). Replaceable so
+    /// tests can observe the call without posting a real notification.
+    var announce: (String) -> Void = { message in
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
+
     /// Bumped each time a landed flight replaces `latestThumbnailImage`, so
     /// the thumbnail button can play its small bounce.
     @Published private(set) var thumbnailLandingCount = 0
@@ -751,6 +763,7 @@ extension CameraScreenModel {
     /// countdown reaches zero.
     private func performCapture(profile: CameraProfile) {
         isCapturing = true
+        captureTriggerCount += 1
         // Computed here, synchronously, on the main actor — before the
         // capture even starts, let alone before anything hops to a
         // background queue. `capturedAt` must be the instant the shutter
@@ -858,6 +871,9 @@ extension CameraScreenModel {
                         // the gallery (TASK-29) can find it later.
                         self.capturedPhotoStore.recordCapturedAsset(assetID)
                         self.markFlightSaved(id: flightID)
+                        // Nothing is shown on screen for a save any more, so
+                        // VoiceOver users hear it instead (issue #148).
+                        self.announce("已儲存")
                     case let .failure(error):
                         self.markFlightFailed(id: flightID)
                         self.captureError = CaptureAlertError(message: error.displayMessage,
