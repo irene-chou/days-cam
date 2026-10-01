@@ -747,10 +747,10 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 // MARK: - Photo resolution
 
 extension CameraService {
-    /// Pixel budget for a captured photo: 4032x3024, the 12MP size 0.1
-    /// acceptance 10.18 expects. Newer phones also offer 48MP, which makes
-    /// the capture, crop, bake and save all about four times heavier (#154).
-    static let maxPhotoPixelCount = 4032 * 3024
+    /// Pixel budget for a captured photo: 5712x4284, the 24MP size Apple's
+    /// own camera defaults to. Newer phones also offer 48MP, which makes the
+    /// capture, crop, bake and save all about twice as heavy (#154).
+    static let maxPhotoPixelCount = 5712 * 4284
 
     /// The dimensions with the most pixels that still fit within
     /// `maxPhotoPixelCount` (acceptance 10.18, issue #154). When every
