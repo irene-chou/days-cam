@@ -194,8 +194,8 @@ struct CameraToolsCapsule: View {
         .padding(4)
         .background(
             Capsule()
-                .fill(CameraTheme.inkOnPhoto.opacity(0.94))
-                .shadow(color: CameraTheme.ink.opacity(0.14), radius: 12, x: 0, y: 8)
+                .fill(CameraTheme.popoverBackground)
+                .shadow(color: CameraTheme.popoverShadow, radius: 12, x: 0, y: 8)
         )
     }
 
