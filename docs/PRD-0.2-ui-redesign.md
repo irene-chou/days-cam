@@ -358,6 +358,7 @@
 | `active`（選中、啟用） | `#C9772A` | Asset Catalog color |
 | `danger` | `#E0503F` | `Button(role: .destructive)` + tint |
 | `flightShadow`（拍照飛行動畫的照片陰影） | 黑 @25% | `Color.black.opacity(0.25)` |
+| `shutterFlash`（按快門時觀景窗閃光） | 白（不透明度由動畫控制，最高 90%；減少動態效果時 35%） | `Color.white` |
 | `popoverBackground`（相機設定膠囊等浮層底色） | 白 @94% | `Color.white.opacity(0.94)` |
 | `popoverShadow`（浮層陰影，`0 8 24`） | `rgba(60,40,20,.14)` | `Color(red:green:blue:).opacity(0.14)` |
 | 字體 | SF Pro Rounded，按鈕與分頁 bold | `.font(.system(.subheadline, design: .rounded).weight(.bold))` |
