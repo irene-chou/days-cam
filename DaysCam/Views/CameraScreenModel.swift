@@ -881,6 +881,7 @@ extension CameraScreenModel {
                 // image's short edge, matching what the viewfinder already
                 // showed for the same aspect ratio (FR-5.9, FR-5.11).
                 let cropped = crop(image, aspectRatio)
+                CaptureTiming.mark(.cropped)
                 return bake(cropped, context.text, context.style, context.placement)
             }
             guard let baked else {
@@ -896,6 +897,7 @@ extension CameraScreenModel {
             // it depends on: a 12MP `UIImage` is not something the thumbnail
             // (88px) or the flight animation (~600px) should hold on to.
             let thumbnail = Self.thumbnail(of: baked)
+            CaptureTiming.mark(.baked)
             let flightImage = Self.thumbnail(of: baked, maxDimension: Self.flightImageMaxDimension)
             let flightID = UUID()
 
@@ -912,6 +914,7 @@ extension CameraScreenModel {
                     // already guarantees main.
                     switch result {
                     case let .success(assetID):
+                        CaptureTiming.mark(.saved)
                         // PRD 0.2 FR-15.1/FR-15.2: record the new asset so
                         // the gallery (TASK-29) can find it later.
                         self.capturedPhotoStore.recordCapturedAsset(assetID)

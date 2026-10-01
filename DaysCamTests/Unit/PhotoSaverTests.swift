@@ -324,6 +324,26 @@ final class PhotoSaverTests: XCTestCase {
         XCTAssertEqual(largest?.width, 4032)
     }
 
+    func testLargestPhotoDimensionsIgnoresFortyEightMegapixels() {
+        let largest = CameraService.largestPhotoDimensions(from: [
+            CMVideoDimensions(width: 4032, height: 3024),
+            CMVideoDimensions(width: 8064, height: 6048)
+        ])
+
+        XCTAssertEqual(largest?.width, 4032)
+        XCTAssertEqual(largest?.height, 3024)
+    }
+
+    func testLargestPhotoDimensionsFallsBackToSmallestWhenAllOverBudget() {
+        let largest = CameraService.largestPhotoDimensions(from: [
+            CMVideoDimensions(width: 8064, height: 6048),
+            CMVideoDimensions(width: 5712, height: 4284)
+        ])
+
+        XCTAssertEqual(largest?.width, 5712)
+        XCTAssertEqual(largest?.height, 4284)
+    }
+
     func testLargestPhotoDimensionsOfNothingIsNil() {
         XCTAssertNil(CameraService.largestPhotoDimensions(from: []))
     }
