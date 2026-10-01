@@ -108,7 +108,6 @@ struct ThumbnailLandingEffect: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scaleEffect(scale)
-            .animation(.easeInOut(duration: 0.2), value: landingCount)
             .onChange(of: landingCount) { _, _ in
                 guard !reduceMotion else { return }
                 withAnimation(.easeOut(duration: 0.1)) { scale = 1.12 }

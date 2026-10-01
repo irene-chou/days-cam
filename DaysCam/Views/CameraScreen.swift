@@ -22,6 +22,8 @@ import SwiftUI
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         content
             .background(CameraTheme.background.ignoresSafeArea())
@@ -434,6 +436,11 @@ struct CameraScreen: View {
             }
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8);
+            // otherwise the new photo replaces the icon instantly — an
+            // animated if/else here left the old icon fading out behind the
+            // new photo, which showed as a flicker right after landing.
+            .animation(reduceMotion ? .easeInOut(duration: 0.2) : nil, value: model.latestThumbnailImage)
         }
         .modifier(ThumbnailLandingEffect(landingCount: model.thumbnailLandingCount))
         .accessibilityLabel("查看已拍照片")

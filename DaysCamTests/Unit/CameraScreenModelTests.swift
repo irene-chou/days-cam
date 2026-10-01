@@ -1066,6 +1066,27 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.thumbnailLandingCount, 1)
     }
 
+    func testThumbnailStaysOnTheNewPhotoAfterLandingEvenWhenALaterCaptureFails() throws {
+        // Issue #148 (flicker fix): once a flight lands, the thumbnail must
+        // never fall back to nil (the placeholder icon) — a later failed
+        // capture or flight removal included.
+        let now = try fixedNow()
+        var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(results.removeFirst()) })
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: model.captureFlights[0].id)
+        let landed = try XCTUnwrap(model.latestThumbnailImage)
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.first?.status == .failed }
+        model.removeCaptureFlight(id: model.captureFlights[0].id)
+
+        XCTAssertTrue(model.latestThumbnailImage === landed)
+    }
+
     func testFlightLandingBeforeSaveCompletesWaitsForTheSave() throws {
         let now = try fixedNow()
         var finishSave: ((Result<String, PhotoSaveError>) -> Void)?
