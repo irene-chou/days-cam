@@ -357,7 +357,7 @@ struct StyleTabView: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 14))
                     .foregroundColor(CameraTheme.inkSecondary)
-                    .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+                    .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                     .accessibilityLabel("最近自訂")
                 if model.recentColors.isEmpty {
                     Text("用彩虹圓自訂的顏色會出現在這裡")
@@ -365,7 +365,9 @@ struct StyleTabView: View {
                         .foregroundColor(CameraTheme.inkSecondary)
                 } else {
                     ForEach(model.recentColors, id: \.hexString) { color in
-                        colorDot(color, isSelected: current == color) { onSelectSwatch(color) }
+                        colorDot(color, isSelected: current == color, cellHeight: Self.swatchDiameter) {
+                            onSelectSwatch(color)
+                        }
                     }
                 }
             }
@@ -374,13 +376,21 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    private func colorDot(_ color: OverlayColor, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    /// `cellHeight` is `swatchCellHeight` for the first row; the "recent" row
+    /// below it passes the bare swatch height so the last row is 8pt shorter
+    /// and the whole palette fits 120pt-tall panels without scrolling under
+    /// the pinned sub-tab row (#155 Y.2). Its selection ring then extends
+    /// 4pt past the cell into the row gap above / the bottom padding below,
+    /// where nothing clips it.
+    private func colorDot(_ color: OverlayColor, isSelected: Bool,
+                          cellHeight: CGFloat = StyleTabView.swatchCellHeight,
+                          action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchSelectionRing(isSelected))
-                .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+                .frame(width: Self.swatchDiameter, height: cellHeight)
         }
         .accessibilityLabel(color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -636,4 +646,41 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
     }
     .frame(width: 375, height: 120)
     .background(CameraTheme.background)
+}
+
+#Preview("外框 · 內容區 120pt，捲到底，色票選定圈要完整 (375pt)") {
+    var style = OverlayStyle()
+    style.outline = .thinStroke
+    let model = previewModel(style: style)
+    model.selectedSubTab = .outline
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 120)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
+}
+
+#Preview("外框 · 內容區 160pt (375pt)") {
+    var style = OverlayStyle()
+    style.outline = .thinStroke
+    let model = previewModel(style: style)
+    model.selectedSubTab = .outline
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 160)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
+}
+
+#Preview("顏色 · 內容區 120pt (375pt)") {
+    let model = previewModel()
+    model.selectedSubTab = .color
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 120)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
 }
