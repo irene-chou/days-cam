@@ -138,12 +138,15 @@ struct CameraToolbar: View {
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
     /// preview below can render all three side by side without duplicating
     /// these layout numbers.
-    fileprivate static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
+    static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
         let contentHeight = RatioIconGeometry.outlineHeight(for: ratio)
         let contentWidth = contentHeight * ratio.shortToLongRatio
         return Image(systemName: ratio.sfSymbolName)
             .resizable()
-            .aspectRatio(contentMode: .fit)
+            // Stretched to exactly `contentWidth` × `contentHeight`, not
+            // `.fit`: the symbol's own aspect is wider than a true 9:16, so
+            // fitting it into the frame made the 9:16 outline 18×28 (#137, qa).
+            .fontWeight(RatioIconGeometry.outlineWeight)
             .frame(width: contentWidth, height: contentHeight)
             .overlay(
                 Text(ratio.displayLabel)
@@ -281,6 +284,9 @@ extension View {
 /// The ratio button's outline geometry (issue #137).
 enum RatioIconGeometry {
     static let labelFontSize: CGFloat = 6.5
+    /// A thin symbol weight keeps the outline's stroke near its old ~1.3pt
+    /// now that the symbol is drawn larger.
+    static let outlineWeight: Font.Weight = .thin
     static let baseOutlineHeight: CGFloat = 28
     static let maximumOutlineHeight: CGFloat = 32
     /// Clearance between the label and the inside of the outline: the
