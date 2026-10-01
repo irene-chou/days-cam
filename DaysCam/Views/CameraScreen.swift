@@ -22,6 +22,16 @@ import SwiftUI
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// What the thumbnail button currently shows; follows
+    /// `model.latestThumbnailImage` (see `showThumbnail`).
+    @State private var shownThumbnail: UIImage?
+
+    /// The viewfinder's white shutter flash (issue #148): 0 → 90% → 0 over
+    /// ~0.15s, softer under Reduce Motion.
+    @State private var flashOpacity: Double = 0
+
     /// The panel's segmented control height, scaled with Dynamic Type
     /// (issue #139); fed to the layout metrics so the viewfinder yields the
     /// extra height.
@@ -31,6 +41,10 @@ struct CameraScreen: View {
         content
             .background(CameraTheme.background.ignoresSafeArea())
             .preferredColorScheme(.light)
+            .onChange(of: model.captureTriggerCount) { _, _ in playShutterFlash() }
+            // Light haptic on the same trigger (issue #148); the simulator
+            // has no haptics, so this call site is the thing to check.
+            .sensoryFeedback(.impact(weight: .light), trigger: model.captureTriggerCount)
             .onAppear { model.onAppear() }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileListPresented) {
@@ -103,6 +117,8 @@ struct CameraScreen: View {
                 footerColumn(metrics: metrics)
 
                 toolsCapsule(metrics: metrics)
+
+                captureFlights(metrics: metrics)
             }
             .ignoresSafeArea()
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
@@ -110,6 +126,24 @@ struct CameraScreen: View {
     }
 
     // MARK: - Viewfinder box
+
+    /// The box's frame in screen coordinates for the current ratio/panel state.
+    private func viewfinderBoxFrame(metrics: CameraScreenLayoutMetrics) -> CGRect {
+        model.panelModel.isOpen
+            ? metrics.panelOpenViewfinderFrame
+            : metrics.viewfinderFrame(for: model.captureSettingsStore.captureAspectRatio, boxWidth: metrics.screenSize.width)
+    }
+
+    /// The picture's own rectangle (the content centered in the box) in screen
+    /// coordinates — where a capture flight starts (issue #148).
+    private func viewfinderContentFrame(metrics: CameraScreenLayoutMetrics) -> CGRect {
+        let box = viewfinderBoxFrame(metrics: metrics)
+        let size = metrics.viewfinderContentSize(for: model.captureSettingsStore.captureAspectRatio,
+                                                 boxSize: box.size,
+                                                 isPanelOpen: model.panelModel.isOpen)
+        return CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
 
     /// Closed, the box's frame comes straight from `metrics`: 3:4 and 9:16
     /// both start at the header's bottom edge (issue #101 rule ①); 1:1 reuses
@@ -121,13 +155,16 @@ struct CameraScreen: View {
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isOpen = model.panelModel.isOpen
-        let rect = isOpen
-            ? metrics.panelOpenViewfinderFrame
-            : metrics.viewfinderFrame(for: ratio, boxWidth: metrics.screenSize.width)
+        let rect = viewfinderBoxFrame(metrics: metrics)
         let vfSize = metrics.viewfinderContentSize(for: ratio, boxSize: rect.size, isPanelOpen: isOpen)
         return ZStack {
             viewfinderContent(frameSize: vfSize)
                 .frame(width: vfSize.width, height: vfSize.height)
+                .overlay(
+                    CameraTheme.shutterFlash
+                        .opacity(flashOpacity)
+                        .allowsHitTesting(false)
+                )
                 .clipped()
         }
         .frame(width: rect.width, height: rect.height)
@@ -157,6 +194,38 @@ struct CameraScreen: View {
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
         .background(Color.clear)
         .animation(CameraTheme.spring, value: isOnPhoto)
+    }
+
+    // MARK: - Shutter flash (issue #148)
+
+    private func playShutterFlash() {
+        let peak = reduceMotion ? 0.35 : 0.9
+        let rise = reduceMotion ? 0.1 : 0.04
+        withAnimation(.easeOut(duration: rise)) { flashOpacity = peak }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(rise * 1_000_000_000))
+            withAnimation(.easeIn(duration: 0.11)) { flashOpacity = 0 }
+        }
+    }
+
+    // MARK: - Capture flights (issue #148)
+
+    /// Topmost layer: each captured photo lifts off the viewfinder and flies
+    /// into the thumbnail button. Never takes touches.
+    private func captureFlights(metrics: CameraScreenLayoutMetrics) -> some View {
+        let isOpen = model.panelModel.isOpen
+        let start = viewfinderContentFrame(metrics: metrics)
+        let target = metrics.leftFooterButtonCenter(isPanelOpen: isOpen)
+        let end = CGRect(x: target.x - Self.footerButtonSize / 2, y: target.y - Self.footerButtonSize / 2,
+                         width: Self.footerButtonSize, height: Self.footerButtonSize)
+        return ZStack(alignment: .topLeading) {
+            ForEach(model.captureFlights) { flight in
+                CaptureFlightView(flight: flight, start: start, end: end, skipsFlightWhenPanelOpen: isOpen,
+                                  onLanded: { model.flightDidLand(id: flight.id) },
+                                  onFinished: { model.removeCaptureFlight(id: flight.id) })
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Tools capsule (issue #135)
@@ -336,7 +405,7 @@ struct CameraScreen: View {
             .padding(.horizontal, sideInset)
         }
         .frame(height: isOpen ? CameraScreenLayoutMetrics.panelOpenFooterRowHeight : nil)
-        .padding(.bottom, isOpen ? 0 : 16)
+        .padding(.bottom, isOpen ? 0 : CameraScreenLayoutMetrics.closedFooterBottomPadding)
     }
 
     /// Tap target of every footer side button (issue #128).
@@ -403,10 +472,11 @@ struct CameraScreen: View {
             // TASK-29: request read access, then open the gallery.
         } label: {
             Group {
-                if let image = model.latestThumbnailImage {
+                if let image = shownThumbnail {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
                 } else {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 20, weight: .medium))
@@ -416,8 +486,24 @@ struct CameraScreen: View {
             }
             .frame(width: 44, height: 44)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
+            // via an explicit `withAnimation` in `showThumbnail`; otherwise
+            // the new photo replaces the icon instantly — an animated if/else
+            // left the old icon fading out behind the new photo, which showed
+            // as a flicker right after landing.
+            .onAppear { shownThumbnail = model.latestThumbnailImage }
+            .onChange(of: model.latestThumbnailImage) { _, image in showThumbnail(image) }
         }
+        .modifier(ThumbnailLandingEffect(landingCount: model.thumbnailLandingCount))
         .accessibilityLabel("查看已拍照片")
+    }
+
+    private func showThumbnail(_ image: UIImage?) {
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.2)) { shownThumbnail = image }
+        } else {
+            shownThumbnail = image
+        }
     }
 
     /// Center: the shutter — the one place PRD 0.2 FR-14.2 allows a filled
