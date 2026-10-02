@@ -488,6 +488,250 @@ final class OverlayRendererStyleTests: XCTestCase {
     }
 }
 
+// MARK: - #158: renderText
+
+/// Covers #158 D.1 ... D.3: `renderText`, the overlay drawn on its own for
+/// the viewfinder and the style preview, shares `bake`'s drawing path.
+final class OverlayRendererRenderTextTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "第 10 天"
+    private let blue = OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
+
+    /// D.1: `renderText` at 1x, laid on a white photo where `bake` would put
+    /// the block, matches what `bake` draws there.
+    ///
+    /// The placement puts the block on a whole pixel. At a fractional origin
+    /// `bake` draws straight onto the subpixel position while the composite
+    /// resamples a finished image, which blurs every edge by up to half a
+    /// pixel — a difference in compositing, not in how the text is drawn.
+    func test_D1_renderTextComposedOnAPhotoMatchesBake() throws {
+        let styles = [
+            OverlayStyle(textColor: blue, outline: .none, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .soft),
+            OverlayStyle(textColor: blue, outline: .thinStroke, shadow: .glow),
+            OverlayStyle(fontID: .snellRoundhand, textColor: blue, outline: .thickStroke, shadow: .hard)
+        ]
+        let frameSize = CGSize(width: 1200, height: 1600)
+        for style in styles {
+            for wholePixelOrigin in [CGPoint(x: 400, y: 600), CGPoint(x: 150, y: 1300)] {
+                try autoreleasepool {
+                    let fontSize = OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize)
+                    let rendered = try XCTUnwrap(renderer.renderText(text, style: style,
+                                                                     fontSize: fontSize, displayScale: 1))
+                    let placement = OverlayPlacement.custom(
+                        x: Double((wholePixelOrigin.x + rendered.blockSize.width / 2) / frameSize.width),
+                        y: Double((wholePixelOrigin.y + rendered.blockSize.height / 2) / frameSize.height))
+                    let baked = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text,
+                                                            style: style, placement: placement))
+                    let origin = OverlayMetrics.origin(forBlockSize: rendered.blockSize, in: frameSize,
+                                                       placement: placement)
+                    let imageFrame = rendered.imageFrame(forBlockOrigin: origin)
+                    let composed = composite(rendered.image, in: imageFrame, onWhite: frameSize)
+
+                    let bakedGrid = try XCTUnwrap(PixelGrid(baked))
+                    let composedGrid = try XCTUnwrap(PixelGrid(composed))
+                    let area = imageFrame.intersection(CGRect(origin: .zero, size: frameSize)).integral
+                    let region = PixelRegion(x: Int(area.minX)...Int(area.maxX) - 1,
+                                             y: Int(area.minY)...Int(area.maxY) - 1)
+                    XCTAssertTrue(bakedGrid.contains(in: region) { $0.distance(to: .white) > 30 },
+                                  "D.1: \(style) baked nothing to compare")
+                    let difference = meanDifference(bakedGrid, composedGrid, in: region)
+                    XCTAssertEqual(origin.x, wholePixelOrigin.x, accuracy: 0.01)
+                    XCTAssertLessThan(difference, 0.02, "D.1: \(style) at \(placement)")
+                }
+            }
+        }
+    }
+
+    /// D.2: heavy decorations stay inside the image; its outermost ring of
+    /// pixels is fully transparent. Every font is included for its overhang.
+    func test_D2_heavyDecorationsAreNeverClipped() throws {
+        var styles = [
+            OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .none, shadow: .glow),
+            OverlayStyle(textColor: .white, outline: .none, shadow: .soft),
+            OverlayStyle(textColor: .white, outline: .none, shadow: .hard),
+            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .glow)
+        ]
+        for fontID in OverlayFontID.allCases {
+            styles.append(OverlayStyle(fontID: fontID, textColor: .white, outline: .thickStroke,
+                                       outlineColor: .black, shadow: .glow))
+        }
+        for style in styles {
+            for text in [text, "Day 1234 fjgy"] {
+                let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 3))
+                let alpha = try XCTUnwrap(AlphaGrid(rendered.image))
+                XCTAssertTrue(alpha.hasInk, "D.2: \(style) drew nothing")
+                XCTAssertEqual(alpha.maxOnBorder, 0, "D.2: \(style.fontID) \(style.outline) \(style.shadow) is clipped")
+            }
+        }
+    }
+
+    /// D.3: doubling the font size doubles the image and the stroke.
+    func test_D3_doublingTheFontSizeDoublesTheImageAndTheStroke() throws {
+        let plain = OverlayStyle(textColor: .white, outline: .none, shadow: .none)
+        let stroked = OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none)
+        func render(_ style: OverlayStyle, _ fontSize: CGFloat) throws -> RenderedOverlayText {
+            try XCTUnwrap(renderer.renderText(text, style: style, fontSize: fontSize, displayScale: 2))
+        }
+        let small = try render(stroked, 30)
+        let large = try render(stroked, 60)
+        XCTAssertEqual(large.image.size.width / small.image.size.width, 2, accuracy: 0.05, "D.3")
+        XCTAssertEqual(large.image.size.height / small.image.size.height, 2, accuracy: 0.05, "D.3")
+        XCTAssertEqual(large.blockSize.width / small.blockSize.width, 2, accuracy: 0.05, "D.3")
+
+        // Stroke width read from the pixels: how much wider the inked area is
+        // with the stroke than without it.
+        func strokeReach(_ fontSize: CGFloat) throws -> CGFloat {
+            let withStroke = try XCTUnwrap(AlphaGrid(render(stroked, fontSize).image)?.inkBounds)
+            let without = try XCTUnwrap(AlphaGrid(render(plain, fontSize).image)?.inkBounds)
+            return withStroke.width - without.width
+        }
+        let smallReach = try strokeReach(30)
+        let largeReach = try strokeReach(60)
+        XCTAssertGreaterThan(smallReach, 4, "D.3: no stroke measured")
+        XCTAssertEqual(largeReach / smallReach, 2, accuracy: 0.25, "D.3")
+    }
+
+    func testTextInsetsLocateTheBlockInsideTheImage() throws {
+        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none)
+        let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 2))
+        XCTAssertEqual(rendered.image.scale, 2)
+        XCTAssertEqual(rendered.image.size.width,
+                       rendered.textInsets.left + rendered.blockSize.width + rendered.textInsets.right, accuracy: 0.001)
+        XCTAssertEqual(rendered.image.size.height,
+                       rendered.textInsets.top + rendered.blockSize.height + rendered.textInsets.bottom, accuracy: 0.001)
+        // The solid box is exactly the block.
+        let box = try XCTUnwrap(AlphaGrid(rendered.image)?.inkBounds)
+        XCTAssertEqual(box.minX / 2, rendered.textInsets.left, accuracy: 1)
+        XCTAssertEqual(box.minY / 2, rendered.textInsets.top, accuracy: 1)
+        XCTAssertEqual(box.width / 2, rendered.blockSize.width, accuracy: 1)
+        XCTAssertEqual(box.height / 2, rendered.blockSize.height, accuracy: 1)
+
+        let frame = rendered.imageFrame(forBlockOrigin: CGPoint(x: 100, y: 50))
+        XCTAssertEqual(frame.minX, 100 - rendered.textInsets.left, accuracy: 0.001)
+        XCTAssertEqual(frame.minY, 50 - rendered.textInsets.top, accuracy: 0.001)
+        XCTAssertEqual(frame.size, rendered.image.size)
+    }
+
+    func testEmptyTextOrNonPositiveSizesRenderNothing() {
+        let style = OverlayStyle()
+        XCTAssertNil(renderer.renderText("", style: style, fontSize: 20, displayScale: 2))
+        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 0, displayScale: 2))
+        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 20, displayScale: 0))
+    }
+
+    func testFittedFontSizeMatchesTheViewfinder() {
+        for style in [OverlayStyle(), OverlayStyle(sizeScale: 160)] {
+            for text in [text, String(repeating: "第 12345 天 ", count: 6)] {
+                let frameSize = CGSize(width: 390, height: 520)
+                XCTAssertEqual(OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize),
+                               OverlayTextView.fittedFontSize(for: text, style: style, frameSize: frameSize))
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    private func whiteImage(_ size: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    private func composite(_ overlay: UIImage, in frame: CGRect, onWhite size: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            overlay.draw(in: frame)
+        }
+    }
+
+    /// Mean per-channel difference over `region`, 0 ... 1.
+    private func meanDifference(_ first: PixelGrid, _ second: PixelGrid, in region: PixelRegion) -> Double {
+        var total = 0
+        var count = 0
+        for y in region.y {
+            for x in region.x {
+                let a = first.color(x: x, y: y)
+                let b = second.color(x: x, y: y)
+                total += abs(a.red - b.red) + abs(a.green - b.green) + abs(a.blue - b.blue)
+                count += 3
+            }
+        }
+        return count == 0 ? 0 : Double(total) / Double(count) / 255
+    }
+}
+
+/// The alpha channel of an image, read back at its pixel size.
+private struct AlphaGrid {
+    let width: Int
+    let height: Int
+    let alpha: [UInt8]
+
+    init?(_ image: UIImage) {
+        guard let cgImage = image.cgImage,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let drew = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress,
+                                          width: width,
+                                          height: height,
+                                          bitsPerComponent: 8,
+                                          bytesPerRow: width * 4,
+                                          space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drew else { return nil }
+        self.width = width
+        self.height = height
+        alpha = stride(from: 3, to: buffer.count, by: 4).map { buffer[$0] }
+    }
+
+    func value(x: Int, y: Int) -> UInt8 { alpha[y * width + x] }
+
+    var hasInk: Bool { alpha.contains { $0 > 128 } }
+
+    /// The highest alpha on the outermost ring of pixels.
+    var maxOnBorder: UInt8 {
+        var highest: UInt8 = 0
+        for x in 0..<width {
+            highest = max(highest, value(x: x, y: 0), value(x: x, y: height - 1))
+        }
+        for y in 0..<height {
+            highest = max(highest, value(x: 0, y: y), value(x: width - 1, y: y))
+        }
+        return highest
+    }
+
+    /// Bounds in pixels of every pixel more than half opaque.
+    var inkBounds: CGRect? {
+        var minX = Int.max, minY = Int.max, maxX = Int.min, maxY = Int.min
+        for y in 0..<height {
+            for x in 0..<width where value(x: x, y: y) > 128 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+}
+
 // MARK: - Pixel reading
 
 /// An 8-bit sRGB color, compared exactly.
