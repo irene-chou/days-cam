@@ -122,7 +122,7 @@ struct CameraScreenLayoutMetrics {
     /// The scrolling area's height below the tab bar — fixed per screen
     /// class, independent of which tab is selected.
     var panelContentHeight: CGFloat {
-        isSmallScreen ? 104 : 120
+        isSmallScreen ? 120 : 160
     }
 
     /// Tab bar plus content area.
