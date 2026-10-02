@@ -325,6 +325,50 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 44) / 2 + 44 + 4, accuracy: 0.05)
     }
 
+    // MARK: - Viewfinder placement (issue #153)
+
+    func testPlacementClosedIsUnscaledAndCenteredOnTheBox() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        for ratio in CaptureAspectRatio.allCases {
+            let placement = metrics.viewfinderPlacement(for: ratio, isPanelOpen: false)
+            let box = metrics.viewfinderFrame(for: ratio, boxWidth: 393)
+            XCTAssertEqual(placement.scale.width, 1, accuracy: 0.0001, "\(ratio)")
+            XCTAssertEqual(placement.scale.height, 1, accuracy: 0.0001, "\(ratio)")
+            XCTAssertEqual(placement.center.x, box.midX, accuracy: 0.05, "\(ratio)")
+            XCTAssertEqual(placement.center.y, box.midY, accuracy: 0.05, "\(ratio)")
+        }
+    }
+
+    /// The layout size never changes with the panel; only scale and center do,
+    /// so the content stays horizontally centered at every instant of the
+    /// animation (Z.1/Z.2) and its open size equals the old frame size.
+    func testPlacementOpenKeepsLayoutSizeAndScalesAboutACenteredPoint() {
+        for device in devices {
+            let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
+            for ratio in CaptureAspectRatio.allCases {
+                let closed = metrics.viewfinderPlacement(for: ratio, isPanelOpen: false)
+                let open = metrics.viewfinderPlacement(for: ratio, isPanelOpen: true)
+                XCTAssertEqual(open.layoutSize, closed.layoutSize)
+                XCTAssertEqual(open.center.x, device.width / 2, accuracy: 0.05, "\(ratio)")
+                let box = metrics.panelOpenViewfinderFrame
+                let expected = metrics.viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: true)
+                XCTAssertEqual(open.layoutSize.width * open.scale.width, expected.width, accuracy: 0.05, "\(ratio)")
+                XCTAssertEqual(open.layoutSize.height * open.scale.height, expected.height, accuracy: 0.05, "\(ratio)")
+                XCTAssertLessThan(open.scale.width, 1.0001)
+            }
+        }
+    }
+
+    /// Same aspect ratio open and closed (the premise of a uniform scale) on
+    /// the non-fallback devices.
+    func testPlacementScaleIsUniformWhereTheAspectRatioIsShared() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
+            let open = metrics.viewfinderPlacement(for: ratio, isPanelOpen: true)
+            XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.001, "\(ratio)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeMetrics(width: CGFloat, height: CGFloat, top: CGFloat, bottom: CGFloat) -> CameraScreenLayoutMetrics {
