@@ -19,7 +19,7 @@ struct OverlayPanelView: View {
 
     /// The scrolling area's fixed height below the segmented control
     /// (issue #128); taller tab content scrolls inside it.
-    var contentHeight: CGFloat = 120
+    var contentHeight: CGFloat = 160
 
     /// The segmented control's height, scaled with Dynamic Type by
     /// `CameraScreen` so the panel's total height accounts for it (#139).

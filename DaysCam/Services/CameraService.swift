@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import CoreMedia
 import Foundation
+import os
 import UIKit
 
 // MARK: - Published value types
@@ -512,6 +513,7 @@ extension CameraService {
             if self.photoOutput.supportedFlashModes.contains(resolvedFlashMode) {
                 settings.flashMode = resolvedFlashMode
             }
+            CaptureTiming.begin()
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
@@ -705,6 +707,8 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             deliver(.failure(.noImageData))
             return
         }
+        CaptureTiming.mark(.processed, size: CGSize(width: image.size.width * image.scale,
+                                                    height: image.size.height * image.scale))
         deliver(.success(image))
     }
 
@@ -743,16 +747,27 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 // MARK: - Photo resolution
 
 extension CameraService {
-    /// The dimensions with the most pixels, which is the full-resolution
-    /// format (acceptance 10.18).
+    /// Pixel budget for a captured photo: 5712x4284, the 24MP size Apple's
+    /// own camera defaults to. Newer phones also offer 48MP, which makes the
+    /// capture, crop, bake and save all about twice as heavy (#154).
+    static let maxPhotoPixelCount = 5712 * 4284
+
+    /// The dimensions with the most pixels that still fit within
+    /// `maxPhotoPixelCount` (acceptance 10.18, issue #154). When every
+    /// candidate is over the budget, the smallest one is used instead.
     ///
     /// Picking by width alone would choose a wide, short format over a larger
     /// one. Internal rather than private so the choice can be unit tested;
     /// applying it needs a real camera, so that part is verified on a device.
     static func largestPhotoDimensions(from candidates: [CMVideoDimensions]) -> CMVideoDimensions? {
-        candidates.max { left, right in
-            Int(left.width) * Int(left.height) < Int(right.width) * Int(right.height)
+        func pixelCount(_ dimensions: CMVideoDimensions) -> Int {
+            Int(dimensions.width) * Int(dimensions.height)
         }
+        let withinBudget = candidates.filter { pixelCount($0) <= maxPhotoPixelCount }
+        if withinBudget.isEmpty {
+            return candidates.min { pixelCount($0) < pixelCount($1) }
+        }
+        return withinBudget.max { pixelCount($0) < pixelCount($1) }
     }
 
     /// The flash mode actually sent to `AVCapturePhotoSettings`, given what
@@ -788,5 +803,63 @@ extension CameraService {
     /// front-camera and no-flash-device branches by calling this directly.
     static func isFlashAvailable(facing: CameraFacing, hasFlash: Bool) -> Bool {
         facing == .back && hasFlash
+    }
+}
+
+
+// MARK: - Capture timing
+
+/// Per-stage timing of one capture, logged as a single line per photo
+/// (category `capture-timing`, DEBUG builds only; issue #154).
+///
+/// A static recorder rather than a value threaded through the pipeline: the
+/// shutter is disabled while a capture is in flight, so at most one is timed
+/// at a time, and this keeps the instrumentation out of the control flow.
+enum CaptureTiming {
+    enum Stage: Int, CaseIterable {
+        case processed, cropped, baked, saved
+    }
+
+    private struct State {
+        var start: CFAbsoluteTime?
+        var marks: [Stage: CFAbsoluteTime] = [:]
+        var size: CGSize = .zero
+    }
+
+    private static let state = OSAllocatedUnfairLock(initialState: State())
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DaysCam",
+                                       category: "capture-timing")
+
+    /// Starts timing a new capture, at the moment the shutter fires.
+    static func begin() {
+        #if DEBUG
+        state.withLock { $0 = State(start: CFAbsoluteTimeGetCurrent()) }
+        #endif
+    }
+
+    /// Records that `stage` finished now. `size` is the photo's pixel size,
+    /// kept from the stage that knows it. Logs once `.saved` is marked.
+    static func mark(_ stage: Stage, size: CGSize? = nil) {
+        #if DEBUG
+        let now = CFAbsoluteTimeGetCurrent()
+        let line: String? = state.withLock { state in
+            guard let start = state.start else { return nil }
+            state.marks[stage] = now
+            if let size { state.size = size }
+            guard stage == .saved else { return nil }
+            var previous = start
+            var parts: [String] = []
+            for stage in Stage.allCases {
+                guard let time = state.marks[stage] else { continue }
+                parts.append("\(stage)=\(Int((time - previous) * 1000))ms")
+                previous = time
+            }
+            let toBaked = state.marks[.baked].map { Int(($0 - start) * 1000) }
+            let total = Int((now - start) * 1000)
+            state.start = nil
+            return "\(parts.joined(separator: " ")) shutterToBaked=\(toBaked.map(String.init) ?? "n/a")ms total=\(total)ms size=\(Int(state.size.width))x\(Int(state.size.height))"
+        }
+        if let line { logger.debug("\(line, privacy: .public)") }
+        #endif
     }
 }

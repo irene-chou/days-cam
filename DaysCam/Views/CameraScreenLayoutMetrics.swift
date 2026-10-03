@@ -122,7 +122,7 @@ struct CameraScreenLayoutMetrics {
     /// The scrolling area's height below the tab bar — fixed per screen
     /// class, independent of which tab is selected.
     var panelContentHeight: CGFloat {
-        isSmallScreen ? 104 : 120
+        isSmallScreen ? 120 : 160
     }
 
     /// Tab bar plus content area.
@@ -240,6 +240,33 @@ struct CameraScreenLayoutMetrics {
             let height = boxSize.height
             return CGSize(width: height * 9 / 16, height: height)
         }
+    }
+
+    // MARK: - Viewfinder placement (issue #153)
+
+    /// Where the viewfinder's content sits for `ratio`: it is always laid
+    /// out at its panel-closed size (`layoutSize`) and only *scaled* about
+    /// its own center (`scale`) and moved (`center`) while the panel is open.
+    /// Resizing the frame instead made a UIKit-backed camera preview jump to
+    /// its final size, pinned to the top-left, while SwiftUI's spring was
+    /// still running (issue #153); a `scaleEffect` also scales that layer.
+    struct ViewfinderPlacement: Equatable {
+        /// Size the content is laid out at (always the panel-closed size).
+        var layoutSize: CGSize
+        /// Scale applied about the content's center.
+        var scale: CGSize
+        /// The content's center in screen coordinates.
+        var center: CGPoint
+    }
+
+    func viewfinderPlacement(for ratio: CaptureAspectRatio, isPanelOpen: Bool) -> ViewfinderPlacement {
+        let closedBox = viewfinderFrame(for: ratio, boxWidth: screenSize.width)
+        let layoutSize = viewfinderContentSize(for: ratio, boxSize: closedBox.size, isPanelOpen: false)
+        let box = isPanelOpen ? panelOpenViewfinderFrame : closedBox
+        let size = viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: isPanelOpen)
+        let scale = CGSize(width: layoutSize.width > 0 ? size.width / layoutSize.width : 1,
+                           height: layoutSize.height > 0 ? size.height / layoutSize.height : 1)
+        return ViewfinderPlacement(layoutSize: layoutSize, scale: scale, center: CGPoint(x: box.midX, y: box.midY))
     }
 
     // MARK: - Chrome-over-photo (issue #121)

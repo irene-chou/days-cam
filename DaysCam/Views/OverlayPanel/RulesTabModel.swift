@@ -66,6 +66,27 @@ final class RulesTabModel: ObservableObject {
         self.updateProfile = updateProfile
     }
 
+    /// Pulls in changes another screen made to the same profile while this
+    /// model was alive (#167): the model is only rebuilt when the selected
+    /// profile changes, so without this the 格式 tab turning 天數 off never
+    /// reached `showsCountingFields`.
+    ///
+    /// Only the fields this tab reads but does not own are taken —
+    /// `showDayCount` (格式 tab) and `name` (profile list rename, only when
+    /// the field is not mid-edit). `startDate` and `countingRule` are this
+    /// tab's own, so its working copy is already current. Does not persist
+    /// anything and ignores a profile with a different id.
+    func applyExternalChanges(from latest: CameraProfile) {
+        guard latest.id == profile.id else { return }
+        if latest.showDayCount != profile.showDayCount {
+            profile.showDayCount = latest.showDayCount
+        }
+        if latest.name != profile.name, nameDraft == profile.name {
+            profile.name = latest.name
+            nameDraft = latest.name
+        }
+    }
+
     private func mutate(_ change: (inout CameraProfile) -> Void) {
         change(&profile)
         do {

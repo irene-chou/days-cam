@@ -25,6 +25,15 @@ struct StyleTabView: View {
     /// overflow, so 23.12 holds regardless of how many swatches a given row
     /// has.
     private static let swatchDiameter: CGFloat = 28
+    /// Height of a swatch's cell and diameter of its selection ring (#155).
+    /// The ring used to be an overlay poking 4pt out of the 28pt swatch on
+    /// every side, which the pinned sub-tab row and the panel's edge cut
+    /// off. The cell is as tall as the ring so the ring lies inside it
+    /// vertically; horizontally the cell keeps the swatch's 28pt pitch
+    /// (eleven 36pt cells would not fit the 355pt content width, acceptance
+    /// 23.12), so the ring may extend into the neighboring gap / the
+    /// content padding, which nothing clips.
+    private static let swatchCellHeight: CGFloat = 36
     /// Gap between items in the "recent" row, the one row that stays
     /// left-aligned with a fixed gap rather than `space-between`
     /// (`.prow:last-child{justify-content:flex-start;gap:10px}`, #106 — was
@@ -219,8 +228,7 @@ struct StyleTabView: View {
                         Button {
                             model.selectOutline(outline)
                         } label: {
-                            stylePreviewSwatch(previewStyle)
-                                .overlay(selectionRing(isSelected))
+                            optionCell(isNone: outline == .none, previewStyle: previewStyle, isSelected: isSelected)
                         }
                         .accessibilityLabel(outlineName(outline))
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -258,8 +266,7 @@ struct StyleTabView: View {
                     Button {
                         model.selectShadow(shadow)
                     } label: {
-                        stylePreviewSwatch(previewStyle)
-                            .overlay(selectionRing(isSelected))
+                        optionCell(isNone: shadow == .none, previewStyle: previewStyle, isSelected: isSelected)
                     }
                     .accessibilityLabel(shadowName(shadow))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -321,6 +328,7 @@ struct StyleTabView: View {
                             .font(.system(size: 16))
                             .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                             .overlay(swatchSelectionRing(current == nil))
+                            .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
                     }
                     .accessibilityLabel("自動（黑或白）")
                     .accessibilityAddTraits(current == nil ? .isSelected : [])
@@ -357,7 +365,9 @@ struct StyleTabView: View {
                         .foregroundColor(CameraTheme.inkSecondary)
                 } else {
                     ForEach(model.recentColors, id: \.hexString) { color in
-                        colorDot(color, isSelected: current == color) { onSelectSwatch(color) }
+                        colorDot(color, isSelected: current == color, cellHeight: Self.swatchDiameter) {
+                            onSelectSwatch(color)
+                        }
                     }
                 }
             }
@@ -366,12 +376,21 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    private func colorDot(_ color: OverlayColor, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    /// `cellHeight` is `swatchCellHeight` for the first row; the "recent" row
+    /// below it passes the bare swatch height so the last row is 8pt shorter
+    /// and the whole palette fits 120pt-tall panels without scrolling under
+    /// the pinned sub-tab row (#155 Y.2). Its selection ring then extends
+    /// 4pt past the cell into the row gap above / the bottom padding below,
+    /// where nothing clips it.
+    private func colorDot(_ color: OverlayColor, isSelected: Bool,
+                          cellHeight: CGFloat = StyleTabView.swatchCellHeight,
+                          action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchSelectionRing(isSelected))
+                .frame(width: Self.swatchDiameter, height: cellHeight)
         }
         .accessibilityLabel(color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -414,11 +433,14 @@ struct StyleTabView: View {
             .labelsHidden()
             .opacity(0.02)
         }
-        .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+        .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
     }
 
-    private func selectionRing(_ isSelected: Bool) -> some View {
-        Circle().strokeBorder(CameraTheme.active, lineWidth: isSelected ? 2 : 0)
+    /// Rounded-square selection frame of the outline/shadow options (corner
+    /// 10, 1.5pt, like the font cells), drawn inside the cell (#155).
+    private func optionSelectionFrame(_ isSelected: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 1.5 : 0)
     }
 
     /// Selection halo for the round color swatches (色票), matching the
@@ -431,36 +453,38 @@ struct StyleTabView: View {
     private func swatchSelectionRing(_ isSelected: Bool) -> some View {
         Circle()
             .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 2 : 0)
-            .frame(width: Self.swatchDiameter + 8, height: Self.swatchDiameter + 8)
+            .frame(width: Self.swatchCellHeight, height: Self.swatchCellHeight)
     }
 
     // MARK: - 共用：外框／陰影的 "Aa" 預覽
 
-    /// Draws "Aa" styled by `style`'s font, text color and (resolved) outline
-    /// color, layering outline then shadow (FR-10.5, FR-10.8) — a reduced,
-    /// self-contained version of `OverlayTheme`'s decoration list rendering,
-    /// kept local since `OverlayTextView` belongs to `ui-shell`.
+    /// Draws "Aa" in the fixed preview look (`StyleSwatchPreview`: dark text,
+    /// gray outline/box/shadow) with `style`'s font and the outline/shadow
+    /// being previewed, layering outline then shadow (FR-10.5, FR-10.8).
+    /// Strokes are real glyph outlines, not offset copies (#155).
     private func stylePreviewSwatch(_ style: OverlayStyle) -> some View {
-        let theme = OverlayTheme(style: style)
+        let fixedStyle = StyleSwatchPreview.fixedStyle(from: style)
         let fontSize: CGFloat = 15
         let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-        let font = Font(OverlayMetrics.font(for: style.fontID, size: fontSize))
-        let plain = Text("Aa").font(font)
-        var layered = AnyView(plain.foregroundColor(swiftUIColor(style.textColor)))
+        let font = OverlayMetrics.font(for: fixedStyle.fontID, size: fontSize)
+        var layered = AnyView(Text("Aa")
+            .font(Font(font))
+            .foregroundColor(CameraTheme.ink))
 
-        for decoration in theme.decorations {
+        for decoration in StyleSwatchPreview.decorations(for: fixedStyle) {
             switch decoration {
             case let .stroke(color, width):
-                let strokeColor = swiftUIColor(color)
-                let offset = width * scale * 0.5
-                let base = layered
-                layered = AnyView(ZStack {
-                    plain.foregroundColor(strokeColor).offset(x: offset)
-                    plain.foregroundColor(strokeColor).offset(x: -offset)
-                    plain.foregroundColor(strokeColor).offset(y: offset)
-                    plain.foregroundColor(strokeColor).offset(y: -offset)
-                    base
-                })
+                // Drawn at half the viewfinder's width (the preview is
+                // small); the image includes the fill, so it replaces the
+                // plain text rather than being layered under it.
+                let image = StyleSwatchPreview.strokedText("Aa",
+                                                           font: font,
+                                                           fill: fixedStyle.textColor,
+                                                           stroke: color,
+                                                           strokeWidth: CGFloat(width) * scale * 0.5)
+                let textSize = ("Aa" as NSString).size(withAttributes: [.font: font])
+                layered = AnyView(Image(uiImage: image)
+                    .frame(width: textSize.width, height: textSize.height))
             case let .backgroundBox(color, opacity, cornerRadius, insets):
                 layered = AnyView(
                     layered
@@ -489,9 +513,27 @@ struct StyleTabView: View {
             .frame(width: 48, height: 44)
     }
 
+    /// An outline/shadow option: its preview, or the `nosign` icon for 無
+    /// (#155), with the rounded-square selection frame drawn inside the cell.
+    @ViewBuilder
+    private func optionCell(isNone: Bool, previewStyle: OverlayStyle, isSelected: Bool) -> some View {
+        Group {
+            if isNone {
+                Image(systemName: "nosign")
+                    .font(.system(size: 20))
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .frame(width: 48, height: 44)
+            } else {
+                stylePreviewSwatch(previewStyle)
+            }
+        }
+        .overlay(optionSelectionFrame(isSelected))
+        .contentShape(Rectangle())
+    }
+
     private func outlineName(_ outline: OverlayOutline) -> String {
         switch outline {
-        case .none: return "無"
+        case .none: return "無外框"
         case .thinStroke: return "細描邊"
         case .thickStroke: return "粗描邊"
         case .translucentBox: return "半透明底框"
@@ -501,7 +543,7 @@ struct StyleTabView: View {
 
     private func shadowName(_ shadow: OverlayShadow) -> String {
         switch shadow {
-        case .none: return "無"
+        case .none: return "無陰影"
         case .soft: return "柔和"
         case .hard: return "硬陰影"
         case .glow: return "發光"
@@ -604,4 +646,41 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
     }
     .frame(width: 375, height: 120)
     .background(CameraTheme.background)
+}
+
+#Preview("外框 · 內容區 120pt，捲到底，色票選定圈要完整 (375pt)") {
+    var style = OverlayStyle()
+    style.outline = .thinStroke
+    let model = previewModel(style: style)
+    model.selectedSubTab = .outline
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 120)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
+}
+
+#Preview("外框 · 內容區 160pt (375pt)") {
+    var style = OverlayStyle()
+    style.outline = .thinStroke
+    let model = previewModel(style: style)
+    model.selectedSubTab = .outline
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 160)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
+}
+
+#Preview("顏色 · 內容區 120pt (375pt)") {
+    let model = previewModel()
+    model.selectedSubTab = .color
+    return ScrollView {
+        StyleTabView(model: model)
+    }
+    .frame(width: 375, height: 120)
+    .background(CameraTheme.background)
+    .defaultScrollAnchor(.bottom)
 }

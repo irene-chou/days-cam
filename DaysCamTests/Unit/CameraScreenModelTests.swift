@@ -1315,6 +1315,25 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(first === second)
     }
 
+    func testRulesTabModelFollowsShowDayCountChangedInTheStore() throws {
+        // #167: turning 天數 off on the format tab only touched that tab's
+        // own profile copy; the rules tab kept the stale `showDayCount`.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let rules = try XCTUnwrap(model.rulesTabModel)
+        XCTAssertTrue(rules.profile.showDayCount)
+
+        var changed = try XCTUnwrap(store.profiles.first { $0.id == rules.profile.id })
+        changed.showDayCount = false
+        changed.showDate = true // invariant: at least one of the two stays on
+        _ = try store.update(changed)
+
+        waitUntil { model.rulesTabModel?.profile.showDayCount == false }
+        XCTAssertTrue(model.rulesTabModel === rules, "the instance must be kept, not rebuilt")
+        XCTAssertFalse(rules.showsCountingFields)
+    }
+
     // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)
 
     func testStyleFormatPositionTabModelsAreNotNilOnceAProfileIsSelected() throws {
