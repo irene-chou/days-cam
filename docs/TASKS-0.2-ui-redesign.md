@@ -9,7 +9,7 @@
 
 ## 怎麼用這份文件
 
-卡片結構、驗收分級、「儲存格指令不得含 `|`」等規則**全部沿用 [`docs/TASKS.md`](./TASKS.md#怎麼用這份文件)**，這裡不重複。本次新增一個驗收等級：
+卡片含目標／範圍／驗收／依賴；共用操作見 [WORKFLOW](WORKFLOW.md)，驗收指令規則見其 QA 節（表格指令不含管線符號）。0.1 卡片只按各卡「沿用」讀取，入口見 [閱讀矩陣](AGENT-READING-MAP.md)。
 
 | 級別 | 含義 | 誰執行 |
 |---|---|---|
@@ -50,14 +50,16 @@
   Lead: MARKETING_VERSION 升為 0.2.0（驗收 30.5a）
 ```
 
-| 角色 | 負責 | 建議模型 | 角色定義 |
-|---|---|---|---|
-| Lead | 分派、PR 審查與合併順序、`docs/**`、`project.yml`、版本升級、B 級驗收整理給人類 | Opus | — |
-| core-style | 17、18（core）、27 | Opus | [`.claude/agents/core-style.md`](../.claude/agents/core-style.md) |
-| core-device | 19（core）、20、28（core） | Sonnet | [`.claude/agents/core-device.md`](../.claude/agents/core-device.md) |
-| ui-shell | 18（`OverlayTextView`）、21、22、26、29 | Sonnet | [`.claude/agents/ui-shell.md`](../.claude/agents/ui-shell.md) |
-| ui-panel | 23、24、25 | Sonnet | [`.claude/agents/ui-panel.md`](../.claude/agents/ui-panel.md) |
-| qa | 每張卡的 A 級、全部 B′、TASK-30 | Sonnet | [`.claude/agents/qa.md`](../.claude/agents/qa.md) |
+| 角色 | 負責 | 預設工具／角色入口 |
+|---|---|---|
+| Lead | 分派、PR 審查與合併順序、共用文件與設定、版本升級、B 級驗收整理 | Claude [lead-spec](../.claude/agents/lead-spec.md) |
+| core-style | 17、18（core）、27 | Codex [core-style](../.codex/agents/core-style.toml) |
+| core-device | 19（core）、20、28（core） | Codex [core-device](../.codex/agents/core-device.toml) |
+| ui-shell | 18（OverlayTextView）、21、22、26、29 | Codex [ui-shell](../.codex/agents/ui-shell.toml) |
+| ui-panel | 23、24、25 | Codex [ui-panel](../.codex/agents/ui-panel.toml) |
+| qa | 每張卡的 A 級、全部 B′、TASK-30 | Codex [qa](../.codex/agents/qa.toml) |
+
+模型與高風險 review 路由集中在 [WORKFLOW](WORKFLOW.md#分工與交接)。角色名稱、責任與卡片編號維持原分工；舊 Claude 入口保留為備援。
 
 > **`Views/CameraScreen.swift` 的合併順序固定為 21 → 22 → 24（手勢接口）→ 26 → 29**，由 Lead 把關。ui-shell 獨佔這個檔案；ui-panel 需要在觀景窗上加東西時，向 ui-shell 提需求。
 
@@ -72,7 +74,7 @@
 | ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets` |
 | ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
 | qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
-| Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`AGENTS.md`、`.claude/agents/` |
+| Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`AGENTS.md`、`CLAUDE.md`、`.claude/agents/`、`.codex/agents/`、`.github/` |
 
 **單元測試**：`DaysCamTests/Unit/<來源檔名>Tests.swift` 歸該來源檔的擁有者，隨實作一起寫。
 
