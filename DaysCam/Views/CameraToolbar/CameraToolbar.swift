@@ -133,10 +133,9 @@ struct CameraToolbar: View {
     /// same width on all four sides, set to what a 22pt medium symbol
     /// measures (`RatioIconGeometry.strokeWidth`).
     ///
-    /// Its height comes from `RatioIconGeometry` (28pt, grown up to 32pt only
-    /// when the label would not fit, issue #137) and its width from
-    /// `ratio.shortToLongRatio`; the label is sized against the outline's
-    /// inner width, not the outer tap target's (PR #98 review).
+    /// The outline is schematic: 9:16 is taller than 3:4, capped at 32pt,
+    /// and widened to fit its full-size label (issue #169, 2026-10-02).
+    /// The label is sized against the inner width, not the tap target.
     ///
     /// `static` and parameterized over `ratio` (rather than reading
     /// `model.captureSettingsStore` directly) purely so the `"Ratio icons"`
@@ -144,14 +143,13 @@ struct CameraToolbar: View {
     /// these layout numbers.
     static func ratioIcon(for ratio: CaptureAspectRatio, isOnPhoto: Bool = false) -> some View {
         let contentHeight = RatioIconGeometry.outlineHeight(for: ratio)
-        let contentWidth = contentHeight * ratio.shortToLongRatio
+        let contentWidth = RatioIconGeometry.outlineWidth(for: ratio)
         return ZStack {
             RoundedRectangle(cornerRadius: RatioIconGeometry.cornerRadius, style: .continuous)
                 .strokeBorder(lineWidth: RatioIconGeometry.strokeWidth)
                 .frame(width: contentWidth, height: contentHeight)
             Text(ratio.displayLabel)
                 .font(.system(size: RatioIconGeometry.labelFontSize, weight: .bold, design: .rounded))
-                .minimumScaleFactor(RatioIconGeometry.shrunkLabelScale)
                 .lineLimit(1)
                 .frame(width: contentWidth - 2 * RatioIconGeometry.labelInset)
         }
@@ -296,9 +294,13 @@ enum RatioIconGeometry {
     /// The label may shrink to this fraction of `labelFontSize` before the
     /// outline grows (issue #137).
     static let minimumLabelScale: CGFloat = 0.9
-    /// Where the label may shrink to once the outline is at its 32pt cap
-    /// (9:16 with the thicker stroke of issue #169 needs this).
-    static let shrunkLabelScale: CGFloat = 0.7
+    /// Keeps the 3:4 and square outlines unchanged while giving 9:16 enough
+    /// inner space for the unscaled label and at least 1pt clearance.
+    static func outlineWidth(for ratio: CaptureAspectRatio) -> CGFloat {
+        let proportionalWidth = outlineHeight(for: ratio) * ratio.shortToLongRatio
+        guard ratio == .nineBySixteen else { return proportionalWidth }
+        return max(proportionalWidth, (labelWidth(for: ratio) + 2 * labelInset).rounded(.up))
+    }
 
     /// Width of `ratio`'s label at `labelFontSize`, bold rounded.
     static func labelWidth(for ratio: CaptureAspectRatio) -> CGFloat {

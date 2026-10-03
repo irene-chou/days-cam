@@ -56,7 +56,7 @@ final class RatioIconRenderTests: XCTestCase {
         } }
         let s = Self.scale
         // Top/bottom edges: opaque run down/up a column just inside the corner radius.
-        let probeX = minX + (maxX - minX) / 2 - (maxX - minX) / 2 + Int(5 * s)
+        let probeX = minX + Int(5 * s)
         var top = 0
         while minY + top <= maxY && opaque(min(probeX, maxX), minY + top) { top += 1 }
         var bottom = 0
@@ -125,20 +125,23 @@ final class RatioIconRenderTests: XCTestCase {
         }
     }
 
-    func testOutlineKeepsItsRatioAndTheHeightLimit() throws {
+    func testSchematicOutlineRespectsTheHeightLimit() throws {
         for ratio in CaptureAspectRatio.allCases {
             let m = try measure(ratio)
             XCTAssertLessThanOrEqual(m.outline.height, 32, "\(ratio)")
-            XCTAssertEqual(m.outline.width / m.outline.height, ratio.shortToLongRatio, accuracy: 0.04, "\(ratio)")
         }
-        XCTAssertEqual(try measure(.nineBySixteen).outline.height, 32, accuracy: 0.7)
+        let tall = try measure(.nineBySixteen).outline
+        let standard = try measure(.threeByFour).outline
+        XCTAssertGreaterThan(tall.height, standard.height)
+        XCTAssertGreaterThan(tall.width, 18)
+        XCTAssertGreaterThanOrEqual(tall.width - 2 * RatioIconGeometry.labelInset,
+                                    RatioIconGeometry.labelWidth(for: .nineBySixteen))
     }
 
-    /// W.3: outline sizes are unchanged from #137 (3:4 21×28, 1:1 28×28, 9:16 18×32).
-    func testOutlineSizesMatchIssue137() throws {
+    /// W.3: 3:4 and square keep #137 sizes; 9:16 uses a legible schematic outline.
+    func testStandardOutlineSizesMatchIssue137() throws {
         let expected: [CaptureAspectRatio: CGSize] = [.threeByFour: CGSize(width: 21, height: 28),
-                                                      .oneByOne: CGSize(width: 28, height: 28),
-                                                      .nineBySixteen: CGSize(width: 18, height: 32)]
+                                                      .oneByOne: CGSize(width: 28, height: 28)]
         for (ratio, size) in expected {
             let m = try measure(ratio)
             XCTAssertEqual(m.outline.width, size.width, accuracy: 0.5, "\(ratio)")

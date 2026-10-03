@@ -14,9 +14,9 @@ final class CameraToolbarTests: XCTestCase {
     func testLabelFitsInsideTheOutlineWithClearanceForEveryRatio() {
         for ratio in CaptureAspectRatio.allCases {
             let height = RatioIconGeometry.outlineHeight(for: ratio)
-            let width = height * ratio.shortToLongRatio
+            let width = RatioIconGeometry.outlineWidth(for: ratio)
             let labelWidth = RatioIconGeometry.labelWidth(for: ratio)
-            XCTAssertLessThanOrEqual(labelWidth * RatioIconGeometry.shrunkLabelScale + 2 * RatioIconGeometry.labelInset, width + 0.01,
+            XCTAssertLessThanOrEqual(labelWidth + 2 * RatioIconGeometry.labelInset, width + 0.01,
                                      "\(ratio): label \(labelWidth) in outline \(width)")
         }
     }
