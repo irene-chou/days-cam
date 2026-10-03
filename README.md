@@ -2,8 +2,10 @@
 
 拍照時把天數或日期疊印在照片上的 iOS App。疊字會在儲存時烘焙進圖片像素。
 
-- 產品規格：[`docs/PRD.md`](docs/PRD.md)
-- 任務清單：[`docs/TASKS.md`](docs/TASKS.md)
+- 目前規格：[`0.2 PRD`](docs/PRD-0.2-ui-redesign.md)；未覆蓋部分沿用 [`0.1 PRD`](docs/PRD.md)
+- 目前任務：[`TASK-17～30`](docs/TASKS-0.2-ui-redesign.md)；舊版回歸依據 [`TASK-01～16`](docs/TASKS.md)
+- Agent 開工：[`AGENTS.md`](AGENTS.md) → [`閱讀矩陣`](docs/AGENT-READING-MAP.md)
+- 雙 agent 與 connector 設定：[`WORKFLOW`](docs/WORKFLOW.md#啟動與設定)
 - 整體規劃：[`PROJECT_PLAN.md`](PROJECT_PLAN.md)
 
 ## 開發環境
