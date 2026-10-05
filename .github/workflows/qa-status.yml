@@ -1,5 +1,5 @@
 # Seeds the `qa` commit status on every PR push so the PR list shows whether QA has passed.
-# Docs and agent-config-only PRs (docs/, .claude/, .codex/, *.md) are marked success; everything else waits as pending until the qa teammate updates it.
+# Docs and agent-config-only PRs (docs/, .claude/, .codex/, *.md) are marked success; everything else waits as pending until Lead (or the independent QA on high-risk cards) updates it.
 
 name: QA status
 
@@ -27,6 +27,6 @@ jobs:
         if [ -z "$NON_DOCS" ]; then
           STATE=success; DESC="純文件，免 qa"
         else
-          STATE=pending; DESC="等待 qa 驗收"
+          STATE=pending; DESC="待 Lead 核對：review gate／人工確認"
         fi
         gh api "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context=qa -f description="$DESC"

@@ -92,10 +92,10 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 
 ### qa status
 
-`qa-status.yml` 對 opened／synchronize／reopened 初始化最新 SHA：只含 `docs/`、`.claude/` 或 `*.md` 為 success「純文件，免 qa」，其餘 pending。**新增 `.codex/*.toml` 不在豁免內**，此類 PR 需完成設定檢查並手動更新 status；本次不擴大自動豁免。
+`qa-status.yml` 對 opened／synchronize／reopened 初始化最新 SHA：只含 `docs/`、`.claude/` 或 `*.md` 為 success「純文件，免 qa」，其餘 pending「待 Lead 核對：review gate／人工確認」（不代表有 qa agent 在跑）。**新增 `.codex/*.toml` 不在豁免內**，此類 PR 需完成設定檢查並手動更新 status；本次不擴大自動豁免。
 
 - `success`：A 全過，且 B／B′ 截圖及爭議已由人類完成必要確認，已可合併。
-- `pending`：尚有實機、截圖、裁決或未執行的檢查，description 註明阻礙。
+- `pending`：尚有實機、截圖、裁決或未執行的檢查，description 註明阻礙。review gate 達成後，Lead 把 description 改成具體在等什麼，例如「待人類在 PR 確認（Lead 自寫）」「待實機：29.9」；只有高風險卡派獨立 QA 時才寫「獨立 QA 驗收中 @<短 SHA>」。
 - `failure`：驗收失敗。新 push 後重驗並設定新 SHA；舊報告不沿用。人類確認最後一項後由 Lead 記到 PR 並更新 status。
 
 設定者：一般風險由 Lead 設定，開發者不可設定自己 PR 的 qa；高風險由獨立 QA 設定。Claude 的 UI 開發要在獨立的 subagent／session 進行，Lead 主 session 只核對與設定 qa；若 Lead 在同一個 session 親自寫了該 PR 的內容，qa 改由人類在 PR 確認後才設定。
