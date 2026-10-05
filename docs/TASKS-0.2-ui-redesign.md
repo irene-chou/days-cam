@@ -55,11 +55,11 @@
 | Lead | 分派、PR 審查與合併順序、共用文件與設定、版本升級、B 級驗收整理 | Claude [lead-spec](../.claude/agents/lead-spec.md) |
 | core-style | 17、18（core）、27 | Codex [core-style](../.codex/agents/core-style.toml) |
 | core-device | 19（core）、20、28（core） | Codex [core-device](../.codex/agents/core-device.toml) |
-| ui-shell | 18（OverlayTextView）、21、22、26、29 | Codex [ui-shell](../.codex/agents/ui-shell.toml) |
-| ui-panel | 23、24、25 | Codex [ui-panel](../.codex/agents/ui-panel.toml) |
-| qa | 每張卡的 A 級、全部 B′、TASK-30 | Codex [qa](../.codex/agents/qa.toml) |
+| ui-shell | 18（OverlayTextView）、21、22、26、29 | Claude [ui-shell](../.claude/agents/ui-shell.md) |
+| ui-panel | 23、24、25 | Claude [ui-panel](../.claude/agents/ui-panel.md) |
+| qa | `risk: high` 卡的獨立驗收、TASK-30；一般卡由開發者自驗 | 沒寫這張卡的那家 |
 
-模型與高風險 review 路由集中在 [WORKFLOW](WORKFLOW.md#分工與交接)。角色名稱、責任與卡片編號維持原分工；舊 Claude 入口保留為備援。
+模型與高風險 review 路由集中在 [WORKFLOW](WORKFLOW.md#分工與交接)。角色名稱、責任與卡片編號維持原分工；另一家的同名入口用於額度接手。
 
 > **`Views/CameraScreen.swift` 的合併順序固定為 21 → 22 → 24（手勢接口）→ 26 → 29**，由 Lead 把關。ui-shell 獨佔這個檔案；ui-panel 需要在觀景窗上加東西時，向 ui-shell 提需求。
 

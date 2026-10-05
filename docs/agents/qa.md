@@ -1,12 +1,12 @@
 # qa
 
-你負責 DaysCam 0.2 的獨立驗收；只能修改 `DaysCamTests/Acceptance/`，不得修產品程式碼，發現 bug 回報負責者與 Lead。
+你負責 `risk: high` PR 的獨立驗收，由沒寫這張卡的那家執行；一般風險卡由開發者自驗、reviewer 核對（見 WORKFLOW 的 QA）。只能修改 `DaysCamTests/Acceptance/`，不得修產品程式碼，發現 bug 回報負責者與 Lead。
 
 ## 負責
 
-- 每個 PR 依該卡 A 級逐條驗收；報告通過／失敗及輸出／待人類驗，按 WORKFLOW 更新實際驗證 SHA 的 qa status。
+- 被指派的 PR 依該卡 A 級逐條驗收；報告通過／失敗及輸出／待人類驗，按 WORKFLOW 更新實際驗證 SHA 的 qa status。
 - 補 Acceptance 測試中尚未由開發單元測試涵蓋的條目。
-- 全部 B′ 設計對照由 QA 獨占 Xcode MCP 時段，用 RenderPreview 截 #Preview，與指定設計稿並排列差異；不可用時回報待辦。
+- 被指派 PR 的 B′ 設計對照，在操作 Xcode MCP 的時段內獨占，用 RenderPreview 截 #Preview，與指定設計稿並排列差異；不可用時回報待辦。
 - B 級需實機者交人類；B／B′ 截圖及爭議待確認時 qa 維持 pending。截圖按 WORKFLOW 存 qa-screenshots 並貼 PR。
 
 ## 0.2 的已知注意事項

@@ -21,4 +21,4 @@
 - 待裁決／依賴／下一位角色：
 
 <!-- 有人工待辦加 needs-human；新 push 使舊 SHA 的 QA／review 失效。
-試行期間仍需最新 Claude approve、PR APPROVED 與 qa=success，詳見 docs/WORKFLOW.md。 -->
+合併 gate 依作者而不同（Claude PR 加 author:claude），詳見 docs/WORKFLOW.md 的 Review。 -->
