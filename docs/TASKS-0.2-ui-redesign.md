@@ -544,7 +544,7 @@ PRD FR-15.1～15.4 的資料層：記下 DaysCam 拍的照片，並以兩段式�
 - `Services/CapturedPhotoStore.swift`：`capturedAssetIDs` 存 `Application Support/DaysCam/photos.json`，原子寫入（同 0.1 §4.3 的做法）
 - `PhotoSaver` 存檔成功後回傳新照片的 `localIdentifier`
 - **ui 半邊不在本卡**：`CameraScreenModel` 在存檔成功後把 ID 寫入 `CapturedPhotoStore`，由 ui-shell 在 TASK-21 做
-- 讀取介面：`fetchAssets()` 回傳仍存在的照片（新的在前），並把已不存在的 ID 從檔案移除
+- 讀取介面：`fetchAssets()` 回傳仍存在的照片（新的在前）；**只在 `.authorized` 下**把已不存在的 ID 從檔案移除，`.limited` 時只過濾回傳值（#186）
 - 權限：`requestReadAccessIfNeeded()` 請求 `.readWrite`；存檔路徑**仍只請求 `.addOnly`**
 - 相簿存取抽成可注入的介面（沿用 0.1 `PhotoSaver` 的做法），測試不碰真的相簿
 - **先驗證 PRD A-7**：在實機以「限定照片」授權，確認讀得到 App 自己建立的照片；不成立時停下來回報 Lead
@@ -554,7 +554,8 @@ PRD FR-15.1～15.4 的資料層：記下 DaysCam 拍的照片，並以兩段式�
 | # | 步驟 | 預期結果 |
 |---|---|---|
 | 28.1 | 假相簿存檔成功（ID `A`、再存 `B`） | `capturedAssetIDs == ["B","A"]`，重建 store 後仍是 |
-| 28.2 | 假相簿裡 `A` 已被刪除時 `fetchAssets()` | 只回傳 `B`；檔案內容變成 `["B"]` |
+| 28.2 | 權限 `.authorized`，假相簿裡 `A` 已被刪除時 `fetchAssets()` | 只回傳 `B`；檔案內容變成 `["B"]` |
+| 28.2a | 權限 `.limited`，`A` 查不到時 `fetchAssets()` | 只回傳 `B`；檔案內容仍是 `["B","A"]`（#186） |
 | 28.3 | 存檔流程呼叫的權限等級 | 只有 `.addOnly`，沒有 `.readWrite` |
 | 28.4 | 首次呼叫 `requestReadAccessIfNeeded()` | 請求 `.readWrite` 恰好一次；已授權時不再請求 |
 | 28.5 | `photos.json` 損毀 | 視為空清單，不崩潰（照片本身仍在相簿） |
