@@ -173,7 +173,8 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 
 - `StyleTabView` 字型格子：只列 `available` 的字型（§4.1 順序）＋「更多字型」格；目前字型不可用時依狀態顯示（FR-10.2′.4）。格子與外框／陰影預覽改用 TASK-32 的解析函式
 - **套用一律呼叫注入的 `applyFont(fontID, profileID)`**（由 TASK-35 的 `CameraScreenModel` 提供），`FontLibraryModel` 與 `StyleTabModel.selectFont` 都不自己寫 `fontID`，也不持有完成後套用的責任（清單關閉後仍要套用，FR-16.11）
-- `StyleTabModel` 新增 `applyExternalChanges(_ profile:)`（比照 `RulesTabModel`），讓外部寫入的 `fontID` 同步進樣式分頁的副本；格式、位置分頁不改 style，不需同步
+- **過渡做法**：`applyFont` 由 TASK-35 才提供，本卡先在 `StyleTabModel`／`FontLibraryModel` 的初始化參數加 `applyFont` 閉包，**預設值**為「直接以現有 `updateProfile` 寫入 `fontID`」，讓 34 合併後、35 合併前格子仍能換字型（不回歸 0.2 FR-10.2）；`CameraScreenModel` 不用改。TASK-35 再改成注入真正的 `applyFont`，並移除這個預設值
+- `StyleTabModel` 新增 `applyExternalChanges(from:)`（比照 `RulesTabModel`），讓外部寫入的 `fontID` 同步進樣式分頁的副本；格式、位置分頁不改 style，不需同步
 - `FontLibraryView`／`FontLibraryModel`：全螢幕清單，外觀同管理設定檔；分段、預覽圖、右側狀態、點列的行為、「⋯」刪除選單、提示文字（FR-16.1～16.12）
 - `FontLicenseView`：讀 `Resources/FontLicenses/`（FR-16.13）
 - 狀態與文字邏輯在 view model，用假 `FontAvailabilityProviding`＋假動作測
