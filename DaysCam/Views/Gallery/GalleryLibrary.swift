@@ -37,7 +37,9 @@ protocol GalleryLibrary {
     /// Loads a displayable image no larger than `targetSize` (pixels).
     func image(id: String, targetSize: CGSize) async -> UIImage?
     /// Yields once per photo-library change (e.g. limited selection edited,
-    /// photo deleted elsewhere), always on the main actor. The observer is
+    /// photo deleted elsewhere). The system calls back on a background
+    /// queue and the stream yields from there; consumers (`GalleryModel`)
+    /// hop to the main actor before touching state. The observer is
     /// registered when iteration starts and unregistered when the consuming
     /// task is cancelled. Never modifies `capturedAssetIDs`.
     func changes() -> AsyncStream<Void>

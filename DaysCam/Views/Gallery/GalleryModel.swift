@@ -64,6 +64,7 @@ final class GalleryModel: ObservableObject {
     func requestAccessAndLoad() async {
         let status = await library.requestReadAccess()
         apply(status: status)
+        startObservingLibraryChanges()
     }
 
     /// Re-reads the list — e.g. coming back from the Photos app, where a
@@ -72,18 +73,33 @@ final class GalleryModel: ObservableObject {
     func reload() {
         guard phase == .photos || phase == .empty else { return }
         let keptID = currentPhoto?.id
-        setPhotos(library.photos(), preferring: keptID)
+        let latest = library.photos()
+        // Unrelated library changes must not republish (and redraw) the list.
+        guard latest != photos || (phase == .empty) != latest.isEmpty else { return }
+        setPhotos(latest, preferring: keptID)
     }
 
-    /// Re-reads the list whenever the library changes (issue #192: limited
-    /// selection edited in Settings, photo deleted elsewhere). Runs until the
-    /// calling task is cancelled; does nothing unless read access is granted.
-    func observeLibraryChanges() async {
-        guard phase == .photos || phase == .empty else { return }
-        for await _ in library.changes() {
-            if Task.isCancelled { break }
-            reload()
+    private var observationTask: Task<Void, Never>?
+
+    /// Starts re-reading the list whenever the library changes (issue #192:
+    /// limited selection edited in Settings, photo deleted elsewhere).
+    /// Idempotent; does nothing unless read access is granted. Called after
+    /// every successful load, so denied → authorized while open also starts it.
+    func startObservingLibraryChanges() {
+        guard observationTask == nil, phase == .photos || phase == .empty else { return }
+        let changes = library.changes()
+        observationTask = Task { @MainActor [weak self] in
+            for await _ in changes {
+                if Task.isCancelled { break }
+                self?.reload()
+            }
         }
+    }
+
+    /// Stops observing (gallery closed); unregisters the system observer.
+    func stopObservingLibraryChanges() {
+        observationTask?.cancel()
+        observationTask = nil
     }
 
     private func apply(status: PHAuthorizationStatus) {
