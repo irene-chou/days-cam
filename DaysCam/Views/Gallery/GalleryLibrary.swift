@@ -24,6 +24,11 @@ protocol GalleryLibrary {
     /// returns the resulting status (FR-15.3). Never prompts again once
     /// decided.
     func requestReadAccess() async -> PHAuthorizationStatus
+    /// Up to `limit` captured photo ids that currently resolve to a visible
+    /// asset, newest first. Unlike `photos()` it never prunes
+    /// `capturedAssetIDs`: under `.limited` access an id may exist yet be
+    /// invisible, and the launch thumbnail must not forget it.
+    func latestVisiblePhotoIDs(limit: Int) -> [String]
     /// The still-existing captured photos, newest first.
     func photos() -> [GalleryPhoto]
     /// Deletes the photo through the system confirmation (FR-15.6).
@@ -49,6 +54,15 @@ struct SystemGalleryLibrary: GalleryLibrary {
                 continuation.resume(returning: status)
             }
         }
+    }
+
+    func latestVisiblePhotoIDs(limit: Int) -> [String] {
+        let ids = store.capturedAssetIDs
+        guard !ids.isEmpty else { return [] }
+        var visible: Set<String> = []
+        PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+            .enumerateObjects { asset, _, _ in visible.insert(asset.localIdentifier) }
+        return Array(ids.filter { visible.contains($0) }.prefix(limit))
     }
 
     func photos() -> [GalleryPhoto] {

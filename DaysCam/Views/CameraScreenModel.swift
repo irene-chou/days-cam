@@ -636,15 +636,19 @@ extension CameraScreenModel {
         default: return
         }
         let landings = thumbnailLandingCount
+        // Never `photos()`: that prunes ids under `.limited` access.
+        let ids = library.latestVisiblePhotoIDs(limit: 3)
         var loaded: UIImage?
-        for photo in library.photos().prefix(3) {
-            loaded = await library.image(id: photo.id, targetSize: Self.libraryThumbnailSize)
+        for id in ids {
+            loaded = await library.image(id: id, targetSize: Self.libraryThumbnailSize)
             if loaded != nil { break }
         }
         guard landings == thumbnailLandingCount else { return }
         if let loaded {
             latestThumbnailImage = loaded
-        } else if replacingExisting {
+        } else if ids.isEmpty && replacingExisting {
+            // Only a confirmed-empty list clears the thumbnail; a failed
+            // load (offline iCloud, PhotoKit error) keeps what is shown.
             latestThumbnailImage = nil
         }
     }

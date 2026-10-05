@@ -1753,7 +1753,13 @@ final class CameraScreenModelTests: XCTestCase {
             requestCount += 1
             return status
         }
-        func photos() -> [GalleryPhoto] { items.map { GalleryPhoto(id: $0, creationDate: nil) } }
+        /// Counts the pruning read; the launch thumbnail must never use it.
+        private(set) var photosCallCount = 0
+        func latestVisiblePhotoIDs(limit: Int) -> [String] { Array(items.prefix(limit)) }
+        func photos() -> [GalleryPhoto] {
+            photosCallCount += 1
+            return items.map { GalleryPhoto(id: $0, creationDate: nil) }
+        }
         func deletePhoto(id: String) async -> Bool {
             items.removeAll { $0 == id }
             return true
@@ -1834,6 +1840,29 @@ final class CameraScreenModelTests: XCTestCase {
         wait(for: [loaded], timeout: 3)
 
         XCTAssertTrue(model.latestThumbnailImage === baked)
+    }
+
+    func testLaunchThumbnailNeverUsesThePruningRead() async throws {
+        let library = FakeThumbnailLibrary(status: .limited, items: ["a"], images: ["a": solidImage(.red)])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+        await model.loadLaunchThumbnail()
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+
+        XCTAssertEqual(library.photosCallCount, 0)
+    }
+
+    func testFailedImageLoadKeepsTheCurrentThumbnail() async throws {
+        let shown = solidImage(.red)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": shown])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+        await model.loadLaunchThumbnail()
+        XCTAssertTrue(model.latestThumbnailImage === shown)
+
+        library.images = [:] // e.g. iCloud offline: ids listed, nothing loads
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+
+        XCTAssertTrue(model.latestThumbnailImage === shown)
     }
 
     func testClosingGalleryAfterDeletingNewestPhotoUpdatesThumbnail() async throws {

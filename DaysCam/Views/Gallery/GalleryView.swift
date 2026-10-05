@@ -212,6 +212,7 @@ private struct PreviewLibrary: GalleryLibrary {
     var count = 6
     func readStatus() -> PHAuthorizationStatus { status }
     func requestReadAccess() async -> PHAuthorizationStatus { status }
+    func latestVisiblePhotoIDs(limit: Int) -> [String] { (0..<min(count, limit)).map { "p\($0)" } }
     func photos() -> [GalleryPhoto] {
         (0..<count).map { GalleryPhoto(id: "p\($0)", creationDate: Date(timeIntervalSince1970: 1_768_000_000 - Double($0) * 86_400)) }
     }
