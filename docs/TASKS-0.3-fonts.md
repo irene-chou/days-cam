@@ -40,10 +40,10 @@ TASK-34 可在 TASK-33 合併前先用 TASK-32 定義的介面加假實作開工
 
 | 擁有者 | 新增或變更的檔案 |
 |---|---|
-| core-style | `Models/OverlayStyle.swift`（`OverlayFontID`）、`Models/FontCatalog.swift`（新）、`Services/OverlayMetrics.swift` |
+| core-style | `Models/OverlayStyle.swift`（`OverlayFontID`）、`Models/FontCatalog.swift`（新）、`Services/OverlayMetrics.swift`、`Services/OverlayRenderer.swift` |
 | core-device | `Services/FontLibrary.swift`（新）、`Services/FontDownloader.swift`（新，若拆檔） |
 | ui-panel | `Views/OverlayPanel/StyleTabView.swift`、`StyleTabModel.swift`、`Views/OverlayPanel/FontLibraryView.swift`／`FontLibraryModel.swift`（新）、`Views/OverlayPanel/FontLicenseView.swift`（新） |
-| ui-shell | `CameraScreenModel.swift`、`CameraScreen.swift`、`DaysCamApp.swift` |
+| ui-shell | `CameraScreenModel.swift`、`CameraScreen.swift`、`OverlayTextView.swift`、`DaysCamApp.swift` |
 | Lead | 外部 repo `irene-chou/dayscam-fonts`、`scripts/render-font-previews.swift`（新）、`DaysCam/Assets.xcassets/FontPreviews/`（新，**例外**：預覽圖由 Lead 產生）、`DaysCam/Resources/FontLicenses/`（新） |
 
 ---
@@ -69,6 +69,8 @@ PRD-0.3 §4.2 的開源字型資產，以及 FR-16.4 預覽圖、FR-16.13 授權
 |---|---|---|
 | 31.1 | 對 manifest 的每個 jsDelivr 與 GitHub raw 網址下載 | 6 個網址都 200，大小與 SHA-256 與 manifest 一致 |
 | 31.2 | `ls DaysCam/Assets.xcassets/FontPreviews` | 21 個 imageset，`fontID` 與 PRD-0.3 §4.1 一致 |
+| 31.2a | 執行 `scripts/render-font-previews.swift` | 腳本對每套字型以 PostScript 名稱取字型，取得的 `fontName` 不等於 §4.1 時**以非零狀態結束**；成功時輸出 21 行「fontID → 實際 PostScript 名稱」並與 §4.1 完全一致（貼在 PR） |
+| 31.2b | 把某套的 PostScript 名稱改成不存在的值再跑腳本 | 腳本失敗，不產生該圖（確認不會退回蘋方） |
 | 31.3 | `ls DaysCam/Resources/FontLicenses` | 4 個授權檔（3 套 OFL＋粉圓 Apache-2.0） |
 
 **依賴**：PRD-0.3 合併
@@ -87,7 +89,8 @@ PRD-0.3 §4.1、§4.3、§4.4、FR-5.14、FR-10.3′ 的模型與渲染層。
 - `OverlayFontID` 換成 21 個 case（PRD §4.1 順序），未知值（含 0.2 的 10 種）解碼為 `pingFang`；`OverlayStyle.fontID` 預設 `pingFang`
 - `Models/FontCatalog.swift`：每個 `fontID` 的顯示名稱、分段、來源（內建／開源／系統）、PostScript 名稱、下載大小；開源字型另含檔名、位元組數、SHA-256、主要與備援網址、版本、著作權聲明、授權檔名（值取自 TASK-31 的 `docs/fonts-manifest.md`）
 - 字型狀態型別（PRD §4.4）與唯讀介面 `FontAvailabilityProviding`（`state(for:) -> FontState`），供 TASK-33 實作、TASK-34／35 使用
-- `OverlayMetrics.font(for:size:availability:)`：`available` 時回傳該字型；其他狀態回傳 `PingFangTC-Semibold`。觀景窗（`renderText`）與烘焙走同一個函式。移除 0.2 FR-10.3 的蘋方補字註解與假設
+- `OverlayMetrics.font(for:size:availability:)`：`available` 時回傳該字型；其他狀態回傳 `PingFangTC-Semibold`。**移除不帶 availability 的 `font(for:size:)` 與 `font(for: theme)`**，避免繞過解析。移除 0.2 FR-10.3 的蘋方補字註解與假設
+- 渲染層簽名一起改：`OverlayRenderer.bake(...)`、`renderText(...)`、`fittedFontSize(...)`、`OverlayLayout`、`OverlayMetrics.textWidth(...)` 都接受 `availability`（或已解析的字型），量字寬與繪製用同一個解析結果（PRD FR-5.14）。呼叫端由 TASK-34（樣式預覽）與 TASK-35（觀景窗、烘焙）改接
 - 字重固定為 §4.1 的 PostScript 名稱，不做字重選擇
 
 **驗收 — A.**
@@ -100,7 +103,9 @@ PRD-0.3 §4.1、§4.3、§4.4、FR-5.14、FR-10.3′ 的模型與渲染層。
 | 32.4 | 0.1 格式夾具（沿用 TASK-17 的夾具） | 照 0.2 §4.3 轉換，字型為 `pingFang` |
 | 32.5 | 假 availability 回傳 `available` 的開源字型（測試內以 `CTFontManagerRegisterFontURLs` 註冊 TASK-31 的檔案，或用測試夾具字型） | 解析出的 `UIFont.fontName` 為該字型的 PostScript 名稱 |
 | 32.6 | 假 availability 回傳 `notDownloaded`／`preparing`／`failed` | 解析出 `PingFangTC-Semibold` |
-| 32.7 | 同一 style 與 availability 下，觀景窗 `renderText` 與烘焙使用的字型 | `fontName` 相同（以注入的解析函式或間諜驗證） |
+| 32.7 | 同一 style 與 availability 下，觀景窗 `renderText` 與烘焙使用的字型 | `fontName` 相同，`fittedFontSize` 相同，且量字寬用的就是解析後的字型（以注入的解析函式或間諜驗證） |
+| 32.7a | availability 回傳 `failed`，但該 PostScript 名稱其實已可用（模擬逾時後比對才完成） | 量測與繪製都用蘋方，兩者一致 |
+| 32.10 | `grep -rn 'func font(for' DaysCam/Services/OverlayMetrics.swift` | 每個結果都帶 `availability` 參數 |
 | 32.8 | `pingFang` 解析 | `PingFangTC-Semibold`，不需 availability 也可用 |
 | 32.9 | FontCatalog 開源 3 套的大小、SHA-256、版本、著作權聲明 | 與 `docs/fonts-manifest.md` 一致（測試讀死值比對即可） |
 
@@ -139,7 +144,7 @@ PRD-0.3 §4.2、§4.4、FR-16.6～16.12、FR-16.14、FR-5.15 的服務層。
 | 33.7 | 重建 FontLibrary（模擬重開 App），檔案存在 | `prepareAtLaunch` 後開源字型為 `available`；不重新下載 |
 | 33.8 | 重開時檔案被刪或 SHA-256 不符 | `notDownloaded`／`failed`，不崩潰 |
 | 33.9 | 假比對器：系統字型比對成功、途中回報錯誤但最後成功 | 皆為 `available` |
-| 33.10 | 假比對器不回應 | `prepareAtLaunch` 3 秒逾時回傳，該字型變 `failed(.other)`，可再呼叫 `download` 重試；不阻塞其他字型 |
+| 33.10 | 假比對器不回應 | `prepareAtLaunch` 3 秒逾時回傳，該字型變 `failed(.other)`，比對器收到取消（progress handler 回傳 `false`）；之後的回呼不改變狀態；可再呼叫 `download` 重試；不阻塞其他字型 |
 | 33.10a | `downloadedSystemFontIDs = ["xingkai"]`，假比對器在開始時回報下載量 > 0 | 比對被取消、未下載任何位元組；`xingkai` 從清單移除且為 `notDownloaded` |
 | 33.10b | `downloadedSystemFontIDs` 為空 | 啟動不比對任何系統字型 |
 | 33.10c | 兩套下載中呼叫 `cancelAllDownloads()` | 兩套皆 `failed(.other)`，暫存檔已清 |
@@ -166,7 +171,8 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 
 **範圍**
 
-- `StyleTabView` 字型格子：只列 `available` 的字型（§4.1 順序）＋「更多字型」格；目前字型不可用時的「需重新下載」格（FR-10.2′.4）
+- `StyleTabView` 字型格子：只列 `available` 的字型（§4.1 順序）＋「更多字型」格；目前字型不可用時依狀態顯示（FR-10.2′.4）。格子與外框／陰影預覽改用 TASK-32 的解析函式
+- **套用一律呼叫注入的 `applyFont(fontID, profileID)`**（由 TASK-35 的 `CameraScreenModel` 提供），`FontLibraryModel` 不自己寫設定檔，也不持有完成後套用的責任（清單關閉後仍要套用，FR-16.11）
 - `FontLibraryView`／`FontLibraryModel`：全螢幕清單，外觀同管理設定檔；分段、預覽圖、右側狀態、點列的行為、「⋯」刪除選單、提示文字（FR-16.1～16.12）
 - `FontLicenseView`：讀 `Resources/FontLicenses/`（FR-16.13）
 - 狀態與文字邏輯在 view model，用假 `FontAvailabilityProviding`＋假動作測
@@ -178,15 +184,15 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 |---|---|---|
 | 34.1 | 只有蘋方可用 | 格子 = [蘋方, 更多字型] |
 | 34.2 | 粉圓、行楷可用 | 格子 = [蘋方, 粉圓, 行楷, 更多字型]（§4.1 順序） |
-| 34.3 | 目前字型為行楷但 `notDownloaded` | 格子含行楷且為選中，副標「需重新下載」 |
+| 34.3 | 目前字型為行楷，狀態分別為 `notDownloaded`、`failed`、`preparing`、`downloading(0.38)` | 格子含行楷且為選中；副標依序「需重新下載」、「需重新下載」、進度圈無文字、「38%」；前兩者點了開清單並捲到行楷，後兩者點了不動作 |
 | 34.4 | 清單分段 | 9 段，標題與每段字型與 §4.1 一致 |
 | 34.5 | 各狀態的右側文字 | 未下載「43.7 MB」（宋體）、下載中「38%」、失敗「重試」、已下載開源有「⋯」、系統與蘋方無 |
-| 34.6 | 點未下載 → 假下載完成 | 呼叫 `download` 一次；完成後目前設定檔 `fontID` 變成它；下載完成前 `fontID` 不變 |
+| 34.6 | 點未下載的列 | 呼叫注入的 `applyFont(fontID, 目前設定檔 ID)` 一次（下載與完成後套用由 TASK-35 處理，見 35.6～35.8） |
 | 34.7 | 點下載中 | 呼叫 `cancel`，提示「已取消下載」 |
-| 34.8 | 「⋯」› 刪除，有 2 個設定檔使用 | 選單文字含「2 個設定檔正在使用」；確認後呼叫 `delete` 與 `replaceFont` |
+| 34.8 | 「⋯」› 刪除，有 2 個設定檔使用 | 選單文字含「2 個設定檔正在使用」；確認後**先**呼叫 `replaceFont` 再呼叫 `delete`（順序以間諜驗證） |
 | 34.9 | 系統字型列 | 沒有「⋯」 |
 | 34.10 | 授權頁 | 列出 3 套開源字型，各有名稱、版本、著作權聲明與授權全文（粉圓另有 Apache-2.0）；註明系統字型由 Apple 提供 |
-| 34.11 | `grep -rn -e 'UIActivityViewController' -e 'ShareLink' -e 'fileExporter' DaysCam/Views/OverlayPanel/` | 無結果（PRD-0.3 §7 不得匯出字型檔） |
+| 34.11 | `grep -rn -e 'UIActivityViewController' -e 'ShareLink' -e 'fileExporter' -e 'UIDocumentPickerViewController' -e 'UIFileSharingEnabled' -e 'LSSupportsOpeningDocumentsInPlace' DaysCam/ project.yml` | 無結果（PRD-0.3 §7 不得匯出字型檔） |
 
 **驗收 — B′.** 對照 D-6 方案 C：格子與清單的各狀態 Preview 截圖。
 
@@ -213,7 +219,9 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 - `DaysCamApp`／`CameraScreenModel`：啟動時呼叫 `FontLibrary.prepareAtLaunch`，目前設定檔的字型優先
 - 目前設定檔字型為 `preparing` 時快門停用；完成或 3 秒逾時後恢復
 - 字型不可用時（非 `available`、非 `preparing`），開面板或切到該設定檔時提示一次「「<名稱>」需要重新下載，暫時用蘋方」
-- 觀景窗與烘焙都把 `FontLibrary` 傳給 `OverlayMetrics` 的解析函式
+- 觀景窗（`OverlayTextView` → `renderText`）與烘焙（`bake`）都改用 TASK-32 帶 availability 的簽名，傳同一個 `FontLibrary`
+- **套用字型的唯一寫入路徑** `applyFont(_ fontID:, profileID:)`（PRD FR-5.18）：字型 `available` → 立即寫入該設定檔；否則呼叫 `FontLibrary.download`，記下「設定檔 → 字型」的待套用（同一設定檔以最後一次為準），下載完成時寫入**開始下載時的設定檔**（已刪除就略過）並提示「已套用「<名稱>」」（FR-16.6、A-8）。此待套用由 `CameraScreenModel` 持有，清單關閉不影響
+- 任何字型寫入、或 `ProfileStore` 被外部改動（如 `replaceFont`）後，對 `styleTabModel` 與其他持有 style 副本的 model 呼叫 `applyExternalChanges`（比照 #167 對 `rulesTabModel` 的做法）
 - 觀景窗疊字圖片快取（`OverlayTextView.swift` 的 `OverlayTextRenderCache.Key`）必須包含**解析後的字型 PostScript 名稱**，字型狀態由 `preparing`／`notDownloaded` 變 `available`（或反向）時一定重畫，不得沿用舊的蘋方圖片（FR-5.14）
 - `scenePhase` 變成 `.background` 時呼叫 `FontLibrary.cancelAllDownloads()`（FR-16.11）
 
@@ -225,6 +233,9 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 | 35.2 | 假 FontLibrary 3 秒不回應 | 3 秒後快門啟用，觀景窗用蘋方 |
 | 35.3 | 切到字型 `notDownloaded` 的設定檔 | 提示文字出現一次；再切回來不重複（同一次啟動內） |
 | 35.4 | 烘焙路徑 | 拿到的 availability 與觀景窗是同一個實例 |
+| 35.6 | `applyFont(.xingkai, A)`，假下載中關閉清單，之後下載完成 | 設定檔 A 的 `fontID` 變成行楷並寫檔；提示「已套用「行楷」」 |
+| 35.7 | `applyFont(.xingkai, A)` 下載中切到設定檔 B，之後完成 | A 變行楷，B 不變 |
+| 35.8 | 套用行楷（或 `replaceFont(.huninn, with: .pingFang)`）後，在樣式分頁改文字顏色 | store 裡 `fontID` 仍是新值，顏色也改到 |
 | 35.4b | 假 FontLibrary 先 `preparing` 再變 `available`，期間取觀景窗疊字圖片兩次 | 第二次圖片的字型為該字型（快取未命中舊的蘋方圖片）；反向（`available` → `notDownloaded`）同理變回蘋方 |
 | 35.4a | 模擬 `scenePhase` 變 `.background` | 假 FontLibrary 的 `cancelAllDownloads` 被呼叫一次 |
 
@@ -232,9 +243,10 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 35.5 | 實機用行楷，殺 App 重開後立刻按快門 | 照片是行楷，不是蘋方 |
+| 35.5 | 實機用行楷，殺 App 重開，快門仍停用（`preparing`）時按快門 | 沒有拍照 |
+| 35.5a | 接 35.5，快門恢復後按快門 | 照片是行楷，不是蘋方 |
 
-**依賴**：TASK-32、33
+**依賴**：TASK-32、33；TASK-34 的 `FontLibraryModel` 需要本卡的 `applyFont`，兩卡先對齊介面再各自開發
 
 ---
 
@@ -253,6 +265,6 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 
 **驗收 — B′.** D-6 方案 C 對照。
 
-**驗收 — B.** 33.13、33.14、34.12、34.13、35.5 在同一台實機重跑；另加：全新安裝不下載任何字型，拍照為蘋方；空間不足時（可略）。
+**驗收 — B.** 33.13、33.14、34.12、34.13、35.5、35.5a 在同一台實機重跑；另加：全新安裝不下載任何字型，拍照為蘋方；空間不足時（可略）。
 
 **依賴**：全部
