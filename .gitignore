@@ -6,3 +6,6 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/xcuserdata/
 *.xcodeproj
+
+# XcodeGen 由 project.yml 產生（見 README）
+DaysCam/Info.plist

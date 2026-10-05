@@ -16,7 +16,7 @@
 
 ## Clone 後必須先產生專案檔
 
-`DaysCam.xcodeproj` **不在版控裡**，`project.yml` 才是單一真實來源。clone 之後要先跑：
+`DaysCam.xcodeproj` 與 `DaysCam/Info.plist` **不在版控裡**，`project.yml` 才是單一真實來源（權限說明等 Info.plist 內容改 `project.yml` 的 `info.properties`）。clone 之後要先跑：
 
 ```
 xcodegen generate
