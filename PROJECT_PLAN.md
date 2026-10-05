@@ -17,7 +17,7 @@ MVP 排除訂閱／IAP、雲端帳號同步、多語系、社群分享與 Widget
 
 ## Agent 團隊
 
-需求與任務卡由 Claude Lead／Spec 負責；Codex developer 實作並寫 XCTest，Codex QA 獨立驗收，Codex GitHub connector 做一般 review，Claude 處理高風險架構與仲裁。人類負責實機、視覺確認與發佈決策。
+需求與任務卡由 Claude Lead／Spec 負責；邏輯卡由 Codex 開發、UI 卡由 Claude 開發，review 交給另一家，高風險卡才另開獨立 QA。人類負責實機、視覺確認與發佈決策。
 
 - [AGENTS.md](AGENTS.md)：共用規範、當前 merge gate。
 - [WORKFLOW](docs/WORKFLOW.md)：角色／模型、交接格式、開發／QA／review、connector 設定與 pilot。
