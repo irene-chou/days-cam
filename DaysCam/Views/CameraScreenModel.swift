@@ -29,6 +29,7 @@ final class CameraScreenModel: ObservableObject {
     /// needs this model.
     let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
+    private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -52,6 +53,11 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var selectedProfileID: UUID?
     /// Whether the management panel (PRD 0.2 FR-9, S-6) is showing.
     @Published var isProfileManagerPresented = false
+    /// The photo browsing screen (TASK-29), presented full screen once read
+    /// access has been answered (`openGallery()`).
+    @Published var isGalleryPresented = false
+    /// The browsing screen's model, created fresh each time it opens.
+    private(set) var galleryModel: GalleryModel?
 
     /// Whether the flash／timer／grid capsule below the toolbar is showing
     /// (issue #135). Never persisted: every launch starts collapsed.
@@ -247,7 +253,11 @@ final class CameraScreenModel: ObservableObject {
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+         },
+         makeGalleryModel: @escaping @MainActor (CapturedPhotoStore) -> GalleryModel = { store in
+             GalleryModel(library: SystemGalleryLibrary(store: store))
          }) {
+        self.makeGalleryModel = makeGalleryModel
         self.cameraService = cameraService
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
@@ -575,6 +585,25 @@ extension CameraScreenModel {
     func presentProfileManagement() {
         collapseCameraTools()
         isProfileManagerPresented = true
+    }
+
+    /// The thumbnail was tapped (PRD 0.2 FR-15.3): ask for `.readWrite`
+    /// the first time (never earlier), then open the gallery — it shows its
+    /// own permission-denied state when the answer was no.
+    func openGallery() {
+        guard galleryModel == nil else { return }
+        collapseCameraTools()
+        let model = makeGalleryModel(capturedPhotoStore)
+        galleryModel = model
+        Task { [weak self] in
+            await model.requestAccessAndLoad()
+            self?.isGalleryPresented = true
+        }
+    }
+
+    func dismissGallery() {
+        isGalleryPresented = false
+        galleryModel = nil
     }
 
     func dismissProfileManagement() {
