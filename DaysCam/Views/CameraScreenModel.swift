@@ -3,14 +3,14 @@ import Foundation
 import UIKit
 
 /// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
-/// interpretation, the profile-driven overlay (TASK-08), the display-settings
-/// sheet entry (TASK-11), the profile switcher (TASK-13), the shutter's
+/// interpretation, the profile-driven overlay (TASK-08), the profile
+/// switcher (TASK-13), the management panel entry (TASK-26), the shutter's
 /// capture state machine (TASK-10) and the cross-midnight/foreground refresh
 /// (TASK-14). `CameraScreen` only lays out whatever this model currently
 /// says — see `docs/TASKS.md`'s note on why UI-level acceptance criteria
 /// live here rather than in the view.
 ///
-/// Like `ProfileListModel.adapting(to:)`, this is one of the boundary types
+/// Like `ProfileManagerModel`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model
 /// has to be the place real services get wired together. It mirrors the
 /// store's `@Published profiles`/`selectedProfileID` the same way that
@@ -50,31 +50,24 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var profiles: [CameraProfile] = []
     /// Mirrors `profileStore.selectedProfileID`.
     @Published private(set) var selectedProfileID: UUID?
-    /// Non-nil while PRD S-4 (the display-settings sheet) should be shown.
-    /// Built once per presentation and held here — same reasoning as
-    /// `ProfileListModel.activeEditModel`: a `.sheet` content closure re-runs
-    /// on unrelated `@Published` changes while the sheet is up (in
-    /// particular `profiles`/`selectedProfileID` ticking from an unrelated
-    /// store write), and rebuilding there would discard in-progress edits.
-    @Published private(set) var displaySettingsModel: DisplaySettingsModel?
-    /// Non-nil while PRD S-2 (the profile management list, reached via the
-    /// switcher's "管理設定檔" entry) should be shown.
-    @Published var isProfileListPresented = false
+    /// Whether the management panel (PRD 0.2 FR-9, S-6) is showing.
+    @Published var isProfileManagerPresented = false
 
     /// Whether the flash／timer／grid capsule below the toolbar is showing
     /// (issue #135). Never persisted: every launch starts collapsed.
     @Published private(set) var isCameraToolsExpanded = false
 
-    /// Drives the management list. Built once and reused — unlike
-    /// `displaySettingsModel`, this does not need to be rebuilt per
-    /// presentation, since `ProfileListModel` already owns its own
-    /// create/edit/delete sheet state independently of whether it is
-    /// currently on screen.
-    let profileListModel: ProfileListModel
+    /// Drives the management panel. Built once and reused: it mirrors the
+    /// store itself, so there is nothing to go stale between presentations.
+    private(set) lazy var profileManagerModel = ProfileManagerModel(
+        store: profileStore,
+        calculator: calculator,
+        onProfileAdded: { [weak self] in self?.finishAddingProfile() }
+    )
 
     /// Drives the overlay panel's shell (PRD 0.2 FR-8, TASK-22): whether
     /// it's open and which first-level tab is selected. Built once and
-    /// reused, same reasoning as `profileListModel` — it owns no data that
+    /// reused, same reasoning as `profileManagerModel` — it owns no data that
     /// depends on `selectedProfile`, so there is nothing to go stale.
     let panelModel = OverlayPanelModel()
 
@@ -273,7 +266,6 @@ final class CameraScreenModel: ObservableObject {
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
         self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
-        self.profileListModel = ProfileListModel.adapting(to: profileStore, calendar: calendar)
         bindToProfileStore()
         bindToCameraService()
         bindToCaptureSettingsStore()
@@ -321,12 +313,11 @@ final class CameraScreenModel: ObservableObject {
     /// though any one mutation only ever touches the handful of fields that
     /// tab actually owns (樣式 → `style`; 位置 → `position`; 格式 →
     /// `showDayCount`/`showDate`/`showName`/`displayUnits`/`useAgeWording`,
-    /// and also `position`/`style` — `DisplaySettingsModel` is shared with
-    /// the 0.1 sheet TASK-26 will remove; 天數規則 → `name`/`startDate`/
+    /// and also `position`/`style`, as `DisplaySettingsModel` carries them; 天數規則 → `name`/`startDate`/
     /// `countingRule`). Passing that closure straight to
     /// `profileStore.update` would blindly overwrite the store's current
     /// record with this tab's own copy, silently reverting whatever fields
-    /// a *different* tab (or `profileListModel`'s own rename) wrote in the
+    /// a *different* tab (or a rename elsewhere) wrote in the
     /// meantime — exactly #70's reported bug. Every closure below instead
     /// goes through a `TabProfileWriter` (this file's own type, just below),
     /// which merges only the fields that changed since that tab's own last
@@ -556,31 +547,6 @@ extension CameraScreenModel {
     }
 }
 
-// MARK: - Display settings sheet (TASK-11)
-
-extension CameraScreenModel {
-    /// Whether PRD S-4 should be shown.
-    var isDisplaySettingsPresented: Bool {
-        displaySettingsModel != nil
-    }
-
-    /// Opens the display-settings sheet for the currently selected profile.
-    /// A no-op in the brief window before any profile is selected.
-    func presentDisplaySettings() {
-        guard let selectedProfile else { return }
-        displaySettingsModel = DisplaySettingsModel(profile: selectedProfile,
-                                                    calendar: calendar,
-                                                    calculator: calculator,
-                                                    renderer: renderer) { [weak self] updated in
-            try self?.profileStore.update(updated)
-        }
-    }
-
-    func dismissDisplaySettings() {
-        displaySettingsModel = nil
-    }
-}
-
 // MARK: - Profile switcher (TASK-13)
 
 extension CameraScreenModel {
@@ -592,7 +558,7 @@ extension CameraScreenModel {
     /// The profile switcher's menu items: exactly the profiles, in
     /// `ProfileStore`'s order, with no synthetic "manage profiles" entry
     /// mixed in — that entry point moves to the bottom bar's own key
-    /// (TASK-26), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
+    /// (TASK-26, `ProfileManagerModel`), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
     /// 21.1).
     var profileMenuItems: [CameraProfile] {
         profiles
@@ -608,7 +574,19 @@ extension CameraScreenModel {
 
     func presentProfileManagement() {
         collapseCameraTools()
-        isProfileListPresented = true
+        isProfileManagerPresented = true
+    }
+
+    func dismissProfileManagement() {
+        isProfileManagerPresented = false
+    }
+
+    /// After "新增設定檔": the new profile is already selected, so close the
+    /// management panel and show the 天數規則 tab to name it and set its
+    /// start date (PRD 0.2 FR-9.8). The overlay panel stays open.
+    func finishAddingProfile() {
+        isProfileManagerPresented = false
+        panelModel.selectedTab = .rules
     }
 }
 
@@ -1000,8 +978,8 @@ extension CameraScreenModel {
 /// applies the fields *that tab itself* actually changed since its own last
 /// write, merged onto whatever `profileStore` currently holds for the same
 /// profile — instead of blindly overwriting the whole record with that
-/// tab's own (possibly stale, since another tab — or `profileListModel`'s
-/// own rename — could have written since this tab's model was built) full
+/// tab's own (possibly stale, since another tab — or a rename elsewhere —
+/// could have written since this tab's model was built) full
 /// `CameraProfile` copy.
 ///
 /// Every tab model (`StyleTabModel`, `DisplaySettingsModel`,

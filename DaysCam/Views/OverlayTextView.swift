@@ -68,7 +68,7 @@ struct OverlayTextView: View {
     /// Creates a view. `frameSize` and everything before it are the settled
     /// public shape from TASK-18; `onDragChanged`/`onDragEnded` are TASK-24's
     /// addition, both defaulting to `nil` so every pre-existing call site
-    /// (`CameraScreen`'s non-position tabs, `DisplaySettingsSheet`'s little
+    /// (`CameraScreen`'s non-position tabs, `StyleSwatchPreview`'s little
     /// preview swatches) keeps compiling and keeps being non-interactive
     /// without changing a single call site.
     init(text: String,

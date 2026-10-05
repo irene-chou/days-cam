@@ -47,10 +47,13 @@ struct CameraScreen: View {
             .sensoryFeedback(.impact(weight: .light), trigger: model.captureTriggerCount)
             .onAppear { model.onAppear() }
             .onDisappear { model.onDisappear() }
-            .sheet(isPresented: $model.isProfileListPresented) {
-                NavigationStack {
-                    ProfileListView(model: model.profileListModel)
+            .sheet(isPresented: $model.isProfileManagerPresented) {
+                ProfileManagerView(model: model.profileManagerModel) {
+                    model.dismissProfileManagement()
                 }
+                .presentationDetents([.fraction(0.68)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
             }
             .overlay(alignment: .bottomLeading) { toastOverlay }
             .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
@@ -532,7 +535,7 @@ struct CameraScreen: View {
     // MARK: - Bindings
 
     /// `model.showsCorruptionRecoveredAlert` as a `Binding` for `.alert`, same
-    /// dismiss-clears-model-state pattern as `ProfileListView.editorBinding`.
+    /// dismiss-clears-model-state pattern as the other alert bindings here.
     private var corruptionAlertBinding: Binding<Bool> {
         Binding(get: { model.showsCorruptionRecoveredAlert },
                 set: { isPresented in if !isPresented { model.dismissCorruptionRecoveredAlert() } })
