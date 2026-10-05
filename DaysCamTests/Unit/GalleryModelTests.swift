@@ -1,3 +1,4 @@
+import Combine
 import Photos
 import UIKit
 import XCTest
@@ -29,13 +30,30 @@ final class GalleryModelTests: XCTestCase {
         }
         func latestVisiblePhotoIDs(limit: Int) -> [String] { items.prefix(limit).map(\.id) }
         func photos() -> [GalleryPhoto] { items }
+        /// When set, `deletePhoto` suspends until `releaseDelete()`.
+        var holdDelete = false
+        private var deleteGate: CheckedContinuation<Void, Never>?
+        func releaseDelete() { deleteGate?.resume(); deleteGate = nil }
         func deletePhoto(id: String) async -> Bool {
             deletedIDs.append(id)
+            if holdDelete { await withCheckedContinuation { deleteGate = $0 } }
             guard deleteSucceeds else { return false }
             items.removeAll { $0.id == id }
             return true
         }
         func image(id: String, targetSize: CGSize) async -> UIImage? { nil }
+        private var changeContinuation: AsyncStream<Void>.Continuation?
+        private(set) var isObserving = false
+        func changes() -> AsyncStream<Void> {
+            AsyncStream { continuation in
+                changeContinuation = continuation
+                isObserving = true
+                continuation.onTermination = { [weak self] _ in
+                    Task { @MainActor in self?.isObserving = false }
+                }
+            }
+        }
+        func notifyChange() { changeContinuation?.yield() }
     }
 
     private func makeModel(_ library: FakeLibrary) -> GalleryModel {
@@ -149,5 +167,132 @@ final class GalleryModelTests: XCTestCase {
         XCTAssertEqual(model.titleText, "照片")
         await model.requestAccessAndLoad()
         XCTAssertEqual(model.titleText, "照片")
+    }
+
+    // MARK: - Live refresh (#192)
+
+    /// Polls (yielding to the main actor) until `condition` holds.
+    private func waitUntil(_ message: String = "", file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) async {
+        for _ in 0..<400 where !condition() { try? await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertTrue(condition(), message, file: file, line: line)
+    }
+
+    func testLiveChangeAddingPhotoUpdatesListKeepsCurrent() async {
+        let library = FakeLibrary(count: 3)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        model.selectedIndex = 1 // p2
+        await waitUntil { library.isObserving }
+        library.items.insert(GalleryPhoto(id: "new", creationDate: nil), at: 0)
+        library.notifyChange()
+        await waitUntil { model.photos.count == 4 }
+        XCTAssertEqual(model.currentPhoto?.id, "p2")
+        XCTAssertEqual(model.subtitleText, "3 / 4")
+        model.stopObservingLibraryChanges()
+    }
+
+    func testLiveChangeRemovingCurrentPicksSameIndexThenPrevious() async {
+        let library = FakeLibrary(count: 5)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        model.selectedIndex = 2
+        await waitUntil { library.isObserving }
+        library.items.removeAll { $0.id == "p3" }
+        library.notifyChange()
+        await waitUntil { model.photos.count == 4 }
+        XCTAssertEqual(model.currentPhoto?.id, "p4")
+        XCTAssertEqual(model.subtitleText, "3 / 4")
+        model.selectedIndex = 3
+        library.items.removeAll { $0.id == "p5" }
+        library.notifyChange()
+        await waitUntil { model.photos.count == 3 }
+        XCTAssertEqual(model.currentPhoto?.id, "p4")
+        XCTAssertEqual(model.subtitleText, "3 / 3")
+        model.stopObservingLibraryChanges()
+    }
+
+    func testLiveChangeRemovingAllShowsEmptyAndAddingRestores() async {
+        let library = FakeLibrary(count: 2)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        await waitUntil { library.isObserving }
+        library.items = []
+        library.notifyChange()
+        await waitUntil { model.phase == .empty }
+        library.items = [GalleryPhoto(id: "x", creationDate: nil)]
+        library.notifyChange()
+        await waitUntil { model.phase == .photos }
+        XCTAssertEqual(model.subtitleText, "1 / 1")
+        model.stopObservingLibraryChanges()
+    }
+
+    func testStoppingObserverUnregisters() async {
+        let library = FakeLibrary(count: 3)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        await waitUntil { library.isObserving }
+        model.stopObservingLibraryChanges()
+        await waitUntil { !library.isObserving }
+    }
+
+    func testObserverDoesNotStartWhenDenied() async {
+        let library = FakeLibrary(status: .denied)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        XCTAssertFalse(library.isObserving)
+    }
+
+    /// Denied while open, then the user grants access in Settings.
+    func testObservationStartsAfterDeniedBecomesAuthorized() async {
+        let library = FakeLibrary(status: .denied)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        XCTAssertFalse(library.isObserving)
+        library.status = .authorized
+        await model.requestAccessAndLoad()
+        XCTAssertEqual(model.phase, .photos)
+        await waitUntil { library.isObserving }
+        model.stopObservingLibraryChanges()
+    }
+
+    func testUnrelatedChangeDoesNotRepublishPhotos() async {
+        let library = FakeLibrary(count: 3)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        await waitUntil { library.isObserving }
+        var publishCount = 0
+        let sink = model.$photos.dropFirst().sink { _ in publishCount += 1 }
+        library.notifyChange() // same contents
+        library.notifyChange()
+        // A later real change proves the earlier notifications were processed.
+        library.items.removeLast()
+        library.notifyChange()
+        await waitUntil { model.photos.count == 2 }
+        XCTAssertEqual(publishCount, 1)
+        sink.cancel()
+        model.stopObservingLibraryChanges()
+    }
+
+    /// A change notification arriving while a delete is in flight.
+    func testChangeDuringDeleteStaysConsistent() async {
+        let library = FakeLibrary(count: 4)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        model.selectedIndex = 1 // p2
+        await waitUntil { library.isObserving }
+        library.holdDelete = true
+        let deletion = Task { await model.deleteCurrent() }
+        await waitUntil { library.deletedIDs == ["p2"] }
+        library.items.removeAll { $0.id == "p2" } // library applies it
+        library.notifyChange()
+        await waitUntil { model.photos.count == 3 }
+        library.releaseDelete()
+        await deletion.value
+        XCTAssertEqual(model.photos.map(\.id), ["p1", "p3", "p4"])
+        XCTAssertEqual(model.currentPhoto?.id, "p3")
+        XCTAssertEqual(model.subtitleText, "2 / 3")
+        XCTAssertFalse(model.isDeleting)
+        model.stopObservingLibraryChanges()
     }
 }

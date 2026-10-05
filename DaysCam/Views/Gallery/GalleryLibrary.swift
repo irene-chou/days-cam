@@ -36,6 +36,26 @@ protocol GalleryLibrary {
     func deletePhoto(id: String) async -> Bool
     /// Loads a displayable image no larger than `targetSize` (pixels).
     func image(id: String, targetSize: CGSize) async -> UIImage?
+    /// Yields once per photo-library change (e.g. limited selection edited,
+    /// photo deleted elsewhere). The system calls back on a background
+    /// queue and the stream yields from there; consumers (`GalleryModel`)
+    /// hop to the main actor before touching state. The observer is
+    /// registered when iteration starts and unregistered when the consuming
+    /// task is cancelled. Never modifies `capturedAssetIDs`.
+    func changes() -> AsyncStream<Void>
+}
+
+extension GalleryLibrary {
+    /// Default: no change notifications.
+    func changes() -> AsyncStream<Void> { AsyncStream { $0.finish() } }
+}
+
+/// Bridges `PHPhotoLibraryChangeObserver` (called on a background queue)
+/// to an `AsyncStream`.
+private final class PhotoLibraryChangeBridge: NSObject, PHPhotoLibraryChangeObserver {
+    private let continuation: AsyncStream<Void>.Continuation
+    init(continuation: AsyncStream<Void>.Continuation) { self.continuation = continuation }
+    func photoLibraryDidChange(_ changeInstance: PHChange) { continuation.yield() }
 }
 
 /// Production library: `CapturedPhotoStore` decides which identifiers
@@ -88,6 +108,16 @@ struct SystemGalleryLibrary: GalleryLibrary {
         }
         if succeeded { store.fetchAssets() } // prune the id from the store
         return succeeded
+    }
+
+    func changes() -> AsyncStream<Void> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let bridge = PhotoLibraryChangeBridge(continuation: continuation)
+            PHPhotoLibrary.shared().register(bridge)
+            continuation.onTermination = { _ in
+                PHPhotoLibrary.shared().unregisterChangeObserver(bridge)
+            }
+        }
     }
 
     func image(id: String, targetSize: CGSize) async -> UIImage? {
