@@ -55,6 +55,11 @@ struct CameraScreen: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
             }
+            .fullScreenCover(isPresented: $model.isGalleryPresented) {
+                if let galleryModel = model.galleryModel {
+                    GalleryView(model: galleryModel) { model.dismissGallery() }
+                }
+            }
             .overlay(alignment: .bottomLeading) { toastOverlay }
             .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
                 Button("好") { model.dismissCorruptionRecoveredAlert() }
@@ -468,13 +473,13 @@ struct CameraScreen: View {
     }
 
     /// Left key while closed: the newest DaysCam photo, or a placeholder
-    /// icon (PRD 0.2 FR-15.2). Tapping it does nothing yet — TASK-29 wires
-    /// up requesting read access and opening the gallery. `isOnPhoto` only
+    /// icon (PRD 0.2 FR-15.2). Tapping it requests read access the first
+    /// time and opens the gallery (FR-15.3). `isOnPhoto` only
     /// ever affects the placeholder icon (issue #121) — an actual thumbnail
     /// image is unaffected either way (assumption 4).
     private func thumbnailButton(isOnPhoto: Bool) -> some View {
         Button {
-            // TASK-29: request read access, then open the gallery.
+            model.openGallery()
         } label: {
             Group {
                 if let image = shownThumbnail {
