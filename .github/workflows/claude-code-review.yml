@@ -23,8 +23,6 @@ jobs:
     #   github.event.pull_request.user.login == 'new-developer' ||
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
-    # Claude-authored PRs are reviewed by Codex instead (see docs/WORKFLOW.md#review).
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'author:claude') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,8 +70,6 @@ jobs:
             2. Use `gh pr view` and `gh pr diff` to read the PR description and changes.
             3. Look for correctness bugs, violations of AGENTS.md hard rules, and missing tests for core logic.
                Only report issues you are confident about.
-               Also check the PR's acceptance table: every A-level acceptance ID of the task must map to a test or concrete evidence;
-               a missing or unsupported item is blocking.
             4. For each issue, post an inline comment with mcp__github_inline_comment__create_inline_comment.
                Mark each one as [必修] (blocking) or [建議] (non-blocking).
                Blocking means: a correctness bug, a AGENTS.md hard-rule violation, or missing tests for core logic.
