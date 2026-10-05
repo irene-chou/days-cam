@@ -4,7 +4,7 @@
 
 ## 分工與交接
 
-原則：一張卡盡量在同一個 session 做完；只有 review 換另一家，因為獨立視角在這一步最有價值。機械式的測試執行交給 CI（`swift.yml`），不另花 agent token。
+原則：一張卡盡量在同一個 session 做完；只有 review 換另一家，因為獨立視角在這一步最有價值。完整測試只在升版 PR 由 CI（`swift.yml`）執行，平常 PR 只跑相關測試 class。
 
 | 工作 | 預設執行者／模型 | 交付 |
 |---|---|---|
@@ -51,7 +51,7 @@
 2. 各自 worktree，分支 `feature/task-XX-<簡述>`；修正／文件用對應前綴。一張卡一個 PR，必要時分 core／UI 半邊。Claude 開的 PR 加 `author:claude` label。高風險 QA 新增驗收測試用 `chore/qa-task-XX`。
 3. 單元測試放 `DaysCamTests/Unit/<來源檔名>Tests.swift`，歸來源檔擁有者。QA 只能寫 `DaysCamTests/Acceptance/` 的版本化程式；測試輸出與專用截圖 worktree 可寫。
 4. 每角色獨立模擬器，先用 `xcrun simctl list devices available` 查找 `iPhone 16 <角色>` 及 UUID，**查無才** `xcrun simctl clone "iPhone 16" "iPhone 16 <角色>"`；clone 不會檢查重名。找不到基底裝置時先查可用 runtime／裝置，不能盲目建多台。
-5. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試以 PR 上的 CI（`swift.yml`）為準，CI 失敗就修到通過，不重複在本機跑全套。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
+5. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`）執行，其他 PR 不跑 CI、也不在本機跑全套（2026-10-05 人類決定，節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
 
 ```sh
 xcodegen generate
@@ -74,7 +74,7 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/comments
 gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 ```
 
-- Developer：在原本的開發 session 處理，不開新 session 重讀。必修逐條處理，同意則修正、等 CI 通過後 push，回覆「已修正：<commit>」；不同意要說明並交 Lead／人類裁決。建議可自行取捨並簡短回覆理由。
+- Developer：在原本的開發 session 處理，不開新 session 重讀。必修逐條處理，同意則修正、相關測試通過後 push，回覆「已修正：<commit>」；不同意要說明並交 Lead／人類裁決。建議可自行取捨並簡短回覆理由。
 - Codex connector：只 review Claude 開的 PR。開 PR 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
 - Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；三輪仍未收斂就停止、加 `needs-human`。截圖待確認、dev 駁回 reviewer 條目也加此 label，人類回覆後記到 PR 並移除。
 - 合併前確認同 SHA 的 `qa=success`、待裁決事項已結案，以及 review gate：Codex PR 的 Claude `APPROVED` review `commit_id` 等於最新 `headRefOid`，且 PR decision 為 `APPROVED`；Claude PR 的 Codex review 針對最新 SHA，且沒有未解 P0／P1，Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
@@ -84,7 +84,7 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 
 驗收層級：A＝QA 可執行（單元／靜態／view model）；B′＝設計對照（SwiftUI Preview）；B＝人類實機。模擬器不能證明實體相機、烘焙目視與權限行為。B 標「待人類驗」後回報，繼續其他可做項目。
 
-**一般風險**：開發者自驗 A 級（測試＋CI），在 PR 列驗收對照表；reviewer 逐條核對對照表，有缺漏即列為必修。UI 卡的 B′ 由開發者（Claude）用 Xcode MCP `RenderPreview` 截圖並與設計稿比較差異。Lead 在 CI 通過、review gate 達成、人工項目確認後，設定 qa status。
+**一般風險**：開發者自驗 A 級（相關測試 class），在 PR 列驗收對照表；reviewer 逐條核對對照表，有缺漏即列為必修。UI 卡的 B′ 由開發者（Claude）用 Xcode MCP `RenderPreview` 截圖並與設計稿比較差異。Lead 在相關測試證據齊全、review gate 達成、人工項目確認後，設定 qa status。
 
 **高風險**：另由沒寫這張卡的那家以 `qa` 角色獨立驗收指定 SHA，在 PR 留逐條通過／失敗（附輸出）／待人類驗，補齊開發單元測試未涵蓋的 Acceptance 測試，並設定 qa status。
 

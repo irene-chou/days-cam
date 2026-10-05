@@ -13,7 +13,7 @@
 
 | 級別 | 含義 | 誰執行 |
 |---|---|---|
-| **A. 可自動跑** | 單元測試、靜態檢查、view model 測試 | 開發者自驗＋CI，reviewer 核對；`risk: high` 卡另由獨立 QA 驗收 |
+| **A. 可自動跑** | 單元測試、靜態檢查、view model 測試 | 開發者在本機跑相關測試 class 自驗（完整測試只在升版 PR 由 CI 執行，見 WORKFLOW 開發第 5 點），reviewer 核對；`risk: high` 卡另由獨立 QA 驗收 |
 | **B′. 設計對照** | 用 Xcode MCP 的 `RenderPreview` 截 SwiftUI `#Preview`，與 `docs/design/` 設計稿並排比對版面、顏色、間距 | 有 Xcode MCP 的 agent 或人類。Xcode MCP 一次只能綁一個 Xcode 視窗，**同時只能一個 agent 用** |
 | **B. 需人類實機** | 相機、閃光燈、實際拍照與烘焙結果目視、相簿權限彈窗 | 人類 |
 
@@ -479,7 +479,7 @@ PRD FR-9，並移除 0.1 的 S-2、S-3、S-4。
 | 26.5 | 新增 | 目前設定檔變成新的那筆；管理面板關閉；疊字面板 `selectedTab == 天數規則` |
 | 26.6 | 刪除目前設定檔 | 切到清單中前一筆（沒有前一筆則下一筆），不崩潰 |
 | 26.7 | `ls DaysCam/Views/ProfileListView.swift DaysCam/Views/ProfileEditView.swift DaysCam/Views/DisplaySettingsSheet.swift` | 三個檔案都不存在 |
-| 26.8 | 完整測試 `xcodebuild ... test` | 全數通過（被刪畫面的 UI 測試一併移除，邏輯測試已移到新卡片） |
+| 26.8 | 本機跑受影響的測試 class（`-only-testing`，列在 PR） | 全數通過；完整測試由升版 PR 的 CI 補跑（被刪畫面的 UI 測試一併移除，邏輯測試已移到新卡片） |
 
 **驗收 — B′. 設計對照**：preview 管理面板，與 D-2 的管理設定檔一致；無疊字預覽、打勾關閉鍵。
 
@@ -624,7 +624,7 @@ PRD FR-15.5～15.10、設計稿 D-5。
 |---|---|---|
 | 30.1 | 全新安裝 `DAYSCAM_FAKE_TODAY=2026-01-10` 啟動 | 直接進相機畫面、疊字 `第 1 天`、淺色主題、3:4、閃光燈關（0.1 G-1） |
 | 30.2 | 放一份 0.1 格式的 `profiles.json`（5 筆、5 種主題、各種單位組合）後啟動 | 5 筆都在，樣式照 PRD §4.3，疊字文字與 0.1 相同 |
-| 30.3 | 完整測試 `xcodebuild ... test` | 全數通過 |
+| 30.3 | 完整測試 `xcodebuild ... test`（本機） | 全數通過。**例外**：TASK-30 是升版前的整合驗收，保留本機全套；升版 PR 的 CI 會再跑一次 |
 | 30.4 | `grep -rn 'kCGImagePropertyExif' DaysCam/` | 無結果 |
 | 30.5 | 只顯示日期，跨日重啟（2026-01-10 → 2026-01-11） | `2026.01.11`，不是 `第 2 天`（0.1 FR-2.17） |
 | 30.5a | `grep -n 'MARKETING_VERSION' project.yml` | 值為 `"0.2.0"`。由 Lead 在 TASK-17～29 全部合併、本卡其餘 A 級通過後修改（版本規則見 `AGENTS.md`） |
