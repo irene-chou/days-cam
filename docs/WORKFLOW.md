@@ -41,7 +41,7 @@
 5. **review 的替代路徑**：
    - Claude 額度用完：Codex PR 的 Action review 會失敗或沒有結果，改用 `@codex review`，並由人類在 PR 留言確認 → 加 `quota-fallback` label。
    - Codex 額度用完：Claude PR 改用 Claude `risk-reviewer` 開全新 session review（不沿用開發 session），結果貼 PR → 加 `quota-fallback` label。
-   - 有 `quota-fallback` 的 PR 合併前，需人類在 PR 確認接受替代 gate，由 Lead 記錄。
+   - 有 `quota-fallback` 的 PR 依 AGENTS 的額度不足例外合併：替代 review 對最新 commit 沒有未解必修，且人類在 PR 確認，由 Lead 記錄；qa gate 照舊。
 6. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
 7. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑，作為之後調整分工比例的依據。
 
@@ -65,7 +65,7 @@ PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體
 
 ## Review
 
-`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，但會略過有 `author:claude` label 的 PR；label 要在開 PR 時就加上（`gh pr create --label author:claude`）。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
+`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，但會略過描述含 Claude Code 署名（`Generated with [Claude Code]`）的 PR。判斷依據是 PR 描述，因為 `gh pr create --label` 是建好 PR 後才加 label，`opened` 事件看不到；Claude 開 PR 時保留署名，另加 `author:claude` label 供看板篩選。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
 
 ```sh
 gh pr view <N> --json headRefOid,reviewDecision
@@ -144,7 +144,7 @@ Markdown 表格內的 shell 指令不可含 `|`；跳脫後 agent 照原文執�
 - [ ] 建立 `author:claude`、`quota-fallback` label；connector 已改為手動觸發，記錄設定人與日期。
 - [ ] 兩個 pilot PR 各記錄：PR URL、review URL、bot 身分／state／commit_id、CI 結果、qa 設定者、修正輪數、兩邊額度前後差。沒量測的欄位寫「未量測」。
 - [ ] 至少一次修正 push 後重審，確認舊 review／qa 不會當成最新結果。
-- [ ] 確認有 `author:claude` 的 PR 不會觸發 Claude Action。
+- [ ] 確認含 Claude Code 署名的 PR 不會觸發 Claude Action。
 - [ ] 跑完約 5 張卡後，依額度紀錄檢討 UI／邏輯的分配比例。
 
 本清單未勾選即表示 pilot 尚未完成。

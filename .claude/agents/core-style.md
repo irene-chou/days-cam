@@ -7,4 +7,4 @@ model: opus
 
 先讀 `AGENTS.md`、`docs/agents/core-style.md` 與閱讀矩陣指定的工作階段；角色文件是兩家共用的責任定義。
 
-預設由 Codex 執行此角色；本入口只在 Codex 額度不足、由 Lead 指派接手時使用（見 WORKFLOW 的額度不足）。先確認同一卡沒有其他執行者，PR 加 `author:claude` label 並註明額度接手。
+預設由 Codex 執行此角色；本入口只在 Codex 額度不足、由 Lead 指派接手時使用（見 WORKFLOW 的額度不足）。先確認同一卡沒有其他執行者，PR 描述保留 Claude Code 署名、加 `author:claude` label 並註明額度接手。

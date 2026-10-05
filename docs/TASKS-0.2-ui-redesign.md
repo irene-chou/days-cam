@@ -13,7 +13,7 @@
 
 | 級別 | 含義 | 誰執行 |
 |---|---|---|
-| **A. QA 可自動跑** | 單元測試、靜態檢查、view model 測試 | QA teammate |
+| **A. 可自動跑** | 單元測試、靜態檢查、view model 測試 | 開發者自驗＋CI，reviewer 核對；`risk: high` 卡另由獨立 QA 驗收 |
 | **B′. 設計對照** | 用 Xcode MCP 的 `RenderPreview` 截 SwiftUI `#Preview`，與 `docs/design/` 設計稿並排比對版面、顏色、間距 | 有 Xcode MCP 的 agent 或人類。Xcode MCP 一次只能綁一個 Xcode 視窗，**同時只能一個 agent 用** |
 | **B. 需人類實機** | 相機、閃光燈、實際拍照與烘焙結果目視、相簿權限彈窗 | 人類 |
 
@@ -34,10 +34,10 @@
 ## 依賴結構與團隊
 
 ```
-第一波（Lead＋core-style、core-device、qa）
+第一波（Lead＋core-style、core-device）
   core-style : TASK-17 ─► TASK-18（core 半邊）─► TASK-27
   core-device: TASK-19（core 半邊）─ TASK-20 ─ TASK-28（core 半邊）→ 做完即退場
-  qa         : 從 TASK-17 送 PR 起逐張驗收
+  qa         : 只驗收 risk: high 的卡（由另一家執行）；一般卡由開發者自驗
 
 第二波（core-device 退場；加入 ui-shell、ui-panel）
   ui-shell   : TASK-18（OverlayTextView）─► TASK-21 ─► TASK-22 ─► TASK-26 ─► TASK-29

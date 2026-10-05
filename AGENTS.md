@@ -26,8 +26,9 @@
 
 ## Review 與 QA gate【硬規則】
 
-- Review 由另一家模型負責：Codex 開的 PR 由 `claude[bot]` Action review（新 push 撤銷舊 approve）；Claude 開的 PR 加 `author:claude` label，Action 略過，改由 Codex connector review。
+- Review 由另一家模型負責：Codex 開的 PR 由 `claude[bot]` Action review（新 push 撤銷舊 approve）；Claude 開的 PR（描述含 Claude Code 署名 `Generated with [Claude Code]`）Action 略過，改由 Codex connector review；另加 `author:claude` label 供看板篩選。
 - 合併須有最新 commit 的 `qa=success`，以及：Codex 開的 PR 需 **Claude bot 對最新 commit 的 approve、PR decision `APPROVED`**；Claude 開的 PR 需 **Codex 對最新 commit 的 review 沒有未解 P0／P1**，由 Lead 在 PR 記錄核對結果。被駁回的 reviewer 條目需 Lead／人類確認。
+- 額度不足例外：PR 有 `quota-fallback` label 時，上述 review 條件改為「替代 review 對最新 commit 沒有未解必修／P0／P1，且人類在 PR 留言確認接受替代 gate」，由 Lead 記錄；`qa=success` 不可省略。
 - `qa=success` 只給 A 級全過且 B 級、B′ 截圖、爭議均已獲必要的人類確認者；有待辦維持 pending，失敗為 failure。新 push 需重新驗證最新 SHA。
 - 必修逐條修正或附理由交 Lead；同 PR 三輪未收斂就停止往返。待人類決定時加 `needs-human`，確認後由 Lead 移除並記錄。
 - review 回覆、status 指令、`qa-screenshots` 孤兒分支及人工確認方式見 [WORKFLOW](docs/WORKFLOW.md#review)；開始 review／QA／合併前必讀對應段落。
