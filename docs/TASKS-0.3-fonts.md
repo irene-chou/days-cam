@@ -105,7 +105,7 @@ PRD-0.3 §4.1、§4.3、§4.4、FR-5.14、FR-10.3′ 的模型與渲染層。
 | 32.6 | 假 availability 回傳 `notDownloaded`／`preparing`／`failed` | 解析出 `PingFangTC-Semibold` |
 | 32.7 | 同一 style 與 availability 下，觀景窗 `renderText` 與烘焙使用的字型 | `fontName` 相同，`fittedFontSize` 相同，且量字寬用的就是解析後的字型（以注入的解析函式或間諜驗證） |
 | 32.7a | availability 回傳 `failed`，但該 PostScript 名稱其實已可用（模擬逾時後比對才完成） | 量測與繪製都用蘋方，兩者一致 |
-| 32.10 | `grep -rn 'func font(for' DaysCam/Services/OverlayMetrics.swift` | 每個結果都帶 `availability` 參數 |
+| 32.10 | `grep -rn 'func font(for' DaysCam/Services/OverlayMetrics.swift` | 每個結果都帶 `availability` 參數。**過渡期例外**：標「TEMP #200」deprecated 的 `font(for:size:)` 允許存在，#200 移除後必須符合 |
 | 32.8 | `pingFang` 解析 | `PingFangTC-Semibold`，不需 availability 也可用 |
 | 32.9 | FontCatalog 開源 3 套的大小、SHA-256、版本、著作權聲明 | 與 `docs/fonts-manifest.md` 一致（測試讀死值比對即可） |
 
