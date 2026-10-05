@@ -29,8 +29,8 @@
 TASK-31 Lead：字型檔下載點、預覽圖、授權文字
 TASK-32 core-style：字型清單、OverlayFontID、舊檔轉換、字型解析
    └─► TASK-33 core-device：FontLibrary（下載、驗證、註冊、比對、刪除）
-          ├─► TASK-34 ui-panel：字型格子、更多字型清單、字型授權頁（依 31、32、33）
-          └─► TASK-35 ui-shell：啟動準備、快門保護、需重新下載提示（依 32、33）
+          ├─► TASK-34 ui-panel：字型格子、更多字型清單、字型授權頁、StyleTabModel 同步（依 31、32、33）
+          │      └─► TASK-35 ui-shell：applyFont、啟動準備、快門保護、需重新下載提示（依 32、33、34）
 TASK-36 qa：0.3 端對端整合驗收 → Lead 升版 0.3.0
 ```
 
@@ -172,7 +172,8 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 **範圍**
 
 - `StyleTabView` 字型格子：只列 `available` 的字型（§4.1 順序）＋「更多字型」格；目前字型不可用時依狀態顯示（FR-10.2′.4）。格子與外框／陰影預覽改用 TASK-32 的解析函式
-- **套用一律呼叫注入的 `applyFont(fontID, profileID)`**（由 TASK-35 的 `CameraScreenModel` 提供），`FontLibraryModel` 不自己寫設定檔，也不持有完成後套用的責任（清單關閉後仍要套用，FR-16.11）
+- **套用一律呼叫注入的 `applyFont(fontID, profileID)`**（由 TASK-35 的 `CameraScreenModel` 提供），`FontLibraryModel` 與 `StyleTabModel.selectFont` 都不自己寫 `fontID`，也不持有完成後套用的責任（清單關閉後仍要套用，FR-16.11）
+- `StyleTabModel` 新增 `applyExternalChanges(_ profile:)`（比照 `RulesTabModel`），讓外部寫入的 `fontID` 同步進樣式分頁的副本；格式、位置分頁不改 style，不需同步
 - `FontLibraryView`／`FontLibraryModel`：全螢幕清單，外觀同管理設定檔；分段、預覽圖、右側狀態、點列的行為、「⋯」刪除選單、提示文字（FR-16.1～16.12）
 - `FontLicenseView`：讀 `Resources/FontLicenses/`（FR-16.13）
 - 狀態與文字邏輯在 view model，用假 `FontAvailabilityProviding`＋假動作測
@@ -187,7 +188,8 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 | 34.3 | 目前字型為行楷，狀態分別為 `notDownloaded`、`failed`、`preparing`、`downloading(0.38)` | 格子含行楷且為選中；副標依序「需重新下載」、「需重新下載」、進度圈無文字、「38%」；前兩者點了開清單並捲到行楷，後兩者點了不動作 |
 | 34.4 | 清單分段 | 9 段，標題與每段字型與 §4.1 一致 |
 | 34.5 | 各狀態的右側文字 | 未下載「43.7 MB」（宋體）、下載中「38%」、失敗「重試」、已下載開源有「⋯」、系統與蘋方無 |
-| 34.6 | 點未下載的列 | 呼叫注入的 `applyFont(fontID, 目前設定檔 ID)` 一次（下載與完成後套用由 TASK-35 處理，見 35.6～35.8） |
+| 34.6 | 點未下載的列、點面板格子的已下載字型 | 兩者都呼叫注入的 `applyFont(fontID, 目前設定檔 ID)` 一次，不直接改 `fontID`（下載與完成後套用由 TASK-35 處理，見 35.6～35.9） |
+| 34.6a | `StyleTabModel.applyExternalChanges` 傳入 `fontID` 改為行楷的設定檔，接著改文字顏色 | 寫出的 style 中 `fontID` 是行楷 |
 | 34.7 | 點下載中 | 呼叫 `cancel`，提示「已取消下載」 |
 | 34.8 | 「⋯」› 刪除，有 2 個設定檔使用 | 選單文字含「2 個設定檔正在使用」；確認後**先**呼叫 `replaceFont` 再呼叫 `delete`（順序以間諜驗證） |
 | 34.9 | 系統字型列 | 沒有「⋯」 |
@@ -203,7 +205,7 @@ PRD-0.3 FR-10.2′、FR-16，設計稿 D-6 方案 C。
 | 34.12 | 實機進更多字型，下載粉圓 | 進度正確，完成後自動套用，觀景窗立即變粉圓 |
 | 34.13 | 用粉圓拍照 | 照片疊字與觀景窗一致 |
 
-**依賴**：TASK-31、32、33（可先以介面開工）
+**依賴**：TASK-31、32、33（可先以介面開工）；`applyFont` 簽名照 TASK-35，先以注入閉包開發
 
 ---
 
@@ -220,8 +222,8 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 - 目前設定檔字型為 `preparing` 時快門停用；完成或 3 秒逾時後恢復
 - 字型不可用時（非 `available`、非 `preparing`），開面板或切到該設定檔時提示一次「「<名稱>」需要重新下載，暫時用蘋方」
 - 觀景窗（`OverlayTextView` → `renderText`）與烘焙（`bake`）都改用 TASK-32 帶 availability 的簽名，傳同一個 `FontLibrary`
-- **套用字型的唯一寫入路徑** `applyFont(_ fontID:, profileID:)`（PRD FR-5.18）：字型 `available` → 立即寫入該設定檔；否則呼叫 `FontLibrary.download`，記下「設定檔 → 字型」的待套用（同一設定檔以最後一次為準），下載完成時寫入**開始下載時的設定檔**（已刪除就略過）並提示「已套用「<名稱>」」（FR-16.6、A-8）。此待套用由 `CameraScreenModel` 持有，清單關閉不影響
-- 任何字型寫入、或 `ProfileStore` 被外部改動（如 `replaceFont`）後，對 `styleTabModel` 與其他持有 style 副本的 model 呼叫 `applyExternalChanges`（比照 #167 對 `rulesTabModel` 的做法）
+- **套用字型的唯一寫入路徑** `applyFont(_ fontID:, profileID:)`（PRD FR-5.18）：字型 `available` → 立即寫入該設定檔；否則呼叫 `FontLibrary.download`，記下「設定檔 → 字型」的待套用（同一設定檔以最後一次為準；**立即寫入已可用字型時也清掉該設定檔的待套用**；該字型下載取消、失敗或因退到背景中斷時清掉對應的待套用），下載完成時寫入**開始下載時的設定檔**（已刪除就略過）並提示「已套用「<名稱>」」（FR-16.6、A-8）。此待套用由 `CameraScreenModel` 持有，清單關閉不影響
+- 任何字型寫入、或 `ProfileStore` 被外部改動（如 `replaceFont`）後，對 `styleTabModel` 呼叫 `applyExternalChanges`（TASK-34 新增；比照 #167 對 `rulesTabModel` 的做法）
 - 觀景窗疊字圖片快取（`OverlayTextView.swift` 的 `OverlayTextRenderCache.Key`）必須包含**解析後的字型 PostScript 名稱**，字型狀態由 `preparing`／`notDownloaded` 變 `available`（或反向）時一定重畫，不得沿用舊的蘋方圖片（FR-5.14）
 - `scenePhase` 變成 `.background` 時呼叫 `FontLibrary.cancelAllDownloads()`（FR-16.11）
 
@@ -235,6 +237,8 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 | 35.4 | 烘焙路徑 | 拿到的 availability 與觀景窗是同一個實例 |
 | 35.6 | `applyFont(.xingkai, A)`，假下載中關閉清單，之後下載完成 | 設定檔 A 的 `fontID` 變成行楷並寫檔；提示「已套用「行楷」」 |
 | 35.7 | `applyFont(.xingkai, A)` 下載中切到設定檔 B，之後完成 | A 變行楷，B 不變 |
+| 35.9 | `applyFont(.xingkai, A)` 下載中，再 `applyFont(.huninn, A)`（粉圓已可用），之後行楷下載完成 | A 維持粉圓 |
+| 35.9a | `applyFont(.xingkai, A)` 後取消（或失敗、退到背景），之後重新下載行楷但沒有再對 A 套用 | A 不變 |
 | 35.8 | 套用行楷（或 `replaceFont(.huninn, with: .pingFang)`）後，在樣式分頁改文字顏色 | store 裡 `fontID` 仍是新值，顏色也改到 |
 | 35.4b | 假 FontLibrary 先 `preparing` 再變 `available`，期間取觀景窗疊字圖片兩次 | 第二次圖片的字型為該字型（快取未命中舊的蘋方圖片）；反向（`available` → `notDownloaded`）同理變回蘋方 |
 | 35.4a | 模擬 `scenePhase` 變 `.background` | 假 FontLibrary 的 `cancelAllDownloads` 被呼叫一次 |
@@ -246,7 +250,7 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 | 35.5 | 實機用行楷，殺 App 重開，快門仍停用（`preparing`）時按快門 | 沒有拍照 |
 | 35.5a | 接 35.5，快門恢復後按快門 | 照片是行楷，不是蘋方 |
 
-**依賴**：TASK-32、33；TASK-34 的 `FontLibraryModel` 需要本卡的 `applyFont`，兩卡先對齊介面再各自開發
+**依賴**：TASK-32、33；需要 TASK-34 的 `StyleTabModel.applyExternalChanges`。`applyFont` 的介面由本卡先定（簽名 `applyFont(_ fontID: OverlayFontID, profileID: UUID)`），TASK-34 以注入的閉包使用；合併順序 34 → 35
 
 ---
 
