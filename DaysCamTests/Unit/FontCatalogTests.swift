@@ -66,7 +66,7 @@ final class FontCatalogTests: XCTestCase {
     }
 
     /// 32.9: open-source sizes, SHA-256, versions and copyright notices as in
-    /// `docs/fonts-manifest.md` (TASK-31, #196 at 33f5809).
+    /// `docs/fonts-manifest.md` (TASK-31, merged in #196).
     func testOpenSourceAssetsMatchTheManifest() throws {
         let huninn = try XCTUnwrap(FontCatalog.entry(for: .huninn).openSource)
         XCTAssertEqual(huninn.fileName, "jf-openhuninn-2.1.ttf")
@@ -109,6 +109,17 @@ final class FontCatalogTests: XCTestCase {
         XCTAssertEqual(iansui.copyright, "Copyright 2025 The Iansui Project Authors (https://github.com/ButTaiwan/iansui)",
                        "32.9")
         XCTAssertEqual(iansui.licenseFileNames, ["iansui-OFL.txt"])
+    }
+
+    /// Every license file the catalog names ships in the App bundle (TASK-31).
+    func testLicenseFilesShipInTheApp() {
+        for entry in FontCatalog.entries {
+            for name in entry.openSource?.licenseFileNames ?? [] {
+                let base = (name as NSString).deletingPathExtension
+                let ext = (name as NSString).pathExtension
+                XCTAssertNotNil(Bundle.main.url(forResource: base, withExtension: ext), "\(entry.fontID): \(name)")
+            }
+        }
     }
 
     /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag.
