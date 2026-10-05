@@ -99,9 +99,9 @@
 | `fontID` | 顯示名稱 | 分段 | 來源 | 取得方式（PostScript 名稱） | 下載大小 |
 |---|---|---|---|---|---|
 | `pingFang` | 蘋方 | 內建 | 內建 | `PingFangTC-Semibold` | — |
-| `huninn` | 粉圓 | 開源 | 開源 | 檔案內名稱，見 TASK 卡 | 約 4.9 MB |
-| `notoSerifTC` | 思源宋體 | 開源 | 開源 | `NotoSerifTC-Bold` | 約 8.3 MB |
-| `iansui` | 芫荽 | 開源 | 開源 | `Iansui-Regular` | 約 9.4 MB |
+| `huninn` | 粉圓 | 開源 | 開源 | `jf-openhuninn-2.1` | 4.9 MB |
+| `notoSerifTC` | 思源宋體 | 開源 | 開源 | `NotoSerifTC-Bold` | 8.3 MB |
+| `iansui` | 芫荽 | 開源 | 開源 | `Iansui-Regular` | 9.4 MB |
 | `lantinghei` | 蘭亭黑 | 黑 | 系統 | `FZLTZHB--B51-0` | 25.2 MB |
 | `liHei` | 儷黑 | 黑 | 系統 | `LiHeiPro` | 4.2 MB |
 | `hiraginoSans` | 冬青黑體 | 黑 | 系統 | `HiraginoSansTC-W6` | 14.1 MB |
@@ -121,7 +121,7 @@
 | `yuppy` | 雅痞 | 可愛 | 系統 | `YuppyTC-Regular` | 12.9 MB |
 
 - 表格順序就是清單與格子的順序，不因下載狀態改變。
-- 系統字型大小取自調查報告的實測下載量（iOS 18.3 模擬器）；開源字型取原檔大小，實際值以 TASK 卡填入的檔案為準。
+- 系統字型大小取自調查報告的實測下載量（iOS 18.3 模擬器）；開源字型為 `irene-chou/dayscam-fonts@v1` 原檔大小（位元組數與 SHA-256 見 TASK-31 的 manifest）。
 - 讀檔遇到未知 `fontID`（包含 0.2 的 10 種）一律轉成 `pingFang`，採用該筆、不丟棄（沿用 0.2 §4.1 的原則，fallback 由 `sfRounded` 改為 `pingFang`）。
 - `OverlayStyle.fontID` 預設值改為 `pingFang`。
 
