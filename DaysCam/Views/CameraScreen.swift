@@ -46,6 +46,8 @@ struct CameraScreen: View {
             // has no haptics, so this call site is the thing to check.
             .sensoryFeedback(.impact(weight: .light), trigger: model.captureTriggerCount)
             .onAppear { model.onAppear() }
+            // FR-15.2 second branch: only reads when access is already granted.
+            .task { await model.loadLaunchThumbnail() }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileManagerPresented) {
                 ProfileManagerView(model: model.profileManagerModel) {

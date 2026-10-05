@@ -210,6 +210,7 @@ private struct GalleryImage: View {
 private struct PreviewLibrary: GalleryLibrary {
     var status: PHAuthorizationStatus = .authorized
     var count = 6
+    func readStatus() -> PHAuthorizationStatus { status }
     func requestReadAccess() async -> PHAuthorizationStatus { status }
     func photos() -> [GalleryPhoto] {
         (0..<count).map { GalleryPhoto(id: "p\($0)", creationDate: Date(timeIntervalSince1970: 1_768_000_000 - Double($0) * 86_400)) }

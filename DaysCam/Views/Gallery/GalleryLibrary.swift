@@ -16,6 +16,10 @@ struct GalleryPhoto: Equatable, Identifiable {
 /// permission prompt nor a `PHAsset` can be built in a unit test.
 @MainActor
 protocol GalleryLibrary {
+    /// The current `.readWrite` status, read without ever prompting. The
+    /// camera screen uses it to decide whether the launch thumbnail may be
+    /// read at all (FR-15.2, FR-15.3).
+    func readStatus() -> PHAuthorizationStatus
     /// Requests `.readWrite` access if it has not been decided yet and
     /// returns the resulting status (FR-15.3). Never prompts again once
     /// decided.
@@ -34,6 +38,10 @@ protocol GalleryLibrary {
 @MainActor
 struct SystemGalleryLibrary: GalleryLibrary {
     let store: CapturedPhotoStore
+
+    func readStatus() -> PHAuthorizationStatus {
+        SystemPhotoLibraryReadAccess().readAuthorizationStatus()
+    }
 
     func requestReadAccess() async -> PHAuthorizationStatus {
         await withCheckedContinuation { continuation in

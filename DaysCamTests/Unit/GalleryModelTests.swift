@@ -22,6 +22,7 @@ final class GalleryModelTests: XCTestCase {
             }
         }
 
+        func readStatus() -> PHAuthorizationStatus { status }
         func requestReadAccess() async -> PHAuthorizationStatus {
             requestCount += 1
             return status

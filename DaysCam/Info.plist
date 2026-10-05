@@ -22,6 +22,8 @@
 	<string>DaysCam 需要使用相機來拍照，並把天數印在照片上。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>DaysCam 需要權限才能把拍好的照片存進你的相簿。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DaysCam 需要讀取權限，才能在 App 裡瀏覽你用 DaysCam 拍的照片。</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>
