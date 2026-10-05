@@ -90,7 +90,7 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         model.toggleCameraTools()
         model.presentProfileManagement()
         XCTAssertFalse(model.isCameraToolsExpanded)
-        XCTAssertTrue(model.isProfileListPresented)
+        XCTAssertTrue(model.isProfileManagerPresented)
 
         model.toggleCameraTools()
         if let id = model.selectedProfileID {

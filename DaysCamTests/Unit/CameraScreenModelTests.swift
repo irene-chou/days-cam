@@ -19,7 +19,7 @@ import XCTest
 ///
 /// The profile side uses a real `ProfileStore` backed by a temporary
 /// directory and an isolated `UserDefaults` suite, same as
-/// `ProfileListModelProfileStoreAdapterTests`.
+/// `ProfileManagerModelTests`.
 @MainActor
 final class CameraScreenModelTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
@@ -459,7 +459,7 @@ final class CameraScreenModelTests: XCTestCase {
         store.select(id: defaultProfile.id)
         // The mirroring sink is dispatched via `.receive(on: .main)`, so it
         // needs a main-queue pump before it is observable, same as
-        // `ProfileListModelProfileStoreAdapterTests`.
+        // `ProfileManagerModelTests`.
         waitUntil { model.selectedProfileID == defaultProfile.id }
         XCTAssertEqual(model.overlayPlacement, .anchor(.bottomTrailing))
         XCTAssertEqual(model.overlayStyle, OverlayStyle())
@@ -477,64 +477,6 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertEqual(model.profiles.map(\.name), ["預設", "小寶"])
         XCTAssertEqual(model.selectedProfileID, store.selectedProfileID)
-    }
-
-    // MARK: - Display settings sheet (TASK-11)
-
-    func testPresentDisplaySettingsBuildsAModelForTheSelectedProfile() throws {
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertFalse(model.isDisplaySettingsPresented)
-
-        model.presentDisplaySettings()
-
-        XCTAssertTrue(model.isDisplaySettingsPresented)
-        XCTAssertEqual(model.displaySettingsModel?.profile.id, model.selectedProfileID)
-    }
-
-    func testDismissDisplaySettingsClearsTheModel() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now)
-        model.presentDisplaySettings()
-        XCTAssertTrue(model.isDisplaySettingsPresented)
-
-        model.dismissDisplaySettings()
-
-        XCTAssertFalse(model.isDisplaySettingsPresented)
-        XCTAssertNil(model.displaySettingsModel)
-    }
-
-    func testDisplaySettingsChangesWriteThroughToTheProfileStore() throws {
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        model.presentDisplaySettings()
-        let sheetModel = try XCTUnwrap(model.displaySettingsModel)
-
-        sheetModel.setShowName(true)
-
-        XCTAssertTrue(store.profiles.first?.showName ?? false)
-        // `model.profiles` mirrors the store via a `.receive(on: .main)` sink,
-        // so it needs a pump before the viewfinder's own overlay reflects the
-        // change — same as the other mirroring tests above.
-        waitUntil { model.selectedProfile?.showName == true }
-        XCTAssertTrue(model.overlayText.hasPrefix("預設"))
-    }
-
-    func testPresentDisplaySettingsIsANoOpWithoutASelectedProfile() throws {
-        // Defensive backstop: `selectedProfile` should never actually be nil
-        // once the app has launched (FR-1.8 guarantees a non-empty list), but
-        // the guard exists so this can never force-unwrap.
-        let now = try fixedNow()
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
-        // Deliberately never call `store.load()`, so `profiles` stays empty
-        // and `selectedProfileID` stays nil.
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        model.presentDisplaySettings()
-
-        XCTAssertFalse(model.isDisplaySettingsPresented)
     }
 
     // MARK: - Profile switcher (TASK-13)
@@ -566,28 +508,49 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.overlayText, "第 1 天")
     }
 
-    func testPresentProfileManagementShowsTheList() throws {
+    func testPresentProfileManagementShowsThePanel() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now)
-        XCTAssertFalse(model.isProfileListPresented)
+        XCTAssertFalse(model.isProfileManagerPresented)
 
         model.presentProfileManagement()
+        XCTAssertTrue(model.isProfileManagerPresented)
 
-        XCTAssertTrue(model.isProfileListPresented)
+        model.dismissProfileManagement()
+        XCTAssertFalse(model.isProfileManagerPresented)
     }
 
-    func testProfileListModelSharesTheSameStoreAsTheScreen() throws {
-        // The management list and the switcher must never fall out of sync —
+    func testProfileManagerModelSharesTheSameStoreAsTheScreen() throws {
+        // The management panel and the switcher must never fall out of sync —
         // both are views onto the same `ProfileStore`.
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.profileListModel.profiles.map(\.id), store.profiles.map(\.id))
+        XCTAssertEqual(model.profileManagerModel.profiles.map(\.id), store.profiles.map(\.id))
 
         try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        waitUntil { model.profileListModel.profiles.count == 2 }
-        XCTAssertEqual(model.profiles.count, 2)
+        XCTAssertEqual(model.profileManagerModel.profiles.count, 2)
+        waitUntil { model.profiles.count == 2 }
+    }
+
+    func testAddingFromTheManagerClosesItAndOpensTheRulesTab() throws {
+        // 26.5: new profile selected, management panel closed, overlay panel
+        // on 天數規則 (and still open).
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        model.openOverlayPanel()
+        model.panelModel.selectedTab = .style
+        model.presentProfileManagement()
+
+        model.profileManagerModel.addProfile()
+
+        XCTAssertEqual(store.profiles.count, 2)
+        XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
+        XCTAssertFalse(model.isProfileManagerPresented)
+        XCTAssertEqual(model.panelModel.selectedTab, .rules)
+        XCTAssertTrue(model.panelModel.isOpen)
     }
 
     // MARK: - Shutter capture context (TASK-10 acceptance 10.3, 10.4)

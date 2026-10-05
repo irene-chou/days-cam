@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Lives in `Views/` rather than alongside `ProfileStoreError` in
 /// `Services/ProfileStore.swift` (core-dev's file) because these are display
-/// strings, not persistence-layer concerns — the same split `ProfileEditView`
+/// strings, not persistence-layer concerns — the same split the old profile editor
 /// already used for `CameraProfileValidationError` before this file existed.
 extension ProfileStoreError {
     var displayMessage: String {
