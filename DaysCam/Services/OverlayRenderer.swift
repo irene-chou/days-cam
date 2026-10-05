@@ -65,16 +65,11 @@ struct OverlayRenderer {
         }
     }
 
-    /// `bake(image:text:style:placement:font:)` with `style.fontID` resolved
-    /// against `availability` first.
-    ///
-    /// The default `availability` is TEMP(TASK-32 → TASK-35): it keeps the
-    /// 0.2 call site compiling and draws every font but PingFang in PingFang.
-    /// Resolve on the main actor and pass `font:` instead when baking off it.
-    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement,
-              availability: any FontAvailabilityProviding = PingFangOnlyFontAvailability()) -> UIImage? {
-        bake(image: image, text: text, style: style, placement: placement,
-             font: OverlayMetrics.resolvedFont(for: style.fontID, availability: availability))
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call site
+    /// compiles. Always draws in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement) -> UIImage? {
+        bake(image: image, text: text, style: style, placement: placement, font: .pingFang)
     }
 
     /// Draws only the overlay text — with its outline or box and its shadow —
@@ -124,14 +119,11 @@ struct OverlayRenderer {
         return RenderedOverlayText(image: image, textInsets: insets, blockSize: block.size)
     }
 
-    /// `renderText(_:style:fontSize:displayScale:font:)` with `style.fontID`
-    /// resolved against `availability` first.
-    ///
-    /// The default `availability` is TEMP(TASK-32 → TASK-34/35), as for `bake`.
-    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat,
-                    availability: any FontAvailabilityProviding = PingFangOnlyFontAvailability()) -> RenderedOverlayText? {
-        renderText(text, style: style, fontSize: fontSize, displayScale: displayScale,
-                   font: OverlayMetrics.resolvedFont(for: style.fontID, availability: availability))
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
+    /// compile. Always draws in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat) -> RenderedOverlayText? {
+        renderText(text, style: style, fontSize: fontSize, displayScale: displayScale, font: .pingFang)
     }
 
     /// The font size overlay text is drawn at in a frame of `frameSize`: the
@@ -156,22 +148,19 @@ struct OverlayRenderer {
                                              availableWidth: availableWidth)
     }
 
-    /// `fittedFontSize(for:style:frameSize:font:)` with `style.fontID`
-    /// resolved against `availability` first.
-    ///
-    /// The default `availability` is TEMP(TASK-32 → TASK-34/35), as for `bake`.
-    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize,
-                               availability: any FontAvailabilityProviding = PingFangOnlyFontAvailability()) -> CGFloat {
-        fittedFontSize(for: text, style: style, frameSize: frameSize,
-                       font: OverlayMetrics.resolvedFont(for: style.fontID, availability: availability))
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
+    /// compile. Always measures in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize) -> CGFloat {
+        fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang)
     }
 
-    /// TEMP(TASK-18): adapter until TASK-21/24 replaces this view layer.
-    ///
-    /// The 0.1 signature `CameraScreenModel` still calls; draws exactly what
-    /// the new signature draws for the theme's style at that anchor.
+    /// TEMP(TASK-18): 0.1-shaped adapter the renderer tests still call;
+    /// draws exactly what `bake(image:text:style:placement:font:)` draws for
+    /// the theme's style at that anchor, in PingFang (every 0.1 theme
+    /// migrates to PingFang, PRD 0.3 §4.3).
     func bake(image: UIImage, text: String, theme: OverlayTheme, position: OverlayPosition) -> UIImage? {
-        bake(image: image, text: text, style: theme.style, placement: .anchor(position))
+        bake(image: image, text: text, style: theme.style, placement: .anchor(position), font: .pingFang)
     }
 }
 

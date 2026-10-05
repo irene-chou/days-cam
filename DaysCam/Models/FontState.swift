@@ -32,30 +32,16 @@ enum FontState: Equatable, Hashable, Sendable {
 
 /// Read-only answer to "can this font be drawn right now" (PRD 0.3 §4.4).
 ///
-/// Implemented by TASK-33's `FontLibrary`; read by the rendering layer and by
-/// the UI (TASK-34, TASK-35). The renderer asks once per draw and turns the
-/// answer into a `ResolvedOverlayFont`, so it never holds on to a provider.
+/// Implemented by TASK-33's `FontLibrary`; read by
+/// `OverlayMetrics.resolvedFont(for:availability:)` and by the UI (TASK-34,
+/// TASK-35).
 ///
-/// Not actor-isolated on purpose: the baking path runs off the main thread.
-/// Resolve on the thread that owns the provider (the main actor, for the
-/// camera screen) and hand the resolved font to the background work.
+/// Main actor only. The rendering layer never sees a provider: the caller
+/// resolves once on the main actor and passes the `Sendable`
+/// `ResolvedOverlayFont` on, including to the background baking work.
+@MainActor
 protocol FontAvailabilityProviding {
     /// The current state of `fontID`. `pingFang` is always `.available`;
-    /// the renderer does not even ask for it.
+    /// resolution does not even ask for it.
     func state(for fontID: OverlayFontID) -> FontState
-}
-
-/// TEMP(TASK-32 → TASK-34/35): the availability every rendering call falls
-/// back to until its caller passes the real `FontLibrary`.
-///
-/// Only PingFang is available, so every other font resolves to PingFang —
-/// exactly what a 0.3 install shows before any font has been downloaded.
-struct PingFangOnlyFontAvailability: FontAvailabilityProviding {
-    /// Creates the provider.
-    init() {}
-
-    /// `.available` for `pingFang`, `.notDownloaded` for everything else.
-    func state(for fontID: OverlayFontID) -> FontState {
-        fontID == .pingFang ? .available : .notDownloaded
-    }
 }

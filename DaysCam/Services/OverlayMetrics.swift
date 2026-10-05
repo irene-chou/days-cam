@@ -144,18 +144,14 @@ enum OverlayMetrics {
         }
     }
 
-    /// TEMP(TASK-32 → TASK-35): `theme`-based form kept for callers outside
-    /// core-style. Resolves `theme.fontID` against `availability` and
-    /// measures with the result; prefer the `font:` form.
+    /// TEMP #200: the 0.2 `theme`-based form, kept only so the remaining
+    /// callers outside core-style compile. Always measures in PingFang.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
     static func fittedFontSize(for text: String,
                                theme: OverlayTheme,
                                baseFontSize: CGFloat,
-                               availableWidth: CGFloat,
-                               availability: any FontAvailabilityProviding = PingFangOnlyFontAvailability()) -> CGFloat {
-        fittedFontSize(for: text,
-                       font: resolvedFont(for: theme.fontID, availability: availability),
-                       baseFontSize: baseFontSize,
-                       availableWidth: availableWidth)
+                               availableWidth: CGFloat) -> CGFloat {
+        fittedFontSize(for: text, font: .pingFang, baseFontSize: baseFontSize, availableWidth: availableWidth)
     }
 
     /// Width `text` occupies when drawn in `font` at `fontSize`.
@@ -173,6 +169,10 @@ enum OverlayMetrics {
     /// PingFang otherwise (FR-16.14). PingFang never asks `availability`.
     /// No fallback list is given for missing glyphs: the system fills them in
     /// on its own (FR-10.3′).
+    ///
+    /// Main actor only: resolve once there, then hand the `Sendable` result
+    /// to the viewfinder and to the background baking work.
+    @MainActor
     static func resolvedFont(for fontID: OverlayFontID,
                              availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
         guard fontID != .pingFang else { return .pingFang }
@@ -196,15 +196,19 @@ enum OverlayMetrics {
     }
 
     /// `fontID` at `size` and its fixed weight, resolved against
-    /// `availability` (PRD 0.3 §4.1, FR-5.14).
-    ///
-    /// The default `availability` is TEMP(TASK-32 → TASK-34/35): it keeps the
-    /// 0.2 call sites compiling and resolves every font but PingFang to
-    /// PingFang until they pass the real `FontLibrary`.
-    // One line on purpose: 32.10 greps for `func font(for` and expects
-    // `availability` on the same line.
-    static func font(for fontID: OverlayFontID, size: CGFloat, availability: any FontAvailabilityProviding = PingFangOnlyFontAvailability()) -> UIFont {
+    /// `availability` (PRD 0.3 §4.1, FR-5.14). For UI that draws a font by
+    /// itself, such as the style grid; overlay text goes through
+    /// `resolvedFont(for:availability:)` and the renderer's `font:` forms.
+    @MainActor
+    static func font(for fontID: OverlayFontID, size: CGFloat, availability: any FontAvailabilityProviding) -> UIFont {
         resolvedFont(for: fontID, availability: availability).font(ofSize: size)
+    }
+
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
+    /// compile. Always PingFang, whatever `fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 availability: 版本")
+    static func font(for fontID: OverlayFontID, size: CGFloat) -> UIFont {
+        ResolvedOverlayFont.pingFang.font(ofSize: size)
     }
 }
 

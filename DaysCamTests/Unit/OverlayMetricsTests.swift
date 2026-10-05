@@ -138,9 +138,10 @@ final class OverlayMetricsTests: XCTestCase {
         XCTAssertEqual(fitted, 3024 * 0.055 * 0.7 * 0.6, accuracy: 0.01, "18.6: overlong text sits on the floor")
     }
 
+    @MainActor
     func testEveryFontIDResolvesAtTheRequestedSize() {
         for fontID in OverlayFontID.allCases {
-            let font = OverlayMetrics.font(for: fontID, size: 40, availability: PingFangOnlyFontAvailability())
+            let font = OverlayMetrics.font(for: fontID, size: 40, availability: FontAvailabilitySpy())
             XCTAssertEqual(font.pointSize, 40, accuracy: 0.0001, "\(fontID)")
         }
     }
@@ -197,6 +198,7 @@ final class OverlayMetricsTests: XCTestCase {
 // MARK: - Font resolution (TASK-32 32.5 ... 32.8, PRD 0.3 FR-5.14)
 
 /// Availability that answers from a table and records every question.
+@MainActor
 final class FontAvailabilitySpy: FontAvailabilityProviding {
     var states: [OverlayFontID: FontState]
     private(set) var asked: [OverlayFontID] = []
@@ -219,6 +221,7 @@ final class FontAvailabilitySpy: FontAvailabilityProviding {
 /// `resolvedFont(state:postScriptName:)` — the rule
 /// `resolvedFont(for:availability:)` applies after looking the name up in
 /// `FontCatalog`.
+@MainActor
 final class OverlayFontResolutionTests: XCTestCase {
     /// A face that ships with iOS, standing in for a downloaded font.
     private let standIn = "Georgia-Bold"
@@ -297,15 +300,5 @@ final class OverlayFontResolutionTests: XCTestCase {
     /// PingFang, never some other face.
     func testAvailableButUnloadableResolvesToPingFang() {
         XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: "NoSuchFont-Bold"), .pingFang)
-    }
-
-    /// Leaving availability out (the TEMP default) means "only PingFang":
-    /// the 0.3 state before any download, so 0.2 call sites do not regress.
-    func testDefaultAvailabilityIsPingFangOnly() {
-        for fontID in OverlayFontID.allCases {
-            XCTAssertEqual(OverlayMetrics.font(for: fontID, size: 20).fontName, "PingFangTC-Semibold", "\(fontID)")
-        }
-        let pingFangOnly = PingFangOnlyFontAvailability()
-        XCTAssertEqual(OverlayFontID.allCases.filter { pingFangOnly.state(for: $0) == .available }, [.pingFang])
     }
 }
