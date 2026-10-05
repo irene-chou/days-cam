@@ -36,6 +36,18 @@ final class GalleryModelTests: XCTestCase {
             return true
         }
         func image(id: String, targetSize: CGSize) async -> UIImage? { nil }
+        private var changeContinuation: AsyncStream<Void>.Continuation?
+        private(set) var isObserving = false
+        func changes() -> AsyncStream<Void> {
+            AsyncStream { continuation in
+                changeContinuation = continuation
+                isObserving = true
+                continuation.onTermination = { [weak self] _ in
+                    Task { @MainActor in self?.isObserving = false }
+                }
+            }
+        }
+        func notifyChange() { changeContinuation?.yield() }
     }
 
     private func makeModel(_ library: FakeLibrary) -> GalleryModel {
@@ -149,5 +161,86 @@ final class GalleryModelTests: XCTestCase {
         XCTAssertEqual(model.titleText, "照片")
         await model.requestAccessAndLoad()
         XCTAssertEqual(model.titleText, "照片")
+    }
+
+    // MARK: - Live refresh (#192)
+
+    private func settle() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testLiveChangeAddingPhotoUpdatesListKeepsCurrent() async {
+        let library = FakeLibrary(count: 3)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        model.selectedIndex = 1 // p2
+        let observer = Task { await model.observeLibraryChanges() }
+        await settle()
+        library.items.insert(GalleryPhoto(id: "new", creationDate: nil), at: 0)
+        library.notifyChange()
+        await settle()
+        XCTAssertEqual(model.photos.count, 4)
+        XCTAssertEqual(model.currentPhoto?.id, "p2")
+        XCTAssertEqual(model.subtitleText, "3 / 4")
+        observer.cancel()
+    }
+
+    func testLiveChangeRemovingCurrentPicksSameIndexThenPrevious() async {
+        let library = FakeLibrary(count: 5)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        model.selectedIndex = 2
+        let observer = Task { await model.observeLibraryChanges() }
+        await settle()
+        library.items.removeAll { $0.id == "p3" }
+        library.notifyChange()
+        await settle()
+        XCTAssertEqual(model.currentPhoto?.id, "p4")
+        XCTAssertEqual(model.subtitleText, "3 / 4")
+        model.selectedIndex = 3
+        library.items.removeAll { $0.id == "p5" }
+        library.notifyChange()
+        await settle()
+        XCTAssertEqual(model.currentPhoto?.id, "p4")
+        XCTAssertEqual(model.subtitleText, "3 / 3")
+        observer.cancel()
+    }
+
+    func testLiveChangeRemovingAllShowsEmptyAndAddingRestores() async {
+        let library = FakeLibrary(count: 2)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        let observer = Task { await model.observeLibraryChanges() }
+        await settle()
+        library.items = []
+        library.notifyChange()
+        await settle()
+        XCTAssertEqual(model.phase, .empty)
+        library.items = [GalleryPhoto(id: "x", creationDate: nil)]
+        library.notifyChange()
+        await settle()
+        XCTAssertEqual(model.phase, .photos)
+        XCTAssertEqual(model.subtitleText, "1 / 1")
+        observer.cancel()
+    }
+
+    func testCancellingObserverStopsListening() async {
+        let library = FakeLibrary(count: 3)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        let observer = Task { await model.observeLibraryChanges() }
+        await settle()
+        XCTAssertTrue(library.isObserving)
+        observer.cancel()
+        await settle()
+        XCTAssertFalse(library.isObserving)
+    }
+
+    func testObserverDoesNotStartWhenDenied() async {
+        let library = FakeLibrary(status: .denied)
+        let model = makeModel(library)
+        await model.requestAccessAndLoad()
+        await model.observeLibraryChanges() // returns immediately
+        XCTAssertFalse(library.isObserving)
     }
 }

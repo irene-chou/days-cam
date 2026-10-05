@@ -75,6 +75,17 @@ final class GalleryModel: ObservableObject {
         setPhotos(library.photos(), preferring: keptID)
     }
 
+    /// Re-reads the list whenever the library changes (issue #192: limited
+    /// selection edited in Settings, photo deleted elsewhere). Runs until the
+    /// calling task is cancelled; does nothing unless read access is granted.
+    func observeLibraryChanges() async {
+        guard phase == .photos || phase == .empty else { return }
+        for await _ in library.changes() {
+            if Task.isCancelled { break }
+            reload()
+        }
+    }
+
     private func apply(status: PHAuthorizationStatus) {
         switch status {
         case .authorized, .limited:

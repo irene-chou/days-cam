@@ -19,7 +19,11 @@ struct GalleryView: View {
         }
         .background(CameraTheme.background.ignoresSafeArea())
         .preferredColorScheme(.light)
-        .task { await model.requestAccessAndLoad() }
+        .task {
+            await model.requestAccessAndLoad()
+            // Live updates while open; cancelled (and unregistered) on close.
+            await model.observeLibraryChanges()
+        }
         // Back from the Photos app (or Settings): re-read the list so a
         // photo deleted there disappears (FR-15.4).
         .onChange(of: scenePhase) { _, phase in
