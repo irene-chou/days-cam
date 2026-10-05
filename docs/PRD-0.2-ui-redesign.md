@@ -383,7 +383,7 @@
 | FR-15.1 | 每次存檔成功，把 `PHPhotoLibrary` 回傳的新照片 `localIdentifier` 加到 `capturedAssetIDs` 最前面 |
 | FR-15.2 | 相機畫面左下縮圖：本次開 App 拍過照 → 用記憶體中最新一張烘焙結果（不需讀取權限）；否則有讀取權限 → `capturedAssetIDs` 中第一張仍存在的照片；否則 → 相片圖示（`photo.on.rectangle`）。按快門存檔後縮圖立即更新 |
 | FR-15.3 | 相簿權限改為 `.readWrite`。**第一次點縮圖時**才請求（存檔仍只需要加入權限，不因此提早詢問）。`.limited` 也可使用（A-7） |
-| FR-15.4 | 瀏覽頁只列出 `capturedAssetIDs` 中仍存在於相簿的照片，最新的在前；在「照片」App 刪掉的照片自動消失，並從 `capturedAssetIDs` 移除 |
+| FR-15.4 | 瀏覽頁只列出 `capturedAssetIDs` 中仍存在於相簿的照片，最新的在前；在「照片」App 刪掉的照片自動消失。**只有完整權限（`.authorized`）時**才把查不到的 ID 從 `capturedAssetIDs` 移除；`.limited` 時查不到可能只是未被選取，只從畫面過濾、不改檔（#186） |
 | FR-15.5 | 版面：左上打勾鍵回相機；標題為拍攝日期時間（`yyyy/MM/dd HH:mm`）與「第幾張 / 共幾張」；中間大圖依原比例置中、左右滑動換張；下方縮圖列可橫向捲動，目前這張放大；右下垃圾桶 |
 | FR-15.6 | 刪除用 `PHAssetChangeRequest.deleteAssets`，確認框由 iOS 系統顯示；刪除後顯示下一張（沒有則上一張），全部刪完顯示空狀態 |
 | FR-15.7 | 空狀態：相片圖示＋「還沒有照片」＋「用 DaysCam 拍的照片會出現在這裡。」＋「去拍照」按鈕（回相機） |
