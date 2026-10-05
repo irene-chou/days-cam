@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import Photos
 import UIKit
 import XCTest
 @testable import DaysCam
@@ -117,7 +118,8 @@ final class CameraScreenModelTests: XCTestCase {
                            bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
-                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
+                           thumbnailLibrary: GalleryLibrary? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
@@ -129,7 +131,8 @@ final class CameraScreenModelTests: XCTestCase {
                  bake: bake,
                  save: save,
                  captureImage: captureImage,
-                 scheduleToastDismiss: scheduleToastDismiss)
+                 scheduleToastDismiss: scheduleToastDismiss,
+                 thumbnailLibrary: thumbnailLibrary)
     }
 
     /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
@@ -159,7 +162,8 @@ final class CameraScreenModelTests: XCTestCase {
                            bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
-                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in }) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
+                           thumbnailLibrary: GalleryLibrary? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer,
@@ -180,7 +184,8 @@ final class CameraScreenModelTests: XCTestCase {
                                       bake: bake,
                                       save: save,
                                       captureImage: captureImage,
-                                      scheduleToastDismiss: scheduleToastDismiss)
+                                      scheduleToastDismiss: scheduleToastDismiss,
+                                      makeThumbnailLibrary: { _ in thumbnailLibrary ?? FakeThumbnailLibrary(status: .denied) })
         return (model, service, provider, store)
     }
 
@@ -1725,5 +1730,221 @@ final class CameraScreenModelTests: XCTestCase {
 
         waitUntil { receivedText != nil }
         XCTAssertEqual(receivedText, "第 11 天")
+    }
+
+    // MARK: - Launch thumbnail from the library (FR-15.2 second branch, issue #182)
+
+    @MainActor
+    private final class FakeThumbnailLibrary: GalleryLibrary {
+        var status: PHAuthorizationStatus
+        /// Newest first; an id missing from `images` has no loadable image.
+        var items: [String]
+        var images: [String: UIImage]
+        private(set) var requestCount = 0
+
+        init(status: PHAuthorizationStatus, items: [String] = [], images: [String: UIImage] = [:]) {
+            self.status = status
+            self.items = items
+            self.images = images
+        }
+
+        func readStatus() -> PHAuthorizationStatus { status }
+        func requestReadAccess() async -> PHAuthorizationStatus {
+            requestCount += 1
+            return status
+        }
+        /// Counts the pruning read (`photos()` drops ids from the store); the
+        /// launch thumbnail must never use it.
+        private(set) var photosCallCount = 0
+        func latestVisiblePhotoIDs(limit: Int) -> [String] { Array(items.prefix(limit)) }
+        func photos() -> [GalleryPhoto] {
+            photosCallCount += 1
+            return items.map { GalleryPhoto(id: $0, creationDate: nil) }
+        }
+        func deletePhoto(id: String) async -> Bool {
+            items.removeAll { $0 == id }
+            return true
+        }
+        /// When set, the next `image(id:)` captures its result, then waits for
+        /// `resumeSuspendedImage()` — models a slow library read.
+        var suspendNextImage = false
+        private(set) var isSuspended = false
+        private var continuation: CheckedContinuation<Void, Never>?
+
+        func image(id: String, targetSize: CGSize) async -> UIImage? {
+            let result = images[id]
+            if suspendNextImage {
+                suspendNextImage = false
+                isSuspended = true
+                await withCheckedContinuation { continuation = $0 }
+                isSuspended = false
+            }
+            return result
+        }
+
+        func resumeSuspendedImage() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    private func solidImage(_ color: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+    }
+
+    func testLaunchThumbnailUsesFirstPhotoWhenReadAccessGranted() async throws {
+        let first = solidImage(.red)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b", "c"],
+                                           images: ["a": first, "b": solidImage(.green), "c": solidImage(.blue)])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+        await model.loadLaunchThumbnail()
+
+        XCTAssertTrue(model.latestThumbnailImage === first)
+    }
+
+    func testLaunchThumbnailUsesSecondPhotoWhenFirstIsGone() async throws {
+        // The deleted first photo is simply no longer listed.
+        let second = solidImage(.green)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["b", "c"],
+                                           images: ["b": second, "c": solidImage(.blue)])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+        await model.loadLaunchThumbnail()
+
+        XCTAssertTrue(model.latestThumbnailImage === second)
+    }
+
+    func testLaunchThumbnailSkipsAPhotoWhoseImageCannotBeLoaded() async throws {
+        let second = solidImage(.green)
+        let library = FakeThumbnailLibrary(status: .limited, items: ["a", "b"], images: ["b": second])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+        await model.loadLaunchThumbnail()
+
+        XCTAssertTrue(model.latestThumbnailImage === second)
+    }
+
+    func testLaunchThumbnailStaysIconWithoutReadAccessAndNeverPrompts() async throws {
+        for status in [PHAuthorizationStatus.notDetermined, .denied, .restricted] {
+            let library = FakeThumbnailLibrary(status: status, items: ["a"], images: ["a": solidImage(.red)])
+            let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+            await model.loadLaunchThumbnail()
+
+            XCTAssertNil(model.latestThumbnailImage, "status \(status.rawValue)")
+            XCTAssertEqual(library.requestCount, 0, "status \(status.rawValue)")
+        }
+    }
+
+    func testLaunchThumbnailDoesNotReplaceThisLaunchsBakedPhoto() throws {
+        let now = try fixedNow()
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.success("asset-1")) },
+                                         thumbnailLibrary: library)
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
+        let baked = try XCTUnwrap(model.latestThumbnailImage)
+
+        let loaded = expectation(description: "launch thumbnail load finished")
+        Task {
+            await model.loadLaunchThumbnail()
+            loaded.fulfill()
+        }
+        wait(for: [loaded], timeout: 3)
+
+        XCTAssertTrue(model.latestThumbnailImage === baked)
+    }
+
+    func testLaunchThumbnailNeverUsesThePruningRead() async throws {
+        let library = FakeThumbnailLibrary(status: .limited, items: ["a"], images: ["a": solidImage(.red)])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+
+        await model.loadLaunchThumbnail()
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+
+        XCTAssertEqual(library.photosCallCount, 0)
+    }
+
+    func testFailedImageLoadKeepsTheCurrentThumbnail() async throws {
+        let shown = solidImage(.red)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": shown])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+        await model.loadLaunchThumbnail()
+        XCTAssertTrue(model.latestThumbnailImage === shown)
+
+        library.images = [:] // e.g. iCloud offline: ids listed, nothing loads
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+
+        XCTAssertTrue(model.latestThumbnailImage === shown)
+    }
+
+    func testStaleLaunchReadFinishingLateDoesNotOverwriteNewerRefresh() async throws {
+        let stale = solidImage(.red)
+        let fresh = solidImage(.green)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": stale, "b": fresh])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+        library.suspendNextImage = true
+        let launch = Task { await model.loadLaunchThumbnail() }
+        while !library.isSuspended { await Task.yield() }
+
+        // The user deletes the newest photo and closes the gallery meanwhile.
+        _ = await library.deletePhoto(id: "a")
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+        XCTAssertTrue(model.latestThumbnailImage === fresh)
+
+        library.resumeSuspendedImage()
+        await launch.value
+
+        XCTAssertTrue(model.latestThumbnailImage === fresh)
+    }
+
+    func testCaptureLandingDuringLibraryReadWins() throws {
+        let now = try fixedNow()
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.success("asset-1")) },
+                                         thumbnailLibrary: library)
+        library.suspendNextImage = true
+        let finished = expectation(description: "launch read finished")
+        Task {
+            await model.loadLaunchThumbnail()
+            finished.fulfill()
+        }
+        waitUntil { library.isSuspended }
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
+        let baked = try XCTUnwrap(model.latestThumbnailImage)
+
+        library.resumeSuspendedImage()
+        wait(for: [finished], timeout: 3)
+
+        XCTAssertTrue(model.latestThumbnailImage === baked)
+    }
+
+    func testClosingGalleryAfterDeletingNewestPhotoUpdatesThumbnail() async throws {
+        let first = solidImage(.red)
+        let second = solidImage(.green)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": first, "b": second])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+        await model.loadLaunchThumbnail()
+        XCTAssertTrue(model.latestThumbnailImage === first)
+
+        _ = await library.deletePhoto(id: "a")
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+        XCTAssertTrue(model.latestThumbnailImage === second)
+
+        _ = await library.deletePhoto(id: "b")
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+        XCTAssertNil(model.latestThumbnailImage)
     }
 }

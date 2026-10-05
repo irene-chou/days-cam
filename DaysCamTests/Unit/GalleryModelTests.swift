@@ -22,10 +22,12 @@ final class GalleryModelTests: XCTestCase {
             }
         }
 
+        func readStatus() -> PHAuthorizationStatus { status }
         func requestReadAccess() async -> PHAuthorizationStatus {
             requestCount += 1
             return status
         }
+        func latestVisiblePhotoIDs(limit: Int) -> [String] { items.prefix(limit).map(\.id) }
         func photos() -> [GalleryPhoto] { items }
         func deletePhoto(id: String) async -> Bool {
             deletedIDs.append(id)

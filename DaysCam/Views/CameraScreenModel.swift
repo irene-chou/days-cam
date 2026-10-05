@@ -30,6 +30,10 @@ final class CameraScreenModel: ObservableObject {
     let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
     private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
+    private let makeThumbnailLibrary: @MainActor (CapturedPhotoStore) -> GalleryLibrary
+    private var didLoadLaunchThumbnail = false
+    /// Bumped by every library refresh; only the newest request may write.
+    private var thumbnailRefreshGeneration = 0
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -126,11 +130,11 @@ final class CameraScreenModel: ObservableObject {
     /// permission). `nil` until the first successful save; the bottom bar's
     /// thumbnail button falls back to the photo icon while it is `nil`.
     ///
-    /// Deliberately does not yet implement FR-15.2's second branch ("has read
-    /// permission → the newest surviving `capturedAssetIDs` entry's photo") —
-    /// that needs a `PHAsset` thumbnail loader this codebase does not have
-    /// yet, and belongs with the gallery infrastructure TASK-29 is already
-    /// building. Flagged as an assumption in this PR's description.
+    /// Before anything is captured this launch it is filled from the photo
+    /// library (FR-15.2's second branch) by `loadLaunchThumbnail()`, but only
+    /// when read access was already granted — never by asking for it
+    /// (FR-15.3). Closing the gallery re-reads it, so deleting the newest
+    /// photo there updates the thumbnail (`dismissGallery()`).
     @Published private(set) var latestThumbnailImage: UIImage?
 
     /// Photos currently flying from the viewfinder into the thumbnail
@@ -256,8 +260,12 @@ final class CameraScreenModel: ObservableObject {
          },
          makeGalleryModel: @escaping @MainActor (CapturedPhotoStore) -> GalleryModel = { store in
              GalleryModel(library: SystemGalleryLibrary(store: store))
+         },
+         makeThumbnailLibrary: @escaping @MainActor (CapturedPhotoStore) -> GalleryLibrary = { store in
+             SystemGalleryLibrary(store: store)
          }) {
         self.makeGalleryModel = makeGalleryModel
+        self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
@@ -604,7 +612,54 @@ extension CameraScreenModel {
     func dismissGallery() {
         isGalleryPresented = false
         galleryModel = nil
+        // The user may have deleted the newest photo in the gallery.
+        Task { [weak self] in await self?.refreshThumbnailFromLibrary(replacingExisting: true) }
     }
+
+    /// Fills the thumbnail from the library on launch (PRD 0.2 FR-15.2,
+    /// second branch). Runs once; does nothing when a photo was already
+    /// captured this launch or when read access is not already granted, so
+    /// it never prompts (FR-15.3).
+    func loadLaunchThumbnail() async {
+        guard !didLoadLaunchThumbnail else { return }
+        didLoadLaunchThumbnail = true
+        await refreshThumbnailFromLibrary(replacingExisting: false)
+    }
+
+    /// Shows the first still-existing captured photo, or the photo icon when
+    /// none is left. `replacingExisting` lets the gallery-close path
+    /// override the in-memory baked image; a capture landing while the read
+    /// is in flight always wins.
+    func refreshThumbnailFromLibrary(replacingExisting: Bool) async {
+        guard replacingExisting || latestThumbnailImage == nil else { return }
+        let library = makeThumbnailLibrary(capturedPhotoStore)
+        switch library.readStatus() {
+        case .authorized, .limited: break
+        default: return
+        }
+        let landings = thumbnailLandingCount
+        thumbnailRefreshGeneration += 1
+        let generation = thumbnailRefreshGeneration
+        // Never `photos()`: that prunes ids under `.limited` access.
+        let ids = library.latestVisiblePhotoIDs(limit: 3)
+        var loaded: UIImage?
+        for id in ids {
+            loaded = await library.image(id: id, targetSize: Self.libraryThumbnailSize)
+            if loaded != nil { break }
+        }
+        // A newer refresh supersedes this one; a capture landing wins too.
+        guard generation == thumbnailRefreshGeneration,
+              landings == thumbnailLandingCount else { return }
+        if let loaded {
+            latestThumbnailImage = loaded
+        } else if ids.isEmpty && replacingExisting {
+            // Only a confirmed-empty list clears the thumbnail; a failed
+            // load (offline iCloud, PhotoKit error) keeps what is shown.
+            latestThumbnailImage = nil
+        }
+    }
+
+    private static let libraryThumbnailSize = CGSize(width: 200, height: 200)
 
     func dismissProfileManagement() {
         isProfileManagerPresented = false
