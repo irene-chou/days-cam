@@ -214,6 +214,7 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 - 目前設定檔字型為 `preparing` 時快門停用；完成或 3 秒逾時後恢復
 - 字型不可用時（非 `available`、非 `preparing`），開面板或切到該設定檔時提示一次「「<名稱>」需要重新下載，暫時用蘋方」
 - 觀景窗與烘焙都把 `FontLibrary` 傳給 `OverlayMetrics` 的解析函式
+- 觀景窗疊字圖片快取（`OverlayTextView.swift` 的 `OverlayTextRenderCache.Key`）必須包含**解析後的字型 PostScript 名稱**，字型狀態由 `preparing`／`notDownloaded` 變 `available`（或反向）時一定重畫，不得沿用舊的蘋方圖片（FR-5.14）
 - `scenePhase` 變成 `.background` 時呼叫 `FontLibrary.cancelAllDownloads()`（FR-16.11）
 
 **驗收 — A.**
@@ -224,6 +225,7 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 | 35.2 | 假 FontLibrary 3 秒不回應 | 3 秒後快門啟用，觀景窗用蘋方 |
 | 35.3 | 切到字型 `notDownloaded` 的設定檔 | 提示文字出現一次；再切回來不重複（同一次啟動內） |
 | 35.4 | 烘焙路徑 | 拿到的 availability 與觀景窗是同一個實例 |
+| 35.4b | 假 FontLibrary 先 `preparing` 再變 `available`，期間取觀景窗疊字圖片兩次 | 第二次圖片的字型為該字型（快取未命中舊的蘋方圖片）；反向（`available` → `notDownloaded`）同理變回蘋方 |
 | 35.4a | 模擬 `scenePhase` 變 `.background` | 假 FontLibrary 的 `cancelAllDownloads` 被呼叫一次 |
 
 **驗收 — B.**
