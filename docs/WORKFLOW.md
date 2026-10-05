@@ -98,7 +98,7 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 - `pending`：尚有實機、截圖、裁決或未執行的檢查，description 註明阻礙。
 - `failure`：驗收失敗。新 push 後重驗並設定新 SHA；舊報告不沿用。人類確認最後一項後由 Lead 記到 PR 並更新 status。
 
-設定者：一般風險由 Lead 設定，開發者不可設定自己 PR 的 qa；高風險由獨立 QA 設定。
+設定者：一般風險由 Lead 設定，開發者不可設定自己 PR 的 qa；高風險由獨立 QA 設定。Claude 的 UI 開發要在獨立的 subagent／session 進行，Lead 主 session 只核對與設定 qa；若 Lead 在同一個 session 親自寫了該 PR 的內容，qa 改由人類在 PR 確認後才設定。
 
 取 SHA 後，整輪驗收固定在該 commit；寫 status 前重新查 head，若不同先停下重驗。不可到最後才把舊測試結果寫給剛取得的新 SHA。
 
