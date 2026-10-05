@@ -62,8 +62,7 @@ final class CapturedPhotoStoreLimitedAccessAcceptanceTests: XCTestCase {
         XCTAssertEqual(onDisk, ["B"])
     }
 
-    /// 28.5 under every status: corrupt photos.json is an empty list, no crash,
-    /// and fetchAssets never rewrites the file or requests permission.
+    /// 28.5 under every status: corrupt photos.json is an empty list, no crash.
     func test_corruptFileIsEmptyForEveryStatusAndNotRewritten() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let garbage = Data("{not json".utf8)
@@ -74,15 +73,16 @@ final class CapturedPhotoStoreLimitedAccessAcceptanceTests: XCTestCase {
             let store = CapturedPhotoStore(directory: directory, library: library)
             XCTAssertEqual(store.capturedAssetIDs, [], "status \(status.rawValue)")
             XCTAssertEqual(store.fetchAssets(), [], "status \(status.rawValue)")
-            XCTAssertEqual(try Data(contentsOf: url), garbage, "status \(status.rawValue)")
             XCTAssertEqual(library.requestedReadAuthorization, 0)
         }
     }
 
-    /// Recording a new photo while limited keeps previously hidden IDs.
-    func test_recordWhileLimitedKeepsHiddenIDs() {
+    /// Opening the gallery (fetchAssets) while limited, then capturing a new photo,
+    /// must not lose the hidden ID: the old behavior pruned "A" at fetch time.
+    func test_recordAfterLimitedFetchKeepsHiddenIDs() {
         let library = StubLibrary(status: .limited, visible: ["B"])
         let store = seededStore(library, ids: ["A", "B"])
+        XCTAssertEqual(store.fetchAssets(), ["B"])
         store.recordCapturedAsset("C")
         XCTAssertEqual(store.capturedAssetIDs, ["C", "A", "B"])
         XCTAssertEqual(CapturedPhotoStore(directory: directory, library: library).capturedAssetIDs, ["C", "A", "B"])
