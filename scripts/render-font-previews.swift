@@ -12,19 +12,25 @@
 
 import AppKit
 import CoreText
+import CryptoKit
 
 struct Entry {
     let fontID: String
     let name: String
     let postScriptName: String
     let file: String?
+    /// SHA-256 from docs/fonts-manifest.md, checked before drawing.
+    var sha256: String? = nil
 }
 
 let entries: [Entry] = [
     Entry(fontID: "pingFang", name: "蘋方", postScriptName: "PingFangTC-Semibold", file: nil),
-    Entry(fontID: "huninn", name: "粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf"),
-    Entry(fontID: "notoSerifTC", name: "思源宋體", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf"),
-    Entry(fontID: "iansui", name: "芫荽", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf"),
+    Entry(fontID: "huninn", name: "粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
+          sha256: "9d5bf4932d31fe94c18cd8cfddc98bc1b14ce10f4e354c682179db290a99c825"),
+    Entry(fontID: "notoSerifTC", name: "思源宋體", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
+          sha256: "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d"),
+    Entry(fontID: "iansui", name: "芫荽", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
+          sha256: "7f1aa62e9dcbf40d0ce41a5d3f1e5ea602e66c295778ac6fefb6b84d8ed08bd5"),
     Entry(fontID: "lantinghei", name: "蘭亭黑", postScriptName: "FZLTZHB--B51-0", file: nil),
     Entry(fontID: "liHei", name: "儷黑", postScriptName: "LiHeiPro", file: nil),
     Entry(fontID: "hiraginoSans", name: "冬青黑體", postScriptName: "HiraginoSansTC-W6", file: nil),
@@ -57,28 +63,32 @@ guard CommandLine.arguments.count == 2 else {
 }
 let fontDir = URL(fileURLWithPath: CommandLine.arguments[1])
 
-/// Registers an open-source file, or matches an Apple downloadable font.
-func prepare(_ entry: Entry) {
+/// Returns the font to draw with. Open-source fonts are built straight from
+/// the manifest file (hash-checked), so a same-named font installed on this
+/// Mac can never be drawn instead; Apple fonts are matched through CoreText.
+func resolve(_ entry: Entry) -> NSFont {
     if let file = entry.file {
-        var error: Unmanaged<CFError>?
         let url = fontDir.appendingPathComponent(file)
-        guard FileManager.default.fileExists(atPath: url.path) else { fail("missing file \(url.path)") }
-        if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
-            // Already registered by an earlier run in the same process is fine.
-            if NSFont(name: entry.postScriptName, size: pointSize) == nil {
-                fail("cannot register \(file)")
-            }
+        guard let data = try? Data(contentsOf: url) else { fail("missing file \(url.path)") }
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard digest == entry.sha256 else { fail("\(entry.fontID): \(file) SHA-256 \(digest) does not match the manifest") }
+        guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+              let descriptor = descriptors.first else { fail("\(entry.fontID): cannot read \(file)") }
+        return CTFontCreateWithFontDescriptor(descriptor, pointSize, nil) as NSFont
+    }
+    if NSFont(name: entry.postScriptName, size: pointSize) == nil {
+        let done = DispatchSemaphore(value: 0)
+        let descriptor = CTFontDescriptorCreateWithNameAndSize(entry.postScriptName as CFString, pointSize)
+        CTFontDescriptorMatchFontDescriptorsWithProgressHandler([descriptor] as CFArray, nil) { state, _ in
+            if state == .didFinish { done.signal() }
+            return true
         }
-        return
+        if done.wait(timeout: .now() + 300) == .timedOut { fail("timed out matching \(entry.postScriptName)") }
     }
-    if NSFont(name: entry.postScriptName, size: pointSize) != nil { return }
-    let done = DispatchSemaphore(value: 0)
-    let descriptor = CTFontDescriptorCreateWithNameAndSize(entry.postScriptName as CFString, pointSize)
-    CTFontDescriptorMatchFontDescriptorsWithProgressHandler([descriptor] as CFArray, nil) { state, _ in
-        if state == .didFinish { done.signal() }
-        return true
+    guard let font = NSFont(name: entry.postScriptName, size: pointSize) else {
+        fail("\(entry.fontID): font \(entry.postScriptName) is not available")
     }
-    if done.wait(timeout: .now() + 300) == .timedOut { fail("timed out matching \(entry.postScriptName)") }
+    return font
 }
 
 func render(_ text: String, font: NSFont, scale: CGFloat) -> Data {
@@ -123,10 +133,7 @@ try! """
 """.write(to: outputDir.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
 
 for entry in entries {
-    prepare(entry)
-    guard let font = NSFont(name: entry.postScriptName, size: pointSize) else {
-        fail("\(entry.fontID): font \(entry.postScriptName) is not available")
-    }
+    let font = resolve(entry)
     guard font.fontName == entry.postScriptName else {
         fail("\(entry.fontID): resolved to \(font.fontName), expected \(entry.postScriptName)")
     }
