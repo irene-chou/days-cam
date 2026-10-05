@@ -1753,7 +1753,8 @@ final class CameraScreenModelTests: XCTestCase {
             requestCount += 1
             return status
         }
-        /// Counts the pruning read; the launch thumbnail must never use it.
+        /// Counts the pruning read (`photos()` drops ids from the store); the
+        /// launch thumbnail must never use it.
         private(set) var photosCallCount = 0
         func latestVisiblePhotoIDs(limit: Int) -> [String] { Array(items.prefix(limit)) }
         func photos() -> [GalleryPhoto] {
@@ -1764,7 +1765,27 @@ final class CameraScreenModelTests: XCTestCase {
             items.removeAll { $0 == id }
             return true
         }
-        func image(id: String, targetSize: CGSize) async -> UIImage? { images[id] }
+        /// When set, the next `image(id:)` captures its result, then waits for
+        /// `resumeSuspendedImage()` — models a slow library read.
+        var suspendNextImage = false
+        private(set) var isSuspended = false
+        private var continuation: CheckedContinuation<Void, Never>?
+
+        func image(id: String, targetSize: CGSize) async -> UIImage? {
+            let result = images[id]
+            if suspendNextImage {
+                suspendNextImage = false
+                isSuspended = true
+                await withCheckedContinuation { continuation = $0 }
+                isSuspended = false
+            }
+            return result
+        }
+
+        func resumeSuspendedImage() {
+            continuation?.resume()
+            continuation = nil
+        }
     }
 
     private func solidImage(_ color: UIColor) -> UIImage {
@@ -1786,8 +1807,7 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testLaunchThumbnailUsesSecondPhotoWhenFirstIsGone() async throws {
-        // `photos()` already prunes deleted ids, so the deleted first photo
-        // simply is not listed any more.
+        // The deleted first photo is simply no longer listed.
         let second = solidImage(.green)
         let library = FakeThumbnailLibrary(status: .authorized, items: ["b", "c"],
                                            images: ["b": second, "c": solidImage(.blue)])
@@ -1863,6 +1883,52 @@ final class CameraScreenModelTests: XCTestCase {
         await model.refreshThumbnailFromLibrary(replacingExisting: true)
 
         XCTAssertTrue(model.latestThumbnailImage === shown)
+    }
+
+    func testStaleLaunchReadFinishingLateDoesNotOverwriteNewerRefresh() async throws {
+        let stale = solidImage(.red)
+        let fresh = solidImage(.green)
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": stale, "b": fresh])
+        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
+        library.suspendNextImage = true
+        let launch = Task { await model.loadLaunchThumbnail() }
+        while !library.isSuspended { await Task.yield() }
+
+        // The user deletes the newest photo and closes the gallery meanwhile.
+        _ = await library.deletePhoto(id: "a")
+        await model.refreshThumbnailFromLibrary(replacingExisting: true)
+        XCTAssertTrue(model.latestThumbnailImage === fresh)
+
+        library.resumeSuspendedImage()
+        await launch.value
+
+        XCTAssertTrue(model.latestThumbnailImage === fresh)
+    }
+
+    func testCaptureLandingDuringLibraryReadWins() throws {
+        let now = try fixedNow()
+        let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
+        let (model, _, _, _) = makeModel(now: now,
+                                         bake: { _, _, _, _ in UIImage() },
+                                         save: { _, completion in completion(.success("asset-1")) },
+                                         thumbnailLibrary: library)
+        library.suspendNextImage = true
+        let finished = expectation(description: "launch read finished")
+        Task {
+            await model.loadLaunchThumbnail()
+            finished.fulfill()
+        }
+        waitUntil { library.isSuspended }
+
+        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
+        let baked = try XCTUnwrap(model.latestThumbnailImage)
+
+        library.resumeSuspendedImage()
+        wait(for: [finished], timeout: 3)
+
+        XCTAssertTrue(model.latestThumbnailImage === baked)
     }
 
     func testClosingGalleryAfterDeletingNewestPhotoUpdatesThumbnail() async throws {

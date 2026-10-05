@@ -32,6 +32,8 @@ final class CameraScreenModel: ObservableObject {
     private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
     private let makeThumbnailLibrary: @MainActor (CapturedPhotoStore) -> GalleryLibrary
     private var didLoadLaunchThumbnail = false
+    /// Bumped by every library refresh; only the newest request may write.
+    private var thumbnailRefreshGeneration = 0
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -636,6 +638,8 @@ extension CameraScreenModel {
         default: return
         }
         let landings = thumbnailLandingCount
+        thumbnailRefreshGeneration += 1
+        let generation = thumbnailRefreshGeneration
         // Never `photos()`: that prunes ids under `.limited` access.
         let ids = library.latestVisiblePhotoIDs(limit: 3)
         var loaded: UIImage?
@@ -643,7 +647,9 @@ extension CameraScreenModel {
             loaded = await library.image(id: id, targetSize: Self.libraryThumbnailSize)
             if loaded != nil { break }
         }
-        guard landings == thumbnailLandingCount else { return }
+        // A newer refresh supersedes this one; a capture landing wins too.
+        guard generation == thumbnailRefreshGeneration,
+              landings == thumbnailLandingCount else { return }
         if let loaded {
             latestThumbnailImage = loaded
         } else if ids.isEmpty && replacingExisting {
