@@ -12,8 +12,8 @@ import Photos
 protocol PhotoLibraryReadAccessing {
     func readAuthorizationStatus() -> PHAuthorizationStatus
     func requestReadAuthorization(handler: @escaping (PHAuthorizationStatus) -> Void)
-    /// Returns whichever of `identifiers` still exist in the library, in no
-    /// particular order — `CapturedPhotoStore` re-sorts to match
+    /// Returns whichever of `identifiers` are currently visible in the library,
+    /// in no particular order — `CapturedPhotoStore` re-sorts to match
     /// `capturedAssetIDs`' own newest-first order.
     func existingIdentifiers(among identifiers: [String]) -> Set<String>
 }
@@ -59,9 +59,9 @@ final class CapturedPhotoStore: ObservableObject {
     static let fileName = "photos.json"
 
     /// Every DaysCam-saved photo's `localIdentifier`, newest first
-    /// (PRD 0.2 §4.4). Not filtered against the library until `fetchAssets()`
-    /// is called — reading it directly (e.g. for FR-15.2's "does this app
-    /// have anything to fall back to at all") never needs `.readWrite`.
+    /// (PRD 0.2 §4.4). Only pruned against the library with full read access
+    /// when `fetchAssets()` is called. Reading it directly for FR-15.2's fallback
+    /// check never needs `.readWrite`.
     @Published private(set) var capturedAssetIDs: [String]
 
     private let directory: URL
@@ -149,18 +149,22 @@ extension CapturedPhotoStore {
 // MARK: - Reading (PRD 0.2 FR-15.4)
 
 extension CapturedPhotoStore {
-    /// The still-existing captured photos, newest first — pruning any
-    /// identifier the system library no longer has (deleted from the Photos
-    /// app) from both the published list and the file (acceptance 28.2).
+    /// Returns currently visible captured photos, newest first. Only full
+    /// read access can establish that a missing identifier was deleted, so
+    /// limited or unavailable access never prunes the stored list (issue #186).
     @discardableResult
     func fetchAssets() -> [String] {
+        let status = library.readAuthorizationStatus()
         let existing = library.existingIdentifiers(among: capturedAssetIDs)
-        let pruned = capturedAssetIDs.filter { existing.contains($0) }
-        if pruned != capturedAssetIDs {
-            capturedAssetIDs = pruned
-            persist(pruned)
+        let visible = capturedAssetIDs.filter { existing.contains($0) }
+        // Recheck after fetching in case access was reduced during the lookup.
+        if status == .authorized,
+           library.readAuthorizationStatus() == .authorized,
+           visible != capturedAssetIDs {
+            capturedAssetIDs = visible
+            persist(visible)
         }
-        return pruned
+        return visible
     }
 }
 
