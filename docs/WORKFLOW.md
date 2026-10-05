@@ -19,7 +19,7 @@
 
 高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務／PR 標 `risk: high` 並寫原因，加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
-**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 另一家 review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。跨家交接只發生在派卡與 review，派給 Codex 的訊息由使用者轉交：
+**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 另一家 review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。跨家交接只發生在派卡與 review。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
 ```text
 任務：TASK-XX／Issue URL（目標、驗收、依賴、相關檔案見卡片）
@@ -27,6 +27,15 @@
 風險：normal／high＋原因；假設與容易誤判的事項
 交付：PR URL、head SHA、驗證命令／結果、待人類確認
 ```
+
+```bash
+codex exec -C <Codex worktree> -s workspace-write \
+  -c sandbox_workspace_write.network_access=true "<上方派卡訊息>"
+```
+
+- 先替 Codex 建好自己的 worktree（見[開發](#開發)），`-C` 指向它；需要 push／開 PR，所以開網路權限。
+- 長任務用背景執行，完成後讀最後輸出核對 PR URL 與 SHA；記下 session id，review 修正用 `codex exec resume <session id> "<修正指示>"` 沿用同一個 session。
+- 互動式的 `/codex:rescue` 等外掛指令也可用，但派卡與修正以 CLI 為準，方便留紀錄。
 
 共享 Markdown 任務由 Lead 記錄領取狀態，其他角色在 PR／Issue 回報；遇到跨角色接口，請擁有者修改並同步 Lead。不貼整段聊天，不安裝自動撿單服務。
 
@@ -130,7 +139,7 @@ Markdown 表格內的 shell 指令不可含 `|`；跳脫後 agent 照原文執�
 
 1. 合併本 PR 後，Claude／Codex 的工作 checkout 都同步最新 main；Codex 使用 ChatGPT 帳戶登入，確認帳戶訂閱與 Code Review 可用額度。
 2. Claude：Lead 在主 session 進行；UI 卡用 `.claude/agents/ui-panel.md`／`ui-shell.md`；高風險用 `risk-reviewer.md`，以及替 Codex PR 做獨立 QA 的 `qa.md`。`core-*` 入口只在額度接手時使用。
-3. Codex：邏輯卡用 `.codex/agents/core-style.toml`／`core-device.toml`；替 Claude PR 做高風險 QA 用 `qa.toml`。`ui-*` 入口只在額度接手時使用。例如「請以 core-style subagent 處理 TASK-XX，完成後回報 PR 與驗證。」若客戶端未辨識 custom agent，可在獨立 session 指定相同角色文件與模型手動執行。
+3. Codex：邏輯卡用 `.codex/agents/core-style.toml`／`core-device.toml`；替 Claude PR 做高風險 QA 用 `qa.toml`。`ui-*` 入口只在額度接手時使用。例如「請以 core-style subagent 處理 TASK-XX，完成後回報 PR 與驗證。」由 Lead 以上方 `codex exec` 派送；若未辨識 custom agent，在訊息中指定相同角色文件與模型（`-m`）。
 4. 角色檔是工作規範，不會自行安裝 Xcode MCP、建立 worktree 或派工。
 5. GitHub connector：在 [Codex Code Review 設定](https://app.chatgpt.com/settings/code-review) 選 `irene-chou/days-cam`，**關閉 Automatic review**，只用手動 `@codex review`，避免連 Codex 自己開的 PR 也被重複 review。
 6. repo 中的角色 TOML 不控制雲端 review；connector 讀適用的 AGENTS.md。這次沒有新增 API action／key，也沒有變更帳戶端開關。
