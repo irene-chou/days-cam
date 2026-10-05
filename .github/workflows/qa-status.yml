@@ -1,5 +1,5 @@
 # Seeds the `qa` commit status on every PR push so the PR list shows whether QA has passed.
-# Docs-only PRs are marked success; everything else waits as pending until the qa teammate updates it.
+# Docs and agent-config-only PRs (docs/, .claude/, .codex/, *.md) are marked success; everything else waits as pending until the qa teammate updates it.
 
 name: QA status
 
@@ -23,7 +23,7 @@ jobs:
         SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         NON_DOCS=$(gh api --paginate "repos/$REPO/pulls/$PR/files" -q '.[].filename' \
-          | grep -Ev '^(docs/|\.claude/)|\.md$' || true)
+          | grep -Ev '^(docs/|\.claude/|\.codex/)|\.md$' || true)
         if [ -z "$NON_DOCS" ]; then
           STATE=success; DESC="純文件，免 qa"
         else
