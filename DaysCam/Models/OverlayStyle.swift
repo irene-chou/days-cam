@@ -1,63 +1,73 @@
 import Foundation
 
-/// The font an overlay is drawn with (PRD 0.2 FR-10.2).
+/// The font an overlay is drawn with (PRD 0.3 §4.1; replaces 0.2 FR-10.2's
+/// ten Latin fonts).
 ///
-/// Case order is the order the style panel lists them in. Weights are fixed per
-/// font (FR-10.3). Resolving an ID to an actual font is the rendering layer's
-/// job; this type only names it, so that it stays free of UIKit.
+/// Case order is the order the grid and the font list show them in, whatever
+/// their download state. Weights are fixed per font (FR-10.3′). Names, sources
+/// and download facts live in `FontCatalog`; turning an ID into a drawable font
+/// is the rendering layer's job (`OverlayMetrics.resolvedFont`), so this type
+/// stays free of UIKit.
 enum OverlayFontID: String, Codable, CaseIterable {
-    case sfRounded
-    case sfPro
-    case sfMono
-    case newYork
-    case avenirNext
-    case futura
-    case georgia
-    case americanTypewriter
-    case didot
-    case snellRoundhand
+    case pingFang
+    case huninn
+    case notoSerifTC
+    case iansui
+    case lantinghei
+    case liHei
+    case hiraginoSans
+    case yuanti
+    case songti
+    case liSong
+    case kaiti
+    case biauKai
+    case hanziPen
+    case hannotate
+    case lingWai
+    case xingkai
+    case weibei
+    case libian
+    case baoli
+    case wawa
+    case yuppy
 
-    /// The font every unknown or missing ID falls back to (PRD 0.2 §4.1).
-    static let fallback: OverlayFontID = .sfRounded
+    /// The font every unknown or missing ID falls back to (PRD 0.3 §4.1,
+    /// replacing 0.2's `sfRounded`).
+    static let fallback: OverlayFontID = .pingFang
 
-    /// Decodes an ID, falling back to `sfRounded` for a value this build does
-    /// not know — for example a font removed in a later version — so that the
-    /// profile carrying it is kept rather than discarded (PRD 0.2 §4.1).
+    /// Decodes an ID, falling back to `pingFang` for a value this build does
+    /// not know — including the ten 0.2 fonts removed in 0.3 — so that the
+    /// profile carrying it is kept rather than discarded (PRD 0.3 §4.1, §4.3).
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
         self = OverlayFontID(rawValue: rawValue) ?? Self.fallback
     }
 
-    /// The font's own English name, shown in that font in the picker.
-    var displayName: String {
-        switch self {
-        case .sfRounded: return "SF Rounded"
-        case .sfPro: return "SF Pro"
-        case .sfMono: return "SF Mono"
-        case .newYork: return "New York"
-        case .avenirNext: return "Avenir Next"
-        case .futura: return "Futura"
-        case .georgia: return "Georgia"
-        case .americanTypewriter: return "Typewriter"
-        case .didot: return "Didot"
-        case .snellRoundhand: return "Snell Roundhand"
-        }
-    }
+    /// The font's Chinese name, as the grid and the list show it.
+    var displayName: String { FontCatalog.entry(for: self).displayName }
 
-    /// The PostScript name to load with `UIFont(name:size:)`, or `nil` for the
-    /// four system fonts, which are built from `UIFont.systemFont` and a design.
-    var postScriptName: String? {
-        switch self {
-        case .sfRounded, .sfPro, .sfMono, .newYork: return nil
-        case .avenirNext: return "AvenirNext-Bold"
-        case .futura: return "Futura-Bold"
-        case .georgia: return "Georgia-Bold"
-        case .americanTypewriter: return "AmericanTypewriter-Semibold"
-        case .didot: return "Didot-Bold"
-        case .snellRoundhand: return "SnellRoundhand-Bold"
-        }
-    }
+    /// The PostScript name of the one face this font is drawn in (§4.1).
+    var postScriptName: String { FontCatalog.entry(for: self).postScriptName }
+}
+
+// MARK: - TEMP(TASK-32): 0.2 font names still used by other owners' tests
+
+/// TEMP(TASK-32 → TASK-34/35): compile shims for the 0.2 font names that
+/// tests owned by ui-shell and ui-panel (and the #73 research probe) still
+/// spell out. Those tests only need *some* non-default font — or, for
+/// `sfRounded`, the default one — so each maps to a 0.3 font. They are not
+/// cases: decoding `"futura"` and friends still yields `pingFang`. Delete once
+/// those tests use 0.3 IDs.
+extension OverlayFontID {
+    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use .pingFang")
+    static var sfRounded: OverlayFontID { .pingFang }
+    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
+    static var sfMono: OverlayFontID { .notoSerifTC }
+    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
+    static var futura: OverlayFontID { .huninn }
+    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
+    static var snellRoundhand: OverlayFontID { .iansui }
 }
 
 /// The outline or background box drawn around the text (PRD 0.2 FR-10.5).
@@ -114,8 +124,9 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Size relative to the 0.1 base size, in percent: 70...160, step 5.
     var sizeScale: Int
 
-    /// Creates a style. The defaults equal 0.1's "classic white" (PRD 0.2 §4.2).
-    init(fontID: OverlayFontID = .sfRounded,
+    /// Creates a style. The defaults equal 0.1's "classic white" (PRD 0.2
+    /// §4.2), drawn in PingFang (PRD 0.3 §4.1).
+    init(fontID: OverlayFontID = .pingFang,
          textColor: OverlayColor = .white,
          outline: OverlayOutline = .none,
          outlineColor: OverlayColor? = nil,
@@ -148,28 +159,26 @@ extension OverlayStyle {
     /// The closest new style for one of the five 0.1 themes (PRD 0.2 §4.3).
     ///
     /// Not pixel-identical: shadow and box opacities differ slightly (A-2).
+    /// The font is always PingFang: the 0.2 fonts that table named were
+    /// removed in 0.3 (PRD 0.3 §4.3).
     init(legacyTheme: ThemeID) {
         switch legacyTheme {
         case .classicWhite:
             self.init()
         case .retroOrange:
-            self.init(fontID: .sfMono,
-                      textColor: OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
+            self.init(textColor: OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
                       outline: .none,
                       shadow: .soft)
         case .filmStrip:
-            self.init(fontID: .sfMono,
-                      textColor: .white,
+            self.init(textColor: .white,
                       outline: .translucentBox,
                       shadow: .none)
         case .minimalDark:
-            self.init(fontID: .sfPro,
-                      textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
+            self.init(textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
                       outline: .translucentBox,
                       shadow: .none)
         case .softPink:
-            self.init(fontID: .sfRounded,
-                      textColor: OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
+            self.init(textColor: OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
                       outline: .thinStroke,
                       shadow: .soft)
         }
