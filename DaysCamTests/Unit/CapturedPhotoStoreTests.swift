@@ -31,8 +31,9 @@ final class CapturedPhotoStoreTests: XCTestCase {
     private final class FakeLibrary: PhotoLibraryReadAccessing {
         var status: PHAuthorizationStatus
         var grants: PHAuthorizationStatus
-        /// Identifiers this fake library still considers to exist.
+        /// Identifiers currently visible under the injected permission status.
         var existing: Set<String>
+        var statusAfterFetch: PHAuthorizationStatus?
 
         private(set) var requestCount = 0
 
@@ -53,7 +54,8 @@ final class CapturedPhotoStoreTests: XCTestCase {
         }
 
         func existingIdentifiers(among identifiers: [String]) -> Set<String> {
-            existing.intersection(identifiers)
+            if let statusAfterFetch { status = statusAfterFetch }
+            return existing.intersection(identifiers)
         }
     }
 
@@ -94,7 +96,7 @@ final class CapturedPhotoStoreTests: XCTestCase {
     // MARK: - 28.2: fetchAssets prunes deleted photos
 
     func test_fetchAssets_prunesAnIdentifierTheLibraryNoLongerHas() {
-        let library = FakeLibrary(existing: ["B"]) // "A" was deleted from Photos
+        let library = FakeLibrary(status: .authorized, existing: ["B"]) // "A" was deleted from Photos
         let store = makeStore(library: library)
         store.recordCapturedAsset("A")
         store.recordCapturedAsset("B")
@@ -111,13 +113,97 @@ final class CapturedPhotoStoreTests: XCTestCase {
     }
 
     func test_fetchAssets_keepsOrderWhenNothingWasDeleted() {
-        let library = FakeLibrary(existing: ["A", "B", "C"])
+        let library = FakeLibrary(status: .authorized, existing: ["A", "B", "C"])
         let store = makeStore(library: library)
         store.recordCapturedAsset("A")
         store.recordCapturedAsset("B")
         store.recordCapturedAsset("C")
 
         XCTAssertEqual(store.fetchAssets(), ["C", "B", "A"])
+    }
+
+    // MARK: - Issue #186: limited visibility must not erase photo history
+
+    func test_fetchAssets_limitedPreservesInvisibleIDsOnDiskAndReload() throws {
+        let library = FakeLibrary(status: .limited, existing: ["B"])
+        let store = makeStore(library: library)
+        store.recordCapturedAsset("A")
+        store.recordCapturedAsset("B")
+        let originalData = try Data(contentsOf: fileURL)
+
+        XCTAssertEqual(store.fetchAssets(), ["B"])
+        XCTAssertEqual(store.capturedAssetIDs, ["B", "A"])
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        let reloaded = makeStore(library: library)
+        XCTAssertEqual(reloaded.capturedAssetIDs, ["B", "A"])
+        XCTAssertEqual(reloaded.fetchAssets(), ["B"])
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+
+        // Selecting the hidden photo again restores it without recording it anew.
+        library.existing = ["A", "B"]
+        XCTAssertEqual(reloaded.fetchAssets(), ["B", "A"])
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(library.requestCount, 0)
+    }
+
+    func test_fetchAssets_authorizedAfterLimitedPrunesOnlyDeletedIDs() throws {
+        let library = FakeLibrary(status: .limited, existing: ["C"])
+        let store = makeStore(library: library)
+        for id in ["A", "B", "C"] { store.recordCapturedAsset(id) }
+
+        XCTAssertEqual(store.fetchAssets(), ["C"])
+        XCTAssertEqual(store.capturedAssetIDs, ["C", "B", "A"])
+
+        // A was deleted; B was merely hidden by limited access.
+        library.status = .authorized
+        library.existing = ["B", "C"]
+        XCTAssertEqual(store.fetchAssets(), ["C", "B"])
+        XCTAssertEqual(store.capturedAssetIDs, ["C", "B"])
+        let onDisk = try JSONDecoder().decode([String].self, from: Data(contentsOf: fileURL))
+        XCTAssertEqual(onDisk, ["C", "B"])
+        XCTAssertEqual(makeStore(library: library).capturedAssetIDs, ["C", "B"])
+    }
+
+    func test_fetchAssets_noVisiblePhotosPreservesIDsWithoutFullAccess() throws {
+        for status: PHAuthorizationStatus in [.limited, .denied, .restricted, .notDetermined] {
+            let library = FakeLibrary(status: status)
+            let store = makeStore(library: library)
+            store.recordCapturedAsset("A")
+            let originalData = try Data(contentsOf: fileURL)
+
+            XCTAssertEqual(store.fetchAssets(), [], "status: \(status)")
+            XCTAssertEqual(store.capturedAssetIDs, ["A"])
+            XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+            XCTAssertEqual(makeStore(library: library).capturedAssetIDs, ["A"])
+            XCTAssertEqual(library.requestCount, 0)
+        }
+    }
+
+    func test_fetchAssets_authorizedPrunesWhenAllPhotosWereDeleted() throws {
+        let store = makeStore(library: FakeLibrary(status: .authorized))
+        store.recordCapturedAsset("A")
+
+        XCTAssertEqual(store.fetchAssets(), [])
+        XCTAssertEqual(store.capturedAssetIDs, [])
+        let onDisk = try JSONDecoder().decode([String].self, from: Data(contentsOf: fileURL))
+        XCTAssertEqual(onDisk, [])
+    }
+
+    func test_fetchAssets_permissionChangesDuringLookupPreserveIDs() throws {
+        for (before, after): (PHAuthorizationStatus, PHAuthorizationStatus) in [
+            (.authorized, .limited), (.limited, .authorized)
+        ] {
+            let library = FakeLibrary(status: before, existing: ["B"])
+            library.statusAfterFetch = after
+            let store = makeStore(library: library)
+            store.recordCapturedAsset("A")
+            store.recordCapturedAsset("B")
+            let originalData = try Data(contentsOf: fileURL)
+
+            XCTAssertEqual(store.fetchAssets(), ["B"])
+            XCTAssertEqual(store.capturedAssetIDs, ["B", "A"])
+            XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        }
     }
 
     // MARK: - 28.4: requestReadAccessIfNeeded
