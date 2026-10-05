@@ -24,7 +24,9 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     # Claude-authored PRs are reviewed by Codex instead (see docs/WORKFLOW.md#review).
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'author:claude') }}
+    # Detect them by the Claude Code attribution in the PR body: labels added by
+    # `gh pr create --label` arrive after the `opened` event, so they cannot be used here.
+    if: ${{ !contains(github.event.pull_request.body, 'Generated with [Claude Code]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
