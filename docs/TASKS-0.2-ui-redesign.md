@@ -13,7 +13,7 @@
 
 | 級別 | 含義 | 誰執行 |
 |---|---|---|
-| **A. 可自動跑** | 單元測試、靜態檢查、view model 測試 | 開發者自驗＋CI，reviewer 核對；`risk: high` 卡另由獨立 QA 驗收 |
+| **A. 可自動跑** | 單元測試、靜態檢查、view model 測試 | 開發者在本機跑相關測試 class 自驗（完整測試只在升版 PR 由 CI 執行，見 WORKFLOW 開發第 5 點），reviewer 核對；`risk: high` 卡另由獨立 QA 驗收 |
 | **B′. 設計對照** | 用 Xcode MCP 的 `RenderPreview` 截 SwiftUI `#Preview`，與 `docs/design/` 設計稿並排比對版面、顏色、間距 | 有 Xcode MCP 的 agent 或人類。Xcode MCP 一次只能綁一個 Xcode 視窗，**同時只能一個 agent 用** |
 | **B. 需人類實機** | 相機、閃光燈、實際拍照與烘焙結果目視、相簿權限彈窗 | 人類 |
 
