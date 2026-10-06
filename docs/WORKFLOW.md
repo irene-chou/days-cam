@@ -11,7 +11,7 @@
 | 需求、設計稿、任務卡、Lead | Claude 主 session／Opus（不另開 `lead-spec` subagent） | PRD／Issue／任務卡、驗收、依賴、所有權；開卡時查程式碼，把相關檔案與 symbol 寫進卡片 |
 | 邏輯開發（日期、渲染、相機、持久化） | Codex `core-style`、`core-device`／GPT-6 Astra low | 實作、XCTest、自驗 A 級、PR |
 | UI 開發（面板、畫面骨架、對照設計稿調整） | Claude `ui-panel`、`ui-shell`／Sonnet | 實作、XCTest、自驗 A 級、B′ Preview 截圖、PR |
-| Review（兼核對驗收） | 全新 session 的 agent，不分作者：Claude Action 自動 review 所有 PR；高風險另加 Codex connector | 必修／建議；逐條確認每個 A 級驗收都有測試或證據 |
+| Review（兼核對驗收） | 全新 session 的 agent，不分作者：Claude Action 自動 review 所有非 draft PR；高風險另加 Codex connector | 必修／建議；逐條確認每個 A 級驗收都有測試或證據 |
 | 獨立 QA | 僅 `risk: high`，由沒寫這張卡的那家執行 `qa` | 指定 SHA 的獨立驗收與證據 |
 | 高風險 review／爭議 | Claude `risk-reviewer`／Opus | 問題、影響、建議、未驗證處 |
 
@@ -86,7 +86,7 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 - Codex connector：高風險卡必觸發；一般卡在 Action 沒結果或需要第二意見時觸發。轉 ready 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
 - Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；凡符合 AGENTS 的 `needs-human` 條件就加 label，並在 PR 留言列出要人類看什麼（驗收編號、截圖連結、待裁決條目）。人類回覆後記到 PR 並移除。
 - 合併前確認同 SHA 的 `qa=success`、沒有 `needs-human`，以及 review gate：一般卡至少一個 approve、`risk:high` 卡 Claude 與 Codex 各一個 approve，定義見 AGENTS。Claude approve 看 `APPROVED` review 的 `commit_id` 等於最新 `headRefOid`；Codex approve 看 connector review 針對最新 SHA 且沒有 P0／P1；任何 review 的必修／P0／P1 已修正或已裁決。Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
-- 看板：可合併候選 `is:pr is:open status:success -label:needs-human`（再逐一核對 review gate）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
+- 看板：可合併候選 `is:pr is:open draft:false status:success -label:needs-human`（再逐一核對 review gate）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
 
 ## QA
 
