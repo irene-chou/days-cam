@@ -109,6 +109,17 @@ private final class FakeMatcher: SystemFontMatching, @unchecked Sendable {
 
 // MARK: - Tests
 
+/// A file manager whose `fileExists` can be told to report every file as missing.
+private final class ScriptedFileManager: FileManager {
+    var reportsEverythingMissing = false
+    private(set) var existenceChecks = 0
+
+    override func fileExists(atPath path: String) -> Bool {
+        existenceChecks += 1
+        return reportsEverythingMissing ? false : super.fileExists(atPath: path)
+    }
+}
+
 /// Covers TASK-33 acceptance 33.1 ... 33.12 (PRD 0.3 §4.2, §4.4, FR-5.15,
 /// FR-16.6 ... FR-16.14). Network, registration and matching are all fakes.
 @MainActor
@@ -165,11 +176,13 @@ final class FontLibraryTests: XCTestCase {
 
     // MARK: Helpers
 
-    private func makeLibrary(launchTimeout: TimeInterval = 3) -> FontLibrary {
+    private func makeLibrary(launchTimeout: TimeInterval = 3,
+                             fileManager: FileManager = .default) -> FontLibrary {
         let huninn = huninnAsset
         let noto = notoAsset
         return FontLibrary(directory: directory, fetcher: fetcher, registrar: registrar, matcher: matcher,
-                           defaults: defaults, launchTimeout: launchTimeout) { fontID in
+                           defaults: defaults, fileManager: fileManager,
+                           launchTimeout: launchTimeout) { fontID in
             let real = FontCatalog.entry(for: fontID)
             switch fontID {
             case .huninn:
@@ -415,6 +428,24 @@ final class FontLibraryTests: XCTestCase {
         await relaunched.prepareAtLaunch(priority: .huninn)
 
         XCTAssertEqual(relaunched.state(for: .huninn), .notDownloaded, "33.8")
+    }
+
+    /// Launch preparation must use the injected file manager, not `FileManager.default`.
+    func test_prepareAtLaunch_usesInjectedFileManager() async {
+        let first = makeLibrary()
+        first.download(.huninn)
+        await waitUntil("available") { first.state(for: .huninn) == .available }
+
+        let scripted = ScriptedFileManager()
+        let relaunched = makeLibrary(fileManager: scripted)
+        XCTAssertEqual(relaunched.state(for: .huninn), .preparing)
+        scripted.reportsEverythingMissing = true
+        let checksBefore = scripted.existenceChecks
+
+        await relaunched.prepareAtLaunch(priority: .huninn)
+
+        XCTAssertGreaterThan(scripted.existenceChecks, checksBefore, "existence check went through the injected manager")
+        XCTAssertEqual(relaunched.state(for: .huninn), .notDownloaded, "injected manager's answer is honoured")
     }
 
     /// 33.8: the file no longer matches its SHA-256.
