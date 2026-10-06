@@ -144,16 +144,6 @@ enum OverlayMetrics {
         }
     }
 
-    /// TEMP #200: the 0.2 `theme`-based form, kept only so the remaining
-    /// callers outside core-style compile. Always measures in PingFang.
-    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
-    static func fittedFontSize(for text: String,
-                               theme: OverlayTheme,
-                               baseFontSize: CGFloat,
-                               availableWidth: CGFloat) -> CGFloat {
-        fittedFontSize(for: text, font: .pingFang, baseFontSize: baseFontSize, availableWidth: availableWidth)
-    }
-
     /// Width `text` occupies when drawn in `font` at `fontSize`.
     static func textWidth(of text: String, font: ResolvedOverlayFont, fontSize: CGFloat) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: font.font(ofSize: fontSize)]
@@ -202,13 +192,6 @@ enum OverlayMetrics {
     @MainActor
     static func font(for fontID: OverlayFontID, size: CGFloat, availability: any FontAvailabilityProviding) -> UIFont {
         resolvedFont(for: fontID, availability: availability).font(ofSize: size)
-    }
-
-    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
-    /// compile. Always PingFang, whatever `fontID` says.
-    @available(*, deprecated, message: "TEMP #200：改用 availability: 版本")
-    static func font(for fontID: OverlayFontID, size: CGFloat) -> UIFont {
-        ResolvedOverlayFont.pingFang.font(ofSize: size)
     }
 }
 

@@ -90,7 +90,7 @@ PRD-0.3 §4.1、§4.3、§4.4、FR-5.14、FR-10.3′ 的模型與渲染層。
 - `Models/FontCatalog.swift`：每個 `fontID` 的顯示名稱、分段、來源（內建／開源／系統）、PostScript 名稱、下載大小；開源字型另含檔名、位元組數、SHA-256、主要與備援網址、版本、著作權聲明、授權檔名（值取自 TASK-31 的 `docs/fonts-manifest.md`）
 - 字型狀態型別（PRD §4.4）與唯讀介面 `FontAvailabilityProviding`（`state(for:) -> FontState`），供 TASK-33 實作、TASK-34／35 使用
 - `OverlayMetrics.font(for:size:availability:)`：`available` 時回傳該字型；其他狀態回傳 `PingFangTC-Semibold`。**移除不帶 availability 的 `font(for:size:)` 與 `font(for: theme)`**，避免繞過解析。移除 0.2 FR-10.3 的蘋方補字註解與假設
-- 渲染層簽名一起改：`OverlayRenderer.bake(...)`、`renderText(...)`、`fittedFontSize(...)`、`OverlayLayout`、`OverlayMetrics.textWidth(...)` 只接受已解析的 `ResolvedOverlayFont`（**不提供帶 availability 的版本**，避免在背景讀狀態或在烘焙時才解析），量字寬與繪製用同一個解析結果（PRD FR-5.14）。`FontAvailabilityProviding` 與 `resolvedFont(for:availability:)` 標 `@MainActor`。過渡期保留不帶字型的 deprecated 入口（固定蘋方，#200）。呼叫端由 TASK-34（樣式預覽）與 TASK-35（觀景窗、烘焙）改接
+- 渲染層簽名一起改：`OverlayRenderer.bake(...)`、`renderText(...)`、`fittedFontSize(...)`、`OverlayLayout`、`OverlayMetrics.textWidth(...)` 只接受已解析的 `ResolvedOverlayFont`（**不提供帶 availability 的版本**，避免在背景讀狀態或在烘焙時才解析），量字寬與繪製用同一個解析結果（PRD FR-5.14）。`FontAvailabilityProviding` 與 `resolvedFont(for:availability:)` 標 `@MainActor`。過渡期曾保留不帶字型的 deprecated 入口（固定蘋方），已於 #200（PR #213）移除。呼叫端由 TASK-34（樣式預覽）與 TASK-35（觀景窗、烘焙）改接
 - 字重固定為 §4.1 的 PostScript 名稱，不做字重選擇
 
 **驗收 — A.**
@@ -105,7 +105,7 @@ PRD-0.3 §4.1、§4.3、§4.4、FR-5.14、FR-10.3′ 的模型與渲染層。
 | 32.6 | 假 availability 回傳 `notDownloaded`／`preparing`／`failed` | 解析出 `PingFangTC-Semibold` |
 | 32.7 | 同一 style 與 availability 下，觀景窗 `renderText` 與烘焙使用的字型 | `fontName` 相同，`fittedFontSize` 相同，且量字寬用的就是解析後的字型（以注入的解析函式或間諜驗證） |
 | 32.7a | availability 回傳 `failed`，但該 PostScript 名稱其實已可用（模擬逾時後比對才完成） | 量測與繪製都用蘋方，兩者一致 |
-| 32.10 | `grep -rn 'func font(for' DaysCam/Services/OverlayMetrics.swift` | 每個結果都帶 `availability` 參數。**過渡期例外**：標「TEMP #200」deprecated 的 `font(for:size:)` 允許存在，#200 移除後必須符合 |
+| 32.10 | `grep -rn 'func font(for' DaysCam/Services/OverlayMetrics.swift` | 每個結果都帶 `availability` 參數（過渡期例外已於 #200 移除） |
 | 32.8 | `pingFang` 解析 | `PingFangTC-Semibold`，不需 availability 也可用 |
 | 32.9 | FontCatalog 開源 3 套的大小、SHA-256、版本、著作權聲明 | 與 `docs/fonts-manifest.md` 一致（測試讀死值比對即可） |
 

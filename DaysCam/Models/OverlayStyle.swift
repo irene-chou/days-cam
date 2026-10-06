@@ -51,25 +51,6 @@ enum OverlayFontID: String, Codable, CaseIterable {
     var postScriptName: String { FontCatalog.entry(for: self).postScriptName }
 }
 
-// MARK: - TEMP(TASK-32): 0.2 font names still used by other owners' tests
-
-/// TEMP(TASK-32 → TASK-34/35): compile shims for the 0.2 font names that
-/// tests owned by ui-shell and ui-panel (and the #73 research probe) still
-/// spell out. Those tests only need *some* non-default font — or, for
-/// `sfRounded`, the default one — so each maps to a 0.3 font. They are not
-/// cases: decoding `"futura"` and friends still yields `pingFang`. Delete once
-/// those tests use 0.3 IDs.
-extension OverlayFontID {
-    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use .pingFang")
-    static var sfRounded: OverlayFontID { .pingFang }
-    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
-    static var sfMono: OverlayFontID { .notoSerifTC }
-    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
-    static var futura: OverlayFontID { .huninn }
-    @available(*, deprecated, message: "TEMP(TASK-32): removed in 0.3; use a 0.3 OverlayFontID")
-    static var snellRoundhand: OverlayFontID { .iansui }
-}
-
 /// The outline or background box drawn around the text (PRD 0.2 FR-10.5).
 enum OverlayOutline: String, Codable, CaseIterable {
     case none

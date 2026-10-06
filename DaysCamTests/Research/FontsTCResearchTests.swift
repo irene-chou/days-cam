@@ -144,13 +144,15 @@ final class FontsTCResearchTests: XCTestCase {
 
         save(stacked(sheet), as: "C1-sheet.png")
 
-        // Baseline: today's renderer with a Latin-only font.
+        // Baseline: today's renderer with the default font, resolved to
+        // PingFang explicitly (0.2's Latin-only Futura was removed in 0.3).
         let baseline = try XCTUnwrap(OverlayRenderer().bake(image: blankPhoto(),
                                                             text: Self.sampleText,
-                                                            style: OverlayStyle(fontID: .futura, shadow: .none),
-                                                            placement: .anchor(.bottomTrailing)))
+                                                            style: OverlayStyle(fontID: .huninn, shadow: .none),
+                                                            placement: .anchor(.bottomTrailing),
+                                                            font: .pingFang))
         save(baseline, as: "C1-baseline-futura.png")
-        let futura = OverlayMetrics.font(for: .futura, size: fontSize)
+        let futura = ResolvedOverlayFont.pingFang.font(ofSize: fontSize)
         report("C1", "name=baseline-OverlayRenderer-futura|runs=\(usedFonts(for: Self.sampleText, font: futura))")
     }
 

@@ -25,7 +25,7 @@ final class OverlayViewfinderEvidenceTests: XCTestCase {
         }
         for (name, style) in cases {
             let baked = try XCTUnwrap(OverlayRenderer().bake(image: background, text: text, style: style,
-                                                            placement: .anchor(.bottomTrailing)))
+                                                            placement: .anchor(.bottomTrailing), font: .pingFang))
             let comparison = HStack(spacing: 12) {
                 VStack {
                     Text("觀景窗 preview")
