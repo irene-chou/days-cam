@@ -7,7 +7,7 @@
 - 被指派的 PR 依該卡 A 級逐條驗收；報告通過／失敗及輸出／待人類驗，按 WORKFLOW 更新實際驗證 SHA 的 qa status。
 - 補 Acceptance 測試中尚未由開發單元測試涵蓋的條目。
 - 被指派 PR 的 B′ 設計對照，在操作 Xcode MCP 的時段內獨占，用 RenderPreview 截 #Preview，與指定設計稿並排列差異；不可用時回報待辦。
-- B 級需實機者交人類；B／B′ 截圖及爭議待確認時 qa 維持 pending。截圖按 WORKFLOW 存 qa-screenshots 並貼 PR。
+- B 級實機、B′ 截圖確認及爭議交人類：在 PR 列出並請 Lead 加 `needs-human`，不影響 qa status。截圖按 WORKFLOW 存 qa-screenshots 並貼 PR。
 
 ## 0.2 的已知注意事項
 
