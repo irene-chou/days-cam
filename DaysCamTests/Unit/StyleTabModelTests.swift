@@ -41,6 +41,9 @@ final class StyleTabModelTests: XCTestCase {
                            spy: Spy = Spy()) -> StyleTabModel {
         StyleTabModel(profile: profile,
                      recentColorsStore: store ?? RecentColorsStore(defaults: defaults),
+                     applyFont: { _, _ in },
+                     allProfiles: { [] },
+                     replaceFont: { _, _ in [] },
                      updateProfile: spy.update)
     }
 
@@ -49,23 +52,6 @@ final class StyleTabModelTests: XCTestCase {
     func testSubTabAccessibilityLabelsInOrder() {
         XCTAssertEqual(StyleTabModel.SubTab.allCases.map(\.accessibilityLabel),
                        ["字型", "顏色", "外框", "陰影", "字級"], "23.1")
-    }
-
-    // MARK: - 23.3 選字型後持久化（0.3：未注入 applyFont 時走過渡預設）
-
-    func testSelectFontPersistsAndUpdatesProfile() {
-        let spy = Spy()
-        let model = makeModel(spy: spy)
-        model.selectFont(.huninn)
-        XCTAssertEqual(model.profile.style.fontID, .huninn, "23.3")
-        XCTAssertEqual(spy.updated.last?.style.fontID, .huninn, "23.3")
-    }
-
-    func testSelectFontNoOpsWhenUnchanged() {
-        let spy = Spy()
-        let model = makeModel(spy: spy) // default fontID is .pingFang
-        model.selectFont(.pingFang)
-        XCTAssertTrue(spy.updated.isEmpty)
     }
 
     // MARK: - 34.1 到 34.3, 34.6, 34.6a 字型格子（PRD 0.3 FR-10.2′）
@@ -221,13 +207,9 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(notReady.resolvedFont(ofSize: 15).fontName, FontCatalog.pingFangPostScriptName)
     }
 
-    func testWithoutAnInjectedLibraryOnlyPingFangIsUsableAndSelectingStillWrites() {
-        // The TASK-34 → TASK-35 transition defaults.
-        let spy = Spy()
-        let model = makeModel(spy: spy)
+    func testWithoutAnInjectedLibraryOnlyPingFangIsUsable() {
+        let model = makeModel()
         XCTAssertEqual(gridFonts(model), [.pingFang])
-        model.selectFont(.huninn)
-        XCTAssertEqual(spy.updated.last?.style.fontID, .huninn)
     }
 
     // MARK: - 23.4 文字顏色第一排：9 色
@@ -348,8 +330,8 @@ final class StyleTabModelTests: XCTestCase {
         struct DummyError: Error {}
         spy.shouldThrow = DummyError()
         let model = makeModel(spy: spy)
-        model.selectFont(.huninn)
+        model.selectTextColor(OverlayStyle.swatches[2])
         XCTAssertNotNil(model.lastError)
-        XCTAssertEqual(model.profile.style.fontID, .huninn)
+        XCTAssertEqual(model.profile.style.textColor, OverlayStyle.swatches[2])
     }
 }

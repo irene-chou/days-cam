@@ -29,6 +29,31 @@ final class CameraScreenModel: ObservableObject {
     /// needs this model.
     let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
+    /// Where each overlay font's availability, download and launch
+    /// preparation come from (PRD 0.3). The real `FontLibrary` in the app;
+    /// tests inject a fake.
+    let fontLibrary: any FontShellControlling
+    /// Seconds the shutter waits for a `preparing` font before giving up and
+    /// drawing PingFang (PRD 0.3 FR-5.15). Injectable so tests need not wait
+    /// the real 3 seconds.
+    private let fontPreparationTimeout: TimeInterval
+    /// "Profile → font" the user asked for that is still downloading; the
+    /// download finishing writes it (PRD 0.3 FR-5.18, A-8). One entry per
+    /// profile, the last request wins. Owned here, not by the font list, so
+    /// closing the list changes nothing (FR-16.11).
+    private var pendingFontApplications: [UUID: OverlayFontID] = [:]
+    /// Fonts whose launch/switch preparation ran past the timeout; the
+    /// shutter no longer waits for them (they still resolve to PingFang until
+    /// `available`).
+    private var timedOutPreparingFonts: Set<OverlayFontID> = []
+    private var preparationTimeoutTasks: [OverlayFontID: Task<Void, Never>] = [:]
+    /// Profile/font pairs the "needs re-download" notice was already shown
+    /// for during this launch (FR-16.14: once).
+    private var noticedUnavailableFonts: Set<UnavailableFontNotice> = []
+    private struct UnavailableFontNotice: Hashable {
+        let profileID: UUID
+        let fontID: OverlayFontID
+    }
     private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
     private let makeThumbnailLibrary: @MainActor (CapturedPhotoStore) -> GalleryLibrary
     private var didLoadLaunchThumbnail = false
@@ -164,7 +189,7 @@ final class CameraScreenModel: ObservableObject {
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage?
 
     /// Saves a baked photo to the system photo library, returning its new
     /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
@@ -248,8 +273,8 @@ final class CameraScreenModel: ObservableObject {
              ImageCropper().crop(image, to: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { image, text, style, placement in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement)
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { image, text, style, placement, font in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
@@ -263,7 +288,11 @@ final class CameraScreenModel: ObservableObject {
          },
          makeThumbnailLibrary: @escaping @MainActor (CapturedPhotoStore) -> GalleryLibrary = { store in
              SystemGalleryLibrary(store: store)
-         }) {
+         },
+         fontLibrary: (any FontShellControlling)? = nil,
+         fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout) {
+        self.fontLibrary = fontLibrary ?? InertFontLibrary()
+        self.fontPreparationTimeout = fontPreparationTimeout
         self.makeGalleryModel = makeGalleryModel
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
@@ -289,7 +318,14 @@ final class CameraScreenModel: ObservableObject {
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
+        bindToFontLibrary()
         refreshOverlayPanelTabModelsIfNeeded()
+        // The launch-time preparation of the current profile's font starts
+        // counting its 3 seconds now (FR-5.15); `prepareFontsAtLaunch()`
+        // does the actual work.
+        if let font = selectedProfile?.style.fontID {
+            startPreparationTimeoutIfNeeded(for: font)
+        }
     }
 
     private func bindToProfileStore() {
@@ -305,6 +341,12 @@ final class CameraScreenModel: ObservableObject {
                    let latest = profiles.first(where: { $0.id == rulesTabModel.profile.id }) {
                     rulesTabModel.applyExternalChanges(from: latest)
                 }
+                // The style tab's own copy must pick up a font written outside
+                // it (`applyFont`, `replaceFont`; PRD 0.3 FR-5.18).
+                if let styleTabModel = self.styleTabModel,
+                   let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
+                    styleTabModel.applyExternalChanges(from: latest)
+                }
             }
             .store(in: &cancellables)
         profileStore.$selectedProfileID
@@ -312,6 +354,7 @@ final class CameraScreenModel: ObservableObject {
             .sink { [weak self] in
                 self?.selectedProfileID = $0
                 self?.refreshOverlayPanelTabModelsIfNeeded()
+                self?.selectedProfileDidChange()
             }
             .store(in: &cancellables)
     }
@@ -353,7 +396,20 @@ final class CameraScreenModel: ObservableObject {
         }
 
         let styleWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        styleTabModel = StyleTabModel(profile: selectedProfile, updateProfile: styleWriter.write)
+        styleTabModel = StyleTabModel(
+            profile: selectedProfile,
+            fontLibrary: fontLibrary,
+            applyFont: { [weak self] fontID, profileID in
+                self?.applyFont(fontID, profileID: profileID)
+            },
+            allProfiles: { [weak self] in self?.profiles ?? [] },
+            replaceFont: { [weak self] font, replacement in
+                guard let self else { return [] }
+                let changed = try self.profileStore.replaceFont(font, with: replacement)
+                self.syncStyleTabModelWithStore()
+                return changed
+            },
+            updateProfile: styleWriter.write)
 
         let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
         let displaySettings = DisplaySettingsModel(profile: selectedProfile,
@@ -516,6 +572,15 @@ final class CameraScreenModel: ObservableObject {
     /// both the button's `.disabled` state and `capturePhoto()`'s own guard.
     var isShutterDisabled: Bool {
         isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isCapturing
+            || isWaitingForFont
+    }
+
+    /// Whether the current profile's font is still being matched after
+    /// launch or a profile switch, within its 3 seconds (PRD 0.3 FR-5.15):
+    /// the shutter waits so a photo is never baked in PingFang by mistake.
+    var isWaitingForFont: Bool {
+        guard let fontID = selectedProfile?.style.fontID else { return false }
+        return fontLibrary.state(for: fontID) == .preparing && !timedOutPreparingFonts.contains(fontID)
     }
 
     /// A transient reason the viewfinder cannot show a live picture even
@@ -556,6 +621,13 @@ extension CameraScreenModel {
     /// The style `selectedProfile` draws its overlay with (PRD 0.2 §4.2).
     var overlayStyle: OverlayStyle {
         selectedProfile?.style ?? OverlayStyle()
+    }
+
+    /// The face the viewfinder draws `overlayStyle` with: the profile's font
+    /// when it is `available`, PingFang otherwise (PRD 0.3 FR-5.14). Resolved
+    /// afresh on every read, so the viewfinder follows the library.
+    var overlayFont: ResolvedOverlayFont {
+        OverlayMetrics.resolvedFont(for: overlayStyle.fontID, availability: fontLibrary)
     }
 
     /// Where `selectedProfile` draws its overlay: a grid anchor or a custom
@@ -797,11 +869,20 @@ extension CameraScreenModel {
     /// the simulator (same boundary `CameraServiceTests` documents), so this
     /// is what `CameraScreenModelTests` calls directly to verify 10.3/10.4
     /// without needing to drive a full capture through real hardware.
-    func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement) {
+    ///
+    /// `font` is resolved here, on the main actor, at the moment the shutter
+    /// fires (a timer: when the countdown reaches zero) and travels with the
+    /// context to the background baking, which never reads the font library
+    /// (PRD 0.3 FR-5.14, FR-16.14).
+    func captureContext(for profile: CameraProfile) -> CaptureContext {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        return (capturedAt, text, profile.style, profile.position)
+        let font = OverlayMetrics.resolvedFont(for: profile.style.fontID, availability: fontLibrary)
+        return (capturedAt, text, profile.style, profile.position, font)
     }
+
+    /// Everything the baking needs, fixed at the instant the shutter fires.
+    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont)
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
     /// FR-7.6).
@@ -929,8 +1010,7 @@ extension CameraScreenModel {
     /// `CameraScreenModelTests` calls directly to verify the bake-failure,
     /// save-success and save-failure branches, and that `isCapturing` ends
     /// up `false` on every one of them (PRD acceptance 10.22).
-    func processCapturedImage(_ image: UIImage,
-                              context: (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement)) {
+    func processCapturedImage(_ image: UIImage, context: CaptureContext) {
         // Redundant with `capturePhoto()`'s own assignment in the real flow
         // (already `true` by the time this runs there) — kept here so this
         // method is self-contained: a test calling it directly exercises the
@@ -954,7 +1034,7 @@ extension CameraScreenModel {
                 // showed for the same aspect ratio (FR-5.9, FR-5.11).
                 let cropped = crop(image, aspectRatio)
                 CaptureTiming.mark(.cropped)
-                return bake(cropped, context.text, context.style, context.placement)
+                return bake(cropped, context.text, context.style, context.placement, context.font)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
