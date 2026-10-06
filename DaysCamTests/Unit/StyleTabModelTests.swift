@@ -51,29 +51,183 @@ final class StyleTabModelTests: XCTestCase {
                        ["字型", "顏色", "外框", "陰影", "字級"], "23.1")
     }
 
-    // MARK: - 23.2 字型選項數與順序 (同 17.1)
-
-    func testFontOptionsMatchOrder() {
-        let model = makeModel()
-        XCTAssertEqual(model.fontOptions.map(\.displayName),
-                       OverlayFontID.allCases.map(\.displayName), "23.2")
-    }
-
-    // MARK: - 23.3 選 Futura 後持久化
+    // MARK: - 23.3 選字型後持久化（0.3：未注入 applyFont 時走過渡預設）
 
     func testSelectFontPersistsAndUpdatesProfile() {
         let spy = Spy()
         let model = makeModel(spy: spy)
-        model.selectFont(.futura)
-        XCTAssertEqual(model.profile.style.fontID, .futura, "23.3")
-        XCTAssertEqual(spy.updated.last?.style.fontID, .futura, "23.3")
+        model.selectFont(.huninn)
+        XCTAssertEqual(model.profile.style.fontID, .huninn, "23.3")
+        XCTAssertEqual(spy.updated.last?.style.fontID, .huninn, "23.3")
     }
 
     func testSelectFontNoOpsWhenUnchanged() {
         let spy = Spy()
-        let model = makeModel(spy: spy) // default fontID is .sfRounded
-        model.selectFont(.sfRounded)
+        let model = makeModel(spy: spy) // default fontID is .pingFang
+        model.selectFont(.pingFang)
         XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    // MARK: - 34.1 到 34.3, 34.6, 34.6a 字型格子（PRD 0.3 FR-10.2′）
+
+    private struct AppliedFont: Equatable {
+        let fontID: OverlayFontID
+        let profileID: UUID
+    }
+
+    private func makeFontModel(library: FakeFontLibrary,
+                               font: OverlayFontID = .pingFang,
+                               applied: @escaping (AppliedFont) -> Void = { _ in },
+                               spy: Spy = Spy()) -> StyleTabModel {
+        var profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        profile.style.fontID = font
+        return StyleTabModel(profile: profile,
+                             recentColorsStore: RecentColorsStore(defaults: defaults),
+                             fontLibrary: library,
+                             applyFont: { applied(AppliedFont(fontID: $0, profileID: $1)) },
+                             updateProfile: spy.update)
+    }
+
+    private func gridFonts(_ model: StyleTabModel) -> [OverlayFontID] {
+        model.fontGridItems.compactMap {
+            if case .font(let cell) = $0 { return cell.fontID }
+            return nil
+        }
+    }
+
+    func testGridWithOnlyPingFangIsPingFangAndMoreFonts() {
+        let model = makeFontModel(library: FakeFontLibrary())
+        XCTAssertEqual(gridFonts(model), [.pingFang], "34.1")
+        XCTAssertEqual(model.fontGridItems.count, 2, "34.1")
+        XCTAssertEqual(model.fontGridItems.last, .moreFonts, "34.1")
+    }
+
+    func testGridListsAvailableFontsInCatalogOrder() {
+        // Declared out of order on purpose: the grid follows §4.1, not the states.
+        let library = FakeFontLibrary([.xingkai: .available, .huninn: .available])
+        let model = makeFontModel(library: library)
+        XCTAssertEqual(gridFonts(model), [.pingFang, .huninn, .xingkai], "34.2")
+        XCTAssertEqual(model.fontGridItems.last, .moreFonts)
+    }
+
+    func testCurrentFontThatIsNotAvailableStaysInTheGridSelectedWithItsCaption() throws {
+        let cases: [(FontState, FontGridCell.Caption)] = [
+            (.notDownloaded, .needsRedownload),
+            (.failed(.other), .needsRedownload),
+            (.preparing, .preparing),
+            (.downloading(progress: 0.38), .percent("38%"))
+        ]
+        for (state, caption) in cases {
+            let model = makeFontModel(library: FakeFontLibrary([.xingkai: state]), font: .xingkai)
+            guard case .font(let cell)? = model.fontGridItems.first(where: { $0.id == "xingkai" }) else {
+                return XCTFail("34.3: 行楷 should be in the grid for \(state)")
+            }
+            XCTAssertTrue(cell.isSelected, "34.3 \(state)")
+            XCTAssertFalse(cell.usesRealFont, "34.3 \(state)")
+            XCTAssertEqual(cell.caption, caption, "34.3 \(state)")
+        }
+    }
+
+    func testTappingTheCurrentFontNeedingDownloadOpensTheListScrolledToIt() {
+        for state in [FontState.notDownloaded, .failed(.noNetwork)] {
+            let model = makeFontModel(library: FakeFontLibrary([.xingkai: state]), font: .xingkai)
+            model.didTapFontCell(.xingkai)
+            XCTAssertNotNil(model.fontLibraryModel, "34.3 \(state)")
+            XCTAssertEqual(model.fontLibraryModel?.scrollTarget, .xingkai, "34.3 \(state)")
+        }
+    }
+
+    func testTappingThePreparingOrDownloadingCurrentFontDoesNothing() {
+        var applied: [AppliedFont] = []
+        for state in [FontState.preparing, .downloading(progress: 0.38)] {
+            let model = makeFontModel(library: FakeFontLibrary([.xingkai: state]), font: .xingkai,
+                                      applied: { applied.append($0) })
+            model.didTapFontCell(.xingkai)
+            XCTAssertNil(model.fontLibraryModel, "34.3 \(state)")
+        }
+        XCTAssertTrue(applied.isEmpty, "34.3")
+    }
+
+    func testMoreFontsOpensTheList() {
+        let model = makeFontModel(library: FakeFontLibrary())
+        XCTAssertNil(model.fontLibraryModel)
+        model.presentFontLibrary()
+        XCTAssertNotNil(model.fontLibraryModel)
+        XCTAssertNil(model.fontLibraryModel?.scrollTarget)
+        model.dismissFontLibrary()
+        XCTAssertNil(model.fontLibraryModel)
+    }
+
+    func testTappingAnAvailableCellAppliesOnceThroughApplyFontAndWritesNothing() {
+        var applied: [AppliedFont] = []
+        let spy = Spy()
+        let model = makeFontModel(library: FakeFontLibrary([.huninn: .available]),
+                                  applied: { applied.append($0) }, spy: spy)
+        model.didTapFontCell(.huninn)
+        XCTAssertEqual(applied, [AppliedFont(fontID: .huninn, profileID: model.profile.id)], "34.6")
+        XCTAssertTrue(spy.updated.isEmpty, "34.6: the model does not write fontID itself")
+        XCTAssertEqual(model.profile.style.fontID, .pingFang, "34.6")
+    }
+
+    func testListRowTapUsesTheSameApplyFontWithTheCurrentProfile() {
+        var applied: [AppliedFont] = []
+        let model = makeFontModel(library: FakeFontLibrary(), applied: { applied.append($0) })
+        model.presentFontLibrary()
+        model.fontLibraryModel?.didTapRow(.songti)
+        XCTAssertEqual(applied, [AppliedFont(fontID: .songti, profileID: model.profile.id)], "34.6")
+    }
+
+    func testApplyExternalChangesTakesTheFontAndTheNextColorEditKeepsIt() {
+        let spy = Spy()
+        let model = makeFontModel(library: FakeFontLibrary(), spy: spy)
+        var latest = model.profile
+        latest.style.fontID = .xingkai
+        model.applyExternalChanges(from: latest)
+        XCTAssertEqual(model.profile.style.fontID, .xingkai)
+        XCTAssertTrue(spy.updated.isEmpty, "applyExternalChanges does not persist")
+
+        model.selectTextColor(OverlayStyle.swatches[2])
+        XCTAssertEqual(spy.updated.last?.style.fontID, .xingkai, "34.6a")
+        XCTAssertEqual(spy.updated.last?.style.textColor, OverlayStyle.swatches[2], "34.6a")
+    }
+
+    func testApplyExternalChangesIgnoresAnotherProfileAndOtherStyleFields() {
+        let spy = Spy()
+        let model = makeFontModel(library: FakeFontLibrary(), spy: spy)
+        var other = CameraProfile(name: "別人", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        other.style.fontID = .xingkai
+        model.applyExternalChanges(from: other)
+        XCTAssertEqual(model.profile.style.fontID, .pingFang)
+
+        var latest = model.profile
+        latest.style.fontID = .huninn
+        latest.style.sizeScale = 150
+        model.applyExternalChanges(from: latest)
+        XCTAssertEqual(model.profile.style.fontID, .huninn)
+        XCTAssertNotEqual(model.profile.style.sizeScale, 150, "the style tab owns the other style fields")
+    }
+
+    func testOpenListFollowsExternalFontChanges() {
+        let model = makeFontModel(library: FakeFontLibrary())
+        model.presentFontLibrary()
+        var latest = model.profile
+        latest.style.fontID = .xingkai
+        model.applyExternalChanges(from: latest)
+        XCTAssertEqual(model.fontLibraryModel?.currentFontID, .xingkai)
+    }
+
+    func testResolvedFontIsPingFangUnlessTheFontIsAvailable() {
+        let notReady = makeFontModel(library: FakeFontLibrary([.xingkai: .notDownloaded]), font: .xingkai)
+        XCTAssertEqual(notReady.resolvedFont(ofSize: 15).fontName, FontCatalog.pingFangPostScriptName)
+    }
+
+    func testWithoutAnInjectedLibraryOnlyPingFangIsUsableAndSelectingStillWrites() {
+        // The TASK-34 → TASK-35 transition defaults.
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        XCTAssertEqual(gridFonts(model), [.pingFang])
+        model.selectFont(.huninn)
+        XCTAssertEqual(spy.updated.last?.style.fontID, .huninn)
     }
 
     // MARK: - 23.4 文字顏色第一排：9 色
@@ -194,8 +348,8 @@ final class StyleTabModelTests: XCTestCase {
         struct DummyError: Error {}
         spy.shouldThrow = DummyError()
         let model = makeModel(spy: spy)
-        model.selectFont(.futura)
+        model.selectFont(.huninn)
         XCTAssertNotNil(model.lastError)
-        XCTAssertEqual(model.profile.style.fontID, .futura)
+        XCTAssertEqual(model.profile.style.fontID, .huninn)
     }
 }

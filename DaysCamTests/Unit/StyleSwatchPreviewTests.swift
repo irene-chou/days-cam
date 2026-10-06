@@ -9,11 +9,11 @@ final class StyleSwatchPreviewTests: XCTestCase {
         var style = OverlayStyle()
         style.textColor = .white
         style.outlineColor = OverlayColor(red8: 0xFF, green8: 0x00, blue8: 0x00)
-        style.fontID = .snellRoundhand
+        style.fontID = .iansui
         let fixed = StyleSwatchPreview.fixedStyle(from: style)
         XCTAssertEqual(fixed.textColor, StyleSwatchPreview.textColor)
         XCTAssertEqual(fixed.resolvedOutlineColor, StyleSwatchPreview.accentGray)
-        XCTAssertEqual(fixed.fontID, .snellRoundhand)
+        XCTAssertEqual(fixed.fontID, .iansui)
     }
 
     func testFixedStyleIsTheSameForWhiteBlackAndYellowText() {
