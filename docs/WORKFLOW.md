@@ -17,7 +17,7 @@
 
 模型是可調整的起點；Codex ID 已對照本機 2026-10-03 模型清單。不可用時在 app 選擇可用模型並調整角色 TOML，不改走 API key。只有依賴已滿足且擁有檔案不重疊時，才同時開兩位 developer；同一時間只有一個 agent 操作 Xcode 視窗。
 
-高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
+高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
 **交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
@@ -49,7 +49,7 @@ codex exec -C <Codex worktree> -s workspace-write \
 4. **換家開發**：同一張卡改由另一家的對應角色接手，在 PR 註明「額度接手」。review 照常由全新 session 執行，哪一家都可以。
 5. **review 的替代路徑**：
    - 一般卡：只需一個 approve。Claude 額度用完時 Action 會失敗或沒有結果，改用 `@codex review`；Codex 額度用完時用 Action 或 Claude `risk-reviewer` 全新 session。不需 `quota-fallback`。
-   - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve，且人類在 PR 確認，由 Lead 記錄；qa gate 照舊。
+   - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve 即可（不需人類另外同意），由 Lead 記錄；qa gate 照舊。
 6. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
 7. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑，作為之後調整分工比例的依據。
 
