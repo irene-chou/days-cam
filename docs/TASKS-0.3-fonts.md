@@ -126,7 +126,7 @@ PRD-0.3 §4.2、§4.4、FR-16.6～16.12、FR-16.14、FR-5.15 的服務層。
 - 開源字型：下載（先 jsDelivr、失敗改 GitHub raw）→ 驗證大小與 SHA-256 → 存 `Application Support/Fonts/<fontID>.<ext>`（`isExcludedFromBackup`）→ `CTFontManagerRegisterFontURLs(.process)`。驗證失敗刪檔並 `failed`
 - 系統字型：`CTFontDescriptorMatchFontDescriptorsWithProgressHandler` 下載與比對；以「最後是否比對成功」判定，不因中途錯誤（如 #302）就判失敗（調查報告註 1）
 - `download(_:)`、`cancel(_:)`、`delete(_:)`（只限開源，刪檔並取消註冊）、`prepareAtLaunch(priority:)`（目前設定檔的字型優先，回傳完成或 3 秒逾時）、`cancelAllDownloads()`（App 退到背景時呼叫，FR-16.11）
-- `downloadedSystemFontIDs` 存 `UserDefaults`：系統字型下載成功時加入；啟動只比對清單內的字型，比對開始回報需要下載（已被系統清掉）時取消、移除並視為 `notDownloaded`，不得自動下載（PRD FR-5.15）
+- `downloadedSystemFontIDs` 存 `UserDefaults`：系統字型下載成功時加入；啟動只比對清單內的字型，比對過程出現任一下載狀態（已被系統清掉，不論是否附帶下載量）時取消、移除並視為 `notDownloaded`，不得自動下載（PRD FR-5.15）
 - 失敗原因至少區分「沒網路」與「其他」
 - 網路、檔案系統、CoreText 比對都抽成可注入介面，單元測試不連網
 - 刪除後「用到它的設定檔改 `pingFang` 並存檔」由本卡提供 `ProfileStore` 方法（`replaceFont(_:with:)`）
@@ -145,7 +145,7 @@ PRD-0.3 §4.2、§4.4、FR-16.6～16.12、FR-16.14、FR-5.15 的服務層。
 | 33.8 | 重開時檔案被刪或 SHA-256 不符 | `notDownloaded`／`failed`，不崩潰 |
 | 33.9 | 假比對器：系統字型比對成功、途中回報錯誤但最後成功 | 皆為 `available` |
 | 33.10 | 假比對器不回應 | `prepareAtLaunch` 3 秒逾時回傳，該字型變 `failed(.other)`，比對器收到取消（progress handler 回傳 `false`）；之後的回呼不改變狀態；可再呼叫 `download` 重試；不阻塞其他字型 |
-| 33.10a | `downloadedSystemFontIDs = ["xingkai"]`，假比對器在開始時回報下載量 > 0 | 比對被取消、未下載任何位元組；`xingkai` 從清單移除且為 `notDownloaded` |
+| 33.10a | `downloadedSystemFontIDs = ["xingkai"]`，假比對器送出「將開始下載」（分別附下載量 > 0 與不附下載量） | 比對被取消、未下載任何位元組；`xingkai` 從清單移除且為 `notDownloaded` |
 | 33.10b | `downloadedSystemFontIDs` 為空 | 啟動不比對任何系統字型 |
 | 33.10c | 兩套下載中呼叫 `cancelAllDownloads()` | 兩套皆 `failed(.other)`，暫存檔已清 |
 | 33.11 | `replaceFont(.huninn, with: .pingFang)` | 用到粉圓的設定檔全部改成蘋方並寫檔；其他設定檔不變 |
