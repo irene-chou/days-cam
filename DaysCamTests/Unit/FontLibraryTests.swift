@@ -600,6 +600,74 @@ final class FontLibraryTests: XCTestCase {
         library.cancelAllDownloads()
     }
 
+    private func queueSixSystemFonts() {
+        defaults.set(["liHei", "hiraginoSans", "liSong", "biauKai", "weibei", "wawa"],
+                     forKey: "downloadedSystemFontIDs")
+    }
+
+    /// FR-5.16: the sixth queued font is matched at once, in parallel, and is
+    /// settled long before the queue would have reached it.
+    func test_prepare_sixthQueuedFont_isMatchedAtOnceWithoutAffectingOthers() async {
+        queueSixSystemFonts()
+        let library = makeLibrary(launchTimeout: 3)
+        let launch = Task { await library.prepareAtLaunch() }
+        await waitUntil("first started") { matcher.startedNames == ["LiHeiPro"] }
+
+        let started = Date()
+        let prepared = Task { await library.prepare(.wawa) }
+        await waitUntil("wawa started") { matcher.startedNames.contains("DFWaWaTC-W5") }
+        XCTAssertEqual(matcher.startedNames, ["LiHeiPro", "DFWaWaTC-W5"], "started alongside the running match")
+        matcher.send(.finished(matched: true, offline: false), to: "DFWaWaTC-W5")
+        await prepared.value
+
+        XCTAssertEqual(library.state(for: .wawa), .available)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        XCTAssertEqual(library.state(for: .liHei), .preparing, "the running match is untouched")
+        XCTAssertEqual(library.state(for: .hiraginoSans), .preparing, "queued fonts are untouched")
+        // The queue later skips the font that is already settled.
+        matcher.send(.finished(matched: true, offline: false), to: "LiHeiPro")
+        await waitUntil("next in queue") { matcher.startedNames.contains("HiraginoSansTC-W6") }
+        XCTAssertEqual(library.state(for: .liHei), .available)
+        XCTAssertEqual(matcher.startedNames.filter { $0 == "DFWaWaTC-W5" }.count, 1, "matched once")
+        launch.cancel()
+    }
+
+    /// FR-5.15: the out-of-queue match also times out 3 seconds after it starts.
+    func test_prepare_timesOutFromItsOwnStart() async {
+        queueSixSystemFonts()
+        let library = makeLibrary(launchTimeout: 0.4)
+        let launch = Task { await library.prepareAtLaunch() }
+        await waitUntil("first started") { matcher.startedNames == ["LiHeiPro"] }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        let started = Date()
+        await library.prepare(.wawa)
+
+        XCTAssertEqual(library.state(for: .wawa), .failed(.other))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.4 + 0.3, "counted from its own start")
+        XCTAssertFalse(matcher.send(.downloading(fraction: 0.1, totalBytes: 0), to: "DFWaWaTC-W5"))
+        launch.cancel()
+    }
+
+    /// A download report cancels a prepare() match too; a settled font returns at once.
+    func test_prepare_wouldDownload_cancelsAndSettledReturnsAtOnce() async {
+        queueSixSystemFonts()
+        let library = makeLibrary()
+        let launch = Task { await library.prepareAtLaunch() }
+        await waitUntil("first started") { !matcher.startedNames.isEmpty }
+
+        let prepared = Task { await library.prepare(.wawa) }
+        await waitUntil("wawa started") { matcher.startedNames.contains("DFWaWaTC-W5") }
+        XCTAssertFalse(matcher.send(.downloadWillBegin(totalBytes: 0), to: "DFWaWaTC-W5"))
+        await prepared.value
+
+        XCTAssertEqual(library.state(for: .wawa), .notDownloaded)
+        XCTAssertFalse(library.downloadedSystemFontIDs.contains(.wawa))
+        await library.prepare(.wawa)
+        await library.prepare(.pingFang)
+        launch.cancel()
+    }
+
     /// A disk error does not try the fallback host.
     func test_download_storageFailure_doesNotTryFallback() async {
         fetcher.script(huninnAsset.primaryURL, .fail(.storage))

@@ -327,6 +327,33 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
         }
     }
 
+    /// Settles one font now, for a profile switched to a `.preparing` font
+    /// (FR-5.16), so the 3-second limit (FR-5.15) holds however long the
+    /// launch queue is.
+    ///
+    /// A font still waiting in the launch queue leaves it and is matched at
+    /// once, alongside whatever match is running; its 3 seconds count from now.
+    /// A font already being matched is just waited for; a font that is not
+    /// `.preparing` returns immediately. Outcomes follow `prepareAtLaunch`: a
+    /// download report cancels the match (`.notDownloaded`), a timeout is
+    /// `.failed(.other)`.
+    func prepare(_ fontID: OverlayFontID) async {
+        guard state(for: fontID) == .preparing else { return }
+        if operations[fontID] == nil {
+            launchQueue.removeAll { $0.fontID == fontID }
+            let entry = entryProvider(fontID)
+            switch entry.source {
+            case .openSource:
+                if let asset = entry.openSource { startOpenSourcePreparation(fontID, asset: asset) }
+            case .system:
+                startLaunchMatch(fontID, postScriptName: entry.postScriptName)
+            case .builtIn:
+                break
+            }
+        }
+        await waitUntilSettled(fontID)
+    }
+
     // MARK: State
 
     private func setState(_ newState: FontState, for fontID: OverlayFontID) {
