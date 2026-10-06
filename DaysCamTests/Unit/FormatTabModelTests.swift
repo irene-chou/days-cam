@@ -5,8 +5,8 @@ import XCTest
 /// 24.1–24.5. Reuses `DisplaySettingsModel` directly (the format tab is a
 /// thin wrapper around it), so the interlock behavior itself — 0.1 11.8–11.14
 /// and `toggleUnit` — is already covered by `DisplaySettingsModelTests`; this
-/// file only covers what `FormatTabModel` adds: the second-layer tabs and the
-/// format-specific hidden-section hint.
+/// file only covers what `FormatTabModel` adds: the format-specific
+/// hidden-section hint (the second layer was removed in TASK-38).
 @MainActor
 final class FormatTabModelTests: XCTestCase {
     private func fixedNow() throws -> Date {
@@ -40,12 +40,6 @@ final class FormatTabModelTests: XCTestCase {
                                                    renderer: TemplateRenderer(),
                                                    updateProfile: spy.update)
         return FormatTabModel(displaySettings: displaySettings)
-    }
-
-    // MARK: - 24.1 格式第二層項目
-
-    func testSubTabTitlesAreDisplayContentThenDayCountFormat() {
-        XCTAssertEqual(FormatTabModel.SubTab.allCases.map(\.title), ["顯示內容", "天數格式"], "24.1")
     }
 
     // MARK: - 24.2 天數格式初始（只勾天）
@@ -101,13 +95,5 @@ final class FormatTabModelTests: XCTestCase {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(showDayCount: true), now: try fixedNow(), spy: spy)
         XCTAssertFalse(model.displaySettings.isDayCountFormatSectionDisabled)
-    }
-
-    // MARK: - selectedSubTab 是純畫面狀態，預設為顯示內容
-
-    func testSelectedSubTabDefaultsToDisplayContent() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        XCTAssertEqual(model.selectedSubTab, .displayContent)
     }
 }
