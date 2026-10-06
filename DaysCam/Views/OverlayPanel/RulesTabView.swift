@@ -17,6 +17,11 @@ struct RulesTabView: View {
     @ObservedObject var model: RulesTabModel
     @FocusState private var isNameFieldFocused: Bool
 
+    /// Whether this view adds its own `.tabbody` inset (12 vertical, 14
+    /// horizontal). `ContentTabView` turns it off and applies the same inset
+    /// once around both sub-tabs (TASK-38).
+    var appliesOuterPadding: Bool = true
+
     /// Minimum height of each of the three rows, content vertically
     /// centered (#156, the human's 2026-10-01 call). Replaces the earlier
     /// per-row 12pt top/bottom padding, which made rows 46-58pt tall
@@ -45,8 +50,8 @@ struct RulesTabView: View {
         // generic one shared by all four — `ui-shell` is dropping the panel
         // container's own generic inset in #105 to avoid stacking both).
         // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
+        .padding(.vertical, appliesOuterPadding ? 12 : 0)
+        .padding(.horizontal, appliesOuterPadding ? 14 : 0)
         .onChange(of: isNameFieldFocused) { _, isFocused in
             if !isFocused {
                 model.endEditingName()
