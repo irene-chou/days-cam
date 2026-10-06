@@ -130,7 +130,7 @@ struct OverlayPanelView: View {
         switch model.panelModel.selectedTab {
         case .style:
             if let styleTabModel = model.styleTabModel {
-                StyleTabView(model: styleTabModel, availableHeight: contentHeight)
+                StyleTabView(model: styleTabModel)
             } else {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }

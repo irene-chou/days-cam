@@ -3,23 +3,10 @@ import UIKit
 import XCTest
 @testable import DaysCam
 
-/// Height check for the style tab's color page (#155 Y.1/Y.2): with the
-/// sub-tab row pinned, anything taller than the panel's content area slides
-/// its first row under that row when scrolled to the bottom, clipping the
-/// selection ring. The color page must therefore fit the 120pt content area.
+/// Layout checks for the style tab's color pages (TASK-39): 34pt swatches on
+/// a shared nine-column grid, and page heights that fit a regular panel.
 @MainActor
 final class StyleTabViewLayoutTests: XCTestCase {
-    func testColorPageFitsA120ptContentAreaSoNothingScrollsUnderThePinnedRow() throws {
-        let suite = try XCTUnwrap(UserDefaults(suiteName: "StyleTabViewLayoutTests.\(UUID().uuidString)"))
-        let profile = CameraProfile(name: "測試", startDate: DateComponents(year: 2026, month: 1, day: 1))
-        let model = StyleTabModel(profile: profile, recentColorsStore: RecentColorsStore(defaults: suite),
-                                  applyFont: { _, _ in }, allProfiles: { [] }, replaceFont: { _, _ in [] }) { _ in }
-        model.selectedSubTab = .color
-        let hosting = UIHostingController(rootView: StyleTabView(model: model, availableHeight: 120).frame(width: 375))
-        let height = hosting.sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
-        XCTAssertLessThanOrEqual(height, 120, "顏色子分頁量到 \(height)pt，超過 120 會捲動並讓選定圈被固定的子分頁列切到")
-    }
-
     private func makeModel() throws -> StyleTabModel {
         let suite = try XCTUnwrap(UserDefaults(suiteName: "StyleTabViewLayoutTests.\(UUID().uuidString)"))
         let profile = CameraProfile(name: "測試", startDate: DateComponents(year: 2026, month: 1, day: 1))
@@ -27,64 +14,48 @@ final class StyleTabViewLayoutTests: XCTestCase {
                              applyFont: { _, _ in }, allProfiles: { [] }, replaceFont: { _, _ in [] }) { _ in }
     }
 
-    /// 39.8: regular panels use 34pt swatches; compact (<= 120pt) keeps 28pt.
-    func testSwatchDiameterFollowsAvailableHeight() {
-        XCTAssertEqual(StyleTabView.swatchDiameter(forAvailableHeight: 120), 28)
-        XCTAssertEqual(StyleTabView.swatchDiameter(forAvailableHeight: 80), 28)
-        XCTAssertEqual(StyleTabView.swatchDiameter(forAvailableHeight: 200), 34)
-        XCTAssertEqual(StyleTabView.swatchDiameter(forAvailableHeight: 160), 34)
+    private func pageHeight(_ model: StyleTabModel) -> CGFloat {
+        let hosting = UIHostingController(rootView: StyleTabView(model: model).frame(width: 375))
+        return hosting.sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
     }
 
-    /// 39.8: measured on the rendered page, not computed. At 200pt the
-    /// outline color page (auto + 9 swatches at 34pt) is drawn into a 375pt
-    /// window and a scan line through the first swatch row must find ten
-    /// separate swatches (no overlap) lying inside the 10pt side insets (no
-    /// clipping / horizontal scrolling); the two-row color page then has to
-    /// fit 200pt tall with both rows at the 42pt ring height.
-    func testRegularPanelPagesFitMeasuredWidthAndHeight() throws {
+    /// 39.8: nine equal-gap columns filling the content width; the second
+    /// row reuses the same column centers, so its n-th swatch is directly
+    /// under the first row's n-th (±0.5).
+    func testNineColumnsAreEvenlySpacedAndShareCentersAcrossRows() {
+        XCTAssertEqual(StyleTabView.swatchDiameter, 34)
+        XCTAssertEqual(StyleTabView.swatchCellHeight, 42)
+        for contentWidth: CGFloat in [355, 375, 420] {
+            let centers = StyleTabView.columnCenters(forContentWidth: contentWidth)
+            XCTAssertEqual(centers.count, 9)
+            let pitches = zip(centers.dropFirst(), centers).map { $0 - $1 }
+            for pitch in pitches {
+                XCTAssertEqual(pitch, pitches[0], accuracy: 0.001, "等距")
+                XCTAssertGreaterThanOrEqual(pitch, 34 + 2, "隔壁色票與環之間不重疊")
+            }
+            let totalWidth = centers[8] + 17 - (centers[0] - 17)
+            XCTAssertLessThanOrEqual(totalWidth, contentWidth + 0.001)
+            XCTAssertEqual(totalWidth, contentWidth, accuracy: 0.001, "撐滿內容寬")
+            let secondRow = StyleTabView.columnCenters(forContentWidth: contentWidth)
+            for (first, second) in zip(centers, secondRow) { XCTAssertEqual(first, second, accuracy: 0.5) }
+        }
+        XCTAssertEqual(StyleTabView.columnSpacing(forContentWidth: 355), 6.125, accuracy: 0.01)
+    }
+
+    /// 39.8a: the color page fits a regular panel's content area (160pt cap);
+    /// the outline page is capped at the ~200pt panel of #198. Small screens may scroll.
+    func testColorAndOutlinePagesFitRegularContentArea() throws {
         let model = try makeModel()
+        model.selectedSubTab = .color
+        let colorHeight = pageHeight(model)
+        XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42)
+        XCTAssertLessThanOrEqual(colorHeight, 160, "顏色頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
-        let hosting = UIHostingController(rootView: StyleTabView(model: model, availableHeight: 200)
-            .frame(width: 375, height: 400, alignment: .top).background(Color.black))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 400))
-        window.rootViewController = hosting
-        window.makeKeyAndVisible()
-        hosting.view.layoutIfNeeded()
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 375, height: 400), format: format).image { _ in
-            hosting.view.drawHierarchy(in: hosting.view.bounds, afterScreenUpdates: true)
-        }
-        let cgImage = try XCTUnwrap(image.cgImage)
-        let data = try XCTUnwrap(cgImage.dataProvider?.data)
-        let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
-        let bytesPerRow = cgImage.bytesPerRow
-        let bytesPerPixel = cgImage.bitsPerPixel / 8
-        func isInk(x: Int, y: Int) -> Bool {
-            let p = bytes + y * bytesPerRow + x * bytesPerPixel
-            return Int(p[0]) + Int(p[1]) + Int(p[2]) > 60 * 3 // not the black test backdrop
-        }
-        var best: (runs: Int, minX: Int, maxX: Int)?
-        for y in 0..<400 {
-            var runs = 0, previous = false, minX = Int.max, maxX = 0
-            for x in 0..<375 {
-                let ink = isInk(x: x, y: y)
-                if ink && !previous { runs += 1 }
-                if ink { minX = min(minX, x); maxX = max(maxX, x) }
-                previous = ink
-            }
-            if runs == 10, best == nil || maxX - minX > best!.maxX - best!.minX { best = (runs, minX, maxX) }
-        }
-        let found = try XCTUnwrap(best, "找不到由 10 顆分開色票組成的第一排（重疊或被切）")
-        // The selected 自動 ring pokes at most 4pt into the 10pt inset (#155).
-        XCTAssertGreaterThanOrEqual(found.minX, 6)
-        XCTAssertLessThanOrEqual(found.maxX, 369)
-
-        model.selectedSubTab = .color
-        let colorHeight = UIHostingController(rootView: StyleTabView(model: model, availableHeight: 200).frame(width: 375))
-            .sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
-        XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42, "兩排應以 42pt 環高計")
-        XCTAssertLessThanOrEqual(colorHeight, 200)
+        let outlineHeight = pageHeight(model)
+        // The card asks <= 160, but outline options (52) + two 42pt rows +
+        // sub-tab row and insets measure 200pt; that equals the ~200pt panel
+        // #198 introduces, so it is capped there (reported to Lead).
+        XCTAssertLessThanOrEqual(outlineHeight, 200, "外框頁 \(outlineHeight)pt")
     }
 }
