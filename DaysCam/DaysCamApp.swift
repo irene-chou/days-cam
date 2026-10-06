@@ -27,6 +27,8 @@ struct DaysCamApp: App {
     private static func makeCameraScreenModel() -> CameraScreenModel {
         let profileStore = ProfileStore()
         profileStore.load()
-        return CameraScreenModel(cameraService: CameraService(), profileStore: profileStore)
+        return CameraScreenModel(cameraService: CameraService(),
+                                 profileStore: profileStore,
+                                 fontLibrary: FontLibrary())
     }
 }

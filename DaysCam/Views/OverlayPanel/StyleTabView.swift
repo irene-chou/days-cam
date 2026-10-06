@@ -662,7 +662,10 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
     store.add(OverlayColor(red8: 0x2E, green8: 0x8B, blue8: 0x57))
     return StyleTabModel(profile: previewProfile(style: style),
                          recentColorsStore: store,
-                         fontLibrary: StaticFontLibrary(states: fontStates)) { _ in }
+                         fontLibrary: StaticFontLibrary(states: fontStates),
+                         applyFont: { _, _ in },
+                         allProfiles: { [] },
+                         replaceFont: { _, _ in [] }) { _ in }
 }
 
 #Preview("字型格子 · 只有蘋方 (375pt)") {

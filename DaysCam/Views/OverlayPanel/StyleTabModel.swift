@@ -52,9 +52,9 @@ final class StyleTabModel: ObservableObject {
     private let updateProfile: (CameraProfile) throws -> Void
     private let recentColorsStore: RecentColorsStore
     private let fontLibrary: any FontListControlling
-    private let injectedApplyFont: ((OverlayFontID, UUID) -> Void)?
-    private let allProfiles: (() -> [CameraProfile])?
-    private let injectedReplaceFont: ((OverlayFontID, OverlayFontID) throws -> [UUID])?
+    private let applyFont: (OverlayFontID, UUID) -> Void
+    private let allProfiles: () -> [CameraProfile]
+    private let replaceFont: (OverlayFontID, OverlayFontID) throws -> [UUID]
     private var cancellables: Set<AnyCancellable> = []
 
     /// Creates a style tab model for `profile`.
@@ -65,33 +65,31 @@ final class StyleTabModel: ObservableObject {
     ///     `UserDefaults.standard`; tests inject their own instance.
     ///   - fontLibrary: Where each font's availability comes from and what
     ///     the font list can cancel or delete (PRD 0.3). The default has only
-    ///     PingFang usable; TASK-35 injects the real `FontLibrary`.
+    ///     PingFang usable (previews, tests); the camera screen injects the
+    ///     real `FontLibrary`.
     ///   - applyFont: The one way a font gets written to a profile
-    ///     (`applyFont(fontID, profileID)`, FR-5.18). TRANSITION (TASK-34):
-    ///     when `nil`, the font is written straight through `updateProfile`
-    ///     so the grid still switches fonts until TASK-35 injects the real
-    ///     one and removes this default.
+    ///     (`applyFont(fontID, profileID)`, FR-5.18), provided by
+    ///     `CameraScreenModel`. This model never writes `fontID` itself.
     ///   - allProfiles: Every profile, to count who uses a font before it is
-    ///     deleted. Defaults to this profile alone (transition, as above).
+    ///     deleted.
     ///   - replaceFont: `ProfileStore.replaceFont`: switches every profile
     ///     using the first font to the second and returns the changed IDs.
-    ///     Defaults to changing this profile alone (transition, as above).
     ///   - updateProfile: Forwarded to the real persistence layer by the
     ///     caller, called after every change. Throws to report a failure;
     ///     this model does not interpret the error, it only surfaces it.
     init(profile: CameraProfile,
          recentColorsStore: RecentColorsStore = RecentColorsStore(),
          fontLibrary: (any FontListControlling)? = nil,
-         applyFont: ((OverlayFontID, UUID) -> Void)? = nil,
-         allProfiles: (() -> [CameraProfile])? = nil,
-         replaceFont: ((OverlayFontID, OverlayFontID) throws -> [UUID])? = nil,
+         applyFont: @escaping (OverlayFontID, UUID) -> Void,
+         allProfiles: @escaping () -> [CameraProfile],
+         replaceFont: @escaping (OverlayFontID, OverlayFontID) throws -> [UUID],
          updateProfile: @escaping (CameraProfile) throws -> Void) {
         self.profile = profile
         self.recentColorsStore = recentColorsStore
         self.fontLibrary = fontLibrary ?? StaticFontLibrary()
-        self.injectedApplyFont = applyFont
+        self.applyFont = applyFont
         self.allProfiles = allProfiles
-        self.injectedReplaceFont = replaceFont
+        self.replaceFont = replaceFont
         self.updateProfile = updateProfile
 
         // Forward the store's changes so a view observing only this model
@@ -241,22 +239,7 @@ extension StyleTabModel {
 
     /// Applies `fontID` to this profile through `applyFont` (FR-5.18).
     func selectFont(_ fontID: OverlayFontID) {
-        applyFont(fontID, to: profile.id)
-    }
-
-    private func applyFont(_ fontID: OverlayFontID, to profileID: UUID) {
-        if let injectedApplyFont {
-            injectedApplyFont(fontID, profileID)
-        } else {
-            writeFontDirectly(fontID, to: profileID)
-        }
-    }
-
-    /// TRANSITION (TASK-34 → TASK-35): the stand-in `applyFont`, writing
-    /// `fontID` through `updateProfile`. Removed with the default.
-    private func writeFontDirectly(_ fontID: OverlayFontID, to profileID: UUID) {
-        guard profileID == profile.id, fontID != profile.style.fontID else { return }
-        mutate { $0.fontID = fontID }
+        applyFont(fontID, profile.id)
     }
 
     /// Opens the font list, optionally scrolled to `fontID` (FR-10.2′.3).
@@ -266,32 +249,14 @@ extension StyleTabModel {
             currentFontID: profile.style.fontID,
             library: fontLibrary,
             scrollTarget: fontID,
-            profiles: { [weak self] in
-                guard let self else { return [] }
-                return self.allProfiles?() ?? [self.profile]
-            },
-            applyFont: { [weak self] fontID, profileID in
-                self?.applyFont(fontID, to: profileID)
-            },
-            replaceFont: { [weak self] font, replacement in
-                guard let self else { return [] }
-                if let injected = self.injectedReplaceFont {
-                    return try injected(font, replacement)
-                }
-                return self.replaceFontDirectly(font, with: replacement)
-            })
+            profiles: allProfiles,
+            applyFont: applyFont,
+            replaceFont: replaceFont)
     }
 
     /// Closes the font list.
     func dismissFontLibrary() {
         fontLibraryModel = nil
-    }
-
-    /// TRANSITION: the stand-in `replaceFont`, changing this profile only.
-    private func replaceFontDirectly(_ font: OverlayFontID, with replacement: OverlayFontID) -> [UUID] {
-        guard profile.style.fontID == font else { return [] }
-        mutate { $0.fontID = replacement }
-        return [profile.id]
     }
 }
 

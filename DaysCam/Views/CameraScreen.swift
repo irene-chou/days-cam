@@ -23,6 +23,7 @@ struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// What the thumbnail button currently shows; follows
     /// `model.latestThumbnailImage` (see `showThumbnail`).
@@ -48,6 +49,13 @@ struct CameraScreen: View {
             .onAppear { model.onAppear() }
             // FR-15.2 second branch: only reads when access is already granted.
             .task { await model.loadLaunchThumbnail() }
+            // PRD 0.3 FR-5.15: settle the fonts on the device, the current
+            // profile's first; the shutter waits for it (at most 3 seconds).
+            .task { await model.prepareFontsAtLaunch() }
+            // FR-16.11: downloads do not continue in the background.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { model.sceneDidEnterBackground() }
+            }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileManagerPresented) {
                 ProfileManagerView(model: model.profileManagerModel) {
@@ -329,6 +337,7 @@ struct CameraScreen: View {
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
                             frameSize: frameSize,
+                            font: model.overlayFont,
                             onDragChanged: model.panelModel.isOverlayDraggable ? { center, size in
                                 model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
                             } : nil,

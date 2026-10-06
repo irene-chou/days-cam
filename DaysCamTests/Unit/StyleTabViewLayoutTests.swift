@@ -12,7 +12,8 @@ final class StyleTabViewLayoutTests: XCTestCase {
     func testColorPageFitsA120ptContentAreaSoNothingScrollsUnderThePinnedRow() throws {
         let suite = try XCTUnwrap(UserDefaults(suiteName: "StyleTabViewLayoutTests.\(UUID().uuidString)"))
         let profile = CameraProfile(name: "測試", startDate: DateComponents(year: 2026, month: 1, day: 1))
-        let model = StyleTabModel(profile: profile, recentColorsStore: RecentColorsStore(defaults: suite)) { _ in }
+        let model = StyleTabModel(profile: profile, recentColorsStore: RecentColorsStore(defaults: suite),
+                                  applyFont: { _, _ in }, allProfiles: { [] }, replaceFont: { _, _ in [] }) { _ in }
         model.selectedSubTab = .color
         let hosting = UIHostingController(rootView: StyleTabView(model: model).frame(width: 375))
         let height = hosting.sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
