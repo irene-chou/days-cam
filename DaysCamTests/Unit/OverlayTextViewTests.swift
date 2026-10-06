@@ -25,7 +25,7 @@ final class OverlayTextViewTests: XCTestCase {
     /// the way `OverlayRenderer` does.
     func testFittedFontSizeMatchesOverlayMetricsForTheSameInputs() {
         let frameSize = CGSize(width: 3024, height: 4032)
-        let style = OverlayStyle(fontID: .sfMono, sizeScale: 70)
+        let style = OverlayStyle(fontID: .notoSerifTC, sizeScale: 70)
         let text = String(repeating: "第 10 天 ", count: 40)
 
         let viaView = OverlayTextView.fittedFontSize(for: text, style: style, frameSize: frameSize)
