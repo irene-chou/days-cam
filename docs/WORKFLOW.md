@@ -19,7 +19,7 @@
 
 高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
-**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
+**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、開 draft PR、實作、自驗、補齊描述後轉 ready → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
 ```text
 任務：TASK-XX／Issue URL（目標、驗收、依賴、相關檔案見卡片）
@@ -73,7 +73,7 @@ PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體
 
 ## Review
 
-`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，review 所有 PR，不分作者（每次都是全新執行）。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
+`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，review 所有非 draft PR，不分作者（每次都是全新執行）；draft 略過，轉 ready 時觸發第一次 review。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
 
 ```sh
 gh pr view <N> --json headRefOid,reviewDecision
@@ -83,7 +83,7 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 ```
 
 - Developer：在原本的開發 session 處理，不開新 session 重讀。必修逐條處理，同意則修正、相關測試通過後 push，回覆「已修正：<commit>」；不同意要說明並交 Lead／人類裁決。建議可自行取捨並簡短回覆理由。
-- Codex connector：高風險卡必觸發；一般卡在 Action 沒結果或需要第二意見時觸發。開 PR 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
+- Codex connector：高風險卡必觸發；一般卡在 Action 沒結果或需要第二意見時觸發。轉 ready 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
 - Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；凡符合 AGENTS 的 `needs-human` 條件就加 label，並在 PR 留言列出要人類看什麼（驗收編號、截圖連結、待裁決條目）。人類回覆後記到 PR 並移除。
 - 合併前確認同 SHA 的 `qa=success`、沒有 `needs-human`，以及 review gate：一般卡至少一個 approve、`risk:high` 卡 Claude 與 Codex 各一個 approve，定義見 AGENTS。Claude approve 看 `APPROVED` review 的 `commit_id` 等於最新 `headRefOid`；Codex approve 看 connector review 針對最新 SHA 且沒有 P0／P1；任何 review 的必修／P0／P1 已修正或已裁決。Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
 - 看板：可合併候選 `is:pr is:open status:success -label:needs-human`（再逐一核對 review gate）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。

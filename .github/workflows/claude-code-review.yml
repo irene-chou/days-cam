@@ -24,6 +24,8 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     # Reviews every PR regardless of author: each run is a fresh session (see docs/WORKFLOW.md#review).
+    # Drafts are skipped; marking a PR ready for review triggers the first review.
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
