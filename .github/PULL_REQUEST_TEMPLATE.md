@@ -21,4 +21,4 @@
 - 待裁決／依賴／下一位角色：
 
 <!-- 有人工待辦加 needs-human；新 push 使舊 SHA 的 QA／review 失效。
-合併 gate 依作者而不同（Claude PR 加 author:claude），詳見 docs/WORKFLOW.md 的 Review。 -->
+合併 gate：一般卡一個 agent approve、高風險卡兩家各一，詳見 docs/WORKFLOW.md 的 Review。 -->

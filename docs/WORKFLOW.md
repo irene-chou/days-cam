@@ -1,17 +1,17 @@
 # Claude + Codex 工作流程
 
-此文件承接 [AGENTS.md](../AGENTS.md)。按工作階段讀對應節；目前在**交叉 review 分工的試行期**，見文末 Pilot。
+此文件承接 [AGENTS.md](../AGENTS.md)。按工作階段讀對應節；目前在**開發分工與 review gate 的試行期**，見文末 Pilot。
 
 ## 分工與交接
 
-原則：一張卡盡量在同一個 session 做完；只有 review 換另一家，因為獨立視角在這一步最有價值。完整測試只在升版 PR 由 CI（`swift.yml`）執行，平常 PR 只跑相關測試 class。
+原則：一張卡盡量在同一個 session 做完；review 改由全新 session 執行（可與作者同模型），因為獨立視角在這一步最有價值。完整測試只在升版 PR 由 CI（`swift.yml`）執行，平常 PR 只跑相關測試 class。
 
 | 工作 | 預設執行者／模型 | 交付 |
 |---|---|---|
 | 需求、設計稿、任務卡、Lead | Claude 主 session／Opus（不另開 `lead-spec` subagent） | PRD／Issue／任務卡、驗收、依賴、所有權；開卡時查程式碼，把相關檔案與 symbol 寫進卡片 |
 | 邏輯開發（日期、渲染、相機、持久化） | Codex `core-style`、`core-device`／GPT-6 Astra low | 實作、XCTest、自驗 A 級、PR |
 | UI 開發（面板、畫面骨架、對照設計稿調整） | Claude `ui-panel`、`ui-shell`／Sonnet | 實作、XCTest、自驗 A 級、B′ Preview 截圖、PR |
-| Review（兼核對驗收） | 另一家：Codex PR → Claude Action；Claude PR（`author:claude`）→ Codex connector | 必修／建議；逐條確認每個 A 級驗收都有測試或證據 |
+| Review（兼核對驗收） | 全新 session 的 agent，不分作者：Claude Action 自動 review 所有 PR；高風險另加 Codex connector | 必修／建議；逐條確認每個 A 級驗收都有測試或證據 |
 | 獨立 QA | 僅 `risk: high`，由沒寫這張卡的那家執行 `qa` | 指定 SHA 的獨立驗收與證據 |
 | 高風險 review／爭議 | Claude `risk-reviewer`／Opus | 問題、影響、建議、未驗證處 |
 
@@ -19,7 +19,7 @@
 
 高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務／PR 標 `risk: high` 並寫原因，加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
-**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 另一家 review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。跨家交接只發生在派卡與 review。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
+**交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
 ```text
 任務：TASK-XX／Issue URL（目標、驗收、依賴、相關檔案見卡片）
@@ -46,18 +46,17 @@ codex exec -C <Codex worktree> -s workspace-write \
 1. **依複雜度選模型，快到上限時只開簡單卡**：平時照上表依卡片複雜度選模型，不全面降級。剩餘額度不多（尚未用完）時，只開小模型能做完的簡單卡；高風險卡等重置後再做。額度已用完時，同家降級通常無效（同家模型大多共用額度，除非某模型另有獨立上限），直接換家或等重置。
 2. **開工前先估量**：剩餘額度明顯不夠完成一張卡時，先不要開工；做到一半中斷，接手方要整份重讀，最浪費。
 3. **中斷時留檢查點**：被迫中斷時，先 push WIP commit，開或更新 draft PR，寫明已完成／未完成的驗收編號與下一步，另一家可以直接接續。
-4. **換家開發**：同一張卡改由另一家的對應角色接手，在 PR 註明「額度接手」。review 仍要交給「不是這次寫程式的那一家」；兩家都寫過時，交給目前有額度的一家，再由人類補看。
+4. **換家開發**：同一張卡改由另一家的對應角色接手，在 PR 註明「額度接手」。review 照常由全新 session 執行，哪一家都可以。
 5. **review 的替代路徑**：
-   - Claude 額度用完：Codex PR 的 Action review 會失敗或沒有結果，改用 `@codex review`，並由人類在 PR 留言確認 → 加 `quota-fallback` label。
-   - Codex 額度用完：Claude PR 改用 Claude `risk-reviewer` 開全新 session review（不沿用開發 session），結果貼 PR → 加 `quota-fallback` label。
-   - 有 `quota-fallback` 的 PR 依 AGENTS 的額度不足例外合併：替代 review 對最新 commit 沒有未解必修，且人類在 PR 確認，由 Lead 記錄；qa gate 照舊。
+   - 一般卡：只需一個 approve。Claude 額度用完時 Action 會失敗或沒有結果，改用 `@codex review`；Codex 額度用完時用 Action 或 Claude `risk-reviewer` 全新 session。不需 `quota-fallback`。
+   - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve，且人類在 PR 確認，由 Lead 記錄；qa gate 照舊。
 6. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
 7. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑，作為之後調整分工比例的依據。
 
 ## 開發
 
 1. 依 [閱讀矩陣](AGENT-READING-MAP.md) 取得任務與回歸條目，檢查依賴已合併。
-2. 各自 worktree，分支 `feature/task-XX-<簡述>`；修正／文件用對應前綴。一張卡一個 PR，必要時分 core／UI 半邊。Claude 開的 PR 加 `author:claude` label。高風險 QA 新增驗收測試用 `chore/qa-task-XX`。
+2. 各自 worktree，分支 `feature/task-XX-<簡述>`；修正／文件用對應前綴。一張卡一個 PR，必要時分 core／UI 半邊。高風險 QA 新增驗收測試用 `chore/qa-task-XX`。
 3. 單元測試放 `DaysCamTests/Unit/<來源檔名>Tests.swift`，歸來源檔擁有者。QA 只能寫 `DaysCamTests/Acceptance/` 的版本化程式；測試輸出與專用截圖 worktree 可寫。
 4. 每角色獨立模擬器，先用 `xcrun simctl list devices available` 查找 `iPhone 16 <角色>` 及 UUID，**查無才** `xcrun simctl clone "iPhone 16" "iPhone 16 <角色>"`；clone 不會檢查重名。找不到基底裝置時先查可用 runtime／裝置，不能盲目建多台。
 5. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`）執行，其他 PR 不跑 CI、也不在本機跑全套（2026-10-05 人類決定，節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
@@ -74,7 +73,7 @@ PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體
 
 ## Review
 
-`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，但會略過描述含 Claude Code 署名（`Generated with [Claude Code]`）的 PR。判斷依據是 PR 描述，因為 `gh pr create --label` 是建好 PR 後才加 label，`opened` 事件看不到；Claude 開 PR 時保留署名，另加 `author:claude` label 供看板篩選。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
+`.github/workflows/claude-code-review.yml` 在 opened／synchronize／ready_for_review／reopened 觸發，review 所有 PR，不分作者（每次都是全新執行）。新 push 撤銷舊 Claude approve；修改 review workflow 前已存在的分支需先 merge 最新 main，避免 Action 因 workflow 版本不同而跳過。
 
 ```sh
 gh pr view <N> --json headRefOid,reviewDecision
@@ -84,10 +83,10 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 ```
 
 - Developer：在原本的開發 session 處理，不開新 session 重讀。必修逐條處理，同意則修正、相關測試通過後 push，回覆「已修正：<commit>」；不同意要說明並交 Lead／人類裁決。建議可自行取捨並簡短回覆理由。
-- Codex connector：只 review Claude 開的 PR。開 PR 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
+- Codex connector：高風險卡必觸發；一般卡在 Action 沒結果或需要第二意見時觸發。開 PR 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
 - Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；三輪仍未收斂就停止、加 `needs-human`。截圖待確認、dev 駁回 reviewer 條目也加此 label，人類回覆後記到 PR 並移除。
-- 合併前確認同 SHA 的 `qa=success`、待裁決事項已結案，以及 review gate：Codex PR 的 Claude `APPROVED` review `commit_id` 等於最新 `headRefOid`，且 PR decision 為 `APPROVED`；Claude PR 的 Codex review 針對最新 SHA，且沒有未解 P0／P1，Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
-- 看板：可合併候選 `is:pr is:open review:approved status:success`（Claude PR 另查 `label:author:claude status:success`）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
+- 合併前確認同 SHA 的 `qa=success`、待裁決事項已結案，以及 review gate：一般卡至少一個 approve、`risk: high` 卡 Claude 與 Codex 各一個 approve，定義見 AGENTS。Claude approve 看 `APPROVED` review 的 `commit_id` 等於最新 `headRefOid`；Codex approve 看 connector review 針對最新 SHA 且沒有 P0／P1；任何 review 的必修／P0／P1 已修正或已裁決。Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
+- 看板：可合併候選 `is:pr is:open review:approved status:success`（只靠 Codex approve 的 PR 不會出現，另查 `is:pr is:open status:success`）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
 
 ## QA
 
@@ -148,12 +147,12 @@ Markdown 表格內的 shell 指令不可含 `|`；跳脫後 agent 照原文執�
 
 ## Pilot 與切換任務
 
-**目標**：驗證交叉 review 分工。各用一張一般風險卡走完「Claude 開發 → Codex review」與「Codex 開發 → Claude review」。Lead 挑正常產品任務，不為試行製造無效 PR。
+**目標**：驗證開發分工與不分作者的 review gate。各用一張一般風險卡走完「Claude 開發 → 全新 session review」與「Codex 開發 → 全新 session review」。Lead 挑正常產品任務，不為試行製造無效 PR。
 
-- [ ] 建立 `author:claude`、`quota-fallback` label；connector 已改為手動觸發，記錄設定人與日期。
+- [ ] 建立 `quota-fallback` label；connector 已改為手動觸發，記錄設定人與日期。
 - [ ] 兩個 pilot PR 各記錄：PR URL、review URL、bot 身分／state／commit_id、CI 結果、qa 設定者、修正輪數、兩邊額度前後差。沒量測的欄位寫「未量測」。
 - [ ] 至少一次修正 push 後重審，確認舊 review／qa 不會當成最新結果。
-- [ ] 確認含 Claude Code 署名的 PR 不會觸發 Claude Action。
+- [ ] 確認含 Claude Code 署名的 PR 也會觸發 Claude Action。
 - [ ] 跑完約 5 張卡後，依額度紀錄檢討 UI／邏輯的分配比例。
 
 本清單未勾選即表示 pilot 尚未完成。

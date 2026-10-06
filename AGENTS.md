@@ -5,7 +5,7 @@
 ## 開工入口
 
 - 先讀本檔，再依 [閱讀矩陣](docs/AGENT-READING-MAP.md) 讀角色與單張任務；不要預設通讀所有 PRD／TASKS。
-- Claude：需求／規格／Lead、UI 開發（ui-panel／ui-shell）、review Codex 的 PR；Codex：邏輯開發（core-style／core-device）、review Claude 的 PR。review 一律交給另一家，高風險卡才另開獨立 QA。詳細分工見 [WORKFLOW](docs/WORKFLOW.md)。
+- Claude：需求／規格／Lead、UI 開發（ui-panel／ui-shell）；Codex：邏輯開發（core-style／core-device）。review 不分作者，由全新 session 的 agent 執行；高風險卡需兩家都 approve，並另開獨立 QA。詳細分工見 [WORKFLOW](docs/WORKFLOW.md)。
 - `CLAUDE.md` 匯入本檔；兩家的角色入口共用 `docs/agents/`，0.2 所有權以 [任務表](docs/TASKS-0.2-ui-redesign.md#檔案所有權) 為準。
 
 ## 技術與風格
@@ -26,9 +26,10 @@
 
 ## Review 與 QA gate【硬規則】
 
-- Review 由另一家模型負責：Codex 開的 PR 由 `claude[bot]` Action review（新 push 撤銷舊 approve）；Claude 開的 PR（描述含 Claude Code 署名 `Generated with [Claude Code]`）Action 略過，改由 Codex connector review；另加 `author:claude` label 供看板篩選。
-- 合併須有最新 commit 的 `qa=success`，以及：Codex 開的 PR 需 **Claude bot 對最新 commit 的 approve、PR decision `APPROVED`**；Claude 開的 PR 需 **Codex 對最新 commit 的 review 沒有未解 P0／P1**，由 Lead 在 PR 記錄核對結果。被駁回的 reviewer 條目需 Lead／人類確認。
-- 額度不足例外：PR 有 `quota-fallback` label 時，上述 review 條件改為「替代 review 對最新 commit 沒有未解必修／P0／P1，且人類在 PR 留言確認接受替代 gate」，由 Lead 記錄；`qa=success` 不可省略。
+- Review 不看作者是哪一家：reviewer 只要是全新 session（不沿用開發 session），與作者同模型也可以。`claude[bot]` Action 會 review 所有 PR（新 push 撤銷舊 approve）；Codex connector 以 `@codex review` 觸發。
+- 「approve」指對最新 commit 的下列任一種：Claude bot 的 `APPROVED` review；Codex connector review 沒有 P0／P1；其他全新 session agent 貼在 PR、註明 SHA 且結論為 approve 的 review（由 Lead 記錄）。
+- 合併須有最新 commit 的 `qa=success`，以及 **一般卡至少一個 agent approve；`risk: high` 卡需 Claude 與 Codex 各一個 approve**。任何 review 對最新 commit 的必修／P0／P1 須已修正或經 Lead／人類裁決，由 Lead 在 PR 記錄核對結果。
+- 額度不足例外：`risk: high` 卡因一家額度用完無法取得兩家 approve 時，可加 `quota-fallback` label，改為「有額度那家的 approve，且人類在 PR 留言確認接受替代 gate」，由 Lead 記錄；`qa=success` 不可省略。
 - `qa=success` 只給 A 級全過且 B 級、B′ 截圖、爭議均已獲必要的人類確認者；有待辦維持 pending，失敗為 failure。新 push 需重新驗證最新 SHA。
 - 必修逐條修正或附理由交 Lead；同 PR 三輪未收斂就停止往返。待人類決定時加 `needs-human`，確認後由 Lead 移除並記錄。
 - review 回覆、status 指令、`qa-screenshots` 孤兒分支及人工確認方式見 [WORKFLOW](docs/WORKFLOW.md#review)；開始 review／QA／合併前必讀對應段落。
