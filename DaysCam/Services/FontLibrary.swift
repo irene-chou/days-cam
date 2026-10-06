@@ -534,8 +534,9 @@ private extension FontLibrary {
         let operation = Operation()
         operations[fontID] = operation
         let url = storedFileURL(for: fontID)
+        let fileManager = self.fileManager
         operation.task = Task { [weak self] in
-            guard FileManager.default.fileExists(atPath: url.path) else {
+            guard fileManager.fileExists(atPath: url.path) else {
                 self?.finishPreparation(fontID, operation: operation, outcome: .missing)
                 return
             }
