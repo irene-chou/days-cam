@@ -263,6 +263,31 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertEqual(model.toast?.text, "沒有網路，連上後再點一次")
     }
 
+    /// The model re-reads the library on the main queue after each
+    /// `objectWillChange`; a failure must be announced once however many
+    /// times that happens afterwards.
+    func testDownloadFailureIsAnnouncedOnlyOnce() async throws {
+        let library = FakeFontLibrary([.songti: .downloading(progress: 0.5)])
+        let model = makeModel(library: library)
+        var posted: [FontLibraryModel.Toast] = []
+        let cancellable = model.$toast.dropFirst().compactMap { $0 }.sink { posted.append($0) }
+
+        // The library's willChange fires before the state changes.
+        library.objectWillChange.send()
+        library.states[.songti] = .failed(.other)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(posted.map(\.text), ["「宋體」下載失敗，點一下重試"])
+
+        // Later changes elsewhere, and extra reads, do not repeat it.
+        library.objectWillChange.send()
+        model.libraryDidChange()
+        library.states[.huninn] = .available
+        library.objectWillChange.send()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(posted.count, 1, "失敗只提示一次")
+        cancellable.cancel()
+    }
+
     func testPreparingThatFailsAtLaunchIsNotAnnounced() {
         let library = FakeFontLibrary([.songti: .preparing])
         let model = makeModel(library: library)
