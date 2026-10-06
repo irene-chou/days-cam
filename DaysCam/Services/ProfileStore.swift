@@ -229,6 +229,37 @@ extension ProfileStore {
     }
 }
 
+// MARK: - Replacing a font (PRD 0.3 FR-16.12, TASK-33)
+
+extension ProfileStore {
+    /// Switches every profile that uses `font` to `replacement` and writes the
+    /// file once, before the caller deletes the font (PRD 0.3 FR-16.12).
+    ///
+    /// Only the font changes: other fields, other profiles and the selection
+    /// stay as they are, and `updatedAt` is stamped on the profiles changed.
+    /// Nothing is written when no profile uses `font`.
+    ///
+    /// - Returns: the identifiers of the profiles that were changed.
+    /// - Throws: `ProfileStoreError.writeFailed`; the stored profiles are then
+    ///   left as they were.
+    @discardableResult
+    func replaceFont(_ font: OverlayFontID, with replacement: OverlayFontID) throws -> [UUID] {
+        guard font != replacement else { return [] }
+        var updated = profiles
+        var changed: [UUID] = []
+        let timestamp = now()
+        for index in updated.indices where updated[index].style.fontID == font {
+            updated[index].style.fontID = replacement
+            updated[index].updatedAt = timestamp
+            changed.append(updated[index].id)
+        }
+        guard !changed.isEmpty else { return [] }
+        try persist(updated)
+        profiles = updated
+        return changed
+    }
+}
+
 // MARK: - Ordering, duplicating, naming (PRD 0.2 FR-9, TASK-20)
 
 extension ProfileStore {
