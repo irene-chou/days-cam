@@ -49,7 +49,7 @@ codex exec -C <Codex worktree> -s workspace-write \
 4. **換家開發**：同一張卡改由另一家的對應角色接手，在 PR 註明「額度接手」。review 照常由全新 session 執行，哪一家都可以。
 5. **review 的替代路徑**：
    - 一般卡：只需一個 approve。Claude 額度用完時 Action 會失敗或沒有結果，改用 `@codex review`；Codex 額度用完時用 Action 或 Claude `risk-reviewer` 全新 session。不需 `quota-fallback`。
-   - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve，且人類在 PR 確認，由 Lead 記錄；qa gate 照舊。
+   - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve 即可（不需人類另外同意），由 Lead 記錄；qa gate 照舊。
 6. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
 7. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑，作為之後調整分工比例的依據。
 

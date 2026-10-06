@@ -29,9 +29,9 @@
 - Review 不看作者是哪一家：reviewer 只要是全新 session（不沿用開發 session），與作者同模型也可以。`claude[bot]` Action 會 review 所有 PR（新 push 撤銷舊 approve）；Codex connector 以 `@codex review` 觸發。
 - 「approve」指對最新 commit 的下列任一種：Claude bot 的 `APPROVED` review；Codex connector review 沒有 P0／P1；其他全新 session agent 貼在 PR、註明 SHA 且結論為 approve 的 review（由 Lead 記錄）。
 - 合併須同時滿足：review gate、最新 commit 的 `qa=success`、PR 沒有 `needs-human` label。review gate 為 **一般卡至少一個 agent approve；`risk:high` 卡需 Claude 與 Codex 各一個 approve**。任何 review 對最新 commit 的必修／P0／P1 須已修正或經 Lead／人類裁決，由 Lead 在 PR 記錄核對結果。
-- 額度不足例外：`risk:high` 卡因一家額度用完無法取得兩家 approve 時，可加 `quota-fallback` label，改為「有額度那家的 approve，且人類在 PR 留言確認接受替代 gate」，由 Lead 記錄；`qa=success` 不可省略。
+- 額度不足例外：`risk:high` 卡因一家額度用完無法取得兩家 approve 時，可加 `quota-fallback` label，改為有額度那家的 approve 即可，不需人類另外同意，由 Lead 記錄；`qa=success` 不可省略。
 - `qa` 只代表獨立 qa agent 是否完成驗收。只有 `risk:high` label 的 PR 需要 qa：Action 設 pending，由 qa agent 對實際驗證的 SHA 設 success（A 級全過、B′ 對照完成）或 failure；新 push 重設 pending 需重驗。其他 PR 由 Action 自動設 success「免 qa」，不卡合併。
-- `needs-human`：凡需要人類過目或驗證就加——B 級實機、B′ 截圖確認、爭議裁決（含開發者駁回 reviewer 條目、規格矛盾）、三輪未收斂、`quota-fallback` 接受替代 gate、Lead 在同一 session 自寫的 PR。人類回覆後由 Lead 記到 PR 並移除。
+- `needs-human`：凡需要人類過目或驗證就加——B 級實機、B′ 截圖確認、爭議裁決（含開發者駁回 reviewer 條目、規格矛盾）、三輪未收斂、Lead 在同一 session 自寫的 PR。人類回覆後由 Lead 記到 PR 並移除。
 - 必修逐條修正或附理由交 Lead；同 PR 三輪未收斂就停止往返並加 `needs-human`。
 - review 回覆、status 指令、`qa-screenshots` 孤兒分支及人工確認方式見 [WORKFLOW](docs/WORKFLOW.md#review)；開始 review／QA／合併前必讀對應段落。
 
