@@ -454,7 +454,8 @@ struct StyleTabView: View {
                         onSelectSwatch(color)
                     }
                 }
-            }
+            }            .accessibilityElement(children: .contain)
+            .accessibilityLabel("最近自訂")
         }
         .opacity(isDisabled ? 0.35 : 1)
         .disabled(isDisabled)
