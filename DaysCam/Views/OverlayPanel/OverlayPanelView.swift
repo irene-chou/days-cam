@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The overlay panel's shell (PRD 0.2 FR-8): the first-level segmented
-/// control (樣式｜格式｜位置｜天數規則, FR-8.4) plus whichever tab's content is
+/// control (樣式｜內容｜位置, TASK-37) plus whichever tab's content is
 /// currently selected.
 ///
 /// Expanding/collapsing the panel and shrinking the viewfinder to 80% are
@@ -19,7 +19,7 @@ struct OverlayPanelView: View {
 
     /// The scrolling area's fixed height below the segmented control
     /// (issue #128); taller tab content scrolls inside it.
-    var contentHeight: CGFloat = 160
+    var contentHeight: CGFloat = 212
 
     /// The segmented control's height, scaled with Dynamic Type by
     /// `CameraScreen` so the panel's total height accounts for it (#139).
@@ -92,7 +92,7 @@ struct OverlayPanelView: View {
     /// `CameraTheme.shutterRing`, since it is used in exactly one place.
     private static let selectedSegmentShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.15)
 
-    /// One of the four equal-width segments (`.A .seg button`): selected
+    /// One of the three equal-width segments (`.A .seg button`): selected
     /// gets a white, rounded, drop-shadowed chip; unselected stays plain
     /// text on the shared gray track — no dot, no per-segment border.
     private func tabButton(_ tab: OverlayPanelModel.Tab) -> some View {
@@ -134,23 +134,19 @@ struct OverlayPanelView: View {
             } else {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }
-        case .format:
-            if let formatTabModel = model.formatTabModel {
-                FormatTabView(model: formatTabModel)
+        case .content:
+            if let formatTabModel = model.formatTabModel, let rulesTabModel = model.rulesTabModel {
+                ContentTabView(model: model.contentTabModel,
+                               formatTabModel: formatTabModel,
+                               rulesTabModel: rulesTabModel)
             } else {
-                placeholderTab(title: "格式", subtitle: "尚未選取設定檔")
+                placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
             }
         case .position:
             if let positionTabModel = model.positionTabModel {
                 PositionTabView(model: positionTabModel, availableHeight: contentHeight)
             } else {
                 placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
-            }
-        case .rules:
-            if let rulesTabModel = model.rulesTabModel {
-                RulesTabView(model: rulesTabModel)
-            } else {
-                placeholderTab(title: "天數規則", subtitle: "尚未選取設定檔")
             }
         }
     }
@@ -180,11 +176,11 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("格式（FormatTabView 已接上）") {
+#Preview("內容・格式子分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .format
+    model.panelModel.selectedTab = .content
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)
@@ -202,11 +198,12 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("天數規則（RulesTabView 已接上）") {
+#Preview("內容・天數規則子分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .rules
+    model.panelModel.selectedTab = .content
+    model.contentTabModel.selectedSubTab = .rules
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)

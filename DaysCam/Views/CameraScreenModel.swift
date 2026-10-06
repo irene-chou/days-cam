@@ -117,6 +117,11 @@ final class CameraScreenModel: ObservableObject {
     /// `refreshOverlayPanelTabModelsIfNeeded`.
     @Published private(set) var styleTabModel: StyleTabModel?
 
+    /// The 內容 tab's sub-tab selection (TASK-37/38). Kept here, not in the
+    /// view, so `finishAddingProfile` can land on 天數規則 and the choice
+    /// survives the panel closing and reopening.
+    let contentTabModel = ContentTabModel()
+
     /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
     /// Rebuilt alongside `styleTabModel`.
     @Published private(set) var formatTabModel: FormatTabModel?
@@ -753,7 +758,8 @@ extension CameraScreenModel {
     /// start date (PRD 0.2 FR-9.8). The overlay panel stays open.
     func finishAddingProfile() {
         isProfileManagerPresented = false
-        panelModel.selectedTab = .rules
+        panelModel.selectedTab = .content
+        contentTabModel.selectedSubTab = .rules
     }
 }
 

@@ -3,10 +3,10 @@ import XCTest
 
 /// Covers the ratio button's outline geometry (issue #137, I.1/I.2).
 final class CameraToolbarTests: XCTestCase {
-    func testOutlineHeightIsBetween28And32ForEveryRatio() {
+    func testOutlineHeightIsBetween21And32ForEveryRatio() {
         for ratio in CaptureAspectRatio.allCases {
             let height = RatioIconGeometry.outlineHeight(for: ratio)
-            XCTAssertGreaterThanOrEqual(height, 28, "\(ratio)")
+            XCTAssertGreaterThanOrEqual(height, 21, "\(ratio)")
             XCTAssertLessThanOrEqual(height, 32, "\(ratio)")
         }
     }
@@ -21,9 +21,12 @@ final class CameraToolbarTests: XCTestCase {
         }
     }
 
-    func testOneByOneAndThreeByFourStayAtTheBaseHeight() {
-        XCTAssertEqual(RatioIconGeometry.outlineHeight(for: .oneByOne), 28)
+    func testThreeByFourStaysAtTheBaseHeightAndOneByOneIs21Square() {
         XCTAssertEqual(RatioIconGeometry.outlineHeight(for: .threeByFour), 28)
+        XCTAssertEqual(RatioIconGeometry.outlineHeight(for: .oneByOne), 21, "37.5")
+        XCTAssertEqual(RatioIconGeometry.outlineWidth(for: .oneByOne), 21, "37.5")
+        XCTAssertEqual(RatioIconGeometry.outlineWidth(for: .oneByOne),
+                       RatioIconGeometry.outlineWidth(for: .threeByFour), "37.5: same width as 3:4")
     }
 
     func testNineBySixteenGrowsToTheMaximumHeight() {

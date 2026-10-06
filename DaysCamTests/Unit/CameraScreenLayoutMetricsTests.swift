@@ -124,11 +124,14 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
     /// 375×667, 375×812, 393×852, 440×956 with the expected 3:4 box (H.12).
     /// Box values derived from the issue's formulas; reference table is ±6pt.
     private var devices: [Device] {
+        // TASK-37 (37.4): regular screens' content area is 212 (was 160), so
+        // the open-panel box is 52pt shorter than the 0.2 values; the small
+        // screen keeps 120 and is unchanged.
         [Device(width: 375, height: 667, top: 20, bottom: 0, viewfinderHeight: 389, boxWidth: 291.75),
-         Device(width: 375, height: 812, top: 50, bottom: 34, viewfinderHeight: 413.3, boxWidth: 310),
-         Device(width: 393, height: 852, top: 59, bottom: 34, viewfinderHeight: 444.7, boxWidth: 333.5),
-         Device(width: 402, height: 874, top: 62, bottom: 34, viewfinderHeight: 460.7, boxWidth: 345.5),
-         Device(width: 440, height: 956, top: 59, bottom: 34, viewfinderHeight: 528, boxWidth: 396)]
+         Device(width: 375, height: 812, top: 50, bottom: 34, viewfinderHeight: 361.3, boxWidth: 271),
+         Device(width: 393, height: 852, top: 59, bottom: 34, viewfinderHeight: 392.7, boxWidth: 294.5),
+         Device(width: 402, height: 874, top: 62, bottom: 34, viewfinderHeight: 408.7, boxWidth: 306.5),
+         Device(width: 440, height: 956, top: 59, bottom: 34, viewfinderHeight: 476, boxWidth: 357)]
     }
 
     func testPanelOpenBoxMatchesReferenceValuesOnEveryDevice() {
@@ -162,8 +165,8 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
     func testPanelHeightsAndSmallScreenBoundary() {
         let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         XCTAssertFalse(regular.isSmallScreen)
-        XCTAssertEqual(regular.panelContentHeight, 160)
-        XCTAssertEqual(regular.panelHeight, 192)
+        XCTAssertEqual(regular.panelContentHeight, 212, "37.4")
+        XCTAssertEqual(regular.panelHeight, 244)
         XCTAssertEqual(regular.panelGapAboveBox, 6)
 
         let small = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
@@ -188,19 +191,20 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
 
         let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         let regularSide = PositionTabModel.gridBoxSide(forAvailableHeight: regular.panelContentHeight)
+        XCTAssertEqual(regularSide, 96, accuracy: accuracy, "37.6: the grid stays 96 in the taller area")
         XCTAssertLessThanOrEqual(regularSide + PositionTabModel.gridBoxVerticalInset(forAvailableHeight: regular.panelContentHeight) * 2, regular.panelContentHeight)
     }
 
     /// A taller tab bar (large Dynamic Type) grows the panel and shrinks the
-    /// viewfinder by the same amount; the content area stays 160 (#139, D.5).
+    /// viewfinder by the same amount; the content area stays 212 (#139, D.5).
     func testTallerTabBarShrinksViewfinderNotContent() {
         let size = CGSize(width: 393, height: 852)
         let insets = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
         let normal = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 32)
         let large = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 38)
-        XCTAssertEqual(normal.panelHeight, 192, accuracy: accuracy)
-        XCTAssertEqual(large.panelHeight, 198, accuracy: accuracy)
-        XCTAssertEqual(large.panelContentHeight, 160)
+        XCTAssertEqual(normal.panelHeight, 244, accuracy: accuracy)
+        XCTAssertEqual(large.panelHeight, 250, accuracy: accuracy)
+        XCTAssertEqual(large.panelContentHeight, 212)
         XCTAssertEqual(large.panelBottom, normal.panelBottom, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderAreaHeight, normal.panelOpenViewfinderAreaHeight - 6, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderFrame.minY, large.headerBottom, accuracy: accuracy)
@@ -219,7 +223,7 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         // footerBase 818: 8pt, 44pt row, 4pt gap, then the panel.
         XCTAssertEqual(metrics.panelBottom, 762, accuracy: accuracy)
-        XCTAssertEqual(metrics.panelTop, 570, accuracy: accuracy)
+        XCTAssertEqual(metrics.panelTop, 518, accuracy: accuracy)
     }
 
     func testFooterSideButtonCenterInset() {
