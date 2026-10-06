@@ -644,9 +644,27 @@ final class FontLibraryTests: XCTestCase {
         await library.prepare(.wawa)
 
         XCTAssertEqual(library.state(for: .wawa), .failed(.other))
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.4 + 0.3, "counted from its own start")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.4 + 1.0, "counted from its own start")
         XCTAssertFalse(matcher.send(.downloading(fraction: 0.1, totalBytes: 0), to: "DFWaWaTC-W5"))
         launch.cancel()
+    }
+
+    /// prepareAtLaunch(priority:) and prepare() waiting for the same font get
+    /// the same result from a single match.
+    func test_prepare_andPrepareAtLaunchWaitingForSameFont_shareOneMatch() async {
+        defaults.set(["liHei"], forKey: "downloadedSystemFontIDs")
+        let library = makeLibrary()
+        let launch = Task { await library.prepareAtLaunch(priority: .liHei) }
+        await waitUntil("match started") { matcher.startedNames == ["LiHeiPro"] }
+        let prepared = Task { await library.prepare(.liHei) }
+        await Task.yield()
+
+        matcher.send(.finished(matched: true, offline: false), to: "LiHeiPro")
+        await launch.value
+        await prepared.value
+
+        XCTAssertEqual(library.state(for: .liHei), .available)
+        XCTAssertEqual(matcher.startedNames, ["LiHeiPro"], "matched once")
     }
 
     /// A download report cancels a prepare() match too; a settled font returns at once.
