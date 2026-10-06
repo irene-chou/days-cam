@@ -390,17 +390,7 @@ struct StyleTabView: View {
             // the same column as the first row's swatch above it, left-aligned.
             paletteRow {
                 if showAutoButton {
-                    Button {
-                        onSelectAuto()
-                    } label: {
-                        Image(systemName: "circle.lefthalf.filled")
-                            .font(.system(size: 16))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                            .overlay(swatchSelectionRing(current == nil))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
-                    }
-                    .accessibilityLabel("自動（黑或白）")
-                    .accessibilityAddTraits(current == nil ? .isSelected : [])
+                    autoColorButton(current: current, onSelectAuto: onSelectAuto)
                 }
                 // The rainbow swatch is "selected" when `current` is a custom
                 // color that does not match any preset or recent swatch —
@@ -433,7 +423,22 @@ struct StyleTabView: View {
         .frame(height: Self.swatchCellHeight)
     }
 
-    private func colorDot(_ color: OverlayColor, isSelected: Bool,
+    /// The 外框顏色 "auto" button: one grid column wide like every swatch.
+    func autoColorButton(current: OverlayColor?, onSelectAuto: @escaping () -> Void) -> some View {
+        Button {
+            onSelectAuto()
+        } label: {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 16))
+                .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                .overlay(swatchSelectionRing(current == nil))
+                .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+        }
+        .accessibilityLabel("自動（黑或白）")
+        .accessibilityAddTraits(current == nil ? .isSelected : [])
+    }
+
+    func colorDot(_ color: OverlayColor, isSelected: Bool,
                           labelPrefix: String = "",
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -463,7 +468,7 @@ struct StyleTabView: View {
     /// (its title, "自訂顏色", even with `.labelsHidden()`) is left as-is
     /// rather than combined, so VoiceOver's activation still routes to the
     /// native control exactly as before this change (R.4).
-    private func customColorPicker(current: OverlayColor?,
+    func customColorPicker(current: OverlayColor?,
                                    isSelected: Bool,
                                    onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
         ZStack {
