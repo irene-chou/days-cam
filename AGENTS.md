@@ -27,7 +27,7 @@
 
 ## Review 與 QA gate【硬規則】
 
-- Review 不看作者是哪一家：reviewer 只要是全新 session（不沿用開發 session），與作者同模型也可以。`claude[bot]` Action 會 review 所有 PR（新 push 撤銷舊 approve）；Codex connector 以 `@codex review` 觸發。
+- Review 不看作者是哪一家：reviewer 只要是全新 session（不沿用開發 session），與作者同模型也可以。`claude[bot]` Action 會 review 所有非 draft PR（新 push 撤銷舊 approve）；Codex connector 以 `@codex review` 觸發。
 - 「approve」指對最新 commit 的下列任一種：Claude bot 的 `APPROVED` review；Codex connector review 沒有 P0／P1；其他全新 session agent 貼在 PR、註明 SHA 且結論為 approve 的 review（由 Lead 記錄）。
 - 合併須同時滿足：review gate、最新 commit 的 `qa=success`、PR 沒有 `needs-human` label。review gate 為 **一般卡至少一個 agent approve；`risk:high` 卡需 Claude 與 Codex 各一個 approve**。任何 review 對最新 commit 的必修／P0／P1 須已修正或經 Lead／人類裁決，由 Lead 在 PR 記錄核對結果。
 - 額度不足例外：`risk:high` 卡因一家額度用完無法取得兩家 approve 時，可加 `quota-fallback` label，改為有額度那家的 approve 即可，不需人類另外同意，由 Lead 記錄；`qa=success` 不可省略。
