@@ -14,31 +14,26 @@ import UIKit
 /// `.accessibilityLabel` only.
 struct StyleTabView: View {
     @ObservedObject var model: StyleTabModel
+    /// Swatch diameter for the color rows, every device (TASK-39 B; was 28).
+    static let swatchDiameter: CGFloat = 34
+    /// Both color rows share this many columns (TASK-39 B).
+    static let colorColumnCount = 9
+    /// Height of a color row and diameter of the selection ring: the ring is
+    /// drawn 4pt outside the swatch (#155), so the row is as tall as the ring.
+    static let swatchCellHeight: CGFloat = swatchDiameter + 8
 
-    /// Swatch diameter for the color rows (`.prow .dot{width:28px}`, #106 —
-    /// was 26). The longest row (outline color: auto + nine swatches +
-    /// rainbow = eleven items) must still fit inside a 375pt-wide screen
-    /// without horizontal scrolling (FR-10.4, acceptance 23.12): at 28pt
-    /// with zero gap that is already only 11*28 = 308pt, inside a 343pt
-    /// content width (375 - 16*2) — the row's `space-between` layout
-    /// (`colorPalette` below) only ever turns that slack into gaps, never
-    /// overflow, so 23.12 holds regardless of how many swatches a given row
-    /// has.
-    private static let swatchDiameter: CGFloat = 28
-    /// Height of a swatch's cell and diameter of its selection ring (#155).
-    /// The ring used to be an overlay poking 4pt out of the 28pt swatch on
-    /// every side, which the pinned sub-tab row and the panel's edge cut
-    /// off. The cell is as tall as the ring so the ring lies inside it
-    /// vertically; horizontally the cell keeps the swatch's 28pt pitch
-    /// (eleven 36pt cells would not fit the 355pt content width, acceptance
-    /// 23.12), so the ring may extend into the neighboring gap / the
-    /// content padding, which nothing clips.
-    private static let swatchCellHeight: CGFloat = 36
-    /// Gap between items in the "recent" row, the one row that stays
-    /// left-aligned with a fixed gap rather than `space-between`
-    /// (`.prow:last-child{justify-content:flex-start;gap:10px}`, #106 — was
-    /// 5, shared with the first row before this).
-    private static let recentRowSpacing: CGFloat = 10
+    /// Gap between neighboring columns when the nine columns fill
+    /// `contentWidth` edge to edge (`space-between`). Never negative.
+    static func columnSpacing(forContentWidth contentWidth: CGFloat) -> CGFloat {
+        max(0, (contentWidth - CGFloat(colorColumnCount) * swatchDiameter) / CGFloat(colorColumnCount - 1))
+    }
+
+    /// Center x of each of the nine columns, shared by both color rows so the
+    /// second row's n-th swatch sits right under the first row's n-th.
+    static func columnCenters(forContentWidth contentWidth: CGFloat) -> [CGFloat] {
+        let pitch = swatchDiameter + columnSpacing(forContentWidth: contentWidth)
+        return (0..<colorColumnCount).map { swatchDiameter / 2 + CGFloat($0) * pitch }
+    }
 
     var body: some View {
         // No gap of its own between `subTabRow` and `content` (#106): the
@@ -131,7 +126,7 @@ struct StyleTabView: View {
             // Final icon set per FR-10.1 / PRD §1 icon rules: SF Symbol
             // names are the spec, not the mockup's hand-drawn SVG
             // approximations (design decision, #71).
-            Image(systemName: "textformat").accessibilityHidden(true)
+            Image(systemName: "t.square").accessibilityHidden(true)
         case .color:
             // Two-layer palette icon (design decision, #71): the inner
             // circle previews the current text color live, the outer ring
@@ -145,7 +140,7 @@ struct StyleTabView: View {
                                 model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
                 .accessibilityHidden(true)
         case .outline:
-            Image(systemName: "square.dashed").accessibilityHidden(true)
+            Image(systemName: "character.square.fill").accessibilityHidden(true)
         case .shadow:
             Image(systemName: "shadow").accessibilityHidden(true)
         case .size:
@@ -383,33 +378,20 @@ struct StyleTabView: View {
                               onSelectSwatch: @escaping (OverlayColor) -> Void,
                               onSelectAuto: @escaping () -> Void = {},
                               onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        // `.pal{gap:6px}` between the two rows (#106) — was 10.
+        // `.pal{gap:6px}` between the two rows (#106).
         VStack(alignment: .leading, spacing: 6) {
-            // First row fills the full content width edge-to-edge, gaps
-            // sized automatically (`.prow{justify-content:space-between}`,
-            // #106 — was a fixed 5pt gap): (N-1) equal flexible spacers
-            // between N fixed-size swatches is `space-between`'s exact
-            // SwiftUI equivalent for a known, non-scrolling item count.
-            HStack(spacing: 0) {
-                if showAutoButton {
-                    Button {
-                        onSelectAuto()
-                    } label: {
-                        Image(systemName: "circle.lefthalf.filled")
-                            .font(.system(size: 16))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                            .overlay(swatchSelectionRing(current == nil))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
-                    }
-                    .accessibilityLabel("自動（黑或白）")
-                    .accessibilityAddTraits(current == nil ? .isSelected : [])
-                    Spacer(minLength: 0)
-                }
-                ForEach(Array(swatches.enumerated()), id: \.element.hexString) { index, swatch in
-                    if index > 0 { Spacer(minLength: 0) }
+            // First row: nine swatches filling the content width, equal gaps.
+            paletteRow {
+                ForEach(swatches, id: \.hexString) { swatch in
                     colorDot(swatch, isSelected: current == swatch) { onSelectSwatch(swatch) }
                 }
-                Spacer(minLength: 0)
+            }
+            // Second row: (auto,) rainbow, then recent custom colors, each in
+            // the same column as the first row's swatch above it, left-aligned.
+            paletteRow {
+                if showAutoButton {
+                    autoColorButton(current: current, onSelectAuto: onSelectAuto)
+                }
                 // The rainbow swatch is "selected" when `current` is a custom
                 // color that does not match any preset or recent swatch —
                 // those already show their own ring, so this only fires for
@@ -418,27 +400,9 @@ struct StyleTabView: View {
                     && !swatches.contains(current!)
                     && !model.recentColors.contains(current!)
                 customColorPicker(current: current, isSelected: isCustomSelected, onPickCustom: onPickCustom)
-            }
-            // Second ("recent") row stays left-aligned with a fixed gap
-            // (`.prow:last-child{justify-content:flex-start;gap:10px}`,
-            // #106) rather than `space-between` — it can have anywhere from
-            // zero to seven items, so stretching it to fill the row would
-            // leave huge, uneven gaps instead of a steady 10pt rhythm.
-            HStack(spacing: Self.recentRowSpacing) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 14))
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                    .accessibilityLabel("最近自訂")
-                if model.recentColors.isEmpty {
-                    Text("用彩虹圓自訂的顏色會出現在這裡")
-                        .font(.caption)
-                        .foregroundColor(CameraTheme.inkSecondary)
-                } else {
-                    ForEach(model.recentColors, id: \.hexString) { color in
-                        colorDot(color, isSelected: current == color, cellHeight: Self.swatchDiameter) {
-                            onSelectSwatch(color)
-                        }
+                ForEach(model.recentColors, id: \.hexString) { color in
+                    colorDot(color, isSelected: current == color, labelPrefix: "最近自訂 ") {
+                        onSelectSwatch(color)
                     }
                 }
             }
@@ -447,23 +411,44 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    /// `cellHeight` is `swatchCellHeight` for the first row; the "recent" row
-    /// below it passes the bare swatch height so the last row is 8pt shorter
-    /// and the whole palette fits 120pt-tall panels without scrolling under
-    /// the pinned sub-tab row (#155 Y.2). Its selection ring then extends
-    /// 4pt past the cell into the row gap above / the bottom padding below,
-    /// where nothing clips it.
-    private func colorDot(_ color: OverlayColor, isSelected: Bool,
-                          cellHeight: CGFloat = StyleTabView.swatchCellHeight,
+    /// One color row: items laid out on the shared nine-column grid.
+    private func paletteRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let built = content()
+        return GeometryReader { proxy in
+            HStack(spacing: Self.columnSpacing(forContentWidth: proxy.size.width)) {
+                built
+            }
+            .frame(width: proxy.size.width, alignment: .leading)
+        }
+        .frame(height: Self.swatchCellHeight)
+    }
+
+    /// The 外框顏色 "auto" button: one grid column wide like every swatch.
+    func autoColorButton(current: OverlayColor?, onSelectAuto: @escaping () -> Void) -> some View {
+        Button {
+            onSelectAuto()
+        } label: {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 16))
+                .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                .overlay(swatchSelectionRing(current == nil))
+                .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+        }
+        .accessibilityLabel("自動（黑或白）")
+        .accessibilityAddTraits(current == nil ? .isSelected : [])
+    }
+
+    func colorDot(_ color: OverlayColor, isSelected: Bool,
+                          labelPrefix: String = "",
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchSelectionRing(isSelected))
-                .frame(width: Self.swatchDiameter, height: cellHeight)
+                .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }
-        .accessibilityLabel(color.hexString)
+        .accessibilityLabel(labelPrefix + color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -483,7 +468,7 @@ struct StyleTabView: View {
     /// (its title, "自訂顏色", even with `.labelsHidden()`) is left as-is
     /// rather than combined, so VoiceOver's activation still routes to the
     /// native control exactly as before this change (R.4).
-    private func customColorPicker(current: OverlayColor?,
+    func customColorPicker(current: OverlayColor?,
                                    isSelected: Bool,
                                    onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
         ZStack {
