@@ -391,6 +391,18 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(storedFont(harness.profileB.id, in: harness.store), .pingFang, "35.7")
     }
 
+    func testFailedSaveAfterTheDownloadKeepsTheErrorAndDoesNotAnnounceApplied() throws {
+        let harness = try makeHarness(states: [.xingkai: .notDownloaded])
+        harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+        // Make the profile file unwritable so `ProfileStore.update` throws.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        harness.library.finishDownload(.xingkai)
+
+        XCTAssertEqual(harness.model.toastState?.message, "無法儲存字型設定", "寫入失敗不可報成已套用")
+        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .pingFang)
+    }
+
     func testDownloadFinishingForADeletedProfileWritesNothing() throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
         harness.model.applyFont(.xingkai, profileID: harness.profileB.id)

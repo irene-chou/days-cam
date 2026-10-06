@@ -1233,18 +1233,23 @@ extension CameraScreenModel {
 
     /// Writes `fontID` into the stored profile and keeps the style tab's copy
     /// in step. A profile that no longer exists is skipped.
-    private func writeFont(_ fontID: OverlayFontID, to profileID: UUID) {
-        guard var latest = profileStore.profiles.first(where: { $0.id == profileID }) else { return }
+    ///
+    /// - Returns: whether the profile now has `fontID`; `false` for a missing
+    ///   profile or a failed save (which shows its own message).
+    @discardableResult
+    private func writeFont(_ fontID: OverlayFontID, to profileID: UUID) -> Bool {
+        guard var latest = profileStore.profiles.first(where: { $0.id == profileID }) else { return false }
         if latest.style.fontID != fontID {
             latest.style.fontID = fontID
             do {
                 try profileStore.update(latest)
             } catch {
                 showToast(message: "無法儲存字型設定")
-                return
+                return false
             }
         }
         syncStyleTabModelWithStore()
+        return true
     }
 
     /// Hands the style tab the store's latest copy of its profile (FR-5.18).
@@ -1276,8 +1281,7 @@ extension CameraScreenModel {
             case .available:
                 pendingFontApplications[profileID] = nil
                 guard profileStore.profiles.contains(where: { $0.id == profileID }) else { continue }
-                writeFont(fontID, to: profileID)
-                announceApplied(fontID)
+                if writeFont(fontID, to: profileID) { announceApplied(fontID) }
             case .notDownloaded, .failed:
                 pendingFontApplications[profileID] = nil
             case .preparing, .downloading:
