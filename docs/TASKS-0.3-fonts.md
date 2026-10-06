@@ -125,7 +125,7 @@ PRD-0.3 §4.2、§4.4、FR-16.6～16.12、FR-16.14、FR-5.15 的服務層。
 - `Services/FontLibrary.swift`：`ObservableObject`，實作 `FontAvailabilityProviding`，發布每個 `fontID` 的 `FontState`
 - 開源字型：下載（先 jsDelivr、失敗改 GitHub raw）→ 驗證大小與 SHA-256 → 存 `Application Support/Fonts/<fontID>.<ext>`（`isExcludedFromBackup`）→ `CTFontManagerRegisterFontURLs(.process)`。驗證失敗刪檔並 `failed`
 - 系統字型：`CTFontDescriptorMatchFontDescriptorsWithProgressHandler` 下載與比對；以「最後是否比對成功」判定，不因中途錯誤（如 #302）就判失敗（調查報告註 1）
-- `download(_:)`、`cancel(_:)`、`delete(_:)`（只限開源，刪檔並取消註冊）、`prepareAtLaunch(priority:)`（目前設定檔的字型優先，回傳完成或 3 秒逾時）、`cancelAllDownloads()`（App 退到背景時呼叫，FR-16.11）
+- `download(_:)`、`cancel(_:)`、`delete(_:)`（只限開源，刪檔並取消註冊）、`prepare(_:)`（把佇列中的字型提前立即比對，3 秒從此刻起算，FR-5.16）、`prepareAtLaunch(priority:)`（目前設定檔的字型優先，回傳完成或 3 秒逾時）、`cancelAllDownloads()`（App 退到背景時呼叫，FR-16.11）
 - `downloadedSystemFontIDs` 存 `UserDefaults`：系統字型下載成功時加入；啟動只比對清單內的字型，比對過程出現任一下載狀態（已被系統清掉，不論是否附帶下載量）時取消、移除並視為 `notDownloaded`，不得自動下載（PRD FR-5.15）
 - 失敗原因至少區分「沒網路」與「其他」
 - 網路、檔案系統、CoreText 比對都抽成可注入介面，單元測試不連網
@@ -220,7 +220,7 @@ PRD-0.3 FR-5.15、FR-5.16、FR-16.14 的畫面接線。
 **範圍**
 
 - `DaysCamApp`／`CameraScreenModel`：啟動時呼叫 `FontLibrary.prepareAtLaunch`，目前設定檔的字型優先
-- 目前設定檔字型為 `preparing` 時快門停用；完成或 3 秒逾時後恢復
+- 目前設定檔字型為 `preparing` 時快門停用；完成或 3 秒逾時後恢復。切換到字型為 `preparing` 的設定檔時呼叫 `FontLibrary.prepare(fontID)`，讓它立即開始比對（不必等啟動佇列），確保 3 秒上限（FR-5.16）
 - 字型不可用時（非 `available`、非 `preparing`），開面板或切到該設定檔時提示一次「「<名稱>」需要重新下載，暫時用蘋方」
 - **字型只在主執行緒解析**：`OverlayMetrics.resolvedFont(for:availability:)`（`@MainActor`）得到 `ResolvedOverlayFont`。觀景窗每次繪製解析一次，同一個值傳給 `fittedFontSize` 與 `renderText`，並加入快取鍵；**按下快門（計時器則為倒數歸零）當下**在主執行緒解析一次，把該值放進烘焙 context，背景佇列的 `bake` 只用這個值，不再讀 `FontLibrary`（#199 review）。改接後移除對 TASK-32 deprecated 無字型入口的所有呼叫（#200）
 - **套用字型的唯一寫入路徑** `applyFont(_ fontID:, profileID:)`（PRD FR-5.18）：字型 `available` → 立即寫入該設定檔；否則呼叫 `FontLibrary.download`，記下「設定檔 → 字型」的待套用（同一設定檔以最後一次為準；**立即寫入已可用字型時也清掉該設定檔的待套用**；該字型下載取消、失敗或因退到背景中斷時清掉對應的待套用），下載完成時寫入**開始下載時的設定檔**（已刪除就略過）並提示「已套用「<名稱>」」（FR-16.6、A-8）。此待套用由 `CameraScreenModel` 持有，清單關閉不影響
