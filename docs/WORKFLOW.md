@@ -17,7 +17,7 @@
 
 模型是可調整的起點；Codex ID 已對照本機 2026-10-03 模型清單。不可用時在 app 選擇可用模型並調整角色 TOML，不改走 API key。只有依賴已滿足且擁有檔案不重疊時，才同時開兩位 developer；同一時間只有一個 agent 操作 Xcode 視窗。
 
-高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
+高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
 **交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
