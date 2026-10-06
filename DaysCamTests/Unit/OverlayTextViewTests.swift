@@ -28,13 +28,14 @@ final class OverlayTextViewTests: XCTestCase {
         let style = OverlayStyle(fontID: .notoSerifTC, sizeScale: 70)
         let text = String(repeating: "第 10 天 ", count: 40)
 
-        let viaView = OverlayTextView.fittedFontSize(for: text, style: style, frameSize: frameSize)
+        let viaView = OverlayTextView.fittedFontSize(for: text, style: style, frameSize: frameSize,
+                                                     font: .pingFang)
 
         let shortEdge = min(frameSize.width, frameSize.height)
         let margin = OverlayMetrics.margin(forShortEdge: shortEdge)
         let base = OverlayMetrics.baseFontSize(forShortEdge: shortEdge, sizeScale: style.sizeScale)
         let expected = OverlayMetrics.fittedFontSize(for: text,
-                                                     theme: OverlayTheme(style: style),
+                                                     font: .pingFang,
                                                      baseFontSize: base,
                                                      availableWidth: frameSize.width - margin * 2)
         XCTAssertEqual(viaView, expected, accuracy: 0.0001)

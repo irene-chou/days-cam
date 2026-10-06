@@ -65,13 +65,6 @@ struct OverlayRenderer {
         }
     }
 
-    /// TEMP #200: the 0.2 signature, kept only so the remaining call site
-    /// compiles. Always draws in PingFang, whatever `style.fontID` says.
-    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
-    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement) -> UIImage? {
-        bake(image: image, text: text, style: style, placement: placement, font: .pingFang)
-    }
-
     /// Draws only the overlay text — with its outline or box and its shadow —
     /// on a transparent background, at `fontSize` points.
     ///
@@ -119,13 +112,6 @@ struct OverlayRenderer {
         return RenderedOverlayText(image: image, textInsets: insets, blockSize: block.size)
     }
 
-    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
-    /// compile. Always draws in PingFang, whatever `style.fontID` says.
-    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
-    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat) -> RenderedOverlayText? {
-        renderText(text, style: style, fontSize: fontSize, displayScale: displayScale, font: .pingFang)
-    }
-
     /// The font size overlay text is drawn at in a frame of `frameSize`: the
     /// base size for its short edge, times `style.sizeScale`, shrunk to fit
     /// between the margins (PRD FR-4.7, FR-4.8; 0.2 FR-5.10, FR-10.9),
@@ -146,13 +132,6 @@ struct OverlayRenderer {
                                              font: font,
                                              baseFontSize: baseFontSize,
                                              availableWidth: availableWidth)
-    }
-
-    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
-    /// compile. Always measures in PingFang, whatever `style.fontID` says.
-    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
-    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize) -> CGFloat {
-        fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang)
     }
 
     /// TEMP(TASK-18): 0.1-shaped adapter the renderer tests still call;

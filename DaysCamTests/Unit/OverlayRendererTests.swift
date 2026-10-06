@@ -714,32 +714,6 @@ final class OverlayRendererRenderTextTests: XCTestCase {
         }
     }
 
-    /// The TEMP #200 entry points without a font draw in PingFang, whatever
-    /// the style's font: the same size and pixels as passing `.pingFang`.
-    @available(*, deprecated, message: "exercises the TEMP #200 entry points on purpose")
-    func testDeprecatedEntryPointsDrawPingFang() throws {
-        let style = OverlayStyle(fontID: .xingkai, textColor: blue, outline: .thinStroke, shadow: .soft)
-        let frameSize = CGSize(width: 600, height: 800)
-        XCTAssertEqual(OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize),
-                       OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang))
-        XCTAssertEqual(OverlayMetrics.fittedFontSize(for: text, theme: OverlayTheme(style: style),
-                                                     baseFontSize: 40, availableWidth: 60),
-                       OverlayMetrics.fittedFontSize(for: text, font: .pingFang, baseFontSize: 40, availableWidth: 60))
-        XCTAssertEqual(OverlayMetrics.font(for: .xingkai, size: 20).fontName, "PingFangTC-Semibold")
-
-        let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 30, displayScale: 2))
-        let inPingFang = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 30, displayScale: 2,
-                                                           font: .pingFang))
-        XCTAssertEqual(try XCTUnwrap(PixelGrid(rendered.image)).bytes, try XCTUnwrap(PixelGrid(inPingFang.image)).bytes)
-
-        let placement = OverlayPlacement.anchor(.bottomTrailing)
-        let baked = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text, style: style,
-                                                placement: placement))
-        let bakedInPingFang = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text, style: style,
-                                                          placement: placement, font: .pingFang))
-        XCTAssertEqual(try XCTUnwrap(PixelGrid(baked)).bytes, try XCTUnwrap(PixelGrid(bakedInPingFang)).bytes)
-    }
-
     /// 32.7a: a font reported `failed` that iOS could in fact load draws in
     /// PingFang on both paths — the same pixels as PingFang itself.
     func test_32_7a_failedButLoadableFontBakesInPingFang() throws {
