@@ -115,11 +115,12 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSettingsStore: CaptureSettingsStore? = nil,
                            countdownTicker: CountdownTicker = SystemCountdownTicker(),
                            crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { _, _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
-                           thumbnailLibrary: GalleryLibrary? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           thumbnailLibrary: GalleryLibrary? = nil,
+                           fontLibrary: (any FontShellControlling)? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
@@ -132,7 +133,8 @@ final class CameraScreenModelTests: XCTestCase {
                  save: save,
                  captureImage: captureImage,
                  scheduleToastDismiss: scheduleToastDismiss,
-                 thumbnailLibrary: thumbnailLibrary)
+                 thumbnailLibrary: thumbnailLibrary,
+                 fontLibrary: fontLibrary)
     }
 
     /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
@@ -159,11 +161,13 @@ final class CameraScreenModelTests: XCTestCase {
                            captureSettingsStore: CaptureSettingsStore? = nil,
                            countdownTicker: CountdownTicker = SystemCountdownTicker(),
                            crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, _, _, _ in UIImage() },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { _, _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
-                           thumbnailLibrary: GalleryLibrary? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           thumbnailLibrary: GalleryLibrary? = nil,
+                           fontLibrary: (any FontShellControlling)? = nil,
+                           fontPreparationTimeout: TimeInterval = 3) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer,
@@ -185,7 +189,9 @@ final class CameraScreenModelTests: XCTestCase {
                                       save: save,
                                       captureImage: captureImage,
                                       scheduleToastDismiss: scheduleToastDismiss,
-                                      makeThumbnailLibrary: { _ in thumbnailLibrary ?? FakeThumbnailLibrary(status: .denied) })
+                                      makeThumbnailLibrary: { _ in thumbnailLibrary ?? FakeThumbnailLibrary(status: .denied) },
+                                      fontLibrary: fontLibrary,
+                                      fontPreparationTimeout: fontPreparationTimeout)
         return (model, service, provider, store)
     }
 
@@ -894,8 +900,8 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - processCapturedImage (TASK-10 bake wiring)
 
-    private func sampleContext(_ now: Date) -> (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement) {
-        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing))
+    private func sampleContext(_ now: Date) -> CameraScreenModel.CaptureContext {
+        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing), font: .pingFang)
     }
 
     func testProcessCapturedImagePassesTheContextThroughToBake() throws {
@@ -903,7 +909,7 @@ final class CameraScreenModelTests: XCTestCase {
         var received: (image: UIImage?, text: String?, style: OverlayStyle?, placement: OverlayPlacement?)
         let bakeExp = expectation(description: "bake called")
         let sourceImage = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement in
+        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement, _ in
             received = (image, text, style, placement)
             bakeExp.fulfill()
             return UIImage()
@@ -934,7 +940,7 @@ final class CameraScreenModelTests: XCTestCase {
                                              cropExp.fulfill()
                                              return image
                                          },
-                                         bake: { _, _, _, _ in UIImage() })
+                                         bake: { _, _, _, _, _ in UIImage() })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
@@ -946,7 +952,7 @@ final class CameraScreenModelTests: XCTestCase {
         // PRD §7.3: baking failure — not one of PhotoSaver's save errors,
         // does not depend on it landing.
         let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _ in nil })
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _ in nil })
         XCTAssertNil(model.captureError)
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -969,7 +975,7 @@ final class CameraScreenModelTests: XCTestCase {
         var saveCalled = false
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in nil },
+                                         bake: { _, _, _, _, _ in nil },
                                          save: { _, completion in
                                              saveCalled = true
                                              completion(.success("asset-1"))
@@ -987,7 +993,7 @@ final class CameraScreenModelTests: XCTestCase {
         var receivedImage: UIImage?
         let saveExp = expectation(description: "save called")
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in bakedImage },
+                                         bake: { _, _, _, _, _ in bakedImage },
                                          save: { image, completion in
                                              receivedImage = image
                                              saveExp.fulfill()
@@ -1004,7 +1010,7 @@ final class CameraScreenModelTests: XCTestCase {
         // Issue #148 (S.10): no "已儲存" toast; one flight instead.
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1021,7 +1027,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testLandingASavedFlightReplacesTheThumbnailAndRemovesIt() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 }
@@ -1041,7 +1047,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(results.removeFirst()) })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 }
@@ -1059,7 +1065,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(results.removeFirst()) })
         var announcements: [String] = []
         model.announce = { announcements.append($0) }
@@ -1101,7 +1107,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var finishSave: ((Result<String, PhotoSaveError>) -> Void)?
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in finishSave = completion })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 && finishSave != nil }
@@ -1119,7 +1125,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testBackToBackCapturesEachGetTheirOwnFlight() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset")) })
         for _ in 0..<3 {
             model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1138,7 +1144,7 @@ final class CameraScreenModelTests: XCTestCase {
             context.fill(CGRect(origin: .zero, size: largeSize))
         }
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in large },
+                                         bake: { _, _, _, _, _ in large },
                                          save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1152,7 +1158,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testProcessCapturedImageSurfacesCaptureErrorOnPermissionDenied() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.failure(.permissionDenied)) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1170,7 +1176,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testProcessCapturedImageSurfacesCaptureErrorOnSaveFailed() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.failure(.saveFailed("磁碟空間不足"))) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1189,7 +1195,7 @@ final class CameraScreenModelTests: XCTestCase {
         var storedCompletion: ((Result<String, PhotoSaveError>) -> Void)?
         let completionStored = expectation(description: "save completion captured")
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in
                                              storedCompletion = completion
                                              completionStored.fulfill()
@@ -1372,7 +1378,7 @@ final class CameraScreenModelTests: XCTestCase {
         let store = makeProfileStore(now: now, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
         ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
         let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
         // Past the 288x384 viewfinder.
@@ -1394,15 +1400,15 @@ final class CameraScreenModelTests: XCTestCase {
         let store = makeProfileStore(now: now, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
         ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
-        model.styleTabModel?.selectFont(.futura)
+        model.styleTabModel?.selectFont(.huninn)
         model.positionTabModel?.selectAnchor(.bottomLeading)
         model.formatTabModel?.displaySettings.setShowDate(true)
         model.rulesTabModel?.setName("阿寶")
 
         let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .futura, "M.1: 樣式改動仍在")
+        XCTAssertEqual(stored.style.fontID, .huninn, "M.1: 樣式改動仍在")
         XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.1: 位置改動仍在")
         XCTAssertTrue(stored.showDate, "M.1: 格式改動仍在")
         XCTAssertEqual(stored.name, "阿寶", "M.1: 天數規則改動仍在")
@@ -1414,15 +1420,15 @@ final class CameraScreenModelTests: XCTestCase {
         let store = makeProfileStore(now: now, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
         ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
         model.rulesTabModel?.setName("阿寶")
         model.formatTabModel?.displaySettings.setShowDate(true)
         model.positionTabModel?.selectAnchor(.bottomLeading)
-        model.styleTabModel?.selectFont(.futura)
+        model.styleTabModel?.selectFont(.huninn)
 
         let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .futura, "M.2: 樣式改動仍在")
+        XCTAssertEqual(stored.style.fontID, .huninn, "M.2: 樣式改動仍在")
         XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.2: 位置改動仍在")
         XCTAssertTrue(stored.showDate, "M.2: 格式改動仍在")
         XCTAssertEqual(stored.name, "阿寶", "M.2: 天數規則改動仍在")
@@ -1434,15 +1440,15 @@ final class CameraScreenModelTests: XCTestCase {
         let store = makeProfileStore(now: now, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
         ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
         let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
         handler.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
-        model.styleTabModel?.selectFont(.futura)
+        model.styleTabModel?.selectFont(.huninn)
 
         let stored = try XCTUnwrap(store.profiles.first)
         XCTAssertEqual(stored.position, .custom(x: 0.5, y: 0.5), "M.3: 拖曳結果仍在")
-        XCTAssertEqual(stored.style.fontID, .futura)
+        XCTAssertEqual(stored.style.fontID, .huninn)
     }
 
     func testRenamingOutsideThePanelThenChangingStyleKeepsTheNewName() throws {
@@ -1475,13 +1481,13 @@ final class CameraScreenModelTests: XCTestCase {
         let store = makeProfileStore(now: now, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
         ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
-        model.styleTabModel?.selectFont(.futura)
+        model.styleTabModel?.selectFont(.huninn)
         model.panelModel.selectedTab = .format // switching tabs never rebuilds (same profile)
 
         let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .futura, "M.5: store 端沒有遺失樣式改動")
+        XCTAssertEqual(stored.style.fontID, .huninn, "M.5: store 端沒有遺失樣式改動")
         // Not asserted: `model.formatTabModel?.displaySettings.profile.style`
         // — `FormatTabView` never reads `style`/`position` today (grep
         // confirms), so this is not currently user-visible; syncing a tab's
@@ -1593,7 +1599,7 @@ final class CameraScreenModelTests: XCTestCase {
         // 21.5.
         let now = try fixedNow()
         let baked = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _ in baked })
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _ in baked })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
@@ -1615,7 +1621,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       capturedPhotoStore: capturedPhotoStore,
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
-                                      bake: { _, _, _, _ in UIImage() },
+                                      bake: { _, _, _, _, _ in UIImage() },
                                       save: { _, completion in completion(.success("new-asset-id")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1716,7 +1722,7 @@ final class CameraScreenModelTests: XCTestCase {
                                          nowProvider: clock.now,
                                          captureSettingsStore: settings,
                                          countdownTicker: ticker,
-                                         bake: { _, text, _, _ in
+                                         bake: { _, text, _, _, _ in
                                              receivedText = text
                                              return UIImage()
                                          },
@@ -1844,7 +1850,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) },
                                          thumbnailLibrary: library)
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1909,7 +1915,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) },
                                          thumbnailLibrary: library)
         library.suspendNextImage = true

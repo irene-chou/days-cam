@@ -8,9 +8,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
 
     func testRepeatedLayoutAndPlacementChangesReusePixels() throws {
         var calls = 0
-        let cache = OverlayTextRenderCache { text, style, size, scale in
+        let cache = OverlayTextRenderCache { text, style, size, scale, font in
             calls += 1
-            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale)
+            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale, font: font)
         }
         let first = try XCTUnwrap(cache.image(text: "第 10 天", style: OverlayStyle(), frameSize: frame, displayScale: 3))
         for position in OverlayPosition.allCases {
@@ -23,9 +23,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
 
     func testEachPixelInputInvalidatesTheCache() {
         var calls = 0
-        let cache = OverlayTextRenderCache { text, style, size, scale in
+        let cache = OverlayTextRenderCache { text, style, size, scale, font in
             calls += 1
-            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale)
+            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale, font: font)
         }
         let style = OverlayStyle(outline: .thickStroke, shadow: .hard)
         _ = cache.image(text: "A", style: style, frameSize: frame, displayScale: 2)

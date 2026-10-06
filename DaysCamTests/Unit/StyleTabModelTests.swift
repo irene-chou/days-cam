@@ -71,6 +71,8 @@ final class StyleTabModelTests: XCTestCase {
                              recentColorsStore: RecentColorsStore(defaults: defaults),
                              fontLibrary: library,
                              applyFont: { applied(AppliedFont(fontID: $0, profileID: $1)) },
+                             allProfiles: { [] },
+                             replaceFont: { _, _ in [] },
                              updateProfile: spy.update)
     }
 
