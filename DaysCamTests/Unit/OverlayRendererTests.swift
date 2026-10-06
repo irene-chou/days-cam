@@ -196,11 +196,11 @@ final class OverlayRendererTests: XCTestCase {
 
         let margin = OverlayMetrics.margin(forShortEdge: frameWidth)
         let fontSize = OverlayMetrics.fittedFontSize(for: text,
-                                                     theme: theme,
+                                                     font: .pingFang,
                                                      baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: frameWidth),
                                                      availableWidth: frameWidth - margin * 2)
         let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-        let font = OverlayMetrics.font(for: theme, size: fontSize)
+        let font = ResolvedOverlayFont.pingFang.font(ofSize: fontSize)
         let textSize = (text as NSString).size(withAttributes: [.font: font])
         let boxWidth = textSize.width + 2 * 12 * scale
         let boxHeight = textSize.height + 2 * 6 * scale
@@ -280,7 +280,7 @@ final class OverlayRendererTests: XCTestCase {
                                    "no pink fill")
 
         let fontSize = OverlayMetrics.fittedFontSize(for: "第 10 天",
-                                                     theme: theme,
+                                                     font: .pingFang,
                                                      baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: CGFloat(width)),
                                                      availableWidth: CGFloat(width) * 0.92)
         let visibleWidth = 2 * OverlayMetrics.decorationScale(forFontSize: fontSize)
@@ -464,7 +464,7 @@ final class OverlayRendererStyleTests: XCTestCase {
                            height: Int = 1600) throws -> PixelGrid {
         try autoreleasepool {
             let output = try XCTUnwrap(renderer.bake(image: try whiteImage(width: width, height: height),
-                                                     text: text, style: style, placement: placement),
+                                                     text: text, style: style, placement: placement, font: .pingFang),
                                        "bake returned nil")
             return try XCTUnwrap(PixelGrid(output))
         }
@@ -505,26 +505,33 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     /// `bake` draws straight onto the subpixel position while the composite
     /// resamples a finished image, which blurs every edge by up to half a
     /// pixel — a difference in compositing, not in how the text is drawn.
+    ///
+    /// The last case stands in an "available" font that is not PingFang
+    /// (Snell Roundhand, which ships with iOS, for its overhang) and passes
+    /// the same resolved font to both paths, as TASK-35 will (32.7).
     func test_D1_renderTextComposedOnAPhotoMatchesBake() throws {
-        let styles = [
-            OverlayStyle(textColor: blue, outline: .none, shadow: .none),
-            OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none),
-            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .soft),
-            OverlayStyle(textColor: blue, outline: .thinStroke, shadow: .glow),
-            OverlayStyle(fontID: .snellRoundhand, textColor: blue, outline: .thickStroke, shadow: .hard)
+        let stand = OverlayMetrics.resolvedFont(state: .available, postScriptName: "SnellRoundhand-Bold")
+        XCTAssertEqual(stand.postScriptName, "SnellRoundhand-Bold", "fixture sanity")
+        let cases: [(OverlayStyle, ResolvedOverlayFont)] = [
+            (OverlayStyle(textColor: blue, outline: .none, shadow: .none), .pingFang),
+            (OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none), .pingFang),
+            (OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .soft), .pingFang),
+            (OverlayStyle(textColor: blue, outline: .thinStroke, shadow: .glow), .pingFang),
+            (OverlayStyle(fontID: .iansui, textColor: blue, outline: .thickStroke, shadow: .hard), stand)
         ]
         let frameSize = CGSize(width: 1200, height: 1600)
-        for style in styles {
+        for (style, font) in cases {
             for wholePixelOrigin in [CGPoint(x: 400, y: 600), CGPoint(x: 150, y: 1300)] {
                 try autoreleasepool {
-                    let fontSize = OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize)
-                    let rendered = try XCTUnwrap(renderer.renderText(text, style: style,
-                                                                     fontSize: fontSize, displayScale: 1))
+                    let fontSize = OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize,
+                                                                  font: font)
+                    let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: fontSize,
+                                                                     displayScale: 1, font: font))
                     let placement = OverlayPlacement.custom(
                         x: Double((wholePixelOrigin.x + rendered.blockSize.width / 2) / frameSize.width),
                         y: Double((wholePixelOrigin.y + rendered.blockSize.height / 2) / frameSize.height))
                     let baked = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text,
-                                                            style: style, placement: placement))
+                                                            style: style, placement: placement, font: font))
                     let origin = OverlayMetrics.origin(forBlockSize: rendered.blockSize, in: frameSize,
                                                        placement: placement)
                     let imageFrame = rendered.imageFrame(forBlockOrigin: origin)
@@ -546,26 +553,31 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     }
 
     /// D.2: heavy decorations stay inside the image; its outermost ring of
-    /// pixels is fully transparent. Every font is included for its overhang.
+    /// pixels is fully transparent. Swash faces that ship with iOS stand in
+    /// for the downloadable fonts, which a unit test cannot fetch, for their
+    /// overhang.
     func test_D2_heavyDecorationsAreNeverClipped() throws {
-        var styles = [
+        var cases: [(OverlayStyle, ResolvedOverlayFont)] = [
             OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none),
             OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none),
             OverlayStyle(textColor: .white, outline: .none, shadow: .glow),
             OverlayStyle(textColor: .white, outline: .none, shadow: .soft),
             OverlayStyle(textColor: .white, outline: .none, shadow: .hard),
             OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .glow)
-        ]
-        for fontID in OverlayFontID.allCases {
-            styles.append(OverlayStyle(fontID: fontID, textColor: .white, outline: .thickStroke,
-                                       outlineColor: .black, shadow: .glow))
+        ].map { ($0, .pingFang) }
+        for name in ["SnellRoundhand-Bold", "Zapfino", "Didot-Bold"] {
+            let font = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
+            XCTAssertEqual(font.postScriptName, name, "fixture sanity")
+            cases.append((OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .glow),
+                          font))
         }
-        for style in styles {
+        for (style, font) in cases {
             for text in [text, "Day 1234 fjgy"] {
-                let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 3))
+                let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 3,
+                                                                 font: font))
                 let alpha = try XCTUnwrap(AlphaGrid(rendered.image))
                 XCTAssertTrue(alpha.hasInk, "D.2: \(style) drew nothing")
-                XCTAssertEqual(alpha.maxOnBorder, 0, "D.2: \(style.fontID) \(style.outline) \(style.shadow) is clipped")
+                XCTAssertEqual(alpha.maxOnBorder, 0, "D.2: \(font.postScriptName) \(style.outline) \(style.shadow) is clipped")
             }
         }
     }
@@ -575,7 +587,7 @@ final class OverlayRendererRenderTextTests: XCTestCase {
         let plain = OverlayStyle(textColor: .white, outline: .none, shadow: .none)
         let stroked = OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none)
         func render(_ style: OverlayStyle, _ fontSize: CGFloat) throws -> RenderedOverlayText {
-            try XCTUnwrap(renderer.renderText(text, style: style, fontSize: fontSize, displayScale: 2))
+            try XCTUnwrap(renderer.renderText(text, style: style, fontSize: fontSize, displayScale: 2, font: .pingFang))
         }
         let small = try render(stroked, 30)
         let large = try render(stroked, 60)
@@ -598,7 +610,7 @@ final class OverlayRendererRenderTextTests: XCTestCase {
 
     func testTextInsetsLocateTheBlockInsideTheImage() throws {
         let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none)
-        let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 2))
+        let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 2, font: .pingFang))
         XCTAssertEqual(rendered.image.scale, 2)
         XCTAssertEqual(rendered.image.size.width,
                        rendered.textInsets.left + rendered.blockSize.width + rendered.textInsets.right, accuracy: 0.001)
@@ -619,19 +631,129 @@ final class OverlayRendererRenderTextTests: XCTestCase {
 
     func testEmptyTextOrNonPositiveSizesRenderNothing() {
         let style = OverlayStyle()
-        XCTAssertNil(renderer.renderText("", style: style, fontSize: 20, displayScale: 2))
-        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 0, displayScale: 2))
-        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 20, displayScale: 0))
+        XCTAssertNil(renderer.renderText("", style: style, fontSize: 20, displayScale: 2, font: .pingFang))
+        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 0, displayScale: 2, font: .pingFang))
+        XCTAssertNil(renderer.renderText(text, style: style, fontSize: 20, displayScale: 0, font: .pingFang))
     }
 
     func testFittedFontSizeMatchesTheViewfinder() {
         for style in [OverlayStyle(), OverlayStyle(sizeScale: 160)] {
             for text in [text, String(repeating: "第 12345 天 ", count: 6)] {
                 let frameSize = CGSize(width: 390, height: 520)
-                XCTAssertEqual(OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize),
+                XCTAssertEqual(OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang),
                                OverlayTextView.fittedFontSize(for: text, style: style, frameSize: frameSize))
             }
         }
+    }
+
+    // MARK: TASK-32: one font resolution for viewfinder and photo (PRD 0.3 FR-5.14)
+
+    /// 32.7: shrink-to-fit measures with the resolved font. A stand-in face
+    /// that ships with iOS fits to exactly what measuring in that face gives,
+    /// which differs from what PingFang gives.
+    func test_32_7_fittingMeasuresWithTheResolvedFont() throws {
+        let name = "Georgia-Bold"
+        let standIn = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
+        let ruler = try XCTUnwrap(UIFont(name: name, size: 10), "fixture sanity")
+        let style = OverlayStyle(fontID: .songti)
+        let frameSize = CGSize(width: 390, height: 520)
+        let long = String(repeating: "Day 12345 ", count: 4)
+
+        let fitted = OverlayRenderer.fittedFontSize(for: long, style: style, frameSize: frameSize, font: standIn)
+        let margin = OverlayMetrics.margin(forShortEdge: 390)
+        let expected = OverlayMetrics.fittedFontSize(for: long,
+                                                     baseFontSize: OverlayMetrics.baseFontSize(forShortEdge: 390),
+                                                     availableWidth: 390 - margin * 2) { candidate, size in
+            (candidate as NSString).size(withAttributes: [.font: ruler.withSize(size)]).width
+        }
+        XCTAssertEqual(fitted, expected, accuracy: 0.0001, "32.7: measured in the resolved face")
+        let floor = OverlayMetrics.baseFontSize(forShortEdge: 390) * OverlayMetrics.minimumFontScale
+        XCTAssertGreaterThan(fitted, floor + 0.5, "fixture sanity: shrunk by measuring, not sitting on the floor")
+        let inPingFang = OverlayRenderer.fittedFontSize(for: long, style: style, frameSize: frameSize, font: .pingFang)
+        XCTAssertGreaterThan(abs(fitted - inPingFang), 0.1, "fixture sanity: the two faces must measure differently")
+    }
+
+    /// 32.7: one `ResolvedOverlayFont` handed to fit, `renderText` and `bake`
+    /// gives the same size and the same pixels on both paths — the way
+    /// TASK-35 resolves once on the main actor and passes the value on. Each
+    /// font is compared against bake's own output, and a viewfinder drawn in
+    /// the other font must not match it, so a path ignoring `font:` would fail.
+    func test_32_7_oneResolvedFontDrivesFitRenderAndBake() throws {
+        let standIn = OverlayMetrics.resolvedFont(state: .available, postScriptName: "Georgia-Bold")
+        XCTAssertEqual(standIn.postScriptName, "Georgia-Bold", "fixture sanity")
+        let style = OverlayStyle(fontID: .songti, textColor: blue, outline: .thinStroke, shadow: .none)
+        let frameSize = CGSize(width: 1200, height: 1600)
+        let sample = "Day 12345"
+        let wholePixelOrigin = CGPoint(x: 300, y: 700)
+
+        func viewfinder(_ font: ResolvedOverlayFont) throws -> RenderedOverlayText {
+            let size = OverlayRenderer.fittedFontSize(for: sample, style: style, frameSize: frameSize, font: font)
+            return try XCTUnwrap(renderer.renderText(sample, style: style, fontSize: size, displayScale: 1, font: font))
+        }
+        for (font, other) in [(standIn, ResolvedOverlayFont.pingFang), (.pingFang, standIn)] {
+            let rendered = try viewfinder(font)
+            let placement = OverlayPlacement.custom(
+                x: Double((wholePixelOrigin.x + rendered.blockSize.width / 2) / frameSize.width),
+                y: Double((wholePixelOrigin.y + rendered.blockSize.height / 2) / frameSize.height))
+            let baked = try XCTUnwrap(PixelGrid(try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: sample,
+                                                                            style: style, placement: placement,
+                                                                            font: font))))
+            let origin = OverlayMetrics.origin(forBlockSize: rendered.blockSize, in: frameSize, placement: placement)
+            let imageFrame = rendered.imageFrame(forBlockOrigin: origin)
+            let area = imageFrame.intersection(CGRect(origin: .zero, size: frameSize)).integral
+            let region = PixelRegion(x: Int(area.minX)...Int(area.maxX) - 1, y: Int(area.minY)...Int(area.maxY) - 1)
+
+            let same = try XCTUnwrap(PixelGrid(composite(rendered.image, in: imageFrame, onWhite: frameSize)))
+            XCTAssertLessThan(meanDifference(baked, same, in: region), 0.02, "32.7: \(font.postScriptName)")
+
+            let mixed = try viewfinder(other)
+            let mixedFrame = mixed.imageFrame(forBlockOrigin: origin)
+            let wrong = try XCTUnwrap(PixelGrid(composite(mixed.image, in: mixedFrame, onWhite: frameSize)))
+            XCTAssertGreaterThan(meanDifference(baked, wrong, in: region), 0.02,
+                                 "fixture sanity: \(other.postScriptName) must not pass for \(font.postScriptName)")
+        }
+    }
+
+    /// The TEMP #200 entry points without a font draw in PingFang, whatever
+    /// the style's font: the same size and pixels as passing `.pingFang`.
+    @available(*, deprecated, message: "exercises the TEMP #200 entry points on purpose")
+    func testDeprecatedEntryPointsDrawPingFang() throws {
+        let style = OverlayStyle(fontID: .xingkai, textColor: blue, outline: .thinStroke, shadow: .soft)
+        let frameSize = CGSize(width: 600, height: 800)
+        XCTAssertEqual(OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize),
+                       OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang))
+        XCTAssertEqual(OverlayMetrics.fittedFontSize(for: text, theme: OverlayTheme(style: style),
+                                                     baseFontSize: 40, availableWidth: 60),
+                       OverlayMetrics.fittedFontSize(for: text, font: .pingFang, baseFontSize: 40, availableWidth: 60))
+        XCTAssertEqual(OverlayMetrics.font(for: .xingkai, size: 20).fontName, "PingFangTC-Semibold")
+
+        let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 30, displayScale: 2))
+        let inPingFang = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 30, displayScale: 2,
+                                                           font: .pingFang))
+        XCTAssertEqual(try XCTUnwrap(PixelGrid(rendered.image)).bytes, try XCTUnwrap(PixelGrid(inPingFang.image)).bytes)
+
+        let placement = OverlayPlacement.anchor(.bottomTrailing)
+        let baked = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text, style: style,
+                                                placement: placement))
+        let bakedInPingFang = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: text, style: style,
+                                                          placement: placement, font: .pingFang))
+        XCTAssertEqual(try XCTUnwrap(PixelGrid(baked)).bytes, try XCTUnwrap(PixelGrid(bakedInPingFang)).bytes)
+    }
+
+    /// 32.7a: a font reported `failed` that iOS could in fact load draws in
+    /// PingFang on both paths — the same pixels as PingFang itself.
+    func test_32_7a_failedButLoadableFontBakesInPingFang() throws {
+        let resolved = OverlayMetrics.resolvedFont(state: .failed(.other), postScriptName: "Georgia-Bold")
+        let style = OverlayStyle(fontID: .songti, textColor: blue, outline: .none, shadow: .none)
+        let frameSize = CGSize(width: 600, height: 800)
+        let baked = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: "Day 10", style: style,
+                                                placement: .anchor(.middleCenter), font: resolved))
+        let inPingFang = try XCTUnwrap(renderer.bake(image: whiteImage(frameSize), text: "Day 10", style: style,
+                                                     placement: .anchor(.middleCenter), font: .pingFang))
+        XCTAssertEqual(try XCTUnwrap(PixelGrid(baked)).bytes, try XCTUnwrap(PixelGrid(inPingFang)).bytes, "32.7a")
+        XCTAssertEqual(OverlayRenderer.fittedFontSize(for: "Day 10", style: style, frameSize: frameSize, font: resolved),
+                       OverlayRenderer.fittedFontSize(for: "Day 10", style: style, frameSize: frameSize,
+                                                      font: .pingFang), "32.7a")
     }
 
     // MARK: Helpers

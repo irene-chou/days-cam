@@ -2,8 +2,9 @@ import UIKit
 import XCTest
 @testable import DaysCam
 
-/// Covers TASK-17 17.1, 17.2 and 17.9 ... 17.12: the style model, its fonts
-/// and the `OverlayColor` additions it relies on (PRD 0.2 §4.2, FR-10).
+/// Covers TASK-17 17.2 and 17.9 ... 17.11, and TASK-32 32.1/32.2 for the font
+/// IDs: the style model, its fonts and the `OverlayColor` additions it relies
+/// on (PRD 0.2 §4.2, FR-10; PRD 0.3 §4.1).
 final class OverlayStyleTests: XCTestCase {
 
     private func hex(_ string: String, file: StaticString = #filePath, line: UInt = #line) throws -> OverlayColor {
@@ -12,38 +13,40 @@ final class OverlayStyleTests: XCTestCase {
 
     // MARK: - Fonts
 
-    func testFontDisplayNamesAreInPanelOrder() {
-        XCTAssertEqual(OverlayFontID.allCases.map(\.displayName),
-                       ["SF Rounded", "SF Pro", "SF Mono", "New York", "Avenir Next",
-                        "Futura", "Georgia", "Typewriter", "Didot", "Snell Roundhand"],
-                       "17.1")
+    // 0.2's 17.1 (ten Latin names) and 17.12 (every 0.2 font ships with iOS)
+    // are replaced by TASK-32 32.1 in `FontCatalogTests` (TASKS-0.3 事先預告 1).
+
+    /// 32.1: the raw values, in PRD 0.3 §4.1 order, are what files store.
+    func testFontIDsAreTheTwentyOneOfPRD03InOrder() {
+        XCTAssertEqual(OverlayFontID.allCases.map(\.rawValue),
+                       ["pingFang", "huninn", "notoSerifTC", "iansui", "lantinghei", "liHei", "hiraginoSans",
+                        "yuanti", "songti", "liSong", "kaiti", "biauKai", "hanziPen", "hannotate", "lingWai",
+                        "xingkai", "weibei", "libian", "baoli", "wawa", "yuppy"],
+                       "32.1")
     }
 
-    func testSystemFontsHaveNoPostScriptName() {
-        let systemFonts = OverlayFontID.allCases.filter { $0.postScriptName == nil }
-        XCTAssertEqual(systemFonts, [.sfRounded, .sfPro, .sfMono, .newYork])
+    /// 32.2: the 0.2 fonts and any unknown value decode as PingFang; known
+    /// 0.3 values decode as themselves.
+    func testRemovedAndUnknownFontIDsDecodeAsPingFang() throws {
+        let json = #"["futura","sfRounded","不存在","comicSans","songti"]"#
+        let decoded = try JSONDecoder().decode([OverlayFontID].self, from: Data(json.utf8))
+        XCTAssertEqual(decoded, [.pingFang, .pingFang, .pingFang, .pingFang, .songti], "32.2")
+        XCTAssertEqual(OverlayFontID.fallback, .pingFang)
     }
 
-    /// 17.12 (replaces 0.1 5.11): every named font ships with iOS. If this
-    /// fails, the font is removed from the list and reported — never swapped
-    /// for another one (PRD 0.2 A-6).
-    func testEveryPostScriptFontExistsOnThisOS() {
-        for font in OverlayFontID.allCases {
-            guard let name = font.postScriptName else { continue }
-            XCTAssertNotNil(UIFont(name: name, size: 17), "17.12: \(font) (\(name)) missing")
+    /// The TEMP aliases are not cases: they never round-trip as a 0.2 name.
+    func testRemovedFontNamesAreNotCases() {
+        for name in ["sfRounded", "sfPro", "sfMono", "newYork", "avenirNext",
+                     "futura", "georgia", "americanTypewriter", "didot", "snellRoundhand"] {
+            XCTAssertNil(OverlayFontID(rawValue: name), name)
         }
-    }
-
-    func testUnknownFontIDDecodesAsSFRounded() throws {
-        let decoded = try JSONDecoder().decode([OverlayFontID].self, from: Data(#"["comicSans","didot"]"#.utf8))
-        XCTAssertEqual(decoded, [.sfRounded, .didot], "17.5")
     }
 
     // MARK: - Defaults
 
     func testDefaultStyleMatchesClassicWhite() throws {
         let style = OverlayStyle()
-        XCTAssertEqual(style.fontID, .sfRounded, "17.2")
+        XCTAssertEqual(style.fontID, .pingFang, "17.2 / PRD 0.3 §4.1")
         XCTAssertEqual(style.textColor, try hex("#FFFFFF"), "17.2")
         XCTAssertEqual(style.outline, .none, "17.2")
         XCTAssertNil(style.outlineColor, "17.2")
@@ -111,7 +114,7 @@ final class OverlayStyleTests: XCTestCase {
     }
 
     func testStyleRoundTripsThroughJSON() throws {
-        let style = OverlayStyle(fontID: .snellRoundhand,
+        let style = OverlayStyle(fontID: .xingkai,
                                  textColor: try hex("#123456"),
                                  outline: .thickStroke,
                                  outlineColor: try hex("#0A84FF"),

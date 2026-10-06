@@ -56,8 +56,7 @@ final class StyleTabModelTests: XCTestCase {
     func testFontOptionsMatchOrder() {
         let model = makeModel()
         XCTAssertEqual(model.fontOptions.map(\.displayName),
-                       ["SF Rounded", "SF Pro", "SF Mono", "New York", "Avenir Next",
-                        "Futura", "Georgia", "Typewriter", "Didot", "Snell Roundhand"], "23.2")
+                       OverlayFontID.allCases.map(\.displayName), "23.2")
     }
 
     // MARK: - 23.3 選 Futura 後持久化

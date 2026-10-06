@@ -57,7 +57,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
                 XCTAssertEqual(imageFrame.minX + rendered.textInsets.left, origin.x, accuracy: 0.001)
                 XCTAssertEqual(imageFrame.minY + rendered.textInsets.top, origin.y, accuracy: 0.001)
                 let center = CGPoint(x: origin.x + rendered.blockSize.width / 2, y: origin.y + rendered.blockSize.height / 2)
-                XCTAssertEqual(OverlayTextView.clampedDragCenter(start: center, translation: .zero, frameSize: frame, blockSize: rendered.blockSize), center)
+                let dragCenter = OverlayTextView.clampedDragCenter(start: center, translation: .zero, frameSize: frame, blockSize: rendered.blockSize)
+                XCTAssertEqual(dragCenter.x, center.x, accuracy: 0.001)
+                XCTAssertEqual(dragCenter.y, center.y, accuracy: 0.001)
             }
         }
     }

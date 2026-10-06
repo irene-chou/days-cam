@@ -275,20 +275,22 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
 
     /// PRD 0.2 §4.3 style table, written out independently of
     /// `OverlayStyle(legacyTheme:)` so that a wrong mapping cannot pass itself.
+    /// The font column is PingFang throughout: 0.3 §4.3 replaces the 0.2 fonts
+    /// the table named.
     private let expectedStyles: [String: OverlayStyle] = [
-        "classicWhite": OverlayStyle(fontID: .sfRounded, textColor: .white,
+        "classicWhite": OverlayStyle(fontID: .pingFang, textColor: .white,
                                      outline: .none, outlineColor: nil, shadow: .soft, sizeScale: 100),
-        "retroOrange": OverlayStyle(fontID: .sfMono, textColor: OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
+        "retroOrange": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
                                     outline: .none, outlineColor: nil, shadow: .soft, sizeScale: 100),
-        "filmStrip": OverlayStyle(fontID: .sfMono, textColor: .white,
+        "filmStrip": OverlayStyle(fontID: .pingFang, textColor: .white,
                                   outline: .translucentBox, outlineColor: nil, shadow: .none, sizeScale: 100),
-        "minimalDark": OverlayStyle(fontID: .sfPro, textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
+        "minimalDark": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
                                     outline: .translucentBox, outlineColor: nil, shadow: .none, sizeScale: 100),
-        "softPink": OverlayStyle(fontID: .sfRounded, textColor: OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
+        "softPink": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
                                  outline: .thinStroke, outlineColor: nil, shadow: .soft, sizeScale: 100)
     ]
 
-    /// 17.3: every 0.1 record is kept and converted.
+    /// 17.3 / 32.4: every 0.1 record is kept and converted, in PingFang.
     func testLegacyFileLoadsEveryRecordWithConvertedStyleAndPosition() throws {
         try writeLegacyFixture()
         let loaded = try makeStore().load()
@@ -297,8 +299,80 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         for row in legacyFixture {
             let profile = try XCTUnwrap(loaded.first { $0.id.uuidString == row.id }, "17.3 \(row.themeID)")
             XCTAssertEqual(profile.style, expectedStyles[row.themeID], "17.3 style of \(row.themeID)")
+            XCTAssertEqual(profile.style.fontID, .pingFang, "32.4 font of \(row.themeID)")
             XCTAssertEqual(profile.position, .anchor(row.position), "17.3 position of \(row.themeID)")
         }
+    }
+
+    // MARK: - 0.2 files (TASK-32 32.2, 32.3)
+
+    /// The ten 0.2 font IDs, removed in 0.3.
+    private static let removedFontIDs = ["sfRounded", "sfPro", "sfMono", "newYork", "avenirNext",
+                                         "futura", "georgia", "americanTypewriter", "didot", "snellRoundhand"]
+
+    /// One record exactly as 0.2 wrote it, with a distinct non-default value
+    /// in every other style field so a field lost in conversion shows up.
+    private func record02(index: Int, fontID: String) -> String {
+        let id = String(format: "00000000-0000-0000-0000-%012d", index + 200)
+        let x = Double(index + 1) / 20
+        return """
+        {"id":"\(id)","name":"0.2-\(index)","startDate":{"year":2026,"month":1,"day":1},\
+        "countingRule":"dayOne","showDayCount":true,"showDate":false,"showName":false,\
+        "displayUnits":["day"],"useAgeWording":false,\
+        "position":{"x":\(x),"y":0.5},\
+        "style":{"fontID":"\(fontID)","textColor":"#12345\(index % 10)","outline":"thickStroke",\
+        "outlineColor":"#0A84FF","shadow":"glow","sizeScale":\(70 + index * 5)},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+    }
+
+    /// The style `record02(index:fontID:)` should read back as, in PingFang.
+    private func expectedStyle02(index: Int) throws -> OverlayStyle {
+        OverlayStyle(fontID: .pingFang,
+                     textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
+                     outline: .thickStroke,
+                     outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
+                     shadow: .glow,
+                     sizeScale: 70 + index * 5)
+    }
+
+    /// 32.3: a 0.2 `profiles.json` with one record per removed font loads with
+    /// every record kept, all in PingFang, and every other style field intact;
+    /// written back, it reads the same and no longer names a 0.2 font.
+    func test02FileWithEveryRemovedFontKeepsRecordsAndOtherFields() throws {
+        let records = Self.removedFontIDs.enumerated().map { record02(index: $0.offset, fontID: $0.element) }
+        try Data("[\(records.joined(separator: ","))]".utf8).write(to: fileURL, options: [.atomic])
+
+        let store = try makeStore()
+        let loaded = store.load()
+        XCTAssertEqual(loaded.count, 10, "32.3: no record dropped")
+        for index in Self.removedFontIDs.indices {
+            let profile = try XCTUnwrap(loaded.first { $0.name == "0.2-\(index)" }, "32.3 \(index)")
+            XCTAssertEqual(profile.style, try expectedStyle02(index: index), "32.3 \(Self.removedFontIDs[index])")
+            XCTAssertEqual(profile.position, .custom(x: Double(index + 1) / 20, y: 0.5), "32.3 position")
+        }
+
+        // `ProfileStore.persist` is private; `update` writes the whole list.
+        try store.update(try XCTUnwrap(loaded.first))
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        for removed in Self.removedFontIDs {
+            XCTAssertFalse(text.contains("\"\(removed)\""), "32.3: \(removed) written back")
+        }
+        let reloaded = try makeStore().load()
+        XCTAssertEqual(reloaded.map(\.id), loaded.map(\.id), "32.3 after saving")
+        XCTAssertEqual(reloaded.map(\.style), loaded.map(\.style), "32.3 after saving")
+    }
+
+    /// 32.2: removed and unknown IDs in a file decode as PingFang without
+    /// losing the record.
+    func testRemovedAndUnknownFontIDsInAFileKeepTheRecord() throws {
+        let values = ["futura", "sfRounded", "不存在"]
+        let records = values.enumerated().map { record02(index: $0.offset, fontID: $0.element) }
+        try Data("[\(records.joined(separator: ","))]".utf8).write(to: fileURL, options: [.atomic])
+
+        let loaded = try makeStore().load()
+        XCTAssertEqual(loaded.count, 3, "32.2: no record dropped")
+        XCTAssertEqual(loaded.map(\.style.fontID), [.pingFang, .pingFang, .pingFang], "32.2")
     }
 
     /// 17.4: once written back, the file is in the new format.
@@ -323,19 +397,20 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         XCTAssertEqual(reloaded.map(\.position), loaded.map(\.position))
     }
 
-    /// 17.5: an unknown font falls back to SF Rounded instead of dropping the record.
-    func testUnknownFontIDFallsBackToSFRounded() throws {
+    /// 17.5, with 0.3's fallback: an unknown font falls back to PingFang
+    /// instead of dropping the record (PRD 0.3 §4.1).
+    func testUnknownFontIDFallsBackToPingFang() throws {
         var profile = CameraProfile(name: "字型", startDate: DateFixture.components(2026, 1, 1))
-        profile.style = OverlayStyle(fontID: .futura)
+        profile.style = OverlayStyle(fontID: .songti)
         let encoded = try XCTUnwrap(String(data: JSONEncoder().encode([profile]), encoding: .utf8))
-        XCTAssertTrue(encoded.contains("\"futura\""), "fixture sanity")
-        try Data(encoded.replacingOccurrences(of: "\"futura\"", with: "\"comicSans\"").utf8)
+        XCTAssertTrue(encoded.contains("\"songti\""), "fixture sanity")
+        try Data(encoded.replacingOccurrences(of: "\"songti\"", with: "\"comicSans\"").utf8)
             .write(to: fileURL, options: [.atomic])
 
         let loaded = try makeStore().load()
         XCTAssertEqual(loaded.count, 1, "17.5: record kept")
         XCTAssertEqual(loaded.first?.id, profile.id, "17.5")
-        XCTAssertEqual(loaded.first?.style.fontID, .sfRounded, "17.5")
+        XCTAssertEqual(loaded.first?.style.fontID, .pingFang, "17.5 / 32.2")
     }
 
     /// 27.11: each 0.1 unit pair becomes the PRD 0.2 §4.3 set, in a real
@@ -377,7 +452,7 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
     func testNewFormatRoundTripsCustomPlacementAndFullStyle() throws {
         var profile = CameraProfile(name: "新格式", startDate: DateFixture.components(2026, 1, 1))
         profile.position = .custom(x: 0.25, y: 0.75)
-        profile.style = OverlayStyle(fontID: .didot,
+        profile.style = OverlayStyle(fontID: .songti,
                                      textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
                                      outline: .solidBox,
                                      outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),

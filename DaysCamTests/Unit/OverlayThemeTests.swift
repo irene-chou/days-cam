@@ -75,14 +75,12 @@ final class OverlayThemeTests: XCTestCase {
         XCTAssertEqual(softPink.blue, 157.0 / 255.0, accuracy: 0.01)
     }
 
-    /// 0.2 §4.3: the five 0.1 themes now draw with the migrated style's font.
-    /// `minimalDark` changes from semibold SF Pro to bold SF Pro (A-2).
+    /// 0.3 §4.3 (replacing 0.2 §4.3's font column): the five 0.1 themes all
+    /// draw in PingFang (32.4).
     func testLegacyThemeFontsFollowTheMigrationTable() {
-        XCTAssertEqual(OverlayTheme.theme(for: .classicWhite).fontID, .sfRounded)
-        XCTAssertEqual(OverlayTheme.theme(for: .retroOrange).fontID, .sfMono)
-        XCTAssertEqual(OverlayTheme.theme(for: .filmStrip).fontID, .sfMono)
-        XCTAssertEqual(OverlayTheme.theme(for: .minimalDark).fontID, .sfPro)
-        XCTAssertEqual(OverlayTheme.theme(for: .softPink).fontID, .sfRounded)
+        for themeID in ThemeID.allCases {
+            XCTAssertEqual(OverlayTheme.theme(for: themeID).fontID, .pingFang, "32.4 \(themeID)")
+        }
     }
 
     func testLookupCoversEveryThemeIdentifier() {
@@ -164,9 +162,9 @@ final class OverlayThemeStyleTests: XCTestCase {
     }
 
     func testThemeCarriesFontAndTextColorFromTheStyle() {
-        let style = OverlayStyle(fontID: .didot, textColor: blue)
+        let style = OverlayStyle(fontID: .songti, textColor: blue)
         let theme = OverlayTheme(style: style)
-        XCTAssertEqual(theme.fontID, .didot)
+        XCTAssertEqual(theme.fontID, .songti)
         XCTAssertEqual(theme.textColor, blue)
         XCTAssertEqual(theme.style, style)
     }

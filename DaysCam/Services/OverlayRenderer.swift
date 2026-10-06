@@ -30,7 +30,13 @@ struct OverlayRenderer {
     ///
     /// Returns nil only when the image has no pixels to draw into; the caller
     /// treats nil as a baking failure and does not save the photo.
-    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement) -> UIImage? {
+    ///
+    /// `font` must be `OverlayMetrics.resolvedFont(for: style.fontID, ...)`,
+    /// resolved when the shutter is pressed — the same value the viewfinder
+    /// was drawing with (PRD 0.3 FR-5.14). It is used both to fit the size and
+    /// to draw, so the two cannot disagree.
+    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement,
+              font: ResolvedOverlayFont) -> UIImage? {
         let pixelSize = CGSize(width: image.size.width * image.scale,
                                height: image.size.height * image.scale)
         guard pixelSize.width >= 1, pixelSize.height >= 1 else { return nil }
@@ -52,11 +58,18 @@ struct OverlayRenderer {
             image.draw(in: CGRect(origin: .zero, size: pixelSize))
 
             guard !text.isEmpty else { return }
-            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize)
-            let block = OverlayLayout(text: text, style: style, fontSize: fontSize).decoratedText()
+            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
+            let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize).decoratedText()
             let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
             block.draw(rendererContext.cgContext, origin)
         }
+    }
+
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call site
+    /// compiles. Always draws in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement) -> UIImage? {
+        bake(image: image, text: text, style: style, placement: placement, font: .pingFang)
     }
 
     /// Draws only the overlay text — with its outline or box and its shadow —
@@ -74,9 +87,13 @@ struct OverlayRenderer {
     /// and the image with `imageFrame(forBlockOrigin:)`.
     ///
     /// Returns nil for empty `text` or a non-positive size or scale.
-    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat) -> RenderedOverlayText? {
+    ///
+    /// `font` is the resolved face, the same one `fittedFontSize` measured
+    /// with (PRD 0.3 FR-5.14).
+    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat,
+                    font: ResolvedOverlayFont) -> RenderedOverlayText? {
         guard !text.isEmpty, fontSize > 0, displayScale > 0 else { return nil }
-        let block = OverlayLayout(text: text, style: style, fontSize: fontSize).decoratedText()
+        let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize).decoratedText()
         // One spare pixel past the overflow on every side keeps the outermost
         // ring transparent even where a box reaches the block's edge. The
         // leading insets are whole pixels so the block starts on the pixel
@@ -102,13 +119,23 @@ struct OverlayRenderer {
         return RenderedOverlayText(image: image, textInsets: insets, blockSize: block.size)
     }
 
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
+    /// compile. Always draws in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    func renderText(_ text: String, style: OverlayStyle, fontSize: CGFloat, displayScale: CGFloat) -> RenderedOverlayText? {
+        renderText(text, style: style, fontSize: fontSize, displayScale: displayScale, font: .pingFang)
+    }
+
     /// The font size overlay text is drawn at in a frame of `frameSize`: the
     /// base size for its short edge, times `style.sizeScale`, shrunk to fit
-    /// between the margins (PRD FR-4.7, FR-4.8; 0.2 FR-5.10, FR-10.9).
+    /// between the margins (PRD FR-4.7, FR-4.8; 0.2 FR-5.10, FR-10.9),
+    /// measured in `font` (0.3 FR-5.14, FR-5.17).
     ///
     /// `bake` uses this with the photo's pixel size; the viewfinder passes its
-    /// own bounds in points and hands the result to `renderText`.
-    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize) -> CGFloat {
+    /// own bounds in points and hands the result to `renderText` together
+    /// with the same `font`.
+    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize,
+                               font: ResolvedOverlayFont) -> CGFloat {
         let shortEdge = min(frameSize.width, frameSize.height)
         let margin = OverlayMetrics.margin(forShortEdge: shortEdge)
         let baseFontSize = OverlayMetrics.baseFontSize(forShortEdge: shortEdge, sizeScale: style.sizeScale)
@@ -116,17 +143,24 @@ struct OverlayRenderer {
         // box insets.
         let availableWidth = max(0, frameSize.width - margin * 2)
         return OverlayMetrics.fittedFontSize(for: text,
-                                             theme: OverlayTheme(style: style),
+                                             font: font,
                                              baseFontSize: baseFontSize,
                                              availableWidth: availableWidth)
     }
 
-    /// TEMP(TASK-18): adapter until TASK-21/24 replaces this view layer.
-    ///
-    /// The 0.1 signature `CameraScreenModel` still calls; draws exactly what
-    /// the new signature draws for the theme's style at that anchor.
+    /// TEMP #200: the 0.2 signature, kept only so the remaining call sites
+    /// compile. Always measures in PingFang, whatever `style.fontID` says.
+    @available(*, deprecated, message: "TEMP #200：改用 font: 版本")
+    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize) -> CGFloat {
+        fittedFontSize(for: text, style: style, frameSize: frameSize, font: .pingFang)
+    }
+
+    /// TEMP(TASK-18): 0.1-shaped adapter the renderer tests still call;
+    /// draws exactly what `bake(image:text:style:placement:font:)` draws for
+    /// the theme's style at that anchor, in PingFang (every 0.1 theme
+    /// migrates to PingFang, PRD 0.3 §4.3).
     func bake(image: UIImage, text: String, theme: OverlayTheme, position: OverlayPosition) -> UIImage? {
-        bake(image: image, text: text, style: theme.style, placement: .anchor(position))
+        bake(image: image, text: text, style: theme.style, placement: .anchor(position), font: .pingFang)
     }
 }
 
@@ -166,12 +200,14 @@ private struct OverlayLayout {
     let decorationScale: CGFloat
     let font: UIFont
 
-    init(text: String, style: OverlayStyle, fontSize: CGFloat) {
+    /// `font` is the already-resolved face (PRD 0.3 FR-5.14); the layout
+    /// never looks at `style.fontID` itself.
+    init(text: String, style: OverlayStyle, font: ResolvedOverlayFont, fontSize: CGFloat) {
         self.text = text
         self.theme = OverlayTheme(style: style)
         self.fontSize = fontSize
         decorationScale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-        font = OverlayMetrics.font(for: style.fontID, size: fontSize)
+        self.font = font.font(ofSize: fontSize)
     }
 
     /// The text with every one of the theme's decorations wrapped around it,
@@ -199,7 +235,8 @@ private struct OverlayLayout {
     }
 
     /// How far the glyphs' ink can reach past the text's line box: swashes
-    /// and italic overhang (Snell Roundhand), plus a margin for antialiasing.
+    /// and brush-stroke overhang (calligraphy faces such as 行楷), plus a
+    /// margin for antialiasing.
     private func glyphOverflow(textSize: CGSize) -> UIEdgeInsets {
         let ink = (text as NSString).boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude,
                                                                height: CGFloat.greatestFiniteMagnitude),
