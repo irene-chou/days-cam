@@ -332,3 +332,7 @@ final class FontLibraryModel: ObservableObject {
         }
     }
 }
+
+/// TASK-33's library already provides everything the font UI needs:
+/// `objectWillChange`, `cancel` and a `Bool`-returning `delete`.
+extension FontLibrary: FontListControlling {}
