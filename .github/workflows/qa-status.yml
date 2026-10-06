@@ -1,11 +1,12 @@
-# Seeds the `qa` commit status on every PR push so the PR list shows whether QA has passed.
-# Docs and agent-config-only PRs (docs/, .claude/, .codex/, *.md) are marked success; everything else waits as pending until Lead (or the independent QA on high-risk cards) updates it.
+# Seeds the `qa` commit status so the PR list shows whether independent QA is done.
+# `qa` only tracks the qa agent: PRs labeled `risk:high` wait as pending until the qa agent
+# sets success/failure; every other PR is marked success ("免 qa"). Human review uses `needs-human`.
 
 name: QA status
 
 on:
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
 
 permissions:
   statuses: write
@@ -13,20 +14,20 @@ permissions:
 
 jobs:
   seed:
+    # Other label changes (e.g. needs-human) must not overwrite a status the qa agent already set.
+    if: ${{ (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'risk:high' }}
     runs-on: ubuntu-latest
     steps:
     - name: Set initial qa status
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
-        PR: ${{ github.event.pull_request.number }}
         SHA: ${{ github.event.pull_request.head.sha }}
+        HIGH_RISK: ${{ contains(github.event.pull_request.labels.*.name, 'risk:high') }}
       run: |
-        NON_DOCS=$(gh api --paginate "repos/$REPO/pulls/$PR/files" -q '.[].filename' \
-          | grep -Ev '^(docs/|\.claude/|\.codex/)|\.md$' || true)
-        if [ -z "$NON_DOCS" ]; then
-          STATE=success; DESC="純文件，免 qa"
+        if [ "$HIGH_RISK" = "true" ]; then
+          STATE=pending; DESC="待 qa agent 驗收"
         else
-          STATE=pending; DESC="待 Lead 核對：review gate／人工確認"
+          STATE=success; DESC="免 qa（非高風險）"
         fi
         gh api "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context=qa -f description="$DESC"
