@@ -136,6 +136,10 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
     private let entryProvider: (OverlayFontID) -> FontCatalogEntry
 
     private var operations: [OverlayFontID: Operation] = [:]
+    private var hasPreparedAtLaunch = false
+    /// System fonts waiting for their launch-time match, in order.
+    private var launchQueue: [(fontID: OverlayFontID, postScriptName: String)] = []
+    private var activeLaunchFont: OverlayFontID?
     private var settleWaiters: [OverlayFontID: [CheckedContinuation<Void, Never>]] = [:]
 
     /// Creates a library.
@@ -287,7 +291,15 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
     /// Returns once `priority` (the current profile's font) has left
     /// `.preparing`, or once every font has when `priority` is `nil`. The other
     /// fonts keep settling on their own.
+    ///
+    /// Call it once, at launch. A second call on the same library returns at
+    /// once and does nothing.
+    ///
+    /// System fonts are matched one after another (the priority font first), so
+    /// each font's 3 seconds count from when its own match starts.
     func prepareAtLaunch(priority: OverlayFontID? = nil) async {
+        guard !hasPreparedAtLaunch else { return }
+        hasPreparedAtLaunch = true
         removeStaleTemporaryFiles()
         let downloaded = Set(downloadedSystemFontIDs)
         var order = OverlayFontID.allCases.filter { state(for: $0) == .preparing }
@@ -301,7 +313,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
                 if let asset = entry.openSource { startOpenSourcePreparation(fontID, asset: asset) }
             case .system:
                 if downloaded.contains(fontID) {
-                    startLaunchMatch(fontID, postScriptName: entry.postScriptName)
+                    launchQueue.append((fontID, entry.postScriptName))
                 } else {
                     setState(.notDownloaded, for: fontID)
                 }
@@ -309,6 +321,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
                 break
             }
         }
+        startNextLaunchMatch()
         for fontID in priority.map({ [$0] }) ?? OverlayFontID.allCases {
             await waitUntilSettled(fontID)
         }
@@ -358,7 +371,8 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
 
     private func removeStaleTemporaryFiles() {
         let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
-        for name in names where name.hasSuffix(Self.temporarySuffix) {
+        let inUse = Set(operations.values.compactMap { $0.temporaryURL?.lastPathComponent })
+        for name in names where name.hasSuffix(Self.temporarySuffix) && !inUse.contains(name) {
             try? fileManager.removeItem(at: directory.appendingPathComponent(name))
         }
     }
@@ -434,6 +448,10 @@ private extension FontLibrary {
             } catch FontFetchError.noNetwork {
                 // No connection fails at once; the fallback host would not help.
                 reason = .noNetwork
+                break
+            } catch FontFetchError.storage {
+                // A disk problem would repeat on the fallback host.
+                reason = .other
                 break
             } catch {
                 reason = .other
@@ -580,9 +598,9 @@ private extension FontLibrary {
         matcher.startMatching(postScriptName: postScriptName) { [weak self] event in
             if session.isCancelled { return false }
             switch event {
-            case .downloadWillBegin(let total) where total > 0,
-                 .downloading(_, let total) where total > 0:
-                // The system cleared the font. Stop before any byte is fetched.
+            case .downloadWillBegin, .downloading:
+                // Any download report means the system cleared the font,
+                // whatever size it carries. Stop before any byte is fetched.
                 session.cancel()
                 self?.onMain { library in
                     library.handleLaunchWouldDownload(fontID, operation: operation)
@@ -601,6 +619,7 @@ private extension FontLibrary {
         guard isCurrent(operation, for: fontID), case .finished(let matched, _) = event else { return }
         end(operation, for: fontID)
         setState(matched ? .available : .failed(.other), for: fontID)
+        launchMatchEnded(fontID)
     }
 
     func handleLaunchWouldDownload(_ fontID: OverlayFontID, operation: Operation) {
@@ -609,12 +628,32 @@ private extension FontLibrary {
         let remaining = downloadedSystemFontIDs.filter { $0 != fontID }.map(\.rawValue)
         defaults.set(remaining, forKey: Self.downloadedSystemFontIDsKey)
         setState(.notDownloaded, for: fontID)
+        launchMatchEnded(fontID)
     }
 
     func timeOutLaunchMatch(_ fontID: OverlayFontID, operation: Operation) {
         guard isCurrent(operation, for: fontID), state(for: fontID) == .preparing else { return }
         end(operation, for: fontID)
         setState(.failed(.other), for: fontID)
+        launchMatchEnded(fontID)
+    }
+
+    /// Starts the next queued launch match, if none is running.
+    func startNextLaunchMatch() {
+        guard activeLaunchFont == nil else { return }
+        while !launchQueue.isEmpty {
+            let next = launchQueue.removeFirst()
+            guard state(for: next.fontID) == .preparing, operations[next.fontID] == nil else { continue }
+            activeLaunchFont = next.fontID
+            startLaunchMatch(next.fontID, postScriptName: next.postScriptName)
+            return
+        }
+    }
+
+    func launchMatchEnded(_ fontID: OverlayFontID) {
+        guard activeLaunchFont == fontID else { return }
+        activeLaunchFont = nil
+        startNextLaunchMatch()
     }
 }
 

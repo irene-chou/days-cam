@@ -17,6 +17,8 @@ private final class FakeFetcher: FontFileFetching, @unchecked Sendable {
     private let lock = NSLock()
     private var behaviors: [URL: Behavior] = [:]
     private var requested: [URL] = []
+    /// Called after a .data body is written, before returning.
+    var onFetched: (@Sendable () -> Void)?
 
     var requestedURLs: [URL] { lock.withLock { requested } }
 
@@ -36,6 +38,7 @@ private final class FakeFetcher: FontFileFetching, @unchecked Sendable {
             progress(0.5)
             try data.write(to: destination)
             progress(1)
+            onFetched?()
         case .fail(let error):
             throw error
         case .hang:
@@ -510,17 +513,16 @@ final class FontLibraryTests: XCTestCase {
         XCTAssertTrue(library.downloadedSystemFontIDs.isEmpty)
     }
 
-    /// 33.10: no answer within the timeout.
+    /// 33.10: no answer within the timeout. Matches run one after another and
+    /// each font's timeout counts from its own start, so the next one is not
+    /// judged by time the previous one used.
     func test_launch_matchTimesOut_failsAndIgnoresLateCallbacks() async {
         defaults.set(["liHei", "xingkai"], forKey: "downloadedSystemFontIDs")
         let library = makeLibrary(launchTimeout: 0.4)
 
         let prepared = Task { await library.prepareAtLaunch(priority: .liHei) }
-        await waitUntil("both started") { matcher.startedNames.count == 2 }
-        // The other font answers at once: one stuck match does not block it.
-        matcher.send(.finished(matched: true, offline: false), to: "STXingkaiTC-Bold")
-        await waitUntil("xingkai available") { library.state(for: .xingkai) == .available }
-        XCTAssertEqual(library.state(for: .liHei), .preparing, "33.10 still waiting")
+        await waitUntil("first started") { matcher.startedNames == ["LiHeiPro"] }
+        XCTAssertEqual(library.state(for: .xingkai), .preparing, "33.10 queued behind the priority font")
 
         await prepared.value
 
@@ -530,11 +532,100 @@ final class FontLibraryTests: XCTestCase {
         matcher.send(.finished(matched: true, offline: false), to: "LiHeiPro")
         await settle()
         XCTAssertEqual(library.state(for: .liHei), .failed(.other), "33.10 late callbacks ignored")
-        XCTAssertEqual(library.state(for: .xingkai), .available, "33.10")
         XCTAssertTrue(library.downloadedSystemFontIDs.contains(.liHei), "a timeout keeps the record")
+
+        // The second font starts only now; answering 0.3 s later, i.e. 0.7 s
+        // after the first began, must not count as a timeout.
+        await waitUntil("second started") { matcher.startedNames == ["LiHeiPro", "STXingkaiTC-Bold"] }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        matcher.send(.finished(matched: true, offline: false), to: "STXingkaiTC-Bold")
+        await waitUntil("xingkai available") { library.state(for: .xingkai) == .available }
 
         XCTAssertTrue(library.download(.liHei), "33.10 retry allowed")
         XCTAssertEqual(matcher.startedNames.filter { $0 == "LiHeiPro" }.count, 2, "33.10")
+    }
+
+    /// 33.10a: a download report without any size still means "would download".
+    func test_launch_downloadReportWithoutSize_isCancelled() async {
+        defaults.set(["xingkai", "liHei"], forKey: "downloadedSystemFontIDs")
+        let library = makeLibrary()
+
+        let prepared = Task { await library.prepareAtLaunch(priority: .xingkai) }
+        await waitUntil("started") { !matcher.startedNames.isEmpty }
+        let answer = matcher.send(.downloadWillBegin(totalBytes: 0), to: "STXingkaiTC-Bold")
+        await prepared.value
+
+        XCTAssertFalse(answer, "33.10a size 0 still cancels")
+        XCTAssertEqual(library.state(for: .xingkai), .notDownloaded, "33.10a")
+        XCTAssertEqual(library.downloadedSystemFontIDs, [.liHei], "33.10a")
+        // The queue moves on to the next font.
+        await waitUntil("next started") { matcher.startedNames.contains("LiHeiPro") }
+    }
+
+    /// `downloading` without a size cancels too.
+    func test_launch_downloadingWithoutSize_isCancelled() async {
+        defaults.set(["xingkai"], forKey: "downloadedSystemFontIDs")
+        let library = makeLibrary()
+
+        let prepared = Task { await library.prepareAtLaunch(priority: .xingkai) }
+        await waitUntil("started") { !matcher.startedNames.isEmpty }
+        let answer = matcher.send(.downloading(fraction: 0, totalBytes: 0), to: "STXingkaiTC-Bold")
+        await prepared.value
+
+        XCTAssertFalse(answer)
+        XCTAssertEqual(library.state(for: .xingkai), .notDownloaded)
+        XCTAssertTrue(library.downloadedSystemFontIDs.isEmpty)
+    }
+
+    /// prepareAtLaunch runs once per library, and never removes the temporary
+    /// file of a download in progress.
+    func test_prepareAtLaunch_secondCallDoesNothing_andKeepsActiveTemporaryFile() async {
+        fetcher.script(huninnAsset.primaryURL, .hang)
+        defaults.set(["liHei"], forKey: "downloadedSystemFontIDs")
+        let library = makeLibrary(launchTimeout: 0.3)
+        let first = Task { await library.prepareAtLaunch() }
+        await waitUntil("match started") { !matcher.startedNames.isEmpty }
+        library.download(.huninn)
+        await waitUntil("partial file") { !temporaryFiles().isEmpty }
+        let before = temporaryFiles()
+
+        await library.prepareAtLaunch(priority: .huninn)
+
+        XCTAssertEqual(temporaryFiles(), before, "a running download keeps its temporary file")
+        XCTAssertEqual(library.state(for: .liHei), .preparing, "the second call did not wait or restart")
+        XCTAssertEqual(matcher.startedNames, ["LiHeiPro"], "no second match")
+        await first.value
+        await library.prepareAtLaunch()
+        XCTAssertEqual(matcher.startedNames, ["LiHeiPro"], "still one match")
+        library.cancelAllDownloads()
+    }
+
+    /// A disk error does not try the fallback host.
+    func test_download_storageFailure_doesNotTryFallback() async {
+        fetcher.script(huninnAsset.primaryURL, .fail(.storage))
+        let library = makeLibrary()
+
+        library.download(.huninn)
+        await waitUntil("failed") { library.state(for: .huninn) == .failed(.other) }
+
+        XCTAssertEqual(fetcher.requestedURLs, [huninnAsset.primaryURL])
+    }
+
+    /// Moving the verified file into place fails: failed, no fallback, no registration.
+    func test_download_moveFails_doesNotTryFallback() async throws {
+        let directoryToLock = directory
+        fetcher.onFetched = {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directoryToLock.path)
+        }
+        let library = makeLibrary()
+
+        library.download(.huninn)
+        await waitUntil("failed") { library.state(for: .huninn) == .failed(.other) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+
+        XCTAssertEqual(fetcher.requestedURLs, [huninnAsset.primaryURL])
+        XCTAssertTrue(registrar.registeredURLs.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.storedFileURL(for: .huninn).path))
     }
 
     /// 33.10a: the system cleared the font, so the match would download.

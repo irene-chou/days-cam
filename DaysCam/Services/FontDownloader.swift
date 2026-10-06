@@ -10,6 +10,9 @@ enum FontFetchError: Error, Equatable {
     case noNetwork
     /// Any other failure: a bad status, a dropped connection, a server error.
     case other
+    /// The file could not be written on this device; the fallback URL would
+    /// fail the same way, so it is not tried.
+    case storage
 }
 
 /// Downloads one file over the network. Injected so unit tests never connect.
@@ -41,8 +44,12 @@ struct URLSessionFontFetcher: FontFileFetching {
                 try? FileManager.default.removeItem(at: location)
                 throw FontFetchError.other
             }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: location, to: destination)
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: location, to: destination)
+            } catch {
+                throw FontFetchError.storage
+            }
         } catch let error as FontFetchError {
             throw error
         } catch is CancellationError {
