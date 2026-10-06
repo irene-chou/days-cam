@@ -9,7 +9,7 @@ import SwiftUI
 /// `FormatTabModel` wrapping the active profile's `DisplaySettingsModel`.
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
-/// sections now sit on one page, top to bottom, each under a small heading.
+/// sections now sit on one page: 天數格式 on top, 顯示內容 below under a small heading.
 /// `ContentTabView` hosts this view as its 格式 sub-tab.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
@@ -26,11 +26,10 @@ struct FormatTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeading("顯示內容")
-            displayContentSection
-            sectionHeading("天數格式")
-                .padding(.top, 8)
             dayCountFormatSection
+            sectionHeading("顯示內容")
+                .padding(.top, 8)
+            displayContentSection
         }
         // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
         // #106 R2): each tab owns its own padding rather than a generic one.
@@ -44,7 +43,7 @@ struct FormatTabView: View {
         }
     }
 
-    /// Small heading above each section (TASK-38 A: 13pt, secondary ink).
+    /// Small heading above the 顯示內容 section (TASK-38 A: 13pt, secondary ink; 天數格式 has none).
     private func sectionHeading(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13))

@@ -48,7 +48,6 @@ final class ContentTabModelTests: XCTestCase {
     func testMeasuredHeights() {
         let format = height(of: .format)
         let rules = height(of: .rules)
-        print("TASK38_HEIGHT format=\(format) rules=\(rules)")
         XCTAssertLessThanOrEqual(max(format, rules), 260, "format=\(format) rules=\(rules)")
         XCTAssertGreaterThan(format, 44 * 4, "格式頁至少四列")
     }
