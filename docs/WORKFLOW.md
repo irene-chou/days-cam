@@ -17,7 +17,7 @@
 
 模型是可調整的起點；Codex ID 已對照本機 2026-10-03 模型清單。不可用時在 app 選擇可用模型並調整角色 TOML，不改走 API key。只有依賴已滿足且擁有檔案不重疊時，才同時開兩位 developer；同一時間只有一個 agent 操作 Xcode 視窗。
 
-高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務／PR 標 `risk: high` 並寫原因，加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
+高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面，以及三輪 review 未收斂。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
 **交接流程**：Claude 寫卡 → 開發者（依卡片類型為 Claude 或 Codex）領取、實作、自驗、開 PR → 全新 session review → 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 直接用 Codex CLI 派卡，不再請使用者轉交；訊息格式如下：
 
@@ -84,36 +84,38 @@ gh api --paginate repos/irene-chou/days-cam/pulls/<N>/reviews
 
 - Developer：在原本的開發 session 處理，不開新 session 重讀。必修逐條處理，同意則修正、相關測試通過後 push，回覆「已修正：<commit>」；不同意要說明並交 Lead／人類裁決。建議可自行取捨並簡短回覆理由。
 - Codex connector：高風險卡必觸發；一般卡在 Action 沒結果或需要第二意見時觸發。開 PR 後與每輪修正集中 push 完後，各在最新 commit 留一次 `@codex review`；同 SHA 已在 review 時勿重複觸發。P0／P1 須處理；沒有留言不代表通過，要確認 review 對象是最新 SHA。
-- Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；三輪仍未收斂就停止、加 `needs-human`。截圖待確認、dev 駁回 reviewer 條目也加此 label，人類回覆後記到 PR 並移除。
-- 合併前確認同 SHA 的 `qa=success`、待裁決事項已結案，以及 review gate：一般卡至少一個 approve、`risk: high` 卡 Claude 與 Codex 各一個 approve，定義見 AGENTS。Claude approve 看 `APPROVED` review 的 `commit_id` 等於最新 `headRefOid`；Codex approve 看 connector review 針對最新 SHA 且沒有 P0／P1；任何 review 的必修／P0／P1 已修正或已裁決。Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
-- 看板：可合併候選 `is:pr is:open review:approved status:success`（只靠 Codex approve 的 PR 不會出現，另查 `is:pr is:open status:success`）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
+- Lead：依既有巡檢安排檢查開啟的 PR，按所有權派修；凡符合 AGENTS 的 `needs-human` 條件就加 label，並在 PR 留言列出要人類看什麼（驗收編號、截圖連結、待裁決條目）。人類回覆後記到 PR 並移除。
+- 合併前確認同 SHA 的 `qa=success`、沒有 `needs-human`，以及 review gate：一般卡至少一個 approve、`risk:high` 卡 Claude 與 Codex 各一個 approve，定義見 AGENTS。Claude approve 看 `APPROVED` review 的 `commit_id` 等於最新 `headRefOid`；Codex approve 看 connector review 針對最新 SHA 且沒有 P0／P1；任何 review 的必修／P0／P1 已修正或已裁決。Lead 在 PR 留言記錄核對結果。PR aggregate decision 不能代替 SHA 比對。
+- 看板：可合併候選 `is:pr is:open status:success -label:needs-human`（再逐一核對 review gate）；等人類 `is:pr is:open label:needs-human`。搜尋只是入口，仍需上述最終檢查。
 
 ## QA
 
-驗收層級：A＝QA 可執行（單元／靜態／view model）；B′＝設計對照（SwiftUI Preview）；B＝人類實機。模擬器不能證明實體相機、烘焙目視與權限行為。B 標「待人類驗」後回報，繼續其他可做項目。
+驗收層級：A＝QA 可執行（單元／靜態／view model）；B′＝設計對照（SwiftUI Preview）；B＝人類實機。模擬器不能證明實體相機、烘焙目視與權限行為。B 與 B′ 截圖確認交人類：加 `needs-human` 後回報，繼續其他可做項目。
 
-**一般風險**：開發者自驗 A 級（相關測試 class），在 PR 列驗收對照表；reviewer 逐條核對對照表，有缺漏即列為必修。UI 卡的 B′ 由開發者（Claude）用 Xcode MCP `RenderPreview` 截圖並與設計稿比較差異。Lead 在相關測試證據齊全、review gate 達成、人工項目確認後，設定 qa status。
+**一般風險**：開發者自驗 A 級（相關測試 class），在 PR 列驗收對照表；reviewer 逐條核對對照表，有缺漏即列為必修。UI 卡的 B′ 由開發者（Claude）用 Xcode MCP `RenderPreview` 截圖並與設計稿比較差異，交人類確認（`needs-human`）。不開 qa agent，qa 由 Action 自動設為免 qa。
 
-**高風險**：另由沒寫這張卡的那家以 `qa` 角色獨立驗收指定 SHA，在 PR 留逐條通過／失敗（附輸出）／待人類驗，補齊開發單元測試未涵蓋的 Acceptance 測試，並設定 qa status。
+**高風險**：另由沒寫這張卡的那家以 `qa` 角色獨立驗收指定 SHA，在 PR 留逐條通過／失敗（附輸出）／待人類驗，補齊開發單元測試未涵蓋的 Acceptance 測試，並設定 qa status。待人類驗的項目由 Lead 加 `needs-human`，不影響 qa。
 
-同時僅一個 agent 操作 Xcode 視窗。工具不可用就交接或標 pending，不能假稱截圖完成。
+同時僅一個 agent 操作 Xcode 視窗。工具不可用就交接或維持 pending，不能假稱截圖完成。
 
 ### qa status
 
-`qa-status.yml` 對 opened／synchronize／reopened 初始化最新 SHA：只含 `docs/`、`.claude/` 或 `*.md` 為 success「純文件，免 qa」，其餘 pending「待 Lead 核對：review gate／人工確認」（不代表有 qa agent 在跑）。**新增 `.codex/*.toml` 不在豁免內**，此類 PR 需完成設定檢查並手動更新 status；本次不擴大自動豁免。
+`qa` 只代表獨立 qa agent 是否完成驗收；人類過目與實機一律走 `needs-human`，不放進 qa。`qa-status.yml` 在 opened／synchronize／reopened 與加減 `risk:high` label 時設定最新 SHA：
 
-- `success`：A 全過，且 B／B′ 截圖及爭議已由人類完成必要確認，已可合併。
-- `pending`：尚有實機、截圖、裁決或未執行的檢查，description 註明阻礙。review gate 達成後，Lead 把 description 改成具體在等什麼，例如「待人類在 PR 確認（Lead 自寫）」「待實機：29.9」；只有高風險卡派獨立 QA 時才寫「獨立 QA 驗收中 @<短 SHA>」。
-- `failure`：驗收失敗。新 push 後重驗並設定新 SHA；舊報告不沿用。人類確認最後一項後由 Lead 記到 PR 並更新 status。
+- 沒有 `risk:high`：success「免 qa（非高風險）」，不卡合併。
+- 有 `risk:high`：pending「待 qa agent 驗收」。之後由獨立 qa agent 設定：
+  - `success`：A 級全過、B′ 對照完成；待人類驗的項目已列在 PR。
+  - `pending`：驗收中或尚未派 qa，description 寫「獨立 QA 驗收中 @<短 SHA>」。
+  - `failure`：驗收失敗。新 push 後重驗並設定新 SHA；舊報告不沿用。
 
-設定者：一般風險由 Lead 設定，開發者不可設定自己 PR 的 qa；高風險由獨立 QA 設定。Claude 的 UI 開發要在獨立的 subagent／session 進行，Lead 主 session 只核對與設定 qa；若 Lead 在同一個 session 親自寫了該 PR 的內容，qa 改由人類在 PR 確認後才設定。
+設定者：只有獨立 qa agent（或額度接手的 qa 角色）設定 qa；開發者、Lead 都不手動設定。
 
 取 SHA 後，整輪驗收固定在該 commit；寫 status 前重新查 head，若不同先停下重驗。不可到最後才把舊測試結果寫給剛取得的新 SHA。
 
 ```sh
 gh pr view <N> --json headRefOid -q .headRefOid
 gh api repos/irene-chou/days-cam/statuses/<實際驗證的SHA> \
-  -f state=success -f context=qa -f description='A1–A6 通過；人工項目已確認'
+  -f state=success -f context=qa -f description='A1–A6 通過；B′ 對照完成'
 ```
 
 description 至多 140 字元，完整結果留 PR。設定 PR 使用實際檢查摘要，不填不存在的 A 驗收。
@@ -128,7 +130,7 @@ description 至多 140 字元，完整結果留 PR。設定 PR 使用實際檢�
 <img src="https://github.com/irene-chou/days-cam/blob/qa-screenshots/pr-<N>/<檔名>?raw=true" width="280">
 ```
 
-標明驗收編號，可表格並排。需要多 PR／設計稿總覽時 Lead 做確認頁；人類在 PR 或對話確認，由 Lead 記到 PR。任務卡寫「截圖推 qa-screenshots 並貼 PR」。
+標明驗收編號，可表格並排。需要多 PR／設計稿總覽時 Lead 做確認頁；人類在 PR 或對話確認，由 Lead 記到 PR 並移除 `needs-human`。任務卡寫「截圖推 qa-screenshots 並貼 PR」。
 
 ### 驗收指令規則
 
@@ -149,8 +151,8 @@ Markdown 表格內的 shell 指令不可含 `|`；跳脫後 agent 照原文執�
 
 **目標**：驗證開發分工與不分作者的 review gate。各用一張一般風險卡走完「Claude 開發 → 全新 session review」與「Codex 開發 → 全新 session review」。Lead 挑正常產品任務，不為試行製造無效 PR。
 
-- [ ] 建立 `quota-fallback` label；connector 已改為手動觸發，記錄設定人與日期。
-- [ ] 兩個 pilot PR 各記錄：PR URL、review URL、bot 身分／state／commit_id、CI 結果、qa 設定者、修正輪數、兩邊額度前後差。沒量測的欄位寫「未量測」。
+- [ ] 建立 `quota-fallback`、`risk:high` label；connector 已改為手動觸發，記錄設定人與日期。
+- [ ] 兩個 pilot PR 各記錄：PR URL、review URL、bot 身分／state／commit_id、CI 結果、qa 狀態、修正輪數、兩邊額度前後差。沒量測的欄位寫「未量測」。
 - [ ] 至少一次修正 push 後重審，確認舊 review／qa 不會當成最新結果。
 - [ ] 確認含 Claude Code 署名的 PR 也會觸發 Claude Action。
 - [ ] 跑完約 5 張卡後，依額度紀錄檢討 UI／邏輯的分配比例。

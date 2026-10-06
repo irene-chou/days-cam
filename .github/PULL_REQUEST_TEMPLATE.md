@@ -4,7 +4,7 @@
 - 改了什麼：
 - 為什麼：
 - 負責角色／檔案所有權：
-- 風險：`risk: normal` 或 `risk: high`，原因：
+- 風險：`risk: normal` 或 `risk: high`（高風險加 `risk:high` label），原因：
 - 這裡是我的假設：無／具體假設；下游容易誤判處：
 
 ## 怎麼驗證
@@ -20,5 +20,5 @@
 - 截圖：qa-screenshots 路徑與驗收編號（如適用）
 - 待裁決／依賴／下一位角色：
 
-<!-- 有人工待辦加 needs-human；新 push 使舊 SHA 的 QA／review 失效。
+<!-- 需要人類過目或驗證加 needs-human；qa 只看 risk:high 的 qa agent；新 push 使舊 SHA 的 QA／review 失效。
 合併 gate：一般卡一個 agent approve、高風險卡兩家各一，詳見 docs/WORKFLOW.md 的 Review。 -->
