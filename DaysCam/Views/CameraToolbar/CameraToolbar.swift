@@ -71,9 +71,9 @@ struct CameraToolbar: View {
 
     // MARK: - Center: profile switcher (PRD 0.2 FR-7.11)
 
-    /// Lists only names, in `ProfileStore`'s order, with the current one
-    /// checked — no "管理設定檔" entry (that moves out to its own entry
-    /// point in TASK-26).
+    /// Lists names in `ProfileStore`'s order, with the current one checked,
+    /// then a divider and "管理設定檔" pinned at the bottom (Issue #222; no
+    /// add/duplicate/delete here). The panel's bottom-left key stays too.
     ///
     /// Padding matches D-1's final borderless chip (`.chip{padding:7px 6px}`,
     /// #105) — an earlier revision of that same rule had a filled pill
@@ -92,6 +92,12 @@ struct CameraToolbar: View {
                     }
                 }
             }
+            Divider()
+            Button {
+                model.presentProfileManagement()
+            } label: {
+                Label("管理設定檔", systemImage: "list.bullet")
+            }
         } label: {
             HStack(spacing: 4) {
                 Text(model.currentProfileName)
@@ -105,6 +111,7 @@ struct CameraToolbar: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
         }
+        .menuOrder(.fixed)
     }
 
     // MARK: - Right: ratio, flip

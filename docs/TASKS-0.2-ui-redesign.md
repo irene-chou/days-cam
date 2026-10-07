@@ -268,7 +268,7 @@ PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部�
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 21.1 | view model：名稱選單項目 | 只有設定檔名稱，順序同 `ProfileStore`；沒有「管理設定檔」項目 |
+| 21.1 | view model：名稱選單項目 | 只有設定檔名稱，順序同 `ProfileStore`；沒有「管理設定檔」項目（`profileMenuItems` 仍只有設定檔；選單 View 底部的管理入口由 #222 加入） |
 | 21.2 | view model：閃光燈按鈕狀態在前鏡頭 | disabled |
 | 21.3 | view model：啟用中的工具（閃光燈自動、計時 3、格線開） | 三者 `isActive == true` |
 | 21.4 | view model：本次開 App 尚未拍照、無讀取權限 | 縮圖為相片圖示狀態 |

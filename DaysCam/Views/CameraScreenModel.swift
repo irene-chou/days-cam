@@ -663,9 +663,10 @@ extension CameraScreenModel {
 
     /// The profile switcher's menu items: exactly the profiles, in
     /// `ProfileStore`'s order, with no synthetic "manage profiles" entry
-    /// mixed in — that entry point moves to the bottom bar's own key
-    /// (TASK-26, `ProfileManagerModel`), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
-    /// 21.1).
+    /// mixed in (acceptance 21.1). The management entry is drawn separately
+    /// at the bottom of the menu view in `CameraToolbar.profileChip`
+    /// (Issue #222) and on the panel's bottom-left key (TASK-26) — two
+    /// entry points, neither of them in this array.
     var profileMenuItems: [CameraProfile] {
         profiles
     }
@@ -755,9 +756,13 @@ extension CameraScreenModel {
 
     /// After "新增設定檔": the new profile is already selected, so close the
     /// management panel and show the 天數規則 tab to name it and set its
-    /// start date (PRD 0.2 FR-9.8). The overlay panel stays open.
+    /// start date (PRD 0.2 FR-9.8). An open panel stays open; a collapsed
+    /// one (management reached from the top menu, Issue #222) is opened.
     func finishAddingProfile() {
         isProfileManagerPresented = false
+        if !panelModel.isOpen {
+            openOverlayPanel()
+        }
         panelModel.selectedTab = .content
         contentTabModel.selectedSubTab = .rules
     }

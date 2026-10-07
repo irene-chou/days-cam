@@ -565,6 +565,22 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(model.panelModel.isOpen)
     }
 
+    func testAddingFromTheManagerWithCollapsedPanelOpensItOnRules() throws {
+        // 42.9 (and 42.5): reached from the top menu with the panel closed.
+        let now = try fixedNow()
+        let (model, _, _, _) = makeModel(now: now)
+        XCTAssertFalse(model.panelModel.isOpen)
+        model.presentProfileManagement()
+        XCTAssertFalse(model.panelModel.isOpen)
+
+        model.finishAddingProfile()
+
+        XCTAssertTrue(model.panelModel.isOpen)
+        XCTAssertEqual(model.panelModel.selectedTab, .content)
+        XCTAssertEqual(model.contentTabModel.selectedSubTab, .rules)
+        XCTAssertFalse(model.isProfileManagerPresented)
+    }
+
     // MARK: - Shutter capture context (TASK-10 acceptance 10.3, 10.4)
 
     func testCaptureContextRecomputesTextForANewCapturedMoment() throws {
@@ -1508,9 +1524,8 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testProfileMenuItemsAreExactlyTheProfilesInStoreOrderWithNoManagementEntry() throws {
         // 21.1: the menu is just names, in `ProfileStore`'s order — no
-        // synthetic "管理設定檔" entry mixed into the model-level list (that
-        // entry point moved out of the menu in FR-7.11; `CameraScreen`'s
-        // `Menu` correspondingly no longer adds one).
+        // synthetic "管理設定檔" entry mixed into the model-level list (the
+        // menu View draws that entry itself at the bottom, Issue #222).
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
