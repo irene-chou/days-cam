@@ -480,11 +480,11 @@ struct StyleTabView: View {
         Button {
             onSelectAuto()
         } label: {
-            // Left half black, right half white: "black or white" (TASK-49,
+            // Left half dark gray (`ink`), right half white: "dark or white" (TASK-49,
             // human's follow-up). Drawn, not a symbol, so no system tint.
             ZStack {
                 Circle().fill(Color.white)
-                Circle().trim(from: 0.25, to: 0.75).fill(Color.black)
+                Circle().trim(from: 0.25, to: 0.75).fill(CameraTheme.ink)
             }
             .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
             .overlay(swatchEdge)
