@@ -12,7 +12,7 @@ import SwiftUI
 /// sections now sit on one page. TASK-48 (0.4 R-13): 天數單位 heading on top
 /// of the unit row, 顯示內容 (日期、名稱 only) below under its own heading;
 /// the day count is always shown, so nothing here is ever disabled for it.
-/// `ContentTabView` hosts this view as its 格式 sub-tab.
+/// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
 

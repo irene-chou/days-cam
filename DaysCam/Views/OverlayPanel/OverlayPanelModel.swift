@@ -11,7 +11,7 @@ import Foundation
 /// instance always starts at `.style` (acceptance 22.3).
 final class OverlayPanelModel: ObservableObject {
     /// The panel's first-level tabs (0.3 TASK-37: 樣式｜內容｜位置), in display order.
-    /// 內容 holds the 格式／天數規則 sub-tabs (`ContentTabModel`).
+    /// 內容 shows the day-count format and display switches (0.4 TASK-45).
     enum Tab: CaseIterable, Equatable, Hashable {
         case style, content, position
 

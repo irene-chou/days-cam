@@ -1263,59 +1263,6 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(model.panelModel.isOpen, "capturing must not close the panel")
     }
 
-    // MARK: - 天數規則 tab wiring (PRD 0.2 FR-13, TASK-22 hooking up TASK-25's RulesTabModel)
-
-    func testRulesTabModelTracksTheSelectedProfile() throws {
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let first = try XCTUnwrap(model.rulesTabModel)
-        XCTAssertEqual(first.profile.id, model.selectedProfileID)
-
-        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        waitUntil { model.selectedProfileID == second.id }
-
-        let updated = try XCTUnwrap(model.rulesTabModel)
-        XCTAssertEqual(updated.profile.id, second.id)
-    }
-
-    func testRulesTabModelKeepsTheSameInstanceAcrossUnrelatedChanges() throws {
-        // Rebuilding on every unrelated re-render would discard an
-        // in-progress name edit (same class of bug `displaySettingsModel`'s
-        // own doc comment documents).
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        let first = try XCTUnwrap(model.rulesTabModel)
-
-        model.refreshOverlay() // bumps `refreshTick`, unrelated to the profile
-
-        let second = try XCTUnwrap(model.rulesTabModel)
-        XCTAssertTrue(first === second)
-    }
-
-    func testRulesTabModelKeepsTheDayCountOnWhenAnotherTabTurnsItOff() throws {
-        // #167: changes made elsewhere must reach the rules tab's copy.
-        // TASK-47 rewrites the assertion: the day count is always on
-        // (#226 R-13), so turning it off is stored as on and the rules tab
-        // must still read `true`. The rename is the signal the sync ran.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let rules = try XCTUnwrap(model.rulesTabModel)
-        XCTAssertTrue(rules.profile.showDayCount)
-
-        var changed = try XCTUnwrap(store.profiles.first { $0.id == rules.profile.id })
-        changed.showDayCount = false
-        changed.showDate = true
-        changed.name = "改過"
-        let stored = try store.update(changed)
-        XCTAssertTrue(stored.showDayCount, "TASK-47")
-
-        waitUntil { model.rulesTabModel?.profile.name == "改過" }
-        XCTAssertTrue(model.rulesTabModel === rules, "the instance must be kept, not rebuilt")
-        XCTAssertEqual(rules.profile.name, "改過")
-        XCTAssertTrue(rules.profile.showDayCount, "TASK-47")
-    }
-
     // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)
 
     func testStyleFormatPositionTabModelsAreNotNilOnceAProfileIsSelected() throws {
@@ -1350,7 +1297,7 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testStyleFormatPositionTabModelsKeepTheSameInstanceAcrossUnrelatedChanges() throws {
-        // Same reasoning as `testRulesTabModelKeepsTheSameInstanceAcrossUnrelatedChanges`.
+        // Same reasoning as `testStyleTabModelKeepsTheSameInstanceAcrossUnrelatedChanges`.
         let (model, _, _, _) = makeModel(now: try fixedNow())
         let firstStyle = try XCTUnwrap(model.styleTabModel)
         let firstFormat = try XCTUnwrap(model.formatTabModel)
@@ -1402,7 +1349,7 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - 跨分頁不互相覆蓋 (#70, M.1–M.5)
 
-    func testSequentialEditsAcrossAllFourTabsAllSurvive() throws {
+    func testSequentialEditsAcrossAllThreeTabsAllSurvive() throws {
         // M.1
         let now = try fixedNow()
         let store = makeProfileStore(now: now, seed: [
@@ -1413,16 +1360,14 @@ final class CameraScreenModelTests: XCTestCase {
         model.styleTabModel?.selectFont(.huninn)
         model.positionTabModel?.selectAnchor(.bottomLeading)
         model.formatTabModel?.displaySettings.setShowDate(true)
-        model.rulesTabModel?.setName("阿寶")
 
         let stored = try XCTUnwrap(store.profiles.first)
         XCTAssertEqual(stored.style.fontID, .huninn, "M.1: 樣式改動仍在")
         XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.1: 位置改動仍在")
         XCTAssertTrue(stored.showDate, "M.1: 格式改動仍在")
-        XCTAssertEqual(stored.name, "阿寶", "M.1: 天數規則改動仍在")
     }
 
-    func testSequentialEditsAcrossAllFourTabsInReverseOrderAllSurvive() throws {
+    func testSequentialEditsAcrossAllThreeTabsInReverseOrderAllSurvive() throws {
         // M.2
         let now = try fixedNow()
         let store = makeProfileStore(now: now, seed: [
@@ -1430,7 +1375,6 @@ final class CameraScreenModelTests: XCTestCase {
         ])
         let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
-        model.rulesTabModel?.setName("阿寶")
         model.formatTabModel?.displaySettings.setShowDate(true)
         model.positionTabModel?.selectAnchor(.bottomLeading)
         model.styleTabModel?.selectFont(.huninn)
@@ -1439,7 +1383,6 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(stored.style.fontID, .huninn, "M.2: 樣式改動仍在")
         XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.2: 位置改動仍在")
         XCTAssertTrue(stored.showDate, "M.2: 格式改動仍在")
-        XCTAssertEqual(stored.name, "阿寶", "M.2: 天數規則改動仍在")
     }
 
     func testDragThenStyleChangeKeepsTheDraggedPosition() throws {

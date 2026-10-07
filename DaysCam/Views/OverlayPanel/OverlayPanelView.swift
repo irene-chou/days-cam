@@ -135,10 +135,8 @@ struct OverlayPanelView: View {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }
         case .content:
-            if let formatTabModel = model.formatTabModel, let rulesTabModel = model.rulesTabModel {
-                ContentTabView(model: model.contentTabModel,
-                               formatTabModel: formatTabModel,
-                               rulesTabModel: rulesTabModel)
+            if let formatTabModel = model.formatTabModel {
+                ContentTabView(formatTabModel: formatTabModel)
             } else {
                 placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
             }
@@ -176,7 +174,7 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("內容・格式子分頁") {
+#Preview("內容分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
@@ -192,18 +190,6 @@ struct OverlayPanelView: View {
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
     model.panelModel.selectedTab = .position
-    return ZStack {
-        CameraTheme.background.ignoresSafeArea()
-        OverlayPanelView(model: model)
-    }
-}
-
-#Preview("內容・天數規則子分頁") {
-    let store = ProfileStore()
-    store.load()
-    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .content
-    model.contentTabModel.selectedSubTab = .rules
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)
