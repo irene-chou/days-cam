@@ -15,6 +15,9 @@ enum CameraProfileValidationError: Error, Equatable {
     /// or `month: 13` (invariant 2).
     case startDateNotARealDate
     /// Both `showDayCount` and `showDate` are off (invariant 3).
+    ///
+    /// No longer reachable through `validatedForPersistence(calendar:)`:
+    /// `normalized()` forces `showDayCount` on (#226 R-13, TASK-47).
     case displaySwitchesAllOff
     /// `displayUnits` is empty (PRD 0.2 §4.1, replacing 0.1 invariant 4).
     case displayUnitsEmpty
@@ -54,6 +57,10 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     /// Whether the start date itself is day 1 or day 0.
     var countingRule: CountingRule
     /// Whether the elapsed amount is printed.
+    ///
+    /// Always `true` once persisted: the day count is always shown (#226 R-13)
+    /// and `normalized()` turns a `false` on. The field stays so that
+    /// `profiles.json` keeps its format.
     var showDayCount: Bool
     /// Whether the capture date is printed.
     var showDate: Bool
@@ -115,9 +122,13 @@ extension CameraProfile {
     /// so that stray components — `hour`, `minute`, `second`, `timeZone`,
     /// `calendar` and the rest — are dropped. Values that are simply wrong, such
     /// as `month: 13`, are left alone for `validate(calendar:)` to reject.
+    ///
+    /// Also turns `showDayCount` on (#226 R-13): an older profile that showed
+    /// only the date is migrated rather than rejected, so no profile is lost.
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.showDayCount = true
         var stripped = DateComponents()
         stripped.year = startDate.year
         stripped.month = startDate.month
