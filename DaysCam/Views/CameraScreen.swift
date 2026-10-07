@@ -410,8 +410,7 @@ struct CameraScreen: View {
     /// screen edge (midway to the shutter's edge, minus 8pt), open or
     /// closed, so they never shift when the panel toggles. Closed, the row sits 16pt
     /// above the bottom of the footer region; open, `footerColumn` supplies
-    /// the 8pt gap itself and the row is exactly 44pt tall (the 52pt buttons
-    /// overflow it by 4pt top and bottom).
+    /// the 8pt gap itself and the row is exactly 44pt tall.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let isOpen = model.panelModel.isOpen
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
@@ -431,8 +430,8 @@ struct CameraScreen: View {
     }
 
     /// Tap target of every footer side button, and the thumbnail's size
-    /// (issue #128; 44 → 52 in TASK-50).
-    private static let footerButtonSize: CGFloat = 52
+    /// (issue #128).
+    private static let footerButtonSize: CGFloat = 44
 
     /// Icon point size of the footer side buttons (TASK-50; was 20).
     private static let footerIconSize: CGFloat = 28
@@ -468,9 +467,9 @@ struct CameraScreen: View {
         }
     }
 
-    /// 52×52 tap target (`footerButtonSize`; issue #128, TASK-50) — every
+    /// 44×44 tap target (`footerButtonSize`; issue #128) — every
     /// bottom bar icon button except `thumbnailButton`, which shows a photo
-    /// thumbnail of the same 52×52 size rather than a plain icon.
+    /// thumbnail of the same 44×44 size rather than a plain icon.
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
     /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
     /// only ever appears while the panel is open (`.manageProfiles`/
@@ -512,7 +511,7 @@ struct CameraScreen: View {
                 }
             }
             .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
             // via an explicit `withAnimation` in `showThumbnail`; otherwise
             // the new photo replaces the icon instantly — an animated if/else

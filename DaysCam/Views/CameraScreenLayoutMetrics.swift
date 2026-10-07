@@ -89,7 +89,7 @@ struct CameraScreenLayoutMetrics {
     /// The segmented control's height at the default Dynamic Type size.
     static let defaultPanelTabBarHeight: CGFloat = 32
 
-    /// Footer row height while the panel is open (the 52×52 side buttons overflow it by 4pt each side).
+    /// Footer row height while the panel is open (two 44×44 buttons).
     static let panelOpenFooterRowHeight: CGFloat = 44
 
     /// Gap between the panel's bottom edge and the footer row.
