@@ -51,13 +51,16 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.1 Subtitle
 
-    func testSubtitleShowsStartDateOrDateOnly() throws {
+    /// TASK-47 rewrites this: the day count is always on (#226 R-13), so a
+    /// profile added as "date only" is stored with it on and gets a start-date
+    /// subtitle like every other profile; "只顯示日期" no longer appears.
+    func testSubtitleShowsStartDateEvenForAProfileAddedAsDateOnly() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)
         try addProfile("只看日期", to: store, showDayCount: false)
         let model = try makeModel(store: store)
 
-        XCTAssertEqual(model.rows.map(\.subtitle), ["2026/01/10 起", "2026/01/01 起", "只顯示日期"])
+        XCTAssertEqual(model.rows.map(\.subtitle), ["2026/01/10 起", "2026/01/01 起", "2026/01/01 起"])
     }
 
     func testCurrentRowIsMarkedAndRowsFollowStoreOrder() throws {
