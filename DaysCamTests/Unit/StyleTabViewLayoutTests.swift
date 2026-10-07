@@ -3,7 +3,7 @@ import UIKit
 import XCTest
 @testable import DaysCam
 
-/// Layout checks for the style tab's color pages (TASK-39): 34pt swatches on
+/// Layout checks for the style tab's color pages (TASK-39): 30pt swatches on
 /// a shared nine-column grid, and page heights that fit a regular panel.
 @MainActor
 final class StyleTabViewLayoutTests: XCTestCase {
@@ -14,32 +14,35 @@ final class StyleTabViewLayoutTests: XCTestCase {
                              applyFont: { _, _ in }, allProfiles: { [] }, replaceFont: { _, _ in [] }) { _ in }
     }
 
-    private func pageHeight(_ model: StyleTabModel) -> CGFloat {
-        let hosting = UIHostingController(rootView: StyleTabView(model: model).frame(width: 375))
+    /// Natural height of the page; `availableHeight` 0 turns off centering's
+    /// minimum height, and the default fills a regular 212pt panel.
+    private func pageHeight(_ model: StyleTabModel, availableHeight: CGFloat = 0) -> CGFloat {
+        let hosting = UIHostingController(rootView: StyleTabView(model: model, availableHeight: availableHeight)
+            .frame(width: 375))
         return hosting.sizeThatFits(in: CGSize(width: 375, height: CGFloat.greatestFiniteMagnitude)).height
     }
 
-    /// 39.8: nine equal-gap columns filling the content width; the second
+    /// 49.10: nine equal-gap columns filling the content width; the second
     /// row reuses the same column centers, so its n-th swatch is directly
     /// under the first row's n-th (±0.5).
     func testNineColumnsAreEvenlySpacedAndShareCentersAcrossRows() {
-        XCTAssertEqual(StyleTabView.swatchDiameter, 34)
-        XCTAssertEqual(StyleTabView.swatchCellHeight, 42)
+        XCTAssertEqual(StyleTabView.swatchDiameter, 30)
+        XCTAssertEqual(StyleTabView.swatchCellHeight, 38)
         for contentWidth: CGFloat in [355, 375, 420] {
             let centers = StyleTabView.columnCenters(forContentWidth: contentWidth)
             XCTAssertEqual(centers.count, 9)
             let pitches = zip(centers.dropFirst(), centers).map { $0 - $1 }
             for pitch in pitches {
                 XCTAssertEqual(pitch, pitches[0], accuracy: 0.001, "等距")
-                XCTAssertGreaterThanOrEqual(pitch, 34 + 2, "隔壁色票與環之間不重疊")
+                XCTAssertGreaterThanOrEqual(pitch, 38, "隔壁色票與環之間不重疊")
             }
-            let totalWidth = centers[8] + 17 - (centers[0] - 17)
+            let totalWidth = centers[8] + 15 - (centers[0] - 15)
             XCTAssertLessThanOrEqual(totalWidth, contentWidth + 0.001)
             XCTAssertEqual(totalWidth, contentWidth, accuracy: 0.001, "撐滿內容寬")
             let secondRow = StyleTabView.columnCenters(forContentWidth: contentWidth)
             for (first, second) in zip(centers, secondRow) { XCTAssertEqual(first, second, accuracy: 0.5) }
         }
-        XCTAssertEqual(StyleTabView.columnSpacing(forContentWidth: 355), 6.125, accuracy: 0.01)
+        XCTAssertEqual(StyleTabView.columnSpacing(forContentWidth: 355), 10.625, accuracy: 0.01)
     }
 
     /// 39.8a: the color page fits a regular panel's content area (160pt cap);
@@ -48,7 +51,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let model = try makeModel()
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
-        XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42)
+        XCTAssertGreaterThanOrEqual(colorHeight, 38 + 6 + 38)
         XCTAssertLessThanOrEqual(colorHeight, 160, "顏色頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
@@ -59,22 +62,50 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(outlineHeight, 200, "外框頁 \(outlineHeight)pt")
     }
 
+    /// 49.1: a centered page fills what is left below the sub-tab row (212pt
+    /// panel: 212 - 4 - 40 - 10), and never goes negative on a tiny panel.
+    func testCenteredContentMinHeightFillsPanelBelowSubTabRow() {
+        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 212), 158)
+        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 20), 0)
+    }
+
+    /// 49.1 / 49.2: only the color, shadow and size pages are centered.
+    func testOnlyShortPagesAreCentered() {
+        let centered = StyleTabModel.SubTab.allCases.filter(\.isCentered)
+        XCTAssertEqual(Set(centered), [.color, .shadow, .size])
+    }
+
+    /// 49.5 / 49.6: option boxes fit one row at SE content width (355pt).
+    func testOptionRowsFitSEContentWidth() {
+        XCTAssertLessThanOrEqual(5 * StyleTabView.outlineOptionSide + 4 * 8, 355)
+        XCTAssertLessThanOrEqual(4 * StyleTabView.shadowOptionSide + 3 * 18, 355)
+    }
+
+    /// 49.1: a centered page measures exactly the panel's content height.
+    func testCenteredPagesFillRegularPanelHeight() throws {
+        let model = try makeModel()
+        for subTab in [StyleTabModel.SubTab.color, .shadow, .size] {
+            model.selectedSubTab = subTab
+            XCTAssertEqual(pageHeight(model, availableHeight: 212), 212, accuracy: 0.5, "\(subTab)")
+        }
+    }
+
     private func width<V: View>(of view: V) -> CGFloat {
         UIHostingController(rootView: view.fixedSize())
             .sizeThatFits(in: CGSize(width: 1000, height: 1000)).width
     }
 
     /// Every second-row item (auto, rainbow, recent colors) is exactly one
-    /// 34pt grid column wide, so the HStack matches `columnCenters`.
+    /// 30pt grid column wide, so the HStack matches `columnCenters`.
     func testSecondRowItemsAreOneSwatchWide() throws {
         let model = try makeModel()
         let view = StyleTabView(model: model)
-        XCTAssertEqual(width(of: view.autoColorButton(current: nil) {}), 34, accuracy: 0.5)
-        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: false) { _ in }), 34, accuracy: 0.5)
-        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: true) { _ in }), 34, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.autoColorButton(current: nil) {}), 30, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: false) { _ in }), 30, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: true) { _ in }), 30, accuracy: 0.5)
         let recent = try XCTUnwrap(OverlayColor(hex: "#8E5AA8"))
-        XCTAssertEqual(width(of: view.colorDot(recent, isSelected: false) {}), 34, accuracy: 0.5)
-        XCTAssertEqual(width(of: view.colorDot(recent, isSelected: true) {}), 34, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.colorDot(recent, isSelected: false) {}), 30, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.colorDot(recent, isSelected: true) {}), 30, accuracy: 0.5)
     }
 
     /// The outline page's second row tops out at 9: auto + rainbow + 7 recent.
