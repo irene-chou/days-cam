@@ -98,12 +98,22 @@ final class CameraScreenModel: ObservableObject {
     /// (issue #135). Never persisted: every launch starts collapsed.
     @Published private(set) var isCameraToolsExpanded = false
 
-    /// Drives the management panel. Built once and reused: it mirrors the
-    /// store itself, so there is nothing to go stale between presentations.
+    /// Drives the 設定檔 sheet. Built once and reused: it mirrors the store
+    /// itself, so there is nothing to go stale between presentations. Its
+    /// edit page writes through a `TabProfileWriter` (#70, R-8).
     private(set) lazy var profileManagerModel = ProfileManagerModel(
         store: profileStore,
         calculator: calculator,
-        onProfileAdded: { [weak self] in self?.finishAddingProfile() }
+        renderer: renderer,
+        makeRulesModel: { [weak self] profile in
+            guard let self else { return RulesTabModel(profile: profile) { _ in } }
+            let writer = TabProfileWriter(baseline: profile, profileStore: self.profileStore)
+            return RulesTabModel(profile: profile,
+                                 calendar: self.calendar,
+                                 calculator: self.calculator,
+                                 renderer: self.renderer,
+                                 updateProfile: writer.write)
+        }
     )
 
     /// Drives the overlay panel's shell (PRD 0.2 FR-8, TASK-22): whether
@@ -118,8 +128,7 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var styleTabModel: StyleTabModel?
 
     /// The 內容 tab's sub-tab selection (TASK-37/38). Kept here, not in the
-    /// view, so `finishAddingProfile` can land on 天數規則 and the choice
-    /// survives the panel closing and reopening.
+    /// view, so the choice survives the panel closing and reopening.
     let contentTabModel = ContentTabModel()
 
     /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
@@ -661,15 +670,6 @@ extension CameraScreenModel {
         selectedProfile?.name ?? ""
     }
 
-    /// The profile switcher's menu items: exactly the profiles, in
-    /// `ProfileStore`'s order, with no synthetic "manage profiles" entry
-    /// mixed in — that entry point moves to the bottom bar's own key
-    /// (TASK-26, `ProfileManagerModel`), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
-    /// 21.1).
-    var profileMenuItems: [CameraProfile] {
-        profiles
-    }
-
     /// Switches the camera to `id` without leaving the camera screen
     /// (PRD FR-1.4). Forwards straight to the store, which also persists
     /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
@@ -678,8 +678,11 @@ extension CameraScreenModel {
         profileStore.select(id: id)
     }
 
+    /// Opens the 設定檔 sheet on its list (#226 R-1), whatever the panel is
+    /// doing; the panel's state is left alone.
     func presentProfileManagement() {
         collapseCameraTools()
+        profileManagerModel.resetNavigation()
         isProfileManagerPresented = true
     }
 
@@ -753,14 +756,6 @@ extension CameraScreenModel {
         isProfileManagerPresented = false
     }
 
-    /// After "新增設定檔": the new profile is already selected, so close the
-    /// management panel and show the 天數規則 tab to name it and set its
-    /// start date (PRD 0.2 FR-9.8). The overlay panel stays open.
-    func finishAddingProfile() {
-        isProfileManagerPresented = false
-        panelModel.selectedTab = .content
-        contentTabModel.selectedSubTab = .rules
-    }
 }
 
 // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21)
@@ -1383,7 +1378,7 @@ extension CameraScreenModel {
 /// not built to reconcile two genuinely concurrent writes to the same
 /// profile.
 @MainActor
-private final class TabProfileWriter {
+final class TabProfileWriter {
     private var baseline: CameraProfile
     private let profileStore: ProfileStore
 

@@ -1,8 +1,9 @@
 import Combine
 import Foundation
 
-/// Drives PRD 0.2 FR-9, the management panel (S-6): switching, reordering,
-/// duplicating, deleting and adding profiles.
+/// Drives the 設定檔 sheet (#226 R-1～R-8, R-10; PRD 0.2 FR-9 as reshaped for
+/// 0.4): switching, reordering, duplicating, deleting and adding profiles,
+/// plus the navigation into a profile's edit page.
 ///
 /// Holds the real `ProfileStore` and mirrors its published state; every
 /// action forwards to the store, which persists immediately. What the store
@@ -11,12 +12,12 @@ import Foundation
 /// FR-9.7 and FR-9.10.
 @MainActor
 final class ProfileManagerModel: ObservableObject {
-    /// One row of the list (PRD FR-9.2): name and start-date subtitle only,
-    /// no overlay preview.
+    /// One row of the list (#226 R-2): name and subtitle only, no overlay
+    /// preview.
     struct Row: Identifiable, Equatable {
         let id: UUID
         let name: String
-        /// "yyyy/MM/dd 起", or "只顯示日期" when the day count is off.
+        /// "yyyy/MM/dd 起・今天第 N 天".
         let subtitle: String
         let isCurrent: Bool
     }
@@ -32,23 +33,38 @@ final class ProfileManagerModel: ObservableObject {
     @Published private(set) var deletionCandidate: CameraProfile?
     /// The latest failed action, for the view to surface.
     @Published var lastError: Error?
+    /// The profile ids pushed onto the sheet's navigation stack: empty on the
+    /// list, one id on that profile's edit page (R-4, R-7).
+    @Published var path: [UUID] = []
+    /// The profile just created by "新增設定檔", whose edit page focuses and
+    /// selects the name field (R-7). Cleared by `resetNavigation()`.
+    @Published private(set) var newlyAddedProfileID: UUID?
 
     private let store: ProfileStore
     private let calculator: DayCountCalculator
-    private let onProfileAdded: () -> Void
+    private let renderer: TemplateRenderer
+    private let makeRulesModel: (CameraProfile) -> RulesTabModel
     private var subscriptions = Set<AnyCancellable>()
 
     /// Creates a model over `store`.
     ///
-    /// - Parameter onProfileAdded: Called after "新增設定檔" succeeded and the
-    ///   new profile is selected; the caller closes this panel and switches
-    ///   the overlay panel to 天數規則 (FR-9.8).
+    /// - Parameter makeRulesModel: Builds the edit page's `RulesTabModel` for
+    ///   one profile. The caller routes its `updateProfile` through a
+    ///   `TabProfileWriter` so a write never overwrites fields another tab
+    ///   just changed (#70). The default writes straight to `store`, which is
+    ///   only fit for previews and tests.
     init(store: ProfileStore,
          calculator: DayCountCalculator = DayCountCalculator(),
-         onProfileAdded: @escaping () -> Void = {}) {
+         renderer: TemplateRenderer = TemplateRenderer(),
+         makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil) {
         self.store = store
         self.calculator = calculator
-        self.onProfileAdded = onProfileAdded
+        self.renderer = renderer
+        self.makeRulesModel = makeRulesModel ?? { profile in
+            RulesTabModel(profile: profile, calculator: calculator, renderer: renderer) {
+                try store.update($0)
+            }
+        }
         self.profiles = store.profiles
         self.selectedProfileID = store.selectedProfileID
         store.$profiles
@@ -67,18 +83,59 @@ final class ProfileManagerModel: ObservableObject {
         profiles.map { profile in
             Row(id: profile.id,
                 name: profile.name,
-                subtitle: Self.subtitle(for: profile),
+                subtitle: subtitle(for: profile),
                 isCurrent: profile.id == selectedProfileID)
         }
     }
 
-    /// FR-9.2's subtitle.
-    static func subtitle(for profile: CameraProfile) -> String {
-        guard profile.showDayCount else { return "只顯示日期" }
+    /// R-2's subtitle: the start date and today's day count under the
+    /// profile's own counting rule, formatted like the overlay with only 天
+    /// ticked (R-13: the count is always shown).
+    func subtitle(for profile: CameraProfile) -> String {
         let year = profile.startDate.year ?? 0
         let month = profile.startDate.month ?? 0
         let day = profile.startDate.day ?? 0
-        return String(format: "%04d/%02d/%02d 起", year, month, day)
+        let date = String(format: "%04d/%02d/%02d", year, month, day)
+        return "\(date) 起・今天\(dayCountText(for: profile))"
+    }
+
+    private func dayCountText(for profile: CameraProfile) -> String {
+        var daysOnly = profile
+        daysOnly.showDayCount = true
+        daysOnly.showDate = false
+        daysOnly.showName = false
+        daysOnly.displayUnits = [.day]
+        daysOnly.useAgeWording = false
+        return renderer.render(profile: daysOnly, capturedAt: calculator.now(), calendar: calculator.calendar)
+    }
+
+    // MARK: - Edit page
+
+    /// The profile `id` as the store holds it now, for the edit page's title.
+    func profile(id: UUID) -> CameraProfile? {
+        profiles.first { $0.id == id }
+    }
+
+    /// Whether `id`'s edit page should focus the name field on appear (R-7).
+    func focusesName(of id: UUID) -> Bool {
+        id == newlyAddedProfileID
+    }
+
+    /// A fresh rules model for `profile`'s edit page.
+    func rulesModel(for profile: CameraProfile) -> RulesTabModel {
+        makeRulesModel(profile)
+    }
+
+    /// Opens `id`'s edit page without switching to it (R-4).
+    func edit(id: UUID) {
+        path = [id]
+    }
+
+    /// Back to the list, e.g. after duplicating or deleting from the edit
+    /// page (R-10), and forgets the "just added" focus request.
+    func resetNavigation() {
+        path = []
+        newlyAddedProfileID = nil
     }
 
     // MARK: - Limits (FR-9.7, FR-9.10)
@@ -94,7 +151,7 @@ final class ProfileManagerModel: ObservableObject {
 
     // MARK: - Actions
 
-    /// Switches to `id` without closing the panel (FR-9.3).
+    /// Switches to `id` (R-3); the view closes the sheet afterwards.
     func select(id: UUID) {
         store.select(id: id)
     }
@@ -118,8 +175,8 @@ final class ProfileManagerModel: ObservableObject {
         }
     }
 
-    /// Creates a default profile, selects it and reports through
-    /// `onProfileAdded` (FR-9.8, FR-9.9).
+    /// Creates a default profile, selects it and pushes its edit page with
+    /// the name field focused (R-7; creation rules FR-9.8 first half, FR-9.9).
     func addProfile() {
         guard canAdd else { return }
         let profile = CameraProfile(name: store.uniqueName(base: "新設定檔"),
@@ -130,7 +187,8 @@ final class ProfileManagerModel: ObservableObject {
             lastError = error
             return
         }
-        onProfileAdded()
+        newlyAddedProfileID = profile.id
+        path = [profile.id]
     }
 
     /// Arms the delete confirmation; a no-op with one profile left.
@@ -156,6 +214,8 @@ final class ProfileManagerModel: ObservableObject {
             lastError = error
             return
         }
+        // Deleting from the edit page lands back on the list (R-10).
+        path = []
         if wasCurrent, let index, !profiles.isEmpty {
             store.select(id: profiles[max(0, index - 1)].id)
         }

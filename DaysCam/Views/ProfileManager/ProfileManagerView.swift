@@ -1,21 +1,30 @@
 import SwiftUI
 
-/// PRD 0.2 FR-9 / design D-2: the management panel that rises from the
-/// bottom. Each row is name + start date (no overlay preview), with a `⋯`
-/// menu and the system reorder handle at the trailing edge. All state lives
-/// in `ProfileManagerModel`.
+/// The 設定檔 sheet (#226 R-1～R-7): a `NavigationStack` whose root is the
+/// profile list and whose pushed page edits one profile
+/// (`ProfileEditorView`). Rows are name + subtitle with a trailing `›`;
+/// reordering is long-press drag and deleting is a swipe action, so no
+/// handle or `⋯` menu is drawn. All state lives in `ProfileManagerModel`.
 struct ProfileManagerView: View {
     @ObservedObject var model: ProfileManagerModel
-    /// Closes the panel — the checkmark key (FR-9.1, FR-14.3).
+    /// Closes the sheet — the checkmark key (FR-14.3).
     var onClose: () -> Void = {}
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            list
-            addButton
+        NavigationStack(path: $model.path) {
+            VStack(spacing: 0) {
+                list
+                addButton
+                hint
+            }
+            .background(Color.white.opacity(0.97))
+            .navigationTitle("設定檔")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { CloseButton(action: onClose) } }
+            .navigationDestination(for: UUID.self) { id in
+                ProfileEditorView(manager: model, profileID: id, onClose: onClose)
+            }
         }
-        .background(Color.white.opacity(0.97))
         .confirmationDialog("刪除後無法復原，已拍的照片不受影響。",
                             isPresented: deletionBinding,
                             titleVisibility: .visible,
@@ -34,45 +43,33 @@ struct ProfileManagerView: View {
 
     // MARK: - Pieces
 
-    private var header: some View {
-        HStack {
-            Text("管理設定檔")
-                .font(CameraTheme.toolFont(.headline))
-                .foregroundColor(CameraTheme.ink)
-            Spacer()
-            Button(action: onClose) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(CameraTheme.active)
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("完成")
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 8)
-        .padding(.top, 14)
-    }
-
     private var list: some View {
         List {
             ForEach(model.rows) { row in
                 profileRow(row)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .deleteDisabled(true)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if model.canDelete {
+                            Button(role: .destructive) {
+                                model.requestDeletion(of: row.id)
+                            } label: {
+                                Text("刪除")
+                            }
+                        }
+                    }
             }
             .onMove { model.move(fromOffsets: $0, toOffset: $1) }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        // Keeps the system reorder handle (`≡`) visible on every row (FR-9.4).
-        .environment(\.editMode, .constant(.active))
     }
 
     private func profileRow(_ row: ProfileManagerModel.Row) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             Button {
                 model.select(id: row.id)
+                onClose()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark")
@@ -95,34 +92,22 @@ struct ProfileManagerView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(row.name)，\(row.subtitle)")
             .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
 
-            rowMenu(row)
-        }
-    }
-
-    private func rowMenu(_ row: ProfileManagerModel.Row) -> some View {
-        Menu {
             Button {
-                model.duplicate(id: row.id)
+                model.edit(id: row.id)
             } label: {
-                Label(model.duplicateTitle, systemImage: "plus.square.on.square")
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(CameraTheme.inkTertiary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .disabled(!model.canDuplicate)
-            Button(role: .destructive) {
-                model.requestDeletion(of: row.id)
-            } label: {
-                Label(model.deleteTitle, systemImage: "trash")
-            }
-            .disabled(!model.canDelete)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(CameraTheme.inkSecondary)
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("編輯\(row.name)")
         }
-        .accessibilityLabel("更多")
     }
 
     private var addButton: some View {
@@ -140,7 +125,13 @@ struct ProfileManagerView: View {
         }
         .disabled(!model.canAdd)
         .padding(.horizontal, 12)
-        .padding(.bottom, 14)
+    }
+
+    private var hint: some View {
+        Text("長按拖曳可排序，向左滑可刪除")
+            .font(.caption)
+            .foregroundColor(CameraTheme.inkTertiary)
+            .padding(.bottom, 14)
     }
 
     // MARK: - Bindings
@@ -156,12 +147,12 @@ struct ProfileManagerView: View {
     }
 }
 
-#Preview("管理設定檔") {
+#Preview("設定檔") {
     ProfileManagerView(model: ProfileManagerModel(store: previewStore()))
         .frame(height: 580)
 }
 
-#Preview("管理設定檔（20 個）") {
+#Preview("設定檔（20 個）") {
     ProfileManagerView(model: ProfileManagerModel(store: previewStore(count: 20)))
         .frame(height: 580)
 }
@@ -186,4 +177,19 @@ private func previewStore(count: Int = 4) -> ProfileStore {
     }
     if let first = store.profiles.first { store.select(id: first.id) }
     return store
+}
+
+/// The checkmark key that closes the whole sheet (list and edit page alike).
+struct CloseButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(CameraTheme.active)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("完成")
+    }
 }

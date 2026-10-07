@@ -64,7 +64,7 @@ final class OverlayPanelModelTests: XCTestCase {
     func testBottomBarActionsWhenOpen() {
         let model = OverlayPanelModel()
         model.open()
-        XCTAssertEqual(model.leftBottomBarAction, .manageProfiles)
+        XCTAssertEqual(model.leftBottomBarAction, .empty)
         XCTAssertEqual(model.rightBottomBarAction, .collapse)
     }
 

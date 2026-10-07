@@ -32,10 +32,11 @@ final class ProfileManagerModelTests: XCTestCase {
         return store
     }
 
-    private func makeModel(store: ProfileStore, onAdded: @escaping () -> Void = {}) throws -> ProfileManagerModel {
+    private func makeModel(store: ProfileStore,
+                           makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil) throws -> ProfileManagerModel {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { now })
-        return ProfileManagerModel(store: store, calculator: calculator, onProfileAdded: onAdded)
+        return ProfileManagerModel(store: store, calculator: calculator, makeRulesModel: makeRulesModel)
     }
 
     @discardableResult
@@ -51,13 +52,24 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.1 Subtitle
 
-    func testSubtitleShowsStartDateOrDateOnly() throws {
+    func testSubtitleShowsStartDateAndTodaysDayCount() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)
-        try addProfile("只看日期", to: store, showDayCount: false)
+        try store.add(CameraProfile(name: "第零天", startDate: DateFixture.components(2026, 1, 1),
+                                    countingRule: .dayZero))
         let model = try makeModel(store: store)
 
-        XCTAssertEqual(model.rows.map(\.subtitle), ["2026/01/10 起", "2026/01/01 起", "只顯示日期"])
+        XCTAssertEqual(model.rows.map(\.subtitle),
+                       ["2026/01/10 起・今天第 1 天", "2026/01/01 起・今天第 10 天", "2026/01/01 起・今天第 9 天"])
+    }
+
+    func testSubtitleIgnoresDisplayTogglesAndUnits() throws {
+        let store = try makeStore()
+        try store.add(CameraProfile(name: "年月", startDate: DateFixture.components(2026, 1, 1),
+                                    showDate: true, showName: true, displayUnits: [.year, .month]))
+        let model = try makeModel(store: store)
+
+        XCTAssertEqual(model.rows.last?.subtitle, "2026/01/01 起・今天第 10 天")
     }
 
     func testCurrentRowIsMarkedAndRowsFollowStoreOrder() throws {
@@ -109,10 +121,9 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.5 Add
 
-    func testAddSelectsTheNewProfileAndReportsIt() throws {
+    func testAddSelectsTheNewProfileAndPushesItsEditPage() throws {
         let store = try makeStore()
-        var addedCount = 0
-        let model = try makeModel(store: store) { addedCount += 1 }
+        let model = try makeModel(store: store)
 
         model.addProfile()
 
@@ -120,7 +131,49 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(model.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(store.profiles.last?.startDate, DateFixture.components(2026, 1, 10))
-        XCTAssertEqual(addedCount, 1)
+        XCTAssertEqual(model.path, [store.profiles.last?.id].compactMap { $0 })
+        XCTAssertTrue(model.focusesName(of: model.path[0]))
+    }
+
+    func testEditPushesThePageWithoutSwitchingProfiles() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        let model = try makeModel(store: store)
+        let current = model.selectedProfileID
+
+        model.edit(id: second.id)
+
+        XCTAssertEqual(model.path, [second.id])
+        XCTAssertEqual(model.selectedProfileID, current)
+        XCTAssertFalse(model.focusesName(of: second.id))
+        model.resetNavigation()
+        XCTAssertTrue(model.path.isEmpty)
+    }
+
+    func testDeletingFromTheEditPageReturnsToTheList() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        let model = try makeModel(store: store)
+        model.edit(id: second.id)
+
+        model.requestDeletion(of: second.id)
+        model.confirmDeletion()
+
+        XCTAssertTrue(model.path.isEmpty)
+        XCTAssertEqual(store.profiles.count, 1)
+    }
+
+    func testEditPageRulesModelWritesThroughTheInjectedWriter() throws {
+        let store = try makeStore()
+        var written: [CameraProfile] = []
+        let model = try makeModel(store: store) { profile in
+            RulesTabModel(profile: profile) { written.append($0) }
+        }
+
+        model.rulesModel(for: store.profiles[0]).setName("改名")
+
+        XCTAssertEqual(written.map(\.name), ["改名"])
+        XCTAssertEqual(store.profiles[0].name, "預設", "must not bypass the injected writer")
     }
 
     func testAddNumbersDuplicateNames() throws {

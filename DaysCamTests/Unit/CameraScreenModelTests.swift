@@ -545,9 +545,9 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.profiles.count == 2 }
     }
 
-    func testAddingFromTheManagerClosesItAndOpensTheContentTabOnRules() throws {
-        // 26.5: new profile selected, management panel closed, overlay panel
-        // on 天數規則 (and still open).
+    func testAddingFromTheManagerKeepsTheSheetAndPanelAsTheyWere() throws {
+        // #226 R-7: new profile selected and its edit page pushed; the sheet
+        // stays open and the overlay panel is left untouched.
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
@@ -559,9 +559,9 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertEqual(store.profiles.count, 2)
         XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
-        XCTAssertFalse(model.isProfileManagerPresented)
-        XCTAssertEqual(model.panelModel.selectedTab, .content)
-        XCTAssertEqual(model.contentTabModel.selectedSubTab, .rules)
+        XCTAssertTrue(model.isProfileManagerPresented)
+        XCTAssertEqual(model.profileManagerModel.path, [store.profiles.last?.id].compactMap { $0 })
+        XCTAssertEqual(model.panelModel.selectedTab, .style)
         XCTAssertTrue(model.panelModel.isOpen)
     }
 
@@ -1506,18 +1506,42 @@ final class CameraScreenModelTests: XCTestCase {
         func hasFlash(for facing: CameraFacing) -> Bool { hasFlash }
     }
 
-    func testProfileMenuItemsAreExactlyTheProfilesInStoreOrderWithNoManagementEntry() throws {
-        // 21.1: the menu is just names, in `ProfileStore`'s order — no
-        // synthetic "管理設定檔" entry mixed into the model-level list (that
-        // entry point moved out of the menu in FR-7.11; `CameraScreen`'s
-        // `Menu` correspondingly no longer adds one).
+    func testPresentProfileManagementOpensOnTheListWithPanelUntouched() throws {
+        // 44.1/44.2 (replaces 21.1's menu items): the chip opens the sheet on
+        // its list whatever the panel is doing, and leaves the panel alone.
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        model.openOverlayPanel()
+        model.panelModel.selectedTab = .position
+        model.profileManagerModel.edit(id: store.profiles[1].id)
 
-        XCTAssertEqual(model.profileMenuItems.map(\.name), store.profiles.map(\.name))
-        XCTAssertEqual(model.profileMenuItems.count, store.profiles.count)
+        model.presentProfileManagement()
+
+        XCTAssertTrue(model.isProfileManagerPresented)
+        XCTAssertTrue(model.profileManagerModel.path.isEmpty)
+        XCTAssertTrue(model.panelModel.isOpen)
+        XCTAssertEqual(model.panelModel.selectedTab, .position)
+    }
+
+    func testEditPageWritesMergeOntoFieldsAnotherTabChanged() throws {
+        // 44.11 (#70): the edit page's write must not revert a field another
+        // tab wrote after the page's model was built.
+        let now = try fixedNow()
+        let store = makeProfileStore(now: now)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        let original = try XCTUnwrap(store.profiles.first)
+        let rules = model.profileManagerModel.rulesModel(for: original)
+
+        var other = original
+        other.showDate = !original.showDate
+        try store.update(other)
+        rules.setName("改名")
+
+        let saved = try XCTUnwrap(store.profiles.first)
+        XCTAssertEqual(saved.name, "改名")
+        XCTAssertEqual(saved.showDate, other.showDate, "showDate written elsewhere must survive")
     }
 
     func testFlashToolIsDisabledWhenNoFlashIsAvailable() throws {

@@ -58,8 +58,8 @@ final class OverlayPanelModel: ObservableObject {
 extension OverlayPanelModel {
     /// What the bottom bar's left key does right now.
     enum LeftBottomBarAction: Equatable {
-        /// Panel open: opens PRD S-6, the management panel (TASK-26).
-        case manageProfiles
+        /// Panel open: nothing, the slot stays reserved (#226 R-12).
+        case empty
         /// Panel closed: TASK-21's photo thumbnail / gallery entry (FR-15.2).
         case latestPhoto
     }
@@ -73,7 +73,7 @@ extension OverlayPanelModel {
     }
 
     var leftBottomBarAction: LeftBottomBarAction {
-        isOpen ? .manageProfiles : .latestPhoto
+        isOpen ? .empty : .latestPhoto
     }
 
     var rightBottomBarAction: RightBottomBarAction {
