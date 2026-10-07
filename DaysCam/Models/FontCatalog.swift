@@ -86,7 +86,8 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     }
 }
 
-/// The fixed catalog of the 21 overlay fonts (PRD 0.3 §4.1, §4.2).
+/// The fixed catalog of the 22 overlay fonts (PRD 0.3 §4.1, §4.2; TASK-40
+/// added 辰宇落雁體).
 ///
 /// Hard-coded on purpose: there is no remote manifest (A-2). Open-source
 /// values must match `docs/fonts-manifest.md`; change both together.
@@ -97,7 +98,7 @@ enum FontCatalog {
     /// The public repository and tag the open-source fonts are served from.
     static let repository = "irene-chou/dayscam-fonts"
     /// The fixed tag the URLs point at.
-    static let repositoryTag = "v1"
+    static let repositoryTag = "v2"
 
     /// Every font in list order, which is `OverlayFontID.allCases` order.
     static var entries: [FontCatalogEntry] { OverlayFontID.allCases.map(entry(for:)) }
@@ -115,6 +116,8 @@ enum FontCatalog {
             return openSourceEntry(fontID, "思源宋體", "NotoSerifTC-Bold", 8.3, asset: notoSerifTCAsset)
         case .iansui:
             return openSourceEntry(fontID, "芫荽", "Iansui-Regular", 9.4, asset: iansuiAsset)
+        case .chenyuluoyan:
+            return openSourceEntry(fontID, "辰宇落雁體", "ChenYuluoyan-2.0-Thin", 9.5, asset: chenyuluoyanAsset)
         case .lantinghei: return systemEntry(fontID, "蘭亭黑", .hei, "FZLTZHB--B51-0", 25.2)
         case .liHei: return systemEntry(fontID, "儷黑", .hei, "LiHeiPro", 4.2)
         case .hiraginoSans: return systemEntry(fontID, "冬青黑體", .hei, "HiraginoSansTC-W6", 14.1)
@@ -169,6 +172,19 @@ enum FontCatalog {
         version: "1.012",
         copyright: "Copyright 2025 The Iansui Project Authors (https://github.com/ButTaiwan/iansui)",
         licenseFileNames: ["iansui-OFL.txt"])
+
+    /// The font has an English and a Traditional Chinese copyright record;
+    /// both are listed, English first (TASK-40).
+    static let chenyuluoyanAsset = asset(
+        path: "chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+        byteCount: 9_522_140,
+        sha256: "1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db",
+        version: "2.100",
+        copyright: """
+            Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.
+            (c) 2022 王立宇、劉韋辰 版權所有。
+            """,
+        licenseFileNames: ["chenyuluoyan-OFL.txt"])
 
     // MARK: - Builders
 

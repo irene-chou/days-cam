@@ -85,7 +85,7 @@ final class FontLibraryModelTests: XCTestCase {
                        ["內建", "開源", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"], "34.4")
         XCTAssertEqual(model.sections.map { $0.rows.map(\.fontID) },
                        [[.pingFang],
-                        [.huninn, .notoSerifTC, .iansui],
+                        [.huninn, .notoSerifTC, .iansui, .chenyuluoyan],
                         [.lantinghei, .liHei, .hiraginoSans],
                         [.yuanti],
                         [.songti, .liSong],
@@ -346,7 +346,7 @@ final class FontLicenseViewTests: XCTestCase {
         var requested: [String] = []
         _ = FontLicenseModel(loadText: { requested.append($0); return "text" })
         XCTAssertEqual(requested, ["huninn-OFL.txt", "huninn-Apache-2.0.txt",
-                                   "notoSerifTC-OFL.txt", "iansui-OFL.txt"])
+                                   "notoSerifTC-OFL.txt", "iansui-OFL.txt", "chenyuluoyan-OFL.txt"])
     }
 
     func testSystemFontsAreCreditedToApple() {

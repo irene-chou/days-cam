@@ -249,8 +249,8 @@ final class OverlayFontResolutionTests: XCTestCase {
     }
 
     /// 32.5 with the real files: set `DAYSCAM_FONT_FIXTURES` (pass it as
-    /// `TEST_RUNNER_DAYSCAM_FONT_FIXTURES`) to a folder holding the three
-    /// open-source font files from `irene-chou/dayscam-fonts@v1`. Each is
+    /// `TEST_RUNNER_DAYSCAM_FONT_FIXTURES`) to a folder holding the four
+    /// open-source font files from `irene-chou/dayscam-fonts@v2`. Each is
     /// registered for this process only and resolved through `FontCatalog`.
     /// Skipped without the variable: the files are not in the repo.
     func testRegisteredOpenSourceFontsResolveThroughTheCatalog() throws {

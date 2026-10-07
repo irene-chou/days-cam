@@ -2,9 +2,9 @@
 // set under DaysCam/Assets.xcassets/FontPreviews (PRD 0.3 FR-16.4).
 //
 // Usage (macOS, from the repo root):
-//   swift scripts/render-font-previews.swift <dir with the three open-source font files>
+//   swift scripts/render-font-previews.swift <dir with the four open-source font files>
 //
-// The open-source files are the ones in irene-chou/dayscam-fonts@v1. Apple's
+// The open-source files are the ones in irene-chou/dayscam-fonts@v2. Apple's
 // downloadable fonts are matched (and downloaded if needed) through CoreText.
 // The script exits non-zero if any font resolves to a PostScript name other
 // than the one in PRD 0.3 §4.1, so a missing font can never fall back to
@@ -31,6 +31,9 @@ let entries: [Entry] = [
           sha256: "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d"),
     Entry(fontID: "iansui", name: "芫荽", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
           sha256: "7f1aa62e9dcbf40d0ce41a5d3f1e5ea602e66c295778ac6fefb6b84d8ed08bd5"),
+    Entry(fontID: "chenyuluoyan", name: "辰宇落雁體", postScriptName: "ChenYuluoyan-2.0-Thin",
+          file: "ChenYuluoyan-2.0-Thin.ttf",
+          sha256: "1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db"),
     Entry(fontID: "lantinghei", name: "蘭亭黑", postScriptName: "FZLTZHB--B51-0", file: nil),
     Entry(fontID: "liHei", name: "儷黑", postScriptName: "LiHeiPro", file: nil),
     Entry(fontID: "hiraginoSans", name: "冬青黑體", postScriptName: "HiraginoSansTC-W6", file: nil),
