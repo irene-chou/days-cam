@@ -1,8 +1,9 @@
 import XCTest
 @testable import DaysCam
 
-/// Covers TASK-32 32.1 and 32.9: the 21 fonts of PRD 0.3 §4.1 and the
-/// open-source download facts of `docs/fonts-manifest.md`.
+/// Covers TASK-32 32.1 and 32.9, and TASK-40 40.1–40.3: the 22 fonts of
+/// PRD 0.3 §4.1 plus 辰宇落雁體 (TASK-40), and the open-source download facts
+/// of `docs/fonts-manifest.md`.
 ///
 /// Expected values are written out here, independently of `FontCatalog`, so a
 /// wrong catalog value cannot pass itself.
@@ -14,6 +15,7 @@ final class FontCatalogTests: XCTestCase {
         (.huninn, "粉圓", .openSource, .openSource, "jf-openhuninn-2.1", "4.9 MB"),
         (.notoSerifTC, "思源宋體", .openSource, .openSource, "NotoSerifTC-Bold", "8.3 MB"),
         (.iansui, "芫荽", .openSource, .openSource, "Iansui-Regular", "9.4 MB"),
+        (.chenyuluoyan, "辰宇落雁體", .openSource, .openSource, "ChenYuluoyan-2.0-Thin", "9.5 MB"),
         (.lantinghei, "蘭亭黑", .hei, .system, "FZLTZHB--B51-0", "25.2 MB"),
         (.liHei, "儷黑", .hei, .system, "LiHeiPro", "4.2 MB"),
         (.hiraginoSans, "冬青黑體", .hei, .system, "HiraginoSansTC-W6", "14.1 MB"),
@@ -33,10 +35,10 @@ final class FontCatalogTests: XCTestCase {
         (.yuppy, "雅痞", .cute, .system, "YuppyTC-Regular", "12.9 MB")
     ]
 
-    /// 32.1: 21 fonts; order, names, sections, sources, PostScript names and
-    /// sizes as in PRD 0.3 §4.1.
+    /// 32.1 / 40.1: 22 fonts; order, names, sections, sources, PostScript
+    /// names and sizes as in PRD 0.3 §4.1 with TASK-40's 辰宇落雁體 after 芫荽.
     func testCatalogMatchesPRDTableInOrder() {
-        XCTAssertEqual(OverlayFontID.allCases.count, 21, "32.1")
+        XCTAssertEqual(OverlayFontID.allCases.count, 22, "40.1")
         XCTAssertEqual(OverlayFontID.allCases, table.map(\.0), "32.1 order")
         XCTAssertEqual(FontCatalog.entries.map(\.fontID), table.map(\.0), "32.1 catalog order")
         for (fontID, name, section, source, postScriptName, size) in table {
@@ -63,6 +65,15 @@ final class FontCatalogTests: XCTestCase {
             seen.append(entry.section)
         }
         XCTAssertEqual(seen, FontSection.allCases)
+    }
+
+    /// 40.1: the open-source section is four fonts, contiguous, 辰宇落雁體 last.
+    func testOpenSourceSectionIsFourContiguousFonts() {
+        let ids = FontCatalog.entries.map(\.fontID)
+        let openSource = FontCatalog.entries.filter { $0.section == .openSource }.map(\.fontID)
+        XCTAssertEqual(openSource, [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "40.1")
+        XCTAssertEqual(Array(ids[1...4]), openSource, "40.1 contiguous, right after 蘋方")
+        XCTAssertEqual(ids[5], .lantinghei, "40.1 蘭亭黑 follows 辰宇落雁體")
     }
 
     /// 32.9: open-source sizes, SHA-256, versions and copyright notices as in
@@ -111,6 +122,37 @@ final class FontCatalogTests: XCTestCase {
         XCTAssertEqual(iansui.licenseFileNames, ["iansui-OFL.txt"])
     }
 
+    /// 40.2: 辰宇落雁體's path, size, SHA-256, PostScript name, version and
+    /// copyright as on TASK-40 (Issue #219).
+    func testChenyuluoyanAssetMatchesTheCard() throws {
+        let entry = FontCatalog.entry(for: .chenyuluoyan)
+        XCTAssertEqual(entry.postScriptName, "ChenYuluoyan-2.0-Thin", "40.2")
+        let asset = try XCTUnwrap(entry.openSource)
+        XCTAssertEqual(asset.fileName, "ChenYuluoyan-2.0-Thin.ttf", "40.2")
+        XCTAssertEqual(asset.repositoryPath, "chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf", "40.2")
+        XCTAssertEqual(asset.byteCount, 9_522_140, "40.2")
+        XCTAssertEqual(asset.sha256, "1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db", "40.2")
+        XCTAssertEqual(asset.version, "2.100", "40.2")
+        XCTAssertEqual(asset.copyright,
+                       "Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.\n(c) 2022 王立宇、劉韋辰 版權所有。", "40.2")
+        XCTAssertEqual(asset.licenseFileNames, ["chenyuluoyan-OFL.txt"])
+        XCTAssertEqual(asset.primaryURL.absoluteString,
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "40.2")
+        XCTAssertEqual(asset.fallbackURL.absoluteString,
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "40.2")
+    }
+
+    /// 40.3: the license file ships in the App and is the OFL 1.1 text for
+    /// Chenyuluoyan.
+    func testChenyuluoyanLicenseShipsInTheApp() throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "chenyuluoyan-OFL", withExtension: "txt"), "40.3")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("SIL Open Font License, Version 1.1"), "40.3")
+        XCTAssertTrue(text.contains("Chenyuluoyan"), "40.3")
+    }
+
     /// Every license file the catalog names ships in the App bundle (TASK-31).
     func testLicenseFilesShipInTheApp() {
         for entry in FontCatalog.entries {
@@ -122,16 +164,24 @@ final class FontCatalogTests: XCTestCase {
         }
     }
 
-    /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag.
+    /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag
+    /// (`v2` since TASK-40, 40.2).
     func testOpenSourceURLsPointAtTheFixedTag() throws {
         let asset = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).openSource)
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v1/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v1/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fileExtension, "otf")
+        XCTAssertEqual(FontCatalog.entries.compactMap(\.openSource).count, 4, "40.2")
         for entry in FontCatalog.entries {
             guard let asset = entry.openSource else { continue }
+            XCTAssertEqual(asset.primaryURL.absoluteString,
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/\(asset.repositoryPath)",
+                           "40.2 \(entry.fontID)")
+            XCTAssertEqual(asset.fallbackURL.absoluteString,
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/\(asset.repositoryPath)",
+                           "40.2 \(entry.fontID)")
             XCTAssertTrue(asset.primaryURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
             XCTAssertTrue(asset.fallbackURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
             XCTAssertEqual(asset.primaryURL.lastPathComponent, asset.fileName, "\(entry.fontID)")

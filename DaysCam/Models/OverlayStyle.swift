@@ -13,6 +13,7 @@ enum OverlayFontID: String, Codable, CaseIterable {
     case huninn
     case notoSerifTC
     case iansui
+    case chenyuluoyan
     case lantinghei
     case liHei
     case hiraginoSans

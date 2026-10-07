@@ -16,13 +16,24 @@ final class OverlayStyleTests: XCTestCase {
     // 0.2's 17.1 (ten Latin names) and 17.12 (every 0.2 font ships with iOS)
     // are replaced by TASK-32 32.1 in `FontCatalogTests` (TASKS-0.3 事先預告 1).
 
-    /// 32.1: the raw values, in PRD 0.3 §4.1 order, are what files store.
-    func testFontIDsAreTheTwentyOneOfPRD03InOrder() {
+    /// 32.1 / 40.1: the raw values, in PRD 0.3 §4.1 order plus TASK-40's
+    /// `chenyuluoyan`, are what files store.
+    func testFontIDsAreTheTwentyTwoInOrder() {
         XCTAssertEqual(OverlayFontID.allCases.map(\.rawValue),
-                       ["pingFang", "huninn", "notoSerifTC", "iansui", "lantinghei", "liHei", "hiraginoSans",
+                       ["pingFang", "huninn", "notoSerifTC", "iansui", "chenyuluoyan", "lantinghei", "liHei", "hiraginoSans",
                         "yuanti", "songti", "liSong", "kaiti", "biauKai", "hanziPen", "hannotate", "lingWai",
                         "xingkai", "weibei", "libian", "baoli", "wawa", "yuppy"],
-                       "32.1")
+                       "32.1 / 40.1")
+    }
+
+    /// 40.4: a stored `chenyuluoyan` reads back as itself.
+    func testChenyuluoyanRoundTrips() throws {
+        let decoded = try JSONDecoder().decode([OverlayFontID].self, from: Data(#"["chenyuluoyan"]"#.utf8))
+        XCTAssertEqual(decoded, [.chenyuluoyan], "40.4")
+        var style = OverlayStyle()
+        style.fontID = .chenyuluoyan
+        let data = try JSONEncoder().encode(style)
+        XCTAssertEqual(try JSONDecoder().decode(OverlayStyle.self, from: data).fontID, .chenyuluoyan, "40.4")
     }
 
     /// 32.2: the 0.2 fonts and any unknown value decode as PingFang; known
