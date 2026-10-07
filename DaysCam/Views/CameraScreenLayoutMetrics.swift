@@ -166,10 +166,11 @@ struct CameraScreenLayoutMetrics {
     }
 
     /// Distance from each screen edge to the center of the footer's side
-    /// buttons: midway between the edge and the shutter's edge, so the
-    /// buttons stay put whether or not the shutter is shown.
+    /// buttons: midway between the edge and the shutter's edge, moved 8pt
+    /// outward (TASK-50), so the buttons stay put whether or not the
+    /// shutter is shown.
     var footerSideButtonCenterInset: CGFloat {
-        (screenSize.width / 2 - Self.shutterRadius) / 2
+        (screenSize.width / 2 - Self.shutterRadius) / 2 - 8
     }
 
     // MARK: - Tools capsule (issue #135)

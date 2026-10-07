@@ -406,9 +406,9 @@ struct CameraScreen: View {
     /// photo. No text labels, no background — every button is just an icon
     /// (FR-14.2).
     ///
-    /// The side buttons' centers sit midway between the screen edge and the
-    /// shutter's edge (`footerSideButtonCenterInset`), open or closed, so
-    /// they never shift when the panel toggles. Closed, the row sits 16pt
+    /// The side buttons' centers sit `footerSideButtonCenterInset` from the
+    /// screen edge (midway to the shutter's edge, minus 8pt), open or
+    /// closed, so they never shift when the panel toggles. Closed, the row sits 16pt
     /// above the bottom of the footer region; open, `footerColumn` supplies
     /// the 8pt gap itself and the row is exactly 44pt tall.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
@@ -429,8 +429,12 @@ struct CameraScreen: View {
         .padding(.bottom, isOpen ? 0 : CameraScreenLayoutMetrics.closedFooterBottomPadding)
     }
 
-    /// Tap target of every footer side button (issue #128).
+    /// Tap target of every footer side button, and the thumbnail's size
+    /// (issue #128).
     private static let footerButtonSize: CGFloat = 44
+
+    /// Icon point size of the footer side buttons (TASK-50; was 20).
+    private static let footerIconSize: CGFloat = 28
 
     @ViewBuilder
     private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
@@ -463,9 +467,9 @@ struct CameraScreen: View {
         }
     }
 
-    /// 44×44 tap target (issue #128; was 50×50, D-1/D-2's `.bubble`) — every bottom
-    /// bar icon button except `thumbnailButton`, which is its own smaller
-    /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
+    /// 44×44 tap target (`footerButtonSize`; issue #128) — every
+    /// bottom bar icon button except `thumbnailButton`, which shows a photo
+    /// thumbnail of the same 44×44 size rather than a plain icon.
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
     /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
     /// only ever appears while the panel is open (`.manageProfiles`/
@@ -476,7 +480,7 @@ struct CameraScreen: View {
     private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: Self.footerIconSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                 .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
                 .legibleOverPhoto(isOnPhoto)
@@ -501,12 +505,12 @@ struct CameraScreen: View {
                         .transition(.opacity)
                 } else {
                     Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: Self.footerIconSize, weight: .medium))
                         .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                         .legibleOverPhoto(isOnPhoto)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
             // via an explicit `withAnimation` in `showThumbnail`; otherwise
