@@ -1306,7 +1306,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         waitUntil { model.rulesTabModel?.profile.showDayCount == false }
         XCTAssertTrue(model.rulesTabModel === rules, "the instance must be kept, not rebuilt")
-        XCTAssertFalse(rules.showsCountingFields)
+        XCTAssertTrue(rules.showsDayCountOffHint)
     }
 
     // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)

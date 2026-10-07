@@ -16,9 +16,9 @@ import Foundation
 /// clamp (FR-1.6) and the "no later than today" start-date bound (0.1 §7.2).
 @MainActor
 final class RulesTabModel: ObservableObject {
-    /// Shown in place of the start-date and counting-rule rows when the day
-    /// count is off (FR-13.5, FR-3.7).
-    static let hiddenHintMessage = "天數未顯示，起始日與起算規則已隱藏"
+    /// Gray hint under the preview sentence when the day count is off (#226
+    /// R-9). The start-date and counting-rule rows stay visible and editable.
+    static let dayCountOffHintMessage = "目前不顯示天數，起始日和起算不會出現在照片上"
     /// Label for `CountingRule.dayOne` (FR-13.4). Order matches
     /// `CountingRule.allCases`: this one is listed first.
     static let countingRuleDayOneLabel = "當天算第 1 天"
@@ -165,15 +165,15 @@ extension RulesTabModel {
     }
 }
 
-// MARK: - 顯示狀態與預覽 (FR-13.1, FR-13.5, FR-3.7)
+// MARK: - 顯示狀態與預覽 (FR-13.1, #226 R-9)
 
 extension RulesTabModel {
-    /// Whether the start-date and counting-rule rows should be shown; they
-    /// only affect the day-count output, so they are hidden once that output
-    /// is off (FR-13.5, FR-3.7) — the profile keeps the values, it just stops
-    /// asking the user about them.
-    var showsCountingFields: Bool {
-        profile.showDayCount
+    /// Whether to show the "day count is off" hint (#226 R-9). The
+    /// start-date and counting-rule rows are always shown; they only affect
+    /// the day-count output, so the hint tells the user they are not on the
+    /// photo while that output is off.
+    var showsDayCountOffHint: Bool {
+        !profile.showDayCount
     }
 
     /// The overlay text this profile would print right now — exists so a

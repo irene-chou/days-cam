@@ -146,19 +146,24 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 25.5 天數關閉時只留名稱
+    // MARK: - 43.2／43.6 天數關閉時欄位照常、另顯示提示（#226 R-9，取代 25.5）
 
-    func testCountingFieldsHiddenWhenDayCountOff() throws {
+    func testDayCountOffShowsHintAndFieldsStayWritable() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(showDayCount: false), now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.showsCountingFields, "25.5")
-        XCTAssertEqual(RulesTabModel.hiddenHintMessage, "天數未顯示，起始日與起算規則已隱藏", "25.5")
+        XCTAssertTrue(model.showsDayCountOffHint, "43.6")
+        XCTAssertEqual(RulesTabModel.dayCountOffHintMessage, "目前不顯示天數，起始日和起算不會出現在照片上", "43.6")
+        model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 2)))
+        model.setCountingRule(.dayZero)
+        XCTAssertEqual(spy.updated.count, 2, "43.6: 天數關閉時起始日、起算仍可寫入")
+        XCTAssertEqual(spy.updated.last?.countingRule, .dayZero)
+        XCTAssertFalse(model.overlayPreviewText.contains("天"), "43.2: 預覽句為日期文字")
     }
 
-    func testCountingFieldsShownWhenDayCountOn() throws {
+    func testDayCountOnHidesHint() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(showDayCount: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.showsCountingFields)
+        XCTAssertFalse(model.showsDayCountOffHint)
     }
 
     // MARK: - 25.6 起算分段控制的兩個選項文字
@@ -199,15 +204,15 @@ final class RulesTabModelTests: XCTestCase {
         let spy = Spy()
         let profile = baselineProfile()
         let model = makeModel(profile: profile, now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.showsCountingFields)
+        XCTAssertFalse(model.showsDayCountOffHint)
 
         var turnedOff = profile
         turnedOff.showDayCount = false
         model.applyExternalChanges(from: turnedOff)
-        XCTAssertFalse(model.showsCountingFields, "W.1／W.3")
+        XCTAssertTrue(model.showsDayCountOffHint, "W.1／W.3")
 
         model.applyExternalChanges(from: profile)
-        XCTAssertTrue(model.showsCountingFields, "W.2／W.3")
+        XCTAssertFalse(model.showsDayCountOffHint, "W.2／W.3")
         XCTAssertEqual(model.profile.startDate, profile.startDate, "起始日保留原值")
         XCTAssertEqual(model.profile.countingRule, profile.countingRule, "起算保留原值")
         XCTAssertTrue(spy.updated.isEmpty, "同步外部變更不應寫回")
@@ -217,7 +222,7 @@ final class RulesTabModelTests: XCTestCase {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
         let other = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), showDayCount: false)
         model.applyExternalChanges(from: other)
-        XCTAssertTrue(model.showsCountingFields)
+        XCTAssertFalse(model.showsDayCountOffHint)
     }
 
     func testExternalRenameDoesNotClobberAnInProgressNameEdit() throws {

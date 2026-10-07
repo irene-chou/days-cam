@@ -1,59 +1,76 @@
 import SwiftUI
 
-/// The 天數規則 (rules) tab of the overlay panel (PRD 0.2 FR-13, D-4).
+/// The 設定檔 editing form: name, start date and counting rule (PRD 0.2
+/// FR-13, reshaped by #226 R-8／R-9 for 0.4).
 ///
-/// Stands alone on purpose, like `StyleTabView`: the panel shell and its
-/// first-layer segmented control (樣式｜格式｜位置｜天數規則) are `ui-shell`'s
-/// (TASK-22), which had not landed when this was written. Once it does,
-/// `ui-shell` drops this view into the panel body for the 天數規則 segment,
-/// passing in a `RulesTabModel` built from the active profile.
+/// Stands alone on purpose, like `StyleTabView`: the container that shows it
+/// (today the panel's 內容 tab, from TASK-44 the profile edit page) builds a
+/// `RulesTabModel` from the active profile and drops this view in.
 ///
-/// Three rows, no second layer (FR-13.1): 名稱｜起始日｜起算. The counting-rule
-/// choice is a pair of plain buttons rather than a native segmented control —
-/// during the D-4 design review a real `Picker(.segmented)` clipped the
-/// longer "當天算第 1 天" label at narrow widths, which is exactly what
-/// acceptance 25.6 now guards against.
+/// Three rows in an iOS grouped-list block (名稱｜起始日｜起算), then one
+/// preview sentence. The counting-rule choice is a pair of plain buttons
+/// rather than a native segmented control — a real `Picker(.segmented)`
+/// clipped the longer "當天算第 1 天" label at narrow widths (25.6).
 struct RulesTabView: View {
     @ObservedObject var model: RulesTabModel
     @FocusState private var isNameFieldFocused: Bool
+    @State private var nameSelection: TextSelection?
+    @State private var didSelectName = false
 
     /// Whether this view adds its own `.tabbody` inset (12 vertical, 14
     /// horizontal). `ContentTabView` turns it off and applies the same inset
     /// once around both sub-tabs (TASK-38).
     var appliesOuterPadding: Bool = true
 
-    /// Minimum height of each of the three rows, content vertically
-    /// centered (#156, the human's 2026-10-01 call). Replaces the earlier
-    /// per-row 12pt top/bottom padding, which made rows 46-58pt tall
-    /// depending on their content (name field, native date picker, capsule
-    /// buttons) and the whole page ~182pt.
-    static let rowMinHeight: CGFloat = 44
+    /// When `true`, the name field takes focus with its text selected as the
+    /// view appears (#226 R-7: a freshly created profile).
+    var focusesNameOnAppear: Bool = false
+
+    /// Minimum height of each of the three rows, content vertically centered.
+    static let rowMinHeight: CGFloat = 48
+    /// Corner radius of the grouped block.
+    static let blockCornerRadius: CGFloat = 12
+    /// Horizontal inset of row content inside the grouped block.
+    static let rowHorizontalPadding: CGFloat = 16
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            nameRow
-            if model.showsCountingFields {
-                Divider()
+            VStack(spacing: 0) {
+                nameRow
+                rowDivider
                 startDateRow
-                Divider()
+                rowDivider
                 countingRuleRow
-            } else {
-                Text(RulesTabModel.hiddenHintMessage)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
+                    .fill(CameraTheme.fill)
+            )
+            previewSentence
+                .padding(.top, 12)
+                .padding(.horizontal, Self.rowHorizontalPadding)
+            if model.showsDayCountOffHint {
+                Text(RulesTabModel.dayCountOffHintMessage)
                     .font(.footnote)
                     .foregroundColor(CameraTheme.inkSecondary)
-                    .padding(.top, 10)
+                    .padding(.top, 6)
+                    .padding(.horizontal, Self.rowHorizontalPadding)
             }
         }
-        // This tab's own `.tabbody` outer inset — the generic D-4 value
-        // (`.tabbody{padding:12px 14px}`, #106 R2, the human's 2026-09-27
-        // call: each tab owns its own `.tabbody` padding rather than a
-        // generic one shared by all four — `ui-shell` is dropping the panel
-        // container's own generic inset in #105 to avoid stacking both).
-        // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
+        .onAppear {
+            guard focusesNameOnAppear else { return }
+            // Focus first, then select once the field is first responder:
+            // a selection set before that is dropped by the text field.
+            DispatchQueue.main.async {
+                isNameFieldFocused = true
+            }
+        }
         .onChange(of: isNameFieldFocused) { _, isFocused in
-            if !isFocused {
+            if isFocused {
+                selectNameOnFirstFocus()
+            } else {
                 model.endEditingName()
             }
         }
@@ -63,6 +80,30 @@ struct RulesTabView: View {
         } message: {
             Text("請再試一次。")
         }
+    }
+
+    private func selectNameOnFirstFocus() {
+        guard focusesNameOnAppear, !didSelectName else { return }
+        didSelectName = true
+        DispatchQueue.main.async {
+            let name = model.nameDraft
+            nameSelection = TextSelection(range: name.startIndex..<name.endIndex)
+        }
+    }
+
+    private var rowDivider: some View {
+        Divider().padding(.leading, Self.rowHorizontalPadding)
+    }
+
+    /// 「今天照片上會顯示 」＋ bold `overlayPreviewText`; wraps, at most 3 lines.
+    private var previewSentence: some View {
+        (Text("今天照片上會顯示 ").foregroundColor(CameraTheme.inkSecondary)
+            + Text(model.overlayPreviewText).bold().foregroundColor(CameraTheme.ink))
+            .font(.subheadline)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("rulesPreviewSentence")
     }
 
     // MARK: - 名稱 (FR-13.2, A-5)
@@ -75,14 +116,14 @@ struct RulesTabView: View {
             TextField("名稱", text: Binding(
                 get: { model.nameDraft },
                 set: { model.setName($0) }
-            ))
+            ), selection: $nameSelection)
             .multilineTextAlignment(.trailing)
             .focused($isNameFieldFocused)
             .submitLabel(.done)
             .onSubmit { model.endEditingName() }
             .accessibilityLabel("名稱")
         }
-        // 44pt minimum tap height (Apple's recommendation; #116, #156).
+        .padding(.horizontal, Self.rowHorizontalPadding)
         .frame(minHeight: Self.rowMinHeight)
     }
 
@@ -99,6 +140,7 @@ struct RulesTabView: View {
             .labelsHidden()
             .datePickerStyle(.compact)
         }
+        .padding(.horizontal, Self.rowHorizontalPadding)
         .frame(minHeight: Self.rowMinHeight)
     }
 
@@ -113,6 +155,7 @@ struct RulesTabView: View {
                 countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
             }
         }
+        .padding(.horizontal, Self.rowHorizontalPadding)
         .frame(minHeight: Self.rowMinHeight)
     }
 
@@ -187,7 +230,14 @@ private enum DateFixtureForPreview {
         .background(Color(.systemBackground))
 }
 
-#Preview("天數關閉：只留名稱 · iPhone SE 寬度 (375pt)") {
+#Preview("名稱聚焦全選 · iPhone SE 寬度 (375pt)") {
+    RulesTabView(model: previewModel(), focusesNameOnAppear: true)
+        .frame(width: 375)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+}
+
+#Preview("天數關閉：欄位照常＋提示 · iPhone SE 寬度 (375pt)") {
     RulesTabView(model: previewModel(showDayCount: false))
         .frame(width: 375)
         .padding(.vertical, 12)
