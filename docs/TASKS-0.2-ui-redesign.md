@@ -338,7 +338,7 @@ PRD FR-10。
 
 **範圍**
 
-- `Views/OverlayPanel/StyleTab*.swift` 與其 view model：第二層 5 個純圖示（FR-10.1）
+- `Views/OverlayPanel/StyleTab*.swift` 與其 view model：第二層 4 個純圖示（FR-10.1，TASK-46 由 5 個合併）
 - 字型列：每個選項用該字型寫自己的名稱，選中只變色（FR-10.2）
 - 顏色與外框顏色：兩排色票、彩虹圓、「最近」（FR-10.4、10.6、10.7），最近清單來自 `RecentColorsStore`
 - 外框、陰影：小色塊上只畫「Aa」（FR-10.5、10.8）

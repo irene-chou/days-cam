@@ -79,7 +79,7 @@ struct StyleTabView: View {
         }
     }
 
-    // MARK: - 第二層：五個純圖示 (FR-10.1)
+    // MARK: - 第二層：四個純圖示 (FR-10.1)
 
     private var subTabRow: some View {
         // Evenly spread across the full row width, `space-around` exactly
@@ -128,23 +128,39 @@ struct StyleTabView: View {
             // approximations (design decision, #71).
             Image(systemName: "t.square").accessibilityHidden(true)
         case .color:
-            // Two-layer palette icon (design decision, #71): the inner
-            // circle previews the current text color live, the outer ring
-            // follows the same selected/unselected rule as the other four
-            // icons. `symbolRenderingMode(.palette)`'s `foregroundStyle`
-            // colors are ordered inner-then-outer for this symbol — verified
-            // by rendering it, not assumed from AppKit's palette ordering.
-            Image(systemName: "circle.inset.filled")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(swiftUIColor(model.profile.style.textColor),
-                                model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
-                .accessibilityHidden(true)
+            // Hand-drawn big-T + small-T with a bar in the current text
+            // color (TASK-46): no SF Symbol matches. The T's follow the
+            // selected/unselected color via the inherited foreground.
+            colorSizeIcon
         case .outline:
             Image(systemName: "character.square.fill").accessibilityHidden(true)
         case .shadow:
             Image(systemName: "shadow").accessibilityHidden(true)
-        case .size:
-            Image(systemName: "textformat.size").accessibilityHidden(true)
+        }
+    }
+
+    /// Big T and small T sharing a baseline, with a 3pt bar beneath in the
+    /// current text color. A pale text color gets a 0.5pt outline so the bar
+    /// stays visible on a light background (TASK-46).
+    private var colorSizeIcon: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .bottom, spacing: 1) {
+                tShape(width: 11, height: 15, stroke: 2.8)
+                tShape(width: 7, height: 10, stroke: 2)
+            }
+            ZStack {
+                Capsule().fill(swiftUIColor(model.profile.style.textColor))
+                Capsule().strokeBorder(CameraTheme.inkTertiary, lineWidth: 0.5)
+            }
+            .frame(width: 19, height: 3)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func tShape(width: CGFloat, height: CGFloat, stroke: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Rectangle().frame(width: width, height: stroke)
+            Rectangle().frame(width: stroke, height: height - stroke)
         }
     }
 
@@ -154,10 +170,9 @@ struct StyleTabView: View {
     private var content: some View {
         switch model.selectedSubTab {
         case .font: fontRow
-        case .color: colorContent
+        case .color: colorAndSizeContent
         case .outline: outlineContent
         case .shadow: shadowContent
-        case .size: sizeSlider
         }
     }
 
@@ -265,7 +280,15 @@ struct StyleTabView: View {
         .accessibilityLabel("更多字型")
     }
 
-    // MARK: - 顏色 (FR-10.4, FR-10.7)
+    // MARK: - 顏色與大小 (FR-10.4, FR-10.7, FR-10.9)
+
+    /// Size slider above, text color swatches below (TASK-46).
+    private var colorAndSizeContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sizeSlider
+            colorContent
+        }
+    }
 
     private var colorContent: some View {
         colorPalette(current: model.profile.style.textColor,
@@ -736,9 +759,11 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
         .background(Color(.systemBackground))
 }
 
-#Preview("字級 · iPhone SE 寬度 (375pt)") {
-    let model = previewModel()
-    model.selectedSubTab = .size
+#Preview("顏色與大小 · 白色文字 · iPhone SE 寬度 (375pt)") {
+    var style = OverlayStyle()
+    style.textColor = .white
+    let model = previewModel(style: style)
+    model.selectedSubTab = .color
     return StyleTabView(model: model)
         .frame(width: 375)
         .padding(.vertical, 12)

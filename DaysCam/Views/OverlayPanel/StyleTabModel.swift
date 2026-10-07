@@ -15,20 +15,19 @@ import UIKit
 /// save step (FR-8.6).
 @MainActor
 final class StyleTabModel: ObservableObject {
-    /// The five second-layer items (FR-10.1). Case order is display order and
+    /// The four second-layer items (FR-10.1). Case order is display order and
     /// matches the accessibility-label order acceptance 23.1 checks.
     enum SubTab: CaseIterable {
-        case font, color, outline, shadow, size
+        case font, color, outline, shadow
 
         /// The only user-visible name — these are icon-only buttons, so this
         /// is surfaced purely through the accessibility label (FR-10.1).
         var accessibilityLabel: String {
             switch self {
             case .font: return "字型"
-            case .color: return "顏色"
+            case .color: return "文字顏色與大小"
             case .outline: return "外框"
             case .shadow: return "陰影"
-            case .size: return "字級"
             }
         }
     }

@@ -42,14 +42,14 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.columnSpacing(forContentWidth: 355), 6.125, accuracy: 0.01)
     }
 
-    /// 39.8a: the color page fits a regular panel's content area (160pt cap);
+    /// 39.8a: the color-and-size page (TASK-46, slider above swatches) fits a regular panel's 212pt content area;
     /// the outline page is capped at the ~200pt panel of #198. Small screens may scroll.
     func testColorAndOutlinePagesFitRegularContentArea() throws {
         let model = try makeModel()
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
         XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42)
-        XCTAssertLessThanOrEqual(colorHeight, 160, "顏色頁 \(colorHeight)pt")
+        XCTAssertLessThanOrEqual(colorHeight, 212, "46.7 顏色與大小頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
         let outlineHeight = pageHeight(model)
