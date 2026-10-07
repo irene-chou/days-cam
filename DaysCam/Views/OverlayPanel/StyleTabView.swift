@@ -730,8 +730,10 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
         .background(Color(.systemBackground))
 }
 
-#Preview("顏色 · iPhone SE 寬度 (375pt)") {
-    let model = previewModel()
+#Preview("顏色與大小 · 彩色文字 · iPhone SE 寬度 (375pt)") {
+    var style = OverlayStyle()
+    style.textColor = OverlayColor(hex: "#3A7BC0") ?? .white
+    let model = previewModel(style: style)
     model.selectedSubTab = .color
     return StyleTabView(model: model)
         .frame(width: 375)
@@ -739,8 +741,9 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
         .background(Color(.systemBackground))
 }
 
-#Preview("外框 · iPhone SE 寬度 (375pt)") {
+#Preview("外框 · 彩色文字（顏色與大小圖示未選中）· iPhone SE 寬度 (375pt)") {
     var style = OverlayStyle()
+    style.textColor = OverlayColor(hex: "#3A7BC0") ?? .white
     style.outline = .translucentBox
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
