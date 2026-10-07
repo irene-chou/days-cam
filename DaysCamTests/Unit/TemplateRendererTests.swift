@@ -100,6 +100,10 @@ final class TemplateRendererTests: XCTestCase {
 
     // MARK: - A-2 (4.9 ... 4.14) date and ordering
 
+    /// TASK-47: a stored profile always has `showDayCount == true` now, so
+    /// this (and the date-only cases in A-8 ... A-11) render an unpersisted
+    /// profile to isolate the date branch. The renderer's rule is unchanged;
+    /// the migrated output is pinned by 47.4 in `CameraProfileDayCountMigrationTests`.
     func testDateOnlyProfileRendersTheDateAlone() throws {
         let output = render(profile(showDayCount: false, showDate: true), at: try referenceCapture())
         XCTAssertEqual(output, "2026.03.20", "4.9")
@@ -253,6 +257,9 @@ final class TemplateRendererTests: XCTestCase {
     }
 
     // MARK: - A-8 (4.44 ... 4.47) the date branch never reads startDate
+    //
+    // `showDayCount: false` here isolates the date branch; see the TASK-47
+    // note on `testDateOnlyProfileRendersTheDateAlone`.
 
     /// The regression this guards: approximating the date from "start date is
     /// today" looks right on day one and prints 第 2 天 the next morning.

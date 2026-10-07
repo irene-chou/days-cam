@@ -418,8 +418,10 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.overlayText, "第 2 天")
     }
 
-    func testOverlayTextShowsDateInsteadOfDayCountWhenConfiguredTo() throws {
-        // 8.3: date-only display must never read "第 N 天" (PRD FR-2.17).
+    func testDateOnlyConfigurationShowsTheDateAndTheDayCount() throws {
+        // TASK-47 rewrites 8.3: the day count is always on (#226 R-13), so a
+        // "date only" edit is stored with it on. The date part must still be
+        // the capture date, never "第 N 天" (PRD FR-2.17).
         let seedDay = try fixedNow() // 2026-01-10
         let store = makeProfileStore(now: seedDay)
         var dateOnly = try XCTUnwrap(store.profiles.first)
@@ -429,7 +431,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
         let (model, _, _, _) = makeModel(profileStore: store, now: nextDay)
-        XCTAssertEqual(model.overlayText, "2026.01.11")
+        XCTAssertEqual(model.overlayText, "2026.01.11\u{3000}第 2 天")
     }
 
     func testOverlayTextPrefixesTheNameWhenShowNameIsOn() throws {
@@ -857,10 +859,10 @@ final class CameraScreenModelTests: XCTestCase {
         }
     }
 
-    func testOverlayTextShowsDateInsteadOfNotStartedWhenDateOnlyIsConfigured() throws {
-        // 15.4: turning off the day count and on the date must show the
-        // date, never "尚未開始" (that text only ever applies to the elapsed
-        // amount).
+    func testDateOnlyConfigurationShowsTheDateAlongsideNotStarted() throws {
+        // TASK-47 rewrites 15.4: the day count is always on (#226 R-13), so
+        // "尚未開始" is printed too — but only for the elapsed amount; the
+        // date part must still be the date.
         let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
         let store = makeProfileStore(now: now)
         var future = try makeFutureProfile(store: store)
@@ -870,7 +872,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "2025.12.01")
+        XCTAssertEqual(model.overlayText, "2025.12.01\u{3000}尚未開始")
     }
 
     func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {
@@ -1290,9 +1292,11 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(first === second)
     }
 
-    func testRulesTabModelFollowsShowDayCountChangedInTheStore() throws {
-        // #167: turning 天數 off on the format tab only touched that tab's
-        // own profile copy; the rules tab kept the stale `showDayCount`.
+    func testRulesTabModelKeepsTheDayCountOnWhenAnotherTabTurnsItOff() throws {
+        // #167: changes made elsewhere must reach the rules tab's copy.
+        // TASK-47 rewrites the assertion: the day count is always on
+        // (#226 R-13), so turning it off is stored as on and the rules tab
+        // must still read `true`. The rename is the signal the sync ran.
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
@@ -1301,12 +1305,15 @@ final class CameraScreenModelTests: XCTestCase {
 
         var changed = try XCTUnwrap(store.profiles.first { $0.id == rules.profile.id })
         changed.showDayCount = false
-        changed.showDate = true // invariant: at least one of the two stays on
-        _ = try store.update(changed)
+        changed.showDate = true
+        changed.name = "改過"
+        let stored = try store.update(changed)
+        XCTAssertTrue(stored.showDayCount, "TASK-47")
 
-        waitUntil { model.rulesTabModel?.profile.showDayCount == false }
+        waitUntil { model.rulesTabModel?.profile.name == "改過" }
         XCTAssertTrue(model.rulesTabModel === rules, "the instance must be kept, not rebuilt")
-        XCTAssertFalse(rules.profile.showDayCount)
+        XCTAssertEqual(rules.profile.name, "改過")
+        XCTAssertTrue(rules.profile.showDayCount, "TASK-47")
     }
 
     // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)
