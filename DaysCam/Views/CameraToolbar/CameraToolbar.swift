@@ -71,27 +71,16 @@ struct CameraToolbar: View {
 
     // MARK: - Center: profile switcher (PRD 0.2 FR-7.11)
 
-    /// Lists only names, in `ProfileStore`'s order, with the current one
-    /// checked — no "管理設定檔" entry (that moves out to its own entry
-    /// point in TASK-26).
+    /// A plain button that opens the 設定檔 sheet (#226 R-1): switching,
+    /// adding and the rest all live there, so there is no menu.
     ///
     /// Padding matches D-1's final borderless chip (`.chip{padding:7px 6px}`,
     /// #105) — an earlier revision of that same rule had a filled pill
     /// background (`padding:7px 14px`), superseded once PRD 0.2 FR-14.2
     /// dropped every button's background except the shutter's.
     private var profileChip: some View {
-        Menu {
-            ForEach(model.profileMenuItems) { profile in
-                Button {
-                    model.selectProfile(id: profile.id)
-                } label: {
-                    if profile.id == model.selectedProfileID {
-                        Label(profile.name, systemImage: "checkmark")
-                    } else {
-                        Text(profile.name)
-                    }
-                }
-            }
+        Button {
+            model.presentProfileManagement()
         } label: {
             HStack(spacing: 4) {
                 Text(model.currentProfileName)
@@ -105,6 +94,7 @@ struct CameraToolbar: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
         }
+        .accessibilityLabel("設定檔：\(model.currentProfileName)")
     }
 
     // MARK: - Right: ratio, flip

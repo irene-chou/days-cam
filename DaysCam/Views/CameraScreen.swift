@@ -442,10 +442,8 @@ struct CameraScreen: View {
         switch model.panelModel.leftBottomBarAction {
         case .latestPhoto:
             thumbnailButton(isOnPhoto: isOnPhoto)
-        case .manageProfiles:
-            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔", isOnPhoto: isOnPhoto) {
-                model.presentProfileManagement()
-            }
+        case .empty:
+            Color.clear.frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
         }
     }
 
@@ -473,9 +471,8 @@ struct CameraScreen: View {
     /// thumbnail of the same 44×44 size rather than a plain icon.
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
     /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
-    /// only ever appears while the panel is open (`.manageProfiles`/
-    /// `.collapse`, PRD 0.2 FR-8.3), where the viewfinder is never behind
-    /// the footer (issue #120), so callers always pass `false` today; still
+    /// only ever appears while the panel is open (`.collapse`, PRD 0.2 FR-8.3),
+    /// where the viewfinder is never behind the footer (issue #120), so callers always pass `false` today; still
     /// threaded through properly rather than assumed, so it stays correct
     /// if that ever changes.
     private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
