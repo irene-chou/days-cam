@@ -49,6 +49,9 @@ struct ProfileManagerView: View {
                 profileRow(row)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+                    // Long-press lifts the row; no ≡ handle and no editMode
+                    // (`onMove` only works in edit mode, #226 R-5).
+                    .draggable(row.id.uuidString)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if model.canDelete {
                             Button(role: .destructive) {
@@ -59,7 +62,13 @@ struct ProfileManagerView: View {
                         }
                     }
             }
-            .onMove { model.move(fromOffsets: $0, toOffset: $1) }
+            .onInsert(of: [.plainText]) { index, providers in
+                guard let provider = providers.first else { return }
+                _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+                    guard let text = object as? String, let id = UUID(uuidString: text) else { return }
+                    Task { @MainActor in model.move(id: id, toIndex: index) }
+                }
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)

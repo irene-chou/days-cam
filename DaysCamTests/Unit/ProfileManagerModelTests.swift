@@ -229,6 +229,22 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.6 Delete
 
+    func testMoveToInsertionIndexPersistsTheNewOrder() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let first = model.profiles[0].id
+
+        model.move(id: first, toIndex: 3) // dropped below the last row
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+
+        model.move(id: second.id, toIndex: 2) // down one slot
+        XCTAssertEqual(store.profiles.map(\.name), ["阿公", "小寶", "預設"])
+        model.move(id: UUID(), toIndex: 0)
+        XCTAssertEqual(store.profiles.count, 3)
+    }
+
     func testDeletingTheCurrentProfileSelectsThePreviousRow() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)

@@ -165,6 +165,13 @@ final class ProfileManagerModel: ObservableObject {
         }
     }
 
+    /// Moves the profile `id` so it lands at insertion `index` of the
+    /// current list (long-press drag and drop, R-5).
+    func move(id: UUID, toIndex index: Int) {
+        guard let from = profiles.firstIndex(where: { $0.id == id }) else { return }
+        move(fromOffsets: IndexSet(integer: from), toOffset: min(max(index, 0), profiles.count))
+    }
+
     /// Inserts "{原名} 副本" below `id` without switching to it (FR-9.5, A-3).
     func duplicate(id: UUID) {
         guard canDuplicate else { return }

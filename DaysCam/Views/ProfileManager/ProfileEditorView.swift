@@ -55,7 +55,7 @@ private struct ProfileEditorContent: View {
                 manager.duplicate(id: profile.id)
                 if manager.lastError == nil { manager.resetNavigation() }
             } label: {
-                actionRow(manager.duplicateTitle, systemImage: "plus.square.on.square",
+                actionRow(manager.canDuplicate ? "複製這個設定檔" : manager.duplicateTitle, systemImage: "plus.square.on.square",
                           color: manager.canDuplicate ? CameraTheme.ink : CameraTheme.inkTertiary)
             }
             .disabled(!manager.canDuplicate)
@@ -63,7 +63,7 @@ private struct ProfileEditorContent: View {
             Button {
                 manager.requestDeletion(of: profile.id)
             } label: {
-                actionRow(manager.deleteTitle, systemImage: "trash",
+                actionRow(manager.canDelete ? "刪除設定檔" : manager.deleteTitle, systemImage: "trash",
                           color: manager.canDelete ? .red : CameraTheme.inkTertiary)
             }
             .disabled(!manager.canDelete)
