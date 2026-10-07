@@ -89,7 +89,7 @@ struct CameraScreenLayoutMetrics {
     /// The segmented control's height at the default Dynamic Type size.
     static let defaultPanelTabBarHeight: CGFloat = 32
 
-    /// Footer row height while the panel is open (two 44×44 buttons).
+    /// Footer row height while the panel is open (the 52×52 side buttons overflow it by 4pt each side).
     static let panelOpenFooterRowHeight: CGFloat = 44
 
     /// Gap between the panel's bottom edge and the footer row.
@@ -166,10 +166,11 @@ struct CameraScreenLayoutMetrics {
     }
 
     /// Distance from each screen edge to the center of the footer's side
-    /// buttons: midway between the edge and the shutter's edge, so the
-    /// buttons stay put whether or not the shutter is shown.
+    /// buttons: midway between the edge and the shutter's edge, moved 8pt
+    /// outward (TASK-50), so the buttons stay put whether or not the
+    /// shutter is shown.
     var footerSideButtonCenterInset: CGFloat {
-        (screenSize.width / 2 - Self.shutterRadius) / 2
+        (screenSize.width / 2 - Self.shutterRadius) / 2 - 8
     }
 
     // MARK: - Tools capsule (issue #135)

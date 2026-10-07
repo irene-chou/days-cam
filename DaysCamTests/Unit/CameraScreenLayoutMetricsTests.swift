@@ -227,9 +227,10 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
     }
 
     func testFooterSideButtonCenterInset() {
-        XCTAssertEqual(makeMetrics(width: 393, height: 852, top: 59, bottom: 34).footerSideButtonCenterInset, 79.25, accuracy: 0.05)
-        XCTAssertEqual(makeMetrics(width: 375, height: 667, top: 20, bottom: 0).footerSideButtonCenterInset, 74.75, accuracy: 0.05)
-        XCTAssertEqual(makeMetrics(width: 440, height: 956, top: 59, bottom: 34).footerSideButtonCenterInset, 91, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 393, height: 852, top: 59, bottom: 34).footerSideButtonCenterInset, 71.25, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 375, height: 667, top: 20, bottom: 0).footerSideButtonCenterInset, 66.75, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 430, height: 932, top: 59, bottom: 34).footerSideButtonCenterInset, 80.5, accuracy: 0.05)
+        XCTAssertEqual(makeMetrics(width: 440, height: 956, top: 59, bottom: 34).footerSideButtonCenterInset, 83, accuracy: 0.05)
     }
 
     /// Closed, 9:16's box already *is* the 9:16 shape (from
@@ -312,7 +313,7 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         // footerBase 818: closed, 16pt padding + half the 76pt shutter row.
         let closed = metrics.leftFooterButtonCenter(isPanelOpen: false)
-        XCTAssertEqual(closed.x, 79.25, accuracy: 0.05)
+        XCTAssertEqual(closed.x, 71.25, accuracy: 0.05)
         XCTAssertEqual(closed.y, 818 - 16 - 38, accuracy: 0.05)
         // Open, 8pt gap + half the 44pt row; same x so the button never shifts.
         let open = metrics.leftFooterButtonCenter(isPanelOpen: true)
