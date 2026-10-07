@@ -260,7 +260,7 @@ PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部�
 - `CameraScreen`：滿版觀景窗；比例切換時的三種版面（FR-7.8）；格線；倒數大數字
 - `Views/CameraToolbar/`：頂部工具列（閃光燈、計時器、名稱選單、比例切換鍵（點一下循環，FR-7.7）、格線、翻轉），狀態來自 TASK-19
 - 名稱選單只列名稱＋打勾（FR-7.11），移除 0.1 的「管理設定檔」入口
-- 底部列：左最新照片縮圖（來源依 PRD FR-15.2，資料來自 TASK-28；點擊先留空，TASK-29 接上）、快門（`accent` 實心＋外圈）、疊字鍵（`pencil.tip.crop.circle`）。無文字、無底色
+- 底部列：左最新照片縮圖（來源依 PRD FR-15.2，資料來自 TASK-28；點擊先留空，TASK-29 接上）、快門（`accent` 實心＋外圈）、疊字鍵（`pencil.tip.crop.circle`；0.3 由 #221 改為 `character.textbox`）。無文字、無底色
 - 疊字鍵此時先打開 0.1 的顯示設定 sheet 當過渡（TASK-22 換掉），**PR 描述要寫明**
 - **接下 TASK-19、28 的 ui 半邊**：`CameraScreenModel` 的計時器倒數（用 TASK-19 的 ticker）與存檔後寫入 `CapturedPhotoStore`；並跑驗收 19.8～19.10
 

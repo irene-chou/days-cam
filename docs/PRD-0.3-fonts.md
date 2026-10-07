@@ -232,6 +232,7 @@
 | FR-8.4 第一層四段、FR-8.2 與 #157 內容區高度、FR-7.7 1:1 外框尺寸 | 由 Issue #198 取代 |
 | FR-8.5 格式分頁第二層「顯示內容｜天數格式」 | 取消；「內容」分頁第二層改為「格式｜天數規則」（Issue #197） |
 | FR-10.1 樣式第二層 icon、FR-10.4 色票排列 | 由 Issue #215 取代；`RecentColorsStore` 規則不變 |
+| FR-7.3、附錄「主操作」疊字鍵 `pencil.tip.crop.circle` | 改為 `character.textbox`（Issue #221，2026-10-07 人類決定） |
 
 ---
 
