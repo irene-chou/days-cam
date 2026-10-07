@@ -58,15 +58,18 @@ codex exec -C <Codex worktree> -s workspace-write \
 1. 依 [閱讀矩陣](AGENT-READING-MAP.md) 取得任務與回歸條目，檢查依賴已合併。
 2. 各自 worktree，分支 `feature/task-XX-<簡述>`；修正／文件用對應前綴。一張卡一個 PR，必要時分 core／UI 半邊。高風險 QA 新增驗收測試用 `chore/qa-task-XX`。
 3. 單元測試放 `DaysCamTests/Unit/<來源檔名>Tests.swift`，歸來源檔擁有者。QA 只能寫 `DaysCamTests/Acceptance/` 的版本化程式；測試輸出與專用截圖 worktree 可寫。
-4. 每角色獨立模擬器，先用 `xcrun simctl list devices available` 查找 `iPhone 16 <角色>` 及 UUID，**查無才** `xcrun simctl clone "iPhone 16" "iPhone 16 <角色>"`；clone 不會檢查重名。找不到基底裝置時先查可用 runtime／裝置，不能盲目建多台。
-5. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`）執行，其他 PR 不跑 CI、也不在本機跑全套（2026-10-05 人類決定，節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
+4. **模擬器一律在 rinclaw 執行**（2026-10-08 人類決定，本機儲存空間不足）：編譯、測試、截圖都 `ssh rinclaw`，本機只改程式碼，不在本機跑 `xcodebuild`／`simctl`。rinclaw 為 Intel Mac、Xcode 26.3、iOS 26.3 runtime，工具在 `~/.local/bin`（指令前加 `export PATH=$HOME/.local/bin:$PATH`）。不得使用 iOS 27 SDK 才有的 API；rinclaw 編不過即視為失敗。rinclaw 效能有限，同時最多約 2 個角色跑模擬器，遇到排隊不要重複起新的建置。連不上或執行異常時停止並回報 Lead，不要退回本機跑。
+5. 同步：用 rsync 把自己的 worktree 推到 rinclaw 的 `~/dayscam-work/<worktree識別>-<角色>/`（排除 `.git` 與 `*.xcodeproj`），不需先 push。每角色在 rinclaw 有獨立模擬器：先用 `xcrun simctl list devices available` 查 `iPhone 16 <角色>`（SE 截圖用 `iPhone SE <角色>`）及 UUID，**查無才**以 `xcrun simctl create "iPhone 16 <角色>" com.apple.CoreSimulator.SimDeviceType.iPhone-16 com.apple.CoreSimulator.SimRuntime.iOS-26-3` 建立（SE 用 `iPhone-SE-3rd-generation`）；create 不會檢查重名，不能盲目建多台。DerivedData 放 rinclaw 的 `/tmp/dayscam-dd-<worktree識別>-<角色>`。截圖用 `scp` 取回本機後再依 [截圖](#截圖) 推 `qa-screenshots`。人類需手動操作模擬器時，由開發者在 rinclaw 開好 Simulator.app 並停在待驗畫面，人類用螢幕共享操作。
+6. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`）執行，其他 PR 不跑 CI、也不跑全套（2026-10-05 人類決定，節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
 
 ```sh
-xcodegen generate
-xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
-  -destination 'platform=iOS Simulator,id=<角色模擬器 UUID>' \
-  -derivedDataPath /tmp/dayscam-dd-<worktree識別>-<角色> \
-  -only-testing:DaysCamTests/<相關測試class> test
+# 本機 worktree 根目錄
+rsync -a --delete --exclude .git --exclude '*.xcodeproj' ./ rinclaw:dayscam-work/<worktree識別>-<角色>/
+ssh rinclaw 'export PATH=$HOME/.local/bin:$PATH; cd ~/dayscam-work/<worktree識別>-<角色> && xcodegen generate && \
+  xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
+    -destination "platform=iOS Simulator,id=<角色模擬器 UUID>" \
+    -derivedDataPath /tmp/dayscam-dd-<worktree識別>-<角色> \
+    -only-testing:DaysCamTests/<相關測試class> test'
 ```
 
 PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體指令、結果與假設；不要只寫「已測試」。開發者自驗 A 級，在 PR 列出「驗收編號 → 測試名稱或證據」對照表，供 reviewer 核對。
