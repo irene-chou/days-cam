@@ -48,12 +48,10 @@ struct ContentTabView: View {
 // MARK: - Preview
 
 @MainActor
-private func previewModels(showDayCount: Bool = true,
-                           subTab: ContentTabModel.SubTab = .format)
+private func previewModels(subTab: ContentTabModel.SubTab = .format)
     -> (ContentTabModel, FormatTabModel, RulesTabModel) {
     let profile = CameraProfile(name: "小寶",
                                startDate: DateComponents(year: 2026, month: 1, day: 1),
-                               showDayCount: showDayCount,
                                displayUnits: [.day])
     let content = ContentTabModel()
     content.selectedSubTab = subTab
@@ -64,13 +62,6 @@ private func previewModels(showDayCount: Bool = true,
 
 #Preview("格式子分頁 · iPhone SE 寬度 (375pt)") {
     let m = previewModels()
-    return ContentTabView(model: m.0, formatTabModel: m.1, rulesTabModel: m.2)
-        .frame(width: 375)
-        .background(Color(.systemBackground))
-}
-
-#Preview("格式子分頁（天數關閉）· iPhone SE 寬度 (375pt)") {
-    let m = previewModels(showDayCount: false)
     return ContentTabView(model: m.0, formatTabModel: m.1, rulesTabModel: m.2)
         .frame(width: 375)
         .background(Color(.systemBackground))
