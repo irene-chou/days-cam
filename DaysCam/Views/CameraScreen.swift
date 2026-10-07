@@ -448,11 +448,12 @@ struct CameraScreen: View {
     private func rightBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.rightBottomBarAction {
         case .openOverlayPanel:
-            // `pencil.tip.crop.circle`, not `textformat`: the style tab's
-            // own 字型 sub-tab already uses `textformat` (PRD FR-10.1), and
-            // having both on screen at once while the panel is open reads
-            // as the same button twice (human decision, 2026-09-27, #84).
-            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
+            // `character.textbox` (human decision, 2026-10-07, #221; it
+            // replaced `pencil.tip.crop.circle` from #84). Not `textformat`
+            // or other T-style icons: the style tab's font icon `t.square`
+            // (#215) and the outline icon `character.square.fill` would
+            // read as the same button twice while the panel is open.
+            iconButton(systemName: "character.textbox", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
                 model.openOverlayPanel()
             }
         case .collapse:
