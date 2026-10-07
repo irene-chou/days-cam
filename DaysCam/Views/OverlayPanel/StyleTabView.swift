@@ -380,23 +380,39 @@ struct StyleTabView: View {
     // MARK: - 字級 (FR-10.9)
 
     private var sizeSlider: some View {
-        // `.zrow{gap:8px}` (#106) — was 12.
-        HStack(spacing: 8) {
-            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-            Slider(
-                value: Binding(
-                    get: { Double(model.profile.style.sizeScale) },
-                    set: { model.setSizeScale(Int($0.rounded())) }
-                ),
-                in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
-                step: Double(StyleTabModel.sizeScaleStep)
-            )
-            .tint(CameraTheme.accentControl)
-            .accessibilityLabel("字級")
-            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+        // Three lines, `spacing` 12 (TASK-49 E): the live percentage, the
+        // slider row, a hint. Double-tapping the percentage or the slider row
+        // resets to the default size.
+        VStack(spacing: 12) {
             Text("\(model.profile.style.sizeScale)%")
-                .font(.subheadline.monospacedDigit())
-                .frame(minWidth: 46, alignment: .trailing)
+                .font(.system(size: 28, weight: .bold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { model.resetSizeScale() }
+                .accessibilityLabel("字級 \(model.profile.style.sizeScale)%")
+            // `.zrow{gap:8px}` (#106) — was 12.
+            HStack(spacing: 8) {
+                Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+                Slider(
+                    value: Binding(
+                        get: { Double(model.profile.style.sizeScale) },
+                        set: { model.setSizeScale(Int($0.rounded())) }
+                    ),
+                    in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
+                    step: Double(StyleTabModel.sizeScaleStep)
+                )
+                .tint(CameraTheme.accentControl)
+                .accessibilityLabel("字級")
+                .accessibilityAction(named: "回到預設大小") { model.resetSizeScale() }
+                Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+            }
+            // Simultaneous, so the slider's own drag still works.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
+            Text("拖曳調整，點兩下回到預設大小")
+                .font(.system(size: 12))
+                .foregroundColor(CameraTheme.inkSecondary)
+                .frame(maxWidth: .infinity)
         }
     }
 

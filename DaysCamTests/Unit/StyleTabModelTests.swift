@@ -290,6 +290,26 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.profile.style.sizeScale, 70)
     }
 
+    // MARK: - 49.15 點兩下回預設字級
+
+    func testResetSizeScaleReturnsToDefaultAndWrites() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.setSizeScale(150)
+        spy.updated.removeAll()
+        model.resetSizeScale()
+        XCTAssertEqual(model.profile.style.sizeScale, OverlayStyle().sizeScale, "49.15")
+        XCTAssertEqual(spy.updated.count, 1)
+        XCTAssertEqual(spy.updated.last?.style.sizeScale, OverlayStyle().sizeScale)
+    }
+
+    func testResetSizeScaleDoesNotWriteWhenAlreadyDefault() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.resetSizeScale()
+        XCTAssertTrue(spy.updated.isEmpty, "49.15")
+    }
+
     // MARK: - 23.10 字級滑桿範圍
 
     func testSizeScaleRangeIs70To160StepOf5() {
