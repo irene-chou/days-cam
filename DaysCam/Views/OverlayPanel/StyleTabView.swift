@@ -282,12 +282,16 @@ struct StyleTabView: View {
 
     // MARK: - 顏色與大小 (FR-10.4, FR-10.7, FR-10.9)
 
-    /// Size slider above, text color swatches below (TASK-46).
+    /// Size slider above, text color swatches below (TASK-46). Roomier than
+    /// the card's 12pt (human B′ feedback, 2026-10-07): 12pt above the slider
+    /// (on top of the sub-tab row's 4pt) and 20pt between slider and swatches,
+    /// still inside the regular 212pt content area.
     private var colorAndSizeContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 20) {
             sizeSlider
             colorContent
         }
+        .padding(.top, 12)
     }
 
     private var colorContent: some View {
@@ -468,6 +472,11 @@ struct StyleTabView: View {
             Circle()
                 .fill(swiftUIColor(color))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                // Hairline so a white swatch separates from the light panel
+                // (human B′ feedback, 2026-10-07); inside the 42pt selection
+                // ring, so the two never overlap. The rainbow swatch is
+                // saturated and needs none.
+                .overlay(Circle().strokeBorder(CameraTheme.inkTertiary, lineWidth: 0.5))
                 .overlay(swatchSelectionRing(isSelected))
                 .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }

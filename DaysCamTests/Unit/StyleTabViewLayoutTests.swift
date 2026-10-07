@@ -48,7 +48,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let model = try makeModel()
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
-        XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42)
+        XCTAssertGreaterThanOrEqual(colorHeight, 42 + 6 + 42 + 20 + 12, "46.7 含加大後的間距")
         XCTAssertLessThanOrEqual(colorHeight, 212, "46.7 顏色與大小頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
