@@ -433,8 +433,9 @@ struct CameraScreen: View {
     /// (issue #128).
     private static let footerButtonSize: CGFloat = 44
 
-    /// Icon point size of the footer side buttons (TASK-50; was 20).
-    private static let footerIconSize: CGFloat = 28
+    /// Icon point size of the footer side buttons (TASK-50 made it 28; human
+    /// decision 2026-10-08 settled on 24, issue #239).
+    private static let footerIconSize: CGFloat = 24
 
     @ViewBuilder
     private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
