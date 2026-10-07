@@ -14,10 +14,6 @@ import Foundation
 /// is open).
 @MainActor
 final class DisplaySettingsModel: ObservableObject {
-    /// Shown next to whichever of "顯示天數"/"顯示日期" is currently the only
-    /// one on, and as the reason it is disabled (PRD FR-2.4).
-    static let mustShowAtLeastOneMessage = "至少需要顯示天數或日期其中一項"
-
     /// The profile as currently configured. Read-only from outside: every
     /// change goes through one of this model's setters so the FR-2.4/2.8/2.9
     /// invariants stay enforced and every change is persisted.
@@ -67,34 +63,13 @@ final class DisplaySettingsModel: ObservableObject {
     }
 }
 
-// MARK: - Display content (FR-2.1–FR-2.4)
+// MARK: - Display content (0.4 R-13: 日期、名稱)
 
 extension DisplaySettingsModel {
-    /// Whether the "顯示天數" toggle should be disabled: it is the only one
-    /// of the two still on, so turning it off would leave both off (FR-2.4).
-    var isShowDayCountToggleDisabled: Bool {
-        profile.showDayCount && !profile.showDate
-    }
-
-    /// Whether the "顯示日期" toggle should be disabled, mirroring
-    /// `isShowDayCountToggleDisabled`.
-    var isShowDateToggleDisabled: Bool {
-        profile.showDate && !profile.showDayCount
-    }
-
-    /// Sets `showDayCount`. A no-op if this would leave both display
-    /// switches off — the view is expected to disable the toggle in that
-    /// state already; this is the defensive backstop (FR-2.4).
-    func setShowDayCount(_ newValue: Bool) {
-        guard newValue != profile.showDayCount else { return }
-        guard newValue || profile.showDate else { return }
-        mutate { $0.showDayCount = newValue }
-    }
-
-    /// Sets `showDate`, mirroring `setShowDayCount`.
+    /// Sets `showDate`. Either display switch may be off, so this never
+    /// refuses: the day count is always shown (0.4 R-13, TASK-48).
     func setShowDate(_ newValue: Bool) {
         guard newValue != profile.showDate else { return }
-        guard newValue || profile.showDayCount else { return }
         mutate { $0.showDate = newValue }
     }
 
@@ -107,12 +82,6 @@ extension DisplaySettingsModel {
 // MARK: - Day-count format (FR-2.7–FR-2.10)
 
 extension DisplaySettingsModel {
-    /// Whether the whole "天數格式" section should be disabled: it has no
-    /// effect while the elapsed amount is not shown at all.
-    var isDayCountFormatSectionDisabled: Bool {
-        !profile.showDayCount
-    }
-
     /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, TASK-27).
     ///
     /// Unchecking the last remaining unit is a no-op: `displayUnits` may

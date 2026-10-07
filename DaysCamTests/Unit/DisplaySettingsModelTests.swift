@@ -82,58 +82,26 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
     }
 
-    func testTurningOffShowDayCountLeavesOnlyTheDate() throws {
+    /// 48.2: 日期 and 名稱 may both be off; the day count remains.
+    func testShowDateAndNameCanBothBeTurnedOffLeavingOnlyTheDayCount() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDate: true), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(false)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10")
-    }
-
-    func testShowDateToggleDisabledWhenItIsTheOnlySwitchOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isShowDateToggleDisabled)
-        XCTAssertFalse(model.isShowDayCountToggleDisabled)
-    }
-
-    func testShowDayCountToggleDisabledWhenItIsTheOnlySwitchOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isShowDayCountToggleDisabled)
-        XCTAssertFalse(model.isShowDateToggleDisabled)
-    }
-
-    func testDayCountFormatSectionDisabledWhenShowDayCountOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isDayCountFormatSectionDisabled)
-    }
-
-    func testReenablingShowDayCountRestoresDateToggleAndFormatSection() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(true)
-        XCTAssertFalse(model.isShowDateToggleDisabled)
-        XCTAssertFalse(model.isDayCountFormatSectionDisabled)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
-    }
-
-    // MARK: - Defensive backstop for FR-2.4 (mirrors disabled UI state)
-
-    func testSetShowDayCountOffNoOpsWhenDateIsAlsoOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(false)
-        XCTAssertTrue(model.profile.showDayCount)
-        XCTAssertTrue(spy.updated.isEmpty)
-    }
-
-    func testSetShowDateOffNoOpsWhenDayCountIsAlsoOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        let model = makeModel(profile: baselineProfile(showDate: true, showName: true), now: try fixedNow(), spy: spy)
         model.setShowDate(false)
-        XCTAssertTrue(model.profile.showDate)
-        XCTAssertTrue(spy.updated.isEmpty)
+        model.setShowName(false)
+        XCTAssertFalse(model.profile.showDate, "48.2")
+        XCTAssertFalse(model.profile.showName, "48.2")
+        XCTAssertTrue(model.profile.showDayCount, "48.2")
+        XCTAssertEqual(spy.updated.count, 2, "48.2 each change persists")
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天", "48.2")
+    }
+
+    /// 48.2: turning 日期 off never no-ops, even with 名稱 already off.
+    func testSetShowDateOffAppliesEvenWhenNameIsOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDate: true, showName: false), now: try fixedNow(), spy: spy)
+        model.setShowDate(false)
+        XCTAssertFalse(model.profile.showDate, "48.2")
+        XCTAssertEqual(spy.updated.count, 1, "48.2")
     }
 
     // MARK: - A-3 單位區間 (11.15–11.20), inputs as 0.2 unit sets; texts unchanged
