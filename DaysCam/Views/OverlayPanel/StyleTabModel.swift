@@ -354,4 +354,10 @@ extension StyleTabModel {
         guard clamped != profile.style.sizeScale else { return }
         mutate { $0.sizeScale = clamped }
     }
+
+    /// Sets `sizeScale` back to `OverlayStyle`'s default (TASK-49 E). Goes
+    /// through `setSizeScale`, so nothing is written when already default.
+    func resetSizeScale() {
+        setSizeScale(OverlayStyle().sizeScale)
+    }
 }
