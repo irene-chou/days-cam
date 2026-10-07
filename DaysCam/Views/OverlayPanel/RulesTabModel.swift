@@ -16,9 +16,6 @@ import Foundation
 /// clamp (FR-1.6) and the "no later than today" start-date bound (0.1 §7.2).
 @MainActor
 final class RulesTabModel: ObservableObject {
-    /// Gray hint under the preview sentence when the day count is off (#226
-    /// R-9). The start-date and counting-rule rows stay visible and editable.
-    static let dayCountOffHintMessage = "目前不顯示天數，起始日和起算不會出現在照片上"
     /// Label for `CountingRule.dayOne` (FR-13.4). Order matches
     /// `CountingRule.allCases`: this one is listed first.
     static let countingRuleDayOneLabel = "當天算第 1 天"
@@ -46,7 +43,7 @@ final class RulesTabModel: ObservableObject {
     ///
     /// - Parameters:
     ///   - calculator: Supplies the start-date picker's upper bound and the
-    ///     capture moment `overlayPreviewText` is rendered as of. Defaults to
+    ///     capture moment `dayCountPreviewText` is rendered as of. Defaults to
     ///     `DayCountCalculator()`, whose default clock honours
     ///     `DAYSCAM_FAKE_TODAY` in debug builds.
     ///   - updateProfile: Forwarded to the real persistence layer by the
@@ -69,7 +66,8 @@ final class RulesTabModel: ObservableObject {
     /// Pulls in changes another screen made to the same profile while this
     /// model was alive (#167): the model is only rebuilt when the selected
     /// profile changes, so without this the 格式 tab turning 天數 off never
-    /// reached `showsCountingFields`.
+    /// reached this working copy, and the next write here would have put the
+    /// stale value back.
     ///
     /// Only the fields this tab reads but does not own are taken —
     /// `showDayCount` (格式 tab) and `name` (profile list rename, only when
@@ -165,21 +163,20 @@ extension RulesTabModel {
     }
 }
 
-// MARK: - 顯示狀態與預覽 (FR-13.1, #226 R-9)
+// MARK: - 預覽 (FR-13.1, #227)
 
 extension RulesTabModel {
-    /// Whether to show the "day count is off" hint (#226 R-9). The
-    /// start-date and counting-rule rows are always shown; they only affect
-    /// the day-count output, so the hint tells the user they are not on the
-    /// photo while that output is off.
-    var showsDayCountOffHint: Bool {
-        !profile.showDayCount
-    }
-
-    /// The overlay text this profile would print right now — exists so a
-    /// counting-rule change (25.4) can be checked end-to-end rather than only
-    /// as a stored enum value.
-    var overlayPreviewText: String {
-        renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar)
+    /// The day count this profile shows today, e.g. 「第 280 天」: always days
+    /// only, whatever the display units, date, name or day-count toggles say
+    /// (#227, the human's 2026-10-07 call). Exists so a counting-rule change
+    /// (25.4) can be checked end-to-end rather than only as a stored enum value.
+    var dayCountPreviewText: String {
+        var daysOnly = profile
+        daysOnly.showDayCount = true
+        daysOnly.showDate = false
+        daysOnly.showName = false
+        daysOnly.displayUnits = [.day]
+        daysOnly.useAgeWording = false
+        return renderer.render(profile: daysOnly, capturedAt: calculator.now(), calendar: calendar)
     }
 }

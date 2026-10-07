@@ -49,13 +49,6 @@ struct RulesTabView: View {
             previewSentence
                 .padding(.top, 12)
                 .padding(.horizontal, Self.rowHorizontalPadding)
-            if model.showsDayCountOffHint {
-                Text(RulesTabModel.dayCountOffHintMessage)
-                    .font(.footnote)
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .padding(.top, 6)
-                    .padding(.horizontal, Self.rowHorizontalPadding)
-            }
         }
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
@@ -95,10 +88,10 @@ struct RulesTabView: View {
         Divider().padding(.leading, Self.rowHorizontalPadding)
     }
 
-    /// 「今天照片上會顯示 」＋ bold `overlayPreviewText`; wraps, at most 3 lines.
+    /// 「今天會顯示為 」＋ bold `dayCountPreviewText`; wraps, at most 3 lines.
     private var previewSentence: some View {
-        (Text("今天照片上會顯示 ").foregroundColor(CameraTheme.inkSecondary)
-            + Text(model.overlayPreviewText).bold().foregroundColor(CameraTheme.ink))
+        (Text("今天會顯示為 ").foregroundColor(CameraTheme.inkSecondary)
+            + Text(model.dayCountPreviewText).bold().foregroundColor(CameraTheme.ink))
             .font(.subheadline)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -188,15 +181,16 @@ struct RulesTabView: View {
 
 // MARK: - Preview
 
-private func previewProfile(name: String = "小寶", showDayCount: Bool = true) -> CameraProfile {
+private func previewProfile(name: String = "小寶", unitsAndDate: Bool = false) -> CameraProfile {
     CameraProfile(name: name,
                  startDate: DateComponents(year: 2026, month: 1, day: 1),
-                 showDayCount: showDayCount)
+                 showDate: unitsAndDate,
+                 displayUnits: unitsAndDate ? [.year, .month] : [.day])
 }
 
 @MainActor
-private func previewModel(name: String = "小寶", showDayCount: Bool = true) -> RulesTabModel {
-    RulesTabModel(profile: previewProfile(name: name, showDayCount: showDayCount),
+private func previewModel(name: String = "小寶", unitsAndDate: Bool = false) -> RulesTabModel {
+    RulesTabModel(profile: previewProfile(name: name, unitsAndDate: unitsAndDate),
                  calculator: DayCountCalculator(now: { DateFixtureForPreview.fakeToday })) { _ in }
 }
 
@@ -237,8 +231,8 @@ private enum DateFixtureForPreview {
         .background(Color(.systemBackground))
 }
 
-#Preview("天數關閉：欄位照常＋提示 · iPhone SE 寬度 (375pt)") {
-    RulesTabView(model: previewModel(showDayCount: false))
+#Preview("單位勾年月、日期開：預覽句仍只顯示天數 · iPhone SE 寬度 (375pt)") {
+    RulesTabView(model: previewModel(unitsAndDate: true))
         .frame(width: 375)
         .padding(.vertical, 12)
         .background(Color(.systemBackground))
