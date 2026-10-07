@@ -50,7 +50,9 @@ struct ProfileManagerView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     // Long-press lifts the row; no ≡ handle and no editMode
-                    // (`onMove` only works in edit mode, #226 R-5).
+                    // (`onMove` only works in edit mode, #226 R-5). The drop
+                    // target is the `ForEach` below: a `List` takes drops
+                    // per ForEach insertion point, not per row view.
                     .draggable(row.id.uuidString)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if model.canDelete {
@@ -62,12 +64,9 @@ struct ProfileManagerView: View {
                         }
                     }
             }
-            .onInsert(of: [.plainText]) { index, providers in
-                guard let provider = providers.first else { return }
-                _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-                    guard let text = object as? String, let id = UUID(uuidString: text) else { return }
-                    Task { @MainActor in model.move(id: id, toIndex: index) }
-                }
+            .dropDestination(for: String.self) { items, offset in
+                guard let dragged = items.first.flatMap(UUID.init(uuidString:)) else { return }
+                model.move(id: dragged, toIndex: offset)
             }
         }
         .listStyle(.plain)
