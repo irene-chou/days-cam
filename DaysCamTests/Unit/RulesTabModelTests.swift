@@ -131,12 +131,12 @@ final class RulesTabModelTests: XCTestCase {
     func testSwitchingToDayZeroRendersOneFewerDay() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(countingRule: .dayOne), now: try fixedNow(), spy: spy)
-        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
+        XCTAssertEqual(model.dayCountPreviewText, "第 10 天")
 
         model.setCountingRule(.dayZero)
 
         XCTAssertEqual(model.profile.countingRule, .dayZero, "25.4")
-        XCTAssertEqual(model.overlayPreviewText, "第 9 天", "25.4")
+        XCTAssertEqual(model.dayCountPreviewText, "第 9 天", "25.4")
     }
 
     func testSetCountingRuleNoOpsWhenUnchanged() throws {
@@ -146,19 +146,25 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 25.5 天數關閉時只留名稱
+    // MARK: - 43.1／43.1b 預覽句只顯示天數（#227）
 
-    func testCountingFieldsHiddenWhenDayCountOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false), now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.showsCountingFields, "25.5")
-        XCTAssertEqual(RulesTabModel.hiddenHintMessage, "天數未顯示，起始日與起算規則已隱藏", "25.5")
+    func testPreviewIsAlwaysDaysOnlyRegardlessOfUnitsDateAndName() throws {
+        var profile = baselineProfile(showDayCount: true)
+        profile.displayUnits = [.year, .month]
+        profile.showDate = true
+        profile.showName = true
+        profile.useAgeWording = true
+        let model = makeModel(profile: profile, now: try fixedNow(), spy: Spy())
+        XCTAssertEqual(model.dayCountPreviewText, "第 10 天", "43.1b")
     }
 
-    func testCountingFieldsShownWhenDayCountOn() throws {
+    func testFieldsStayWritableWhateverTheDayCountFlag() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.showsCountingFields)
+        let model = makeModel(profile: baselineProfile(showDayCount: false), now: try fixedNow(), spy: spy)
+        model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 2)))
+        model.setCountingRule(.dayZero)
+        XCTAssertEqual(spy.updated.count, 2, "43.2／43.6")
+        XCTAssertEqual(model.dayCountPreviewText, "第 8 天")
     }
 
     // MARK: - 25.6 起算分段控制的兩個選項文字
@@ -199,15 +205,15 @@ final class RulesTabModelTests: XCTestCase {
         let spy = Spy()
         let profile = baselineProfile()
         let model = makeModel(profile: profile, now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.showsCountingFields)
+        XCTAssertTrue(model.profile.showDayCount)
 
         var turnedOff = profile
         turnedOff.showDayCount = false
         model.applyExternalChanges(from: turnedOff)
-        XCTAssertFalse(model.showsCountingFields, "W.1／W.3")
+        XCTAssertFalse(model.profile.showDayCount, "W.1／W.3")
 
         model.applyExternalChanges(from: profile)
-        XCTAssertTrue(model.showsCountingFields, "W.2／W.3")
+        XCTAssertTrue(model.profile.showDayCount, "W.2／W.3")
         XCTAssertEqual(model.profile.startDate, profile.startDate, "起始日保留原值")
         XCTAssertEqual(model.profile.countingRule, profile.countingRule, "起算保留原值")
         XCTAssertTrue(spy.updated.isEmpty, "同步外部變更不應寫回")
@@ -217,7 +223,7 @@ final class RulesTabModelTests: XCTestCase {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
         let other = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), showDayCount: false)
         model.applyExternalChanges(from: other)
-        XCTAssertTrue(model.showsCountingFields)
+        XCTAssertTrue(model.profile.showDayCount)
     }
 
     func testExternalRenameDoesNotClobberAnInProgressNameEdit() throws {
