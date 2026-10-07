@@ -545,7 +545,7 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.profiles.count == 2 }
     }
 
-    func testAddingFromTheManagerClosesItAndOpensTheRulesTab() throws {
+    func testAddingFromTheManagerClosesItAndOpensTheContentTabOnRules() throws {
         // 26.5: new profile selected, management panel closed, overlay panel
         // on 天數規則 (and still open).
         let now = try fixedNow()
@@ -560,7 +560,8 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 2)
         XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
         XCTAssertFalse(model.isProfileManagerPresented)
-        XCTAssertEqual(model.panelModel.selectedTab, .rules)
+        XCTAssertEqual(model.panelModel.selectedTab, .content)
+        XCTAssertEqual(model.contentTabModel.selectedSubTab, .rules)
         XCTAssertTrue(model.panelModel.isOpen)
     }
 
@@ -1484,7 +1485,7 @@ final class CameraScreenModelTests: XCTestCase {
         let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
         model.styleTabModel?.selectFont(.huninn)
-        model.panelModel.selectedTab = .format // switching tabs never rebuilds (same profile)
+        model.panelModel.selectedTab = .content // switching tabs never rebuilds (same profile)
 
         let stored = try XCTUnwrap(store.profiles.first)
         XCTAssertEqual(stored.style.fontID, .huninn, "M.5: store 端沒有遺失樣式改動")

@@ -10,17 +10,17 @@ import Foundation
 /// (acceptance 22.2) — not across relaunches, so a freshly constructed
 /// instance always starts at `.style` (acceptance 22.3).
 final class OverlayPanelModel: ObservableObject {
-    /// The panel's first-level tabs (PRD 0.2 FR-8.4), in display order.
+    /// The panel's first-level tabs (0.3 TASK-37: 樣式｜內容｜位置), in display order.
+    /// 內容 holds the 格式／天數規則 sub-tabs (`ContentTabModel`).
     enum Tab: CaseIterable, Equatable, Hashable {
-        case style, format, position, rules
+        case style, content, position
 
         /// The segmented control's label (PRD 0.2 FR-8.4).
         var title: String {
             switch self {
             case .style: return "樣式"
-            case .format: return "格式"
+            case .content: return "內容"
             case .position: return "位置"
-            case .rules: return "天數規則"
             }
         }
     }

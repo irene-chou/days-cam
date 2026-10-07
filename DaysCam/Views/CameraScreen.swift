@@ -637,12 +637,13 @@ private struct GridLinesView: View {
     return CameraScreen(model: model)
 }
 
-#Preview("疊字面板打開・天數規則分頁") {
+#Preview("疊字面板打開・內容（天數規則）分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
     model.panelModel.open()
-    model.panelModel.selectedTab = .rules
+    model.panelModel.selectedTab = .content
+    model.contentTabModel.selectedSubTab = .rules
     return CameraScreen(model: model)
 }
 

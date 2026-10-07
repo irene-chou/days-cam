@@ -138,10 +138,10 @@ final class RatioIconRenderTests: XCTestCase {
                                     RatioIconGeometry.labelWidth(for: .nineBySixteen))
     }
 
-    /// W.3: 3:4 and square keep #137 sizes; 9:16 uses a legible schematic outline.
+    /// W.3 / 37.5: 3:4 keeps its #137 size, 1:1 is 21×21 (TASK-37); 9:16 uses a legible schematic outline.
     func testStandardOutlineSizesMatchIssue137() throws {
         let expected: [CaptureAspectRatio: CGSize] = [.threeByFour: CGSize(width: 21, height: 28),
-                                                      .oneByOne: CGSize(width: 28, height: 28)]
+                                                      .oneByOne: CGSize(width: 21, height: 21)]
         for (ratio, size) in expected {
             let m = try measure(ratio)
             XCTAssertEqual(m.outline.width, size.width, accuracy: 0.5, "\(ratio)")

@@ -287,6 +287,8 @@ enum RatioIconGeometry {
     static let strokeWidth: CGFloat = 2.15
     static let cornerRadius: CGFloat = 4
     static let baseOutlineHeight: CGFloat = 28
+    /// The 1:1 outline's side: the same width as 3:4's 21×28 outline.
+    static let squareOutlineSide: CGFloat = 21
     static let maximumOutlineHeight: CGFloat = 32
     /// Distance from the outline's outer edge to the label: the stroke plus
     /// 1pt of clearance.
@@ -294,7 +296,7 @@ enum RatioIconGeometry {
     /// The label may shrink to this fraction of `labelFontSize` before the
     /// outline grows (issue #137).
     static let minimumLabelScale: CGFloat = 0.9
-    /// Keeps the 3:4 and square outlines unchanged while giving 9:16 enough
+    /// Keeps the 3:4 outline unchanged while giving 9:16 enough
     /// inner space for the unscaled label and at least 1pt clearance.
     static func outlineWidth(for ratio: CaptureAspectRatio) -> CGFloat {
         let proportionalWidth = outlineHeight(for: ratio) * ratio.shortToLongRatio
@@ -312,6 +314,8 @@ enum RatioIconGeometry {
     /// 28pt, grown just enough (up to 32pt) for the label to clear the
     /// outline's sides; the font is never shrunk to make it fit.
     static func outlineHeight(for ratio: CaptureAspectRatio) -> CGFloat {
+        // 1:1 is as wide as the 3:4 outline (21pt), so it is 21×21 (TASK-37).
+        if ratio == .oneByOne { return squareOutlineSide }
         let needed = (labelWidth(for: ratio) * minimumLabelScale + 2 * labelInset) / ratio.shortToLongRatio
         return min(max(baseOutlineHeight, needed.rounded(.up)), maximumOutlineHeight)
     }
