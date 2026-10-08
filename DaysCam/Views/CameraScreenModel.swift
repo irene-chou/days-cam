@@ -356,7 +356,7 @@ final class CameraScreenModel: ObservableObject {
                 guard let self else { return }
                 self.profiles = profiles
                 // The style tab's own copy must pick up a font written outside
-                // it (`applyFont`, `replaceFont`; PRD 0.3 FR-5.18).
+                // it (`applyFont`; PRD 0.3 FR-5.18).
                 if let styleTabModel = self.styleTabModel,
                    let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
                     styleTabModel.applyExternalChanges(from: latest)
@@ -415,12 +415,6 @@ final class CameraScreenModel: ObservableObject {
                 self?.applyFont(fontID, profileID: profileID)
             },
             allProfiles: { [weak self] in self?.profiles ?? [] },
-            replaceFont: { [weak self] font, replacement in
-                guard let self else { return [] }
-                let changed = try self.profileStore.replaceFont(font, with: replacement)
-                self.syncStyleTabModelWithStore()
-                return changed
-            },
             updateProfile: styleWriter.write)
 
         let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)

@@ -461,11 +461,13 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(stored.style.textColor, OverlayStyle.swatches[2], "35.8")
     }
 
-    func testReplaceFontOutsideTheTabsIsFollowedByTheStyleTabBeforeItsNextEdit() async throws {
+    func testFontChangeWrittenOutsideTheTabsIsFollowedByTheStyleTabBeforeItsNextEdit() async throws {
         let harness = try makeHarness(fontA: .huninn, states: [.huninn: .available])
         XCTAssertEqual(harness.model.styleTabModel?.profile.style.fontID, .huninn)
 
-        try harness.store.replaceFont(.huninn, with: .pingFang)
+        var changed = try XCTUnwrap(harness.store.profiles.first { $0.id == harness.profileA.id })
+        changed.style.fontID = .pingFang
+        try harness.store.update(changed)
         await settle()
         harness.model.styleTabModel?.selectTextColor(OverlayStyle.swatches[3])
 

@@ -248,9 +248,9 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
     /// Deletes a downloaded open-source font: unregisters it and removes the
     /// file (FR-16.12, A-3).
     ///
-    /// The caller must already have moved the profiles using it to another font
-    /// (`ProfileStore.replaceFont(_:with:)`); this only touches files and
-    /// registration.
+    /// Profiles using it are left as they are (TASK-56): they keep the font
+    /// selected and draw with PingFang until it is downloaded again; this only
+    /// touches files and registration.
     ///
     /// - Returns: `false` for `pingFang` and system fonts, which cannot be
     ///   deleted, or when the file could not be removed.
