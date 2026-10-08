@@ -18,6 +18,9 @@ import UIKit
 @MainActor
 final class CameraScreenModel: ObservableObject {
     let cameraService: CameraService
+    /// Pinch-to-zoom state of the viewfinder (TASK-61); its changes are
+    /// forwarded like `cameraService`'s.
+    let zoomModel: ViewfinderZoomModel
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
     /// grid. Exposed (not `private`) the same way `cameraService` is, so
     /// `CameraToolbar` can read it directly; this model forwards its change
@@ -308,6 +311,8 @@ final class CameraScreenModel: ObservableObject {
         self.makeGalleryModel = makeGalleryModel
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
+        self.zoomModel = ViewfinderZoomModel(currentFactor: { [cameraService] in cameraService.zoomFactor },
+                                             applyFactor: { [cameraService] in cameraService.setZoomFactor($0) })
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
         self.profileStore = profileStore
@@ -328,6 +333,9 @@ final class CameraScreenModel: ObservableObject {
         self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
         bindToProfileStore()
         bindToCameraService()
+        zoomModel.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
