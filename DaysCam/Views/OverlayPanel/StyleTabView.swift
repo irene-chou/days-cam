@@ -79,10 +79,10 @@ struct StyleTabView: View {
             } header: {
                 subTabRow
                     .background(CameraTheme.background)
-                    // The font list's messages hang below the pinned row.
-                    .overlay(alignment: .bottom) {
+                    // The font list's messages sit over the pinned row, so they
+                    // never cover the cells being tapped.
+                    .overlay(alignment: .center) {
                         FontToastView(model: model.fontList)
-                            .offset(y: 30)
                     }
             }
         }
