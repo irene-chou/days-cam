@@ -398,21 +398,25 @@ struct CameraScreen: View {
     /// The magnification capsule, centered under the picture's bottom edge
     /// inside it; shown while pinching and for a second after. Never takes
     /// touches.
+    @ViewBuilder
     private func zoomCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         let frame = viewfinderContentFrame(metrics: metrics)
         let visible = model.zoomModel.isIndicatorVisible
-        return Text(ViewfinderZoomModel.indicatorText(for: model.cameraService.zoomFactor))
-            .font(.system(size: 14, weight: .semibold).monospacedDigit())
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(.black.opacity(0.55), in: Capsule())
-            .position(x: frame.midX, y: frame.maxY - 24)
-            .opacity(visible ? 1 : 0)
-            .animation(.easeOut(duration: visible ? 0.1 : 0.3), value: visible)
-            .allowsHitTesting(false)
-            .accessibilityIdentifier("zoomCapsule")
-            .accessibilityHidden(!visible)
+        ZStack {
+            if visible {
+                Text(ViewfinderZoomModel.indicatorText(for: model.cameraService.zoomFactor))
+                    .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .position(x: frame.midX, y: frame.maxY - 24)
+                    .accessibilityIdentifier("zoomCapsule")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: visible ? 0.1 : 0.3), value: visible)
+        .allowsHitTesting(false)
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
