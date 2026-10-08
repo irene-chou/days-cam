@@ -15,7 +15,9 @@ struct ProfileManagerView: View {
     @State private var draggingID: UUID?
     @State private var dragTranslation: CGFloat = 0
     @State private var dragTarget = 0
-    @State private var rowHeight: CGFloat = 0
+    /// Each realized row's top edge in the list's space; the row pitch (row
+    /// plus the list's own spacing) is read from these, not guessed.
+    @State private var rowOrigins: [Int: CGFloat] = [:]
     @State private var suppressTap = false
 
     var body: some View {
@@ -59,7 +61,10 @@ struct ProfileManagerView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { rowHeight = $0 }
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.listSpace)).minY }) {
+                        // Not while dragging: the lift/slide offsets would skew the pitch.
+                        if draggingID == nil { rowOrigins[index] = $0 }
+                    }
                     // Long-press lifts the row, then dragging moves it (no ≡
                     // handle, no editMode: #226 R-5). System drag & drop and
                     // `onMove` never delivered a drop here (TASK-58).
@@ -83,11 +88,20 @@ struct ProfileManagerView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollDisabled(draggingID != nil)
+        .coordinateSpace(name: Self.listSpace)
     }
 
     // MARK: - Reorder (TASK-58)
 
     private static let rowMinHeight: CGFloat = 60
+    private static let listSpace = "profileList"
+
+    /// Distance between two neighboring rows' tops, 0 until two are laid out.
+    private var rowHeight: CGFloat {
+        guard let low = rowOrigins.keys.min(), let high = rowOrigins.keys.max(), high > low,
+              let top = rowOrigins[low], let bottom = rowOrigins[high] else { return 0 }
+        return (bottom - top) / CGFloat(high - low)
+    }
 
     /// Vertical shift of the row at `index` while a drag is in progress: the
     /// dragged row follows the finger, the rows it passes slide one slot.
@@ -101,7 +115,7 @@ struct ProfileManagerView: View {
 
     private func reorderGesture(row: ProfileManagerModel.Row, index: Int) -> some Gesture {
         LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
             .onChanged { value in
                 guard case .second(true, let drag) = value else { return }
                 if draggingID == nil {
