@@ -135,7 +135,7 @@
 - 0.1 不變條件 5 改為：`useAgeWording == true` 時 `displayUnits` 必須含 `.year`
 - 新增：`style.sizeScale` 介於 70 與 160 之間，且是 5 的倍數
 - 新增：`position` 為 `.custom` 時，x、y 皆介於 0 與 1 之間（含）
-- 新增：`style.textColor` 與 `style.outlineColor` 的 RGB 各分量介於 0 與 1 之間，alpha 固定為 1
+- 新增：`style.textColor` 與 `style.outlineColor` 的 RGB 各分量介於 0 與 1 之間；alpha 介於 0.05 與 1 之間（含），存檔量化為 8 bit（TASK-69 #297 取代「alpha 固定為 1」）。讀檔遇到低於 0.05 的 alpha（只可能是手改檔案）提高到最小可存值 13/255 並採用該筆，不丟棄
 
 讀檔時遇到**未知的 `fontID`**（例如日後移除某字型），改用 `sfRounded` 並採用該筆，不丟棄。
 
@@ -144,9 +144,9 @@
 | 欄位 | 型別 | 預設 | 值域 |
 |---|---|---|---|
 | `fontID` | `OverlayFontID` | `sfRounded` | FR-10.2 的 10 種 |
-| `textColor` | `OverlayColor`（加上 `Codable`，存成 `#RRGGBB` 字串） | `#FFFFFF` | 任意 sRGB 不透明色 |
+| `textColor` | `OverlayColor`（加上 `Codable`；不透明存 `#RRGGBB`，半透明存 `#RRGGBBAA`，讀取兩種都接受，`#RRGGBB` 視為 alpha 100%） | `#FFFFFF` | 任意 sRGB 色，alpha 5%～100%（TASK-69） |
 | `outline` | `OverlayOutline` | `.none` | `none`／`thinStroke`／`thickStroke`／`translucentBox`／`solidBox` |
-| `outlineColor` | `OverlayColor?` | `nil` | `nil` ＝ 自動（FR-10.6）；有值則照該色 |
+| `outlineColor` | `OverlayColor?`（格式同 `textColor`） | `nil` | `nil` ＝ 自動（FR-10.6，不透明）；有值則照該色，alpha 5%～100%（TASK-69） |
 | `shadow` | `OverlayShadow` | `.soft` | `none`／`soft`／`hard`／`glow` |
 | `sizeScale` | `Int`（百分比） | `100` | 70～160，步進 5 |
 

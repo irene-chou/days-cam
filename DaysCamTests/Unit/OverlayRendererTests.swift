@@ -486,6 +486,96 @@ final class OverlayRendererStyleTests: XCTestCase {
     }
 }
 
+// MARK: - TASK-69: color opacity
+
+/// Covers TASK-69 69.2 and 69.5 at the pixel level: translucent text and
+/// outline colors bake as translucent, without the stroke showing through
+/// the text or doubling up where neighbouring glyphs' strokes overlap.
+final class OverlayRendererOpacityTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "第 10 天"
+    private let grey = RGB(red: 128, green: 128, blue: 128)
+    private let everywhere = PixelRegion(x: 0...1199, y: 0...1599)
+
+    /// 69.2: 50% white on black bakes as mid-grey, never as white.
+    func testHalfTransparentTextBakesHalfway() throws {
+        let style = OverlayStyle(textColor: OverlayColor.white.withOpacity(0.5), outline: .none, shadow: .none)
+        let grid = try bakedGrid(style: style, background: .black)
+        XCTAssertNotNil(grid.bounds(in: everywhere) { $0.distance(to: .black) > 30 }, "69.2: drew nothing")
+        XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: RGB(red: 128, green: 128, blue: 128)) <= 3 },
+                      "69.2: glyph interior is 50% white")
+        XCTAssertTrue(grid.all(in: everywhere) { $0.red <= 131 }, "69.2: nothing brighter than 50% white")
+    }
+
+    /// 69.2: under translucent text the stroke's inner half is cut away, so
+    /// the glyph interior looks exactly as it does without a stroke.
+    func testStrokeDoesNotShowThroughTranslucentText() throws {
+        let fill = OverlayColor.white.withOpacity(0.5)
+        let plain = try bakedGrid(style: OverlayStyle(textColor: fill, outline: .none, shadow: .none), background: grey)
+        let interiorColor = RGB(red: 191, green: 191, blue: 191)   // 50% white over 128 grey
+        for outline in [OverlayOutline.thinStroke, .thickStroke] {
+            let stroked = try bakedGrid(style: OverlayStyle(textColor: fill, outline: outline, outlineColor: .black,
+                                                            shadow: .none),
+                                        background: grey)
+            var interior = 0
+            var kept = 0
+            for y in everywhere.y {
+                for x in everywhere.x where plain.color(x: x, y: y).distance(to: interiorColor) <= 2 {
+                    interior += 1
+                    if stroked.color(x: x, y: y).distance(to: interiorColor) <= 6 { kept += 1 }
+                }
+            }
+            XCTAssertGreaterThan(interior, 1000, "fixture sanity: no glyph interior")
+            XCTAssertGreaterThan(Double(kept) / Double(interior), 0.95, "69.2: \(outline) shows through the text")
+            XCTAssertTrue(stroked.contains(in: everywhere) { $0.distance(to: .black) <= 3 },
+                          "69.2: \(outline) still drawn outside the glyphs")
+        }
+    }
+
+    /// 69.5: a 50% black stroke on white is 50% grey everywhere — overlapping
+    /// strokes of neighbouring glyphs do not get darker.
+    func testTranslucentStrokeIsUniform() throws {
+        let style = OverlayStyle(textColor: .white, outline: .thickStroke,
+                                 outlineColor: OverlayColor.black.withOpacity(0.5), shadow: .none)
+        let grid = try bakedGrid(style: style, background: .white)
+        XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: RGB(red: 128, green: 128, blue: 128)) <= 3 },
+                      "69.5: stroke is 50% black")
+        XCTAssertTrue(grid.all(in: everywhere) { $0.red >= 124 }, "69.5: nowhere darker than one 50% stroke")
+    }
+
+    /// 69.5: a box in a 40% color is drawn at 40% (solid) or 20% (translucent).
+    func testTranslucentBoxMultipliesTheColorAlpha() throws {
+        for (outline, expected) in [(OverlayOutline.solidBox, 153), (.translucentBox, 204)] {
+            let style = OverlayStyle(textColor: .white, outline: outline,
+                                     outlineColor: OverlayColor.black.withOpacity(0.4), shadow: .none)
+            let grid = try bakedGrid(style: style, background: .white)
+            let box = RGB(red: expected, green: expected, blue: expected)
+            XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: box) <= 3 }, "69.5: \(outline)")
+            XCTAssertTrue(grid.all(in: everywhere) { $0.red >= expected - 3 }, "69.5: \(outline) too dark")
+        }
+    }
+
+    // MARK: Helpers
+
+    private func bakedGrid(style: OverlayStyle, background: RGB) throws -> PixelGrid {
+        try autoreleasepool {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1600), format: format).image { context in
+                UIColor(red: CGFloat(background.red) / 255, green: CGFloat(background.green) / 255,
+                        blue: CGFloat(background.blue) / 255, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 1600))
+            }
+            let output = try XCTUnwrap(renderer.bake(image: image, text: text, style: style,
+                                                     placement: .anchor(.middleCenter), font: .pingFang),
+                                       "bake returned nil")
+            return try XCTUnwrap(PixelGrid(output))
+        }
+    }
+}
+
 // MARK: - #158: renderText
 
 /// Covers #158 D.1 ... D.3: `renderText`, the overlay drawn on its own for
@@ -515,7 +605,13 @@ final class OverlayRendererRenderTextTests: XCTestCase {
             (OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none), .pingFang),
             (OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .soft), .pingFang),
             (OverlayStyle(textColor: blue, outline: .thinStroke, shadow: .glow), .pingFang),
-            (OverlayStyle(fontID: .iansui, textColor: blue, outline: .thickStroke, shadow: .hard), stand)
+            (OverlayStyle(fontID: .iansui, textColor: blue, outline: .thickStroke, shadow: .hard), stand),
+            // TASK-69 69.2 / 69.5: translucent text and outline colors.
+            (OverlayStyle(textColor: blue.withOpacity(0.5), outline: .none, shadow: .soft), .pingFang),
+            (OverlayStyle(textColor: blue.withOpacity(0.5), outline: .thickStroke,
+                          outlineColor: OverlayColor.black.withOpacity(0.5), shadow: .glow), .pingFang),
+            (OverlayStyle(textColor: OverlayColor.white.withOpacity(0.3), outline: .solidBox,
+                          outlineColor: OverlayColor.black.withOpacity(0.6), shadow: .hard), .pingFang)
         ]
         let frameSize = CGSize(width: 1200, height: 1600)
         for (style, font) in cases {
