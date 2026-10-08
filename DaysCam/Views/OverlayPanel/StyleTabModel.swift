@@ -75,10 +75,6 @@ final class StyleTabModel: ObservableObject {
     ///     `CameraScreenModel`. This model never writes `fontID` itself.
     ///   - allProfiles: Every profile, to count who uses a font before it is
     ///     deleted.
-    ///   - replaceFont: Unused since TASK-56: deleting a font no longer
-    ///     switches profiles to PingFang (they keep the font selected and draw
-    ///     with PingFang until it is downloaded again). Kept so
-    ///     `CameraScreenModel`'s call site did not have to change.
     ///   - updateProfile: Forwarded to the real persistence layer by the
     ///     caller, called after every change. Throws to report a failure;
     ///     this model does not interpret the error, it only surfaces it.
@@ -87,7 +83,6 @@ final class StyleTabModel: ObservableObject {
          fontLibrary: (any FontListControlling)? = nil,
          applyFont: @escaping (OverlayFontID, UUID) -> Void,
          allProfiles: @escaping () -> [CameraProfile],
-         replaceFont: @escaping (OverlayFontID, OverlayFontID) throws -> [UUID],
          updateProfile: @escaping (CameraProfile) throws -> Void) {
         self.profile = profile
         self.recentColorsStore = recentColorsStore
@@ -116,7 +111,7 @@ final class StyleTabModel: ObservableObject {
     /// Takes over the fields other writers own, from the latest copy of this
     /// profile (PRD 0.3 FR-5.18; same idea as `RulesTabModel`).
     ///
-    /// Only `style.fontID` is taken: `applyFont` and `replaceFont` write it
+    /// Only `style.fontID` is taken: `applyFont` writes it
     /// outside this tab, and this tab's own copy must not write the old font
     /// back the next time it changes a color. Everything else in the style is
     /// this tab's own. Does not persist anything; ignores another profile.

@@ -11,7 +11,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let suite = try XCTUnwrap(UserDefaults(suiteName: "StyleTabViewLayoutTests.\(UUID().uuidString)"))
         let profile = CameraProfile(name: "測試", startDate: DateComponents(year: 2026, month: 1, day: 1))
         return StyleTabModel(profile: profile, recentColorsStore: RecentColorsStore(defaults: suite),
-                             applyFont: { _, _ in }, allProfiles: { [] }, replaceFont: { _, _ in [] }) { _ in }
+                             applyFont: { _, _ in }, allProfiles: { [] }) { _ in }
     }
 
     /// Natural height of the page; `availableHeight` 0 turns off centering's

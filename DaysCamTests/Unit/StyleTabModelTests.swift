@@ -43,7 +43,6 @@ final class StyleTabModelTests: XCTestCase {
                      recentColorsStore: store ?? RecentColorsStore(defaults: defaults),
                      applyFont: { _, _ in },
                      allProfiles: { [] },
-                     replaceFont: { _, _ in [] },
                      updateProfile: spy.update)
     }
 
@@ -72,8 +71,7 @@ final class StyleTabModelTests: XCTestCase {
                              fontLibrary: library,
                              applyFont: { applied(AppliedFont(fontID: $0, profileID: $1)) },
                              allProfiles: { [] },
-                             replaceFont: { _, _ in [] },
-                             updateProfile: spy.update)
+                                     updateProfile: spy.update)
     }
 
     private func listFonts(_ model: StyleTabModel) -> [OverlayFontID] {

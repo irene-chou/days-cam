@@ -614,8 +614,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
                          recentColorsStore: store,
                          fontLibrary: StaticFontLibrary(states: fontStates),
                          applyFont: { _, _ in },
-                         allProfiles: { [] },
-                         replaceFont: { _, _ in [] }) { _ in }
+                         allProfiles: { [] }) { _ in }
 }
 
 #Preview("字型格子 · 只有蘋方 (375pt)") {
