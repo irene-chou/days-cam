@@ -127,10 +127,6 @@ final class CameraScreenModel: ObservableObject {
     /// `refreshOverlayPanelTabModelsIfNeeded`.
     @Published private(set) var styleTabModel: StyleTabModel?
 
-    /// The 內容 tab's sub-tab selection (TASK-37/38). Kept here, not in the
-    /// view, so the choice survives the panel closing and reopening.
-    let contentTabModel = ContentTabModel()
-
     /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
     /// Rebuilt alongside `styleTabModel`.
     @Published private(set) var formatTabModel: FormatTabModel?
@@ -146,14 +142,6 @@ final class CameraScreenModel: ObservableObject {
     /// strongly here — `overlayDragHandler` is `weak` (see its own doc
     /// comment), so nothing else keeps this alive.
     private var positionDragAdapter: PositionDragAdapter?
-
-    /// The 天數規則 tab's model (PRD 0.2 FR-13, TASK-25's `RulesTabView`).
-    /// Rebuilt only when `selectedProfileID` actually changes — same
-    /// reasoning as `displaySettingsModel`'s own doc comment: the panel's
-    /// tab-content closure re-runs on unrelated `@Published` changes while
-    /// it's on screen, and rebuilding a fresh `RulesTabModel` on every one of
-    /// those would discard an in-progress name edit each time.
-    @Published private(set) var rulesTabModel: RulesTabModel?
 
     /// True from the moment the shutter is tapped until the photo pipeline
     /// finishes, success or failure (PRD FR-5.5: disabled while saving).
@@ -359,13 +347,6 @@ final class CameraScreenModel: ObservableObject {
             .sink { [weak self] profiles in
                 guard let self else { return }
                 self.profiles = profiles
-                // Each tab model holds its own profile copy; keep the rules
-                // tab's read-only fields (e.g. `showDayCount`, owned by the
-                // format tab) in step with the store (#167).
-                if let rulesTabModel = self.rulesTabModel,
-                   let latest = profiles.first(where: { $0.id == rulesTabModel.profile.id }) {
-                    rulesTabModel.applyExternalChanges(from: latest)
-                }
                 // The style tab's own copy must pick up a font written outside
                 // it (`applyFont`, `replaceFont`; PRD 0.3 FR-5.18).
                 if let styleTabModel = self.styleTabModel,
@@ -385,14 +366,13 @@ final class CameraScreenModel: ObservableObject {
     }
 
     /// Rebuilds every overlay-panel tab model — `styleTabModel`,
-    /// `formatTabModel`, `positionTabModel` (plus its drag adapter) and
-    /// `rulesTabModel` — only when `selectedProfileID` has actually changed
-    /// since they were last built — see `rulesTabModel`'s own doc comment for
-    /// why that matters (rebuilding on every unrelated re-render would
-    /// discard whatever the user is mid-edit on).
+    /// `formatTabModel` and `positionTabModel` (plus its drag adapter) — only
+    /// when `selectedProfileID` has actually changed since they were last
+    /// built (rebuilding on every unrelated re-render would discard whatever
+    /// the user is mid-edit on).
     ///
-    /// All four are rebuilt together, gated on the same check, so they can
-    /// never point at four different profiles at once.
+    /// All three are rebuilt together, gated on the same check, so they can
+    /// never point at different profiles at once.
     ///
     /// Each tab model holds its own full `CameraProfile` copy and always
     /// calls its `updateProfile` closure with that *entire* copy, even
@@ -409,14 +389,13 @@ final class CameraScreenModel: ObservableObject {
     /// which merges only the fields that changed since that tab's own last
     /// write onto the store's current record.
     private func refreshOverlayPanelTabModelsIfNeeded() {
-        guard rulesTabModel?.profile.id != selectedProfileID else { return }
+        guard styleTabModel?.profile.id != selectedProfileID else { return }
         guard let selectedProfile else {
             styleTabModel = nil
             formatTabModel = nil
             positionTabModel = nil
             positionDragAdapter = nil
             panelModel.overlayDragHandler = nil
-            rulesTabModel = nil
             return
         }
 
@@ -450,13 +429,6 @@ final class CameraScreenModel: ObservableObject {
         let adapter = PositionDragAdapter(positionTabModel: newPositionTabModel)
         positionDragAdapter = adapter
         panelModel.overlayDragHandler = adapter
-
-        let rulesWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        rulesTabModel = RulesTabModel(profile: selectedProfile,
-                                     calendar: calendar,
-                                     calculator: calculator,
-                                     renderer: renderer,
-                                     updateProfile: rulesWriter.write)
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
