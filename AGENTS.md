@@ -20,7 +20,7 @@
 - 一張任務卡須有目標、可執行的驗收標準、依賴；每個 PR 做一件事，描述改了什麼、為什麼、怎麼驗證。
 - 分支 `feature/`、`fix/`、`chore/`、`docs/`；禁止直接 push main，一律 PR。commit 首行簡短明確。
 - PR 一律先開 draft；A 級自驗全過、描述補齊（驗收對照、假設、下游預告）後才 `gh pr ready` 送審。draft 不跑 review、不可合併。
-- 各角色用自己的 worktree、模擬器與 DerivedData，模擬器一律 ssh 到 rinclaw 執行；操作見 [開發](docs/WORKFLOW.md#開發)。只改擁有的檔案，跨所有權先交 Lead 協調；QA 不改產品程式碼。
+- 各角色用自己的 worktree、模擬器與 DerivedData，模擬器以 rinclaw 為主、排隊時改本機；操作見 [開發](docs/WORKFLOW.md#開發)。只改擁有的檔案，跨所有權先交 Lead 協調；QA 不改產品程式碼。
 - 決策、規格變更必須寫入 docs 或 Issue。完成交接須有驗證指令／操作、驗收編號、明列「這裡是我的假設」，並主動預告下游可能誤判的地方。
 - 需求散文與驗收表矛盾時，以驗收表實作並回報 Lead 修正文案。靜態檢查若迫使無意義改名／改寫，回報收斂驗收，不遷就檢查。
 - 上架前版本為 0.x：階段升次版、修正升修訂版；正式上架才 1.0.0。只由 Lead 在階段任務全合併後改 `project.yml` 的 `MARKETING_VERSION`，文件稱呼同步。
