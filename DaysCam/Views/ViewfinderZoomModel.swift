@@ -15,8 +15,13 @@ final class ViewfinderZoomModel: ObservableObject {
     @Published private(set) var isPinching = false
     /// True while the capsule should show: during a pinch and shortly after.
     @Published private(set) var isIndicatorVisible = false
+    /// The zoom the latest pinch asked for, clamped to the camera's range.
+    /// Next pinch starts from it rather than from the camera's own factor,
+    /// which only follows asynchronously (issue #280). Only the capsule
+    /// observes this model for it; `CameraScreen` does not.
+    @Published private(set) var requestedFactor: CGFloat
 
-    private let currentFactor: () -> CGFloat
+    private let zoomRange: () -> ZoomRange
     private let applyFactor: (CGFloat) -> Void
     private let scheduleHide: (@escaping () -> Void) -> Void
     /// The zoom when the current pinch began; `nil` between pinches.
@@ -24,12 +29,14 @@ final class ViewfinderZoomModel: ObservableObject {
     /// Bumped on every pinch change so an older pending hide does nothing.
     private var hideToken = 0
 
-    init(currentFactor: @escaping () -> CGFloat,
+    init(initialFactor: CGFloat = 1,
+         zoomRange: @escaping () -> ZoomRange,
          applyFactor: @escaping (CGFloat) -> Void,
          scheduleHide: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + ViewfinderZoomModel.indicatorLingerSeconds, execute: work)
          }) {
-        self.currentFactor = currentFactor
+        self.requestedFactor = initialFactor
+        self.zoomRange = zoomRange
         self.applyFactor = applyFactor
         self.scheduleHide = scheduleHide
     }
@@ -38,24 +45,35 @@ final class ViewfinderZoomModel: ObservableObject {
     /// to where it began (1 = fingers unmoved). The requested zoom is the
     /// zoom at the pinch's start times that scale.
     func pinchChanged(magnification: CGFloat) {
-        let start = pinchStartFactor ?? currentFactor()
+        let start = pinchStartFactor ?? requestedFactor
         pinchStartFactor = start
         hideToken += 1
-        isPinching = true
-        isIndicatorVisible = true
-        applyFactor(start * magnification)
+        // Assign only on a real change: `@Published` publishes on every
+        // assignment, and a pinch calls this every frame (issue #280).
+        if !isPinching { isPinching = true }
+        if !isIndicatorVisible { isIndicatorVisible = true }
+        let requested = start * magnification
+        let clamped = zoomRange().clamp(requested)
+        if requestedFactor != clamped { requestedFactor = clamped }
+        applyFactor(requested)
     }
 
     /// The fingers lifted: the capsule fades out after `indicatorLingerSeconds`.
     func pinchEnded() {
         pinchStartFactor = nil
-        isPinching = false
+        if isPinching { isPinching = false }
         hideToken += 1
         let token = hideToken
         scheduleHide { [weak self] in
             guard let self, self.hideToken == token else { return }
-            self.isIndicatorVisible = false
+            if self.isIndicatorVisible { self.isIndicatorVisible = false }
         }
+    }
+
+    /// The camera went back to 1× on its own (a front/back switch), so the
+    /// next pinch must start there.
+    func resetRequestedFactor() {
+        if requestedFactor != 1 { requestedFactor = 1 }
     }
 
     /// The capsule's text for a zoom factor, e.g. "2.3×".

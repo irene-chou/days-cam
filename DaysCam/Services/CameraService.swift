@@ -181,6 +181,39 @@ struct ZoomRange: Equatable {
     }
 }
 
+/// Coalesces zoom requests (issue #280): a pinch asks for a new factor every
+/// frame, far faster than the camera takes them. Only the newest request is
+/// kept and at most one job is ever scheduled; in-between factors are dropped.
+final class ZoomRequestCoalescer {
+    private let lock = NSLock()
+    private var pending: CGFloat?
+    private var isScheduled = false
+
+    init() {}
+
+    /// Records `factor` as the newest request. When no job is scheduled yet,
+    /// `schedule` is asked to run one; that job applies whatever request is
+    /// newest by the time it runs.
+    func submit(_ factor: CGFloat,
+                schedule: (@escaping () -> Void) -> Void,
+                apply: @escaping (CGFloat) -> Void) {
+        lock.lock()
+        pending = factor
+        let needsJob = !isScheduled
+        isScheduled = true
+        lock.unlock()
+        guard needsJob else { return }
+        schedule { [self] in
+            lock.lock()
+            let newest = pending
+            pending = nil
+            isScheduled = false
+            lock.unlock()
+            if let newest { apply(newest) }
+        }
+    }
+}
+
 /// A tick source for the timer countdown (PRD 0.2 FR-7.6).
 ///
 /// Injected so the countdown state machine (`CameraScreenModel`, TASK-21) can
@@ -246,7 +279,21 @@ final class CameraService: ObservableObject {
 
     /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
     /// every camera switch (issue #274).
-    @Published private(set) var zoomFactor: CGFloat = 1
+    ///
+    /// Deliberately not `@Published`: a pinch changes it every frame, and a
+    /// `@Published` property would make every view that observes this service
+    /// (through `CameraScreenModel`) re-render each time (issue #280). Read
+    /// `zoomFactorPublisher` to follow it.
+    var zoomFactor: CGFloat { zoomFactorSubject.value }
+
+    /// Emits `zoomFactor` whenever it changes; the current value on subscribe.
+    var zoomFactorPublisher: AnyPublisher<CGFloat, Never> { zoomFactorSubject.eraseToAnyPublisher() }
+
+    private let zoomFactorSubject = CurrentValueSubject<CGFloat, Never>(1)
+
+    /// Folds the stream of pinch updates into at most one queued job on
+    /// `sessionQueue`, always applying the newest factor (issue #280).
+    private let zoomCoalescer = ZoomRequestCoalescer()
 
     /// The factors `setZoomFactor(_:)` accepts on the current camera.
     @Published private(set) var zoomRange: ZoomRange = .fixed
@@ -505,11 +552,13 @@ extension CameraService {
     /// Call on the main queue.
     func setZoomFactor(_ factor: CGFloat) {
         guard isCaptureSupported else { return }
-        sessionQueue.async { [weak self] in
+        zoomCoalescer.submit(factor,
+                             schedule: { [sessionQueue] work in sessionQueue.async(execute: work) },
+                             apply: { [weak self] factor in
             guard let self, let device = self.videoInput?.device else { return }
             guard CameraService.applyZoom(factor, to: device) != nil else { return }
             self.publishZoom(of: device)
-        }
+        })
     }
 
     /// The range a device with these available factors accepts: its own
@@ -743,7 +792,7 @@ private extension CameraService {
         onMain { [weak self] in
             guard let self else { return }
             if self.zoomRange != range { self.zoomRange = range }
-            if self.zoomFactor != factor { self.zoomFactor = factor }
+            if self.zoomFactorSubject.value != factor { self.zoomFactorSubject.send(factor) }
         }
     }
 }
