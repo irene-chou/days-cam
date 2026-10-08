@@ -15,7 +15,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
     }
 
     /// Natural height of the page; `availableHeight` 0 turns off centering's
-    /// minimum height, and the default fills a regular 212pt panel.
+    /// minimum height, and the default fills a regular 224pt panel.
     private func pageHeight(_ model: StyleTabModel, availableHeight: CGFloat = 0) -> CGFloat {
         let hosting = UIHostingController(rootView: StyleTabView(model: model, availableHeight: availableHeight)
             .frame(width: 375))
@@ -62,10 +62,10 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(outlineHeight, 200, "外框頁 \(outlineHeight)pt")
     }
 
-    /// 49.1: a centered page fills what is left below the sub-tab row (212pt
-    /// panel: 212 - 4 - 40 - 10), and never goes negative on a tiny panel.
+    /// 49.1: a centered page fills what is left below the sub-tab row (224pt
+    /// panel: 224 - 4 - 40 - 10), and never goes negative on a tiny panel.
     func testCenteredContentMinHeightFillsPanelBelowSubTabRow() {
-        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 212), 158)
+        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 224), 170)
         XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 20), 0)
     }
 
@@ -86,7 +86,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let model = try makeModel()
         for subTab in [StyleTabModel.SubTab.color, .shadow, .size] {
             model.selectedSubTab = subTab
-            XCTAssertEqual(pageHeight(model, availableHeight: 212), 212, accuracy: 0.5, "\(subTab)")
+            XCTAssertEqual(pageHeight(model, availableHeight: 224), 224, accuracy: 0.5, "\(subTab)")
         }
     }
 
