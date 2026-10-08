@@ -7,9 +7,12 @@ import Foundation
 /// elsewhere without this type changing. Never read the system clock in here:
 /// `capturedAt` is the only time source (PRD FR-2.18, §6.5.3).
 struct TemplateRenderer {
-    /// Shown instead of a count when the start date has not arrived yet
-    /// (PRD §7.2).
-    static let notStartedText = "尚未開始"
+    /// Shown instead of a count when the start date has not arrived yet:
+    /// `還有 N 天`, `daysUntilStart` calendar days away (#250, replacing
+    /// PRD §7.2's 尚未開始). Always in days, whatever the units or wording.
+    static func notStartedText(daysUntilStart: Int) -> String {
+        "還有 \(daysUntilStart) 天"
+    }
     /// Shown when every checked unit is zero (PRD FR-2.12, 0.2 U-7).
     static let allZeroText = "0 天"
     /// Separates the date from the elapsed amount: ideographic space U+3000
@@ -75,8 +78,11 @@ private extension TemplateRenderer {
     func elapsedText(profile: CameraProfile, calculator: DayCountCalculator) -> String {
         // Checked on the raw difference, not the day count: under `.dayOne` a
         // start date one day out still counts to 0, and 0 is not "day zero".
-        guard calculator.rawDayDifference(from: profile.startDate) >= 0 else {
-            return Self.notStartedText
+        // The counting rule plays no part in how far away the start is, so a
+        // start date tomorrow reads 還有 1 天 under either rule.
+        let rawDifference = calculator.rawDayDifference(from: profile.startDate)
+        guard rawDifference >= 0 else {
+            return Self.notStartedText(daysUntilStart: -rawDifference)
         }
 
         let units = profile.displayUnits
