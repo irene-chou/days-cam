@@ -6,7 +6,6 @@ import XCTest
 @MainActor
 final class ViewfinderZoomModelTests: XCTestCase {
     private var applied: [CGFloat] = []
-    private var pendingHides: [() -> Void] = []
     private var range = ZoomRange(minimum: 1, maximum: 10)
     private var cancellables: Set<AnyCancellable> = []
 
@@ -16,8 +15,7 @@ final class ViewfinderZoomModelTests: XCTestCase {
         ViewfinderZoomModel(initialFactor: initialFactor,
                             zoomRange: { [unowned self] in range },
                             applyFactor: { [unowned self] in applied.append($0) },
-                            applyPreset: { [unowned self] in appliedPresets.append($0) },
-                            scheduleHide: { [unowned self] in pendingHides.append($0) })
+                            applyPreset: { [unowned self] in appliedPresets.append($0) })
     }
 
     /// How many times `model.objectWillChange` fires while `body` runs.
@@ -50,7 +48,6 @@ final class ViewfinderZoomModelTests: XCTestCase {
     func testStartsHiddenAndNotPinching() {
         let model = makeModel()
         XCTAssertFalse(model.isPinching)
-        XCTAssertFalse(model.isIndicatorVisible)
     }
 
     /// The request is the zoom at the pinch's start times the gesture scale.
@@ -99,7 +96,7 @@ final class ViewfinderZoomModelTests: XCTestCase {
     /// 63.4: with nothing new to say, a pinch update does not publish a change.
     func testRepeatedPinchUpdatesWithSameStateDoNotPublish() {
         let model = makeModel()
-        model.pinchChanged(magnification: 1) // first update: pinching + indicator
+        model.pinchChanged(magnification: 1) // first update: pinching
         let count = changeCount(of: model) {
             model.pinchChanged(magnification: 1)
             model.pinchChanged(magnification: 1)
@@ -118,7 +115,7 @@ final class ViewfinderZoomModelTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
-    func testEndingTwiceOrHidingTwiceDoesNotRepublish() {
+    func testEndingTwiceDoesNotRepublish() {
         let model = makeModel()
         model.pinchChanged(magnification: 1.2)
         model.pinchEnded()
@@ -128,43 +125,17 @@ final class ViewfinderZoomModelTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
-    func testPinchingShowsTheIndicatorAndFlagsThePinch() {
+    func testPinchFlagsFollowTheFingers() {
         let model = makeModel()
         model.pinchChanged(magnification: 1.2)
         XCTAssertTrue(model.isPinching)
-        XCTAssertTrue(model.isIndicatorVisible)
-    }
-
-    /// 61.5: the capsule outlasts the pinch until the scheduled hide runs.
-    func testIndicatorHidesOnlyAfterTheScheduledDelay() {
-        let model = makeModel()
-        model.pinchChanged(magnification: 1.2)
         model.pinchEnded()
         XCTAssertFalse(model.isPinching, "手指放開後疊字可再拖曳")
-        XCTAssertTrue(model.isIndicatorVisible)
-        XCTAssertEqual(pendingHides.count, 1)
-        pendingHides[0]()
-        XCTAssertFalse(model.isIndicatorVisible)
-    }
-
-    /// A new pinch before the delay is up cancels the older hide.
-    func testNewPinchCancelsAPendingHide() {
-        let model = makeModel()
-        model.pinchChanged(magnification: 1.2)
-        model.pinchEnded()
-        model.pinchChanged(magnification: 1.1)
-        pendingHides[0]()
-        XCTAssertTrue(model.isIndicatorVisible)
-        XCTAssertTrue(model.isPinching)
     }
 
     func testIndicatorTextHasOneDecimalAndTimesSign() {
         XCTAssertEqual(ViewfinderZoomModel.indicatorText(for: 1), "1.0×")
         XCTAssertEqual(ViewfinderZoomModel.indicatorText(for: 2.34), "2.3×")
         XCTAssertEqual(ViewfinderZoomModel.indicatorText(for: 10), "10.0×")
-    }
-
-    func testLingerIsOneSecond() {
-        XCTAssertEqual(ViewfinderZoomModel.indicatorLingerSeconds, 1)
     }
 }
