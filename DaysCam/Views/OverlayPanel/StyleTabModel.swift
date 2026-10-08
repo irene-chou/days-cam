@@ -293,17 +293,22 @@ extension StyleTabModel {
         mutate { $0.outlineColor = color }
     }
 
-    /// Records a text color chosen with the rainbow `ColorPicker`: applies it
-    /// and adds it to the shared recent-colors list (FR-10.7).
-    func pickCustomTextColor(_ color: OverlayColor) {
+    /// Applies a text color dragged in the custom color picker. Does not touch
+    /// the recent list, so intermediate colors never land there (TASK-53);
+    /// call `commitCustomColor` once when the picker closes.
+    func applyCustomTextColor(_ color: OverlayColor) {
         mutate { $0.textColor = color }
-        recentColorsStore.add(color)
     }
 
-    /// Records an outline color chosen with the rainbow `ColorPicker`,
-    /// mirroring `pickCustomTextColor` (FR-10.7).
-    func pickCustomOutlineColor(_ color: OverlayColor) {
+    /// Applies an outline color dragged in the custom color picker, mirroring
+    /// `applyCustomTextColor`.
+    func applyCustomOutlineColor(_ color: OverlayColor) {
         mutate { $0.outlineColor = color }
+    }
+
+    /// Adds the final color of a closed custom color picker to the shared
+    /// recent-colors list (FR-10.7). Preset swatches are ignored by the store.
+    func commitCustomColor(_ color: OverlayColor) {
         recentColorsStore.add(color)
     }
 }

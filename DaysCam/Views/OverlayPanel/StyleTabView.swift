@@ -307,7 +307,8 @@ struct StyleTabView: View {
                     showAutoButton: false,
                     isDisabled: false,
                     onSelectSwatch: { model.selectTextColor($0) },
-                    onPickCustom: { model.pickCustomTextColor($0) })
+                    onApplyCustom: { model.applyCustomTextColor($0) },
+                    onCommitCustom: { model.commitCustomColor($0) })
     }
 
     // MARK: - 外框、外框顏色 (FR-10.5, FR-10.6, FR-10.10)
@@ -343,7 +344,8 @@ struct StyleTabView: View {
                         isDisabled: model.isOutlineColorSectionDisabled,
                         onSelectSwatch: { model.selectOutlineColor($0) },
                         onSelectAuto: { model.selectOutlineColor(nil) },
-                        onPickCustom: { model.pickCustomOutlineColor($0) })
+                        onApplyCustom: { model.applyCustomOutlineColor($0) },
+                        onCommitCustom: { model.commitCustomColor($0) })
         }
     }
 
@@ -429,7 +431,8 @@ struct StyleTabView: View {
                               isDisabled: Bool,
                               onSelectSwatch: @escaping (OverlayColor) -> Void,
                               onSelectAuto: @escaping () -> Void = {},
-                              onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
+                              onApplyCustom: @escaping (OverlayColor) -> Void,
+                              onCommitCustom: @escaping (OverlayColor) -> Void) -> some View {
         // `.pal{gap:6px}` between the two rows (#106).
         VStack(alignment: .leading, spacing: 6) {
             // First row: nine swatches filling the content width, equal gaps.
@@ -451,7 +454,8 @@ struct StyleTabView: View {
                 let isCustomSelected = current != nil
                     && !swatches.contains(current!)
                     && !model.recentColors.contains(current!)
-                customColorPicker(current: current, isSelected: isCustomSelected, onPickCustom: onPickCustom)
+                customColorPicker(current: current, isSelected: isCustomSelected,
+                                  onApply: onApplyCustom, onCommit: onCommitCustom)
                 ForEach(model.recentColors, id: \.hexString) { color in
                     colorDot(color, isSelected: current == color, labelPrefix: "最近自訂 ") {
                         onSelectSwatch(color)
@@ -517,37 +521,21 @@ struct StyleTabView: View {
         .map { Color(hue: $0, saturation: 1, brightness: 1) }
 
     /// Custom-color entry point: a solid rainbow circle, same diameter as the
-    /// other swatches (issue #83) — not the system `ColorPicker`'s default
-    /// ring-with-current-color-well look. The real `ColorPicker` is still
-    /// there, made effectively invisible (`.opacity` low enough to read as
-    /// transparent but non-zero, since SwiftUI stops forwarding taps to a
-    /// fully transparent control) and stacked on top so tapping still opens
-    /// the system color picker and preserves FR-10.7's "add to recent"
-    /// behavior unchanged. The `ColorPicker`'s own accessibility label
-    /// (its title, "自訂顏色", even with `.labelsHidden()`) is left as-is
-    /// rather than combined, so VoiceOver's activation still routes to the
-    /// native control exactly as before this change (R.4).
+    /// other swatches (issue #83). Tapping it presents the system color picker
+    /// (`UIColorPickerViewController`, no alpha). Dragging calls `onApply`
+    /// continuously for the live preview; `onCommit` runs once when the picker
+    /// closes, and only if the final color differs from the one it opened
+    /// with, so the recent list gets one entry per pick (TASK-53).
     func customColorPicker(current: OverlayColor?,
-                                   isSelected: Bool,
-                                   onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        ZStack {
+                           isSelected: Bool,
+                           onApply: @escaping (OverlayColor) -> Void,
+                           onCommit: @escaping (OverlayColor) -> Void) -> some View {
+        CustomColorPickerButton(current: current ?? .white, onApply: onApply, onCommit: onCommit) {
             Circle()
                 .fill(AngularGradient(colors: Self.rainbowHues, center: .center))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchEdge)
                 .overlay(swatchSelectionRing(isSelected))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            ColorPicker("自訂顏色", selection: Binding(
-                get: { swiftUIColor(current ?? .white) },
-                set: { newValue in
-                    if let picked = OverlayColor(newValue) {
-                        onPickCustom(picked)
-                    }
-                }
-            ), supportsOpacity: false)
-            .labelsHidden()
-            .opacity(0.02)
         }
         .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
     }
@@ -871,4 +859,73 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
     .frame(width: 375, height: 120)
     .background(CameraTheme.background)
     .defaultScrollAnchor(.bottom)
+}
+
+/// Button that presents `UIColorPickerViewController` and reports live
+/// selections (`onApply`) separately from the single close-time result
+/// (`onCommit`, only when the color changed since opening).
+private struct CustomColorPickerButton<Label: View>: View {
+    let current: OverlayColor
+    let onApply: (OverlayColor) -> Void
+    let onCommit: (OverlayColor) -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var isPresented = false
+
+    var body: some View {
+        Button { isPresented = true } label: { label() }
+            .buttonStyle(.plain)
+            .accessibilityLabel("自訂顏色")
+            .background(
+                ColorPickerPresenter(isPresented: $isPresented, initial: current,
+                                     onApply: onApply, onCommit: onCommit)
+                    .frame(width: 0, height: 0)
+            )
+    }
+}
+
+/// Hosts the modal presentation of a `UIColorPickerViewController`.
+private struct ColorPickerPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let initial: OverlayColor
+    let onApply: (OverlayColor) -> Void
+    let onCommit: (OverlayColor) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        guard isPresented, host.presentedViewController == nil else { return }
+        let picker = UIColorPickerViewController()
+        picker.supportsAlpha = false
+        picker.selectedColor = UIColor(red: initial.red, green: initial.green,
+                                       blue: initial.blue, alpha: 1)
+        picker.delegate = coordinator
+        coordinator.startColor = initial
+        coordinator.latestColor = initial
+        host.present(picker, animated: true)
+    }
+
+    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+        var parent: ColorPickerPresenter?
+        var startColor: OverlayColor?
+        var latestColor: OverlayColor?
+
+        func colorPickerViewController(_ viewController: UIColorPickerViewController,
+                                       didSelect color: UIColor, continuously: Bool) {
+            guard let picked = OverlayColor(Color(uiColor: color)) else { return }
+            latestColor = picked
+            parent?.onApply(picked)
+        }
+
+        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
+            if let final = latestColor, final != startColor {
+                parent?.onCommit(final)
+            }
+            parent?.isPresented = false
+        }
+    }
 }
