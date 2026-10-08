@@ -79,7 +79,7 @@ final class DisplaySettingsModelTests: XCTestCase {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setShowDate(true)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 第 10 天")
     }
 
     /// 48.2: 日期 and 名稱 may both be off; the day count remains.

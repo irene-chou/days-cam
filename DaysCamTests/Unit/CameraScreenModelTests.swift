@@ -431,7 +431,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
         let (model, _, _, _) = makeModel(profileStore: store, now: nextDay)
-        XCTAssertEqual(model.overlayText, "2026.01.11\u{3000}第 2 天")
+        XCTAssertEqual(model.overlayText, "2026.01.11 第 2 天")
     }
 
     func testOverlayTextPrefixesTheNameWhenShowNameIsOn() throws {
@@ -872,7 +872,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "2025.12.01\u{3000}尚未開始")
+        XCTAssertEqual(model.overlayText, "2025.12.01 尚未開始")
     }
 
     func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {

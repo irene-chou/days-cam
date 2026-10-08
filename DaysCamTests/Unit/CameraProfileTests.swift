@@ -668,6 +668,6 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
                                                capturedAt: try referenceInstant(),
                                                calendar: DateFixture.taipei)
 
-        XCTAssertEqual(output, "只看日期 2026.03.20\u{3000}14 個月又 5 天", "47.4")
+        XCTAssertEqual(output, "2026.03.20 只看日期 14 個月又 5 天", "47.4")
     }
 }
