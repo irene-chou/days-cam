@@ -2,11 +2,18 @@
 
 拍照時把天數或日期疊印在照片上的 iOS App。疊字會在儲存時烘焙進圖片像素。
 
-- 目前規格：[`0.2 PRD`](docs/PRD-0.2-ui-redesign.md)；未覆蓋部分沿用 [`0.1 PRD`](docs/PRD.md)
-- 目前任務：[`TASK-17～30`](docs/TASKS-0.2-ui-redesign.md)；舊版回歸依據 [`TASK-01～16`](docs/TASKS.md)
-- Agent 開工：[`AGENTS.md`](AGENTS.md) → [`閱讀矩陣`](docs/AGENT-READING-MAP.md)
-- 雙 agent 與 connector 設定：[`WORKFLOW`](docs/WORKFLOW.md#啟動與設定)
-- 整體規劃：[`PROJECT_PLAN.md`](PROJECT_PLAN.md)
+## 路線圖與規格
+
+| 階段 | 範圍 | 規格與任務 |
+|---|---|---|
+| 0.1 MVP | 即時拍照、設定檔、日期／天數文字、九宮格位置、儲存 | [PRD](docs/PRD.md)、[TASK-01～16](docs/TASKS.md) |
+| 0.2 介面改版 | 相機工具、疊字面板、字型與色彩、天數單位、拖曳定位、照片瀏覽 | [PRD-0.2](docs/PRD-0.2-ui-redesign.md)、[TASK-17～30](docs/TASKS-0.2-ui-redesign.md) |
+| 0.3 繁中字型 | 蘋方內建、開源與系統字型點了才下載 | [PRD-0.3](docs/PRD-0.3-fonts.md)、[TASK-31～36](docs/TASKS-0.3-fonts.md) |
+| 0.4 面板改版（進行中） | 面板與設定檔流程調整 | Issue [#226](https://github.com/irene-chou/days-cam/issues/226) 與各 TASK issue |
+
+新版未覆蓋的規格沿用前一版。MVP 排除訂閱／IAP、雲端帳號同步、多語系、社群分享與 Widget。發佈（簽名、TestFlight）在階段驗收後由 Lead 整理，是否上架由人類決定。
+
+Agent 開工：[`AGENTS.md`](AGENTS.md) → [`閱讀矩陣`](docs/AGENT-READING-MAP.md)；雙 agent 與 connector 設定見 [`WORKFLOW`](docs/WORKFLOW.md#啟動與設定)。
 
 ## 開發環境
 
@@ -35,16 +42,4 @@ xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
   -destination 'platform=iOS Simulator,name=iPhone 16' test
 ```
 
-### 多個 worktree 並行時要指定 DerivedData
-
-平行開發時每個人各有一個 git worktree，但專案名稱都是 `DaysCam`，Xcode 會把它們雜湊到**同一個** DerivedData 目錄。兩邊同時跑 `xcodebuild test` 會互踩，出現 result bundle 的寫入警告。
-
-各自加上 `-derivedDataPath` 即可：
-
-```
-xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  -derivedDataPath /tmp/dd-<你的識別> test
-```
-
-單人開發不需要這個參數。
+並行開發（各自 worktree、DerivedData、模擬器，以及到 rinclaw 執行）見 [WORKFLOW 開發](docs/WORKFLOW.md#開發)。
