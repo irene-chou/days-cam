@@ -10,10 +10,13 @@ final class ViewfinderZoomModelTests: XCTestCase {
     private var range = ZoomRange(minimum: 1, maximum: 10)
     private var cancellables: Set<AnyCancellable> = []
 
+    private var appliedPresets: [CGFloat] = []
+
     private func makeModel(initialFactor: CGFloat = 1) -> ViewfinderZoomModel {
         ViewfinderZoomModel(initialFactor: initialFactor,
                             zoomRange: { [unowned self] in range },
                             applyFactor: { [unowned self] in applied.append($0) },
+                            applyPreset: { [unowned self] in appliedPresets.append($0) },
                             scheduleHide: { [unowned self] in pendingHides.append($0) })
     }
 
@@ -23,6 +26,25 @@ final class ViewfinderZoomModelTests: XCTestCase {
         model.objectWillChange.sink { count += 1 }.store(in: &cancellables)
         body()
         return count
+    }
+
+    /// 62.3: a tap on a preset asks the camera for it and the next pinch
+    /// starts from it.
+    func testSelectingAPresetAppliesItAndSetsTheRequestedFactor() {
+        let model = makeModel()
+        model.selectPreset(ZoomPreset(displayFactor: 2))
+        XCTAssertEqual(appliedPresets, [2])
+        XCTAssertEqual(model.requestedFactor, 2)
+        model.pinchChanged(magnification: 0.85)
+        XCTAssertEqual(applied.last ?? 0, 1.7, accuracy: 0.0001)
+    }
+
+    func testSelectingAPresetOutsideTheRangeIsClamped() {
+        range = ZoomRange(minimum: 1, maximum: 4)
+        let model = makeModel()
+        model.selectPreset(ZoomPreset(displayFactor: 0.5))
+        XCTAssertEqual(appliedPresets, [1])
+        XCTAssertEqual(model.requestedFactor, 1)
     }
 
     func testStartsHiddenAndNotPinching() {
