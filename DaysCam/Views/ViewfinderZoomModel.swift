@@ -23,6 +23,7 @@ final class ViewfinderZoomModel: ObservableObject {
 
     private let zoomRange: () -> ZoomRange
     private let applyFactor: (CGFloat) -> Void
+    private let applyPreset: (CGFloat) -> Void
     private let scheduleHide: (@escaping () -> Void) -> Void
     /// The zoom when the current pinch began; `nil` between pinches.
     private var pinchStartFactor: CGFloat?
@@ -32,12 +33,14 @@ final class ViewfinderZoomModel: ObservableObject {
     init(initialFactor: CGFloat = 1,
          zoomRange: @escaping () -> ZoomRange,
          applyFactor: @escaping (CGFloat) -> Void,
+         applyPreset: @escaping (CGFloat) -> Void = { _ in },
          scheduleHide: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + ViewfinderZoomModel.indicatorLingerSeconds, execute: work)
          }) {
         self.requestedFactor = initialFactor
         self.zoomRange = zoomRange
         self.applyFactor = applyFactor
+        self.applyPreset = applyPreset
         self.scheduleHide = scheduleHide
     }
 
@@ -70,6 +73,14 @@ final class ViewfinderZoomModel: ObservableObject {
         }
     }
 
+    /// A quick-zoom button was tapped (issue #279): the camera ramps to the
+    /// preset, and the next pinch starts from it. All display factors.
+    func selectPreset(_ preset: ZoomPreset) {
+        let clamped = zoomRange().clamp(preset.displayFactor)
+        if requestedFactor != clamped { requestedFactor = clamped }
+        applyPreset(clamped)
+    }
+
     /// The camera went back to 1× on its own (a front/back switch), so the
     /// next pinch must start there.
     func resetRequestedFactor() {
@@ -77,7 +88,7 @@ final class ViewfinderZoomModel: ObservableObject {
     }
 
     /// The capsule's text for a zoom factor, e.g. "2.3×".
-    static func indicatorText(for factor: CGFloat) -> String {
+    nonisolated static func indicatorText(for factor: CGFloat) -> String {
         String(format: "%.1f×", Double(factor))
     }
 }

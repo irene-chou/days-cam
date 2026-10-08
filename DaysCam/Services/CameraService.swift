@@ -106,14 +106,27 @@ struct SystemCameraAuthorizer: CameraAuthorizing {
     }
 }
 
-/// Production device lookup: the built-in wide angle camera on each side.
+/// Production device lookup. The back side prefers a virtual device that
+/// switches between lenses seamlessly (triple, then dual wide, then dual), and
+/// falls back to the plain wide angle camera; the front side is the wide angle
+/// camera (issue #279).
 struct SystemCaptureDeviceProvider: CaptureDeviceProviding {
     func device(for facing: CameraFacing) -> AVCaptureDevice? {
-        AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera],
-                                         mediaType: .video,
-                                         position: facing.captureDevicePosition)
-            .devices
-            .first
+        let types: [AVCaptureDevice.DeviceType]
+        switch facing {
+        case .back:
+            types = [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
+        case .front:
+            types = [.builtInWideAngleCamera]
+        }
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types,
+                                                       mediaType: .video,
+                                                       position: facing.captureDevicePosition).devices
+        // First by preference order, whatever order the session lists them in.
+        for type in types {
+            if let device = devices.first(where: { $0.deviceType == type }) { return device }
+        }
+        return nil
     }
 }
 
@@ -162,9 +175,28 @@ protocol ZoomableCaptureDevice: AnyObject {
     var videoZoomFactor: CGFloat { get set }
     func lockForConfiguration() throws
     func unlockForConfiguration()
+    /// Which lenses make up the device; decides what 1× means (issue #279).
+    var zoomLens: ZoomLens { get }
+    var isRampingVideoZoom: Bool { get }
+    func cancelVideoZoomRamp()
+    func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float)
 }
 
-extension AVCaptureDevice: ZoomableCaptureDevice {}
+/// Defaults for a device with a single lens that never ramps: how a test
+/// double behaves unless it says otherwise.
+extension ZoomableCaptureDevice {
+    var zoomLens: ZoomLens { ZoomLens() }
+    var isRampingVideoZoom: Bool { false }
+    func cancelVideoZoomRamp() {}
+    func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float) { videoZoomFactor = factor }
+}
+
+extension AVCaptureDevice: ZoomableCaptureDevice {
+    var zoomLens: ZoomLens {
+        ZoomLens(hasUltraWide: constituentDevices.first?.deviceType == .builtInUltraWideCamera,
+                 switchOverFactors: virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
+    }
+}
 
 /// The zoom factors the current camera accepts, as `setZoomFactor(_:)` clamps
 /// them: the device's available range, capped at `CameraService.maxZoomFactor`.
@@ -295,8 +327,12 @@ final class CameraService: ObservableObject {
     /// `sessionQueue`, always applying the newest factor (issue #280).
     private let zoomCoalescer = ZoomRequestCoalescer()
 
-    /// The factors `setZoomFactor(_:)` accepts on the current camera.
+    /// The display factors `setZoomFactor(_:)` accepts on the current camera.
     @Published private(set) var zoomRange: ZoomRange = .fixed
+
+    /// The quick-zoom buttons the current camera offers, ascending display
+    /// factors (issue #279). Empty until a camera is configured.
+    @Published private(set) var availableZoomPresets: [ZoomPreset] = []
 
     /// The most the viewfinder zooms in, whatever the device allows
     /// (issue #274).
@@ -541,13 +577,15 @@ extension CameraService {
 
 extension CameraService {
 
-    /// Zooms the current camera to `factor`, clamped to `zoomRange`.
+    /// Zooms the current camera to the display factor `factor`, clamped to
+    /// `zoomRange`.
     ///
     /// Optical/sensor zoom through `AVCaptureDevice.videoZoomFactor`, never a
     /// crop after capture, so the photo matches the viewfinder and keeps the
     /// resolution the system picks (issue #274). The device is locked and set
     /// on the session queue; `zoomFactor` follows on the main queue once the
-    /// device has taken it. A no-op until a camera is configured.
+    /// device has taken it. A no-op until a camera is configured. Requests are
+    /// coalesced (issue #280): this is for a pinch's stream of updates.
     ///
     /// Call on the main queue.
     func setZoomFactor(_ factor: CGFloat) {
@@ -561,31 +599,62 @@ extension CameraService {
         })
     }
 
-    /// The range a device with these available factors accepts: its own
-    /// range, with the top capped at `maxZoomFactor`.
-    static func zoomRange(minAvailable: CGFloat, maxAvailable: CGFloat) -> ZoomRange {
-        let maximum = Swift.min(maxAvailable, maxZoomFactor)
-        return ZoomRange(minimum: Swift.min(minAvailable, maximum), maximum: maximum)
+    /// Takes the camera to the display factor `displayFactor` with a smooth
+    /// ramp, for a quick-zoom button (issue #279). Only changes
+    /// `videoZoomFactor`; the session and its input stay as they are.
+    ///
+    /// Not coalesced and not for a pinch: a ramp lags the fingers.
+    ///
+    /// Call on the main queue.
+    func setZoom(displayFactor: CGFloat, animated: Bool) {
+        guard isCaptureSupported else { return }
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            let rate: Float? = animated ? CameraService.presetRampRate : nil
+            guard CameraService.applyZoom(displayFactor, to: device, rampRate: rate) != nil else { return }
+            self.publishZoom(of: device)
+        }
     }
 
-    /// The range `device` accepts.
+    /// How fast a quick-zoom ramp runs, in doublings of the factor per second.
+    static let presetRampRate: Float = 4
+
+    /// The display range a device with these available factors accepts, where
+    /// display 1× is device factor `base`: its own range, with the top capped
+    /// at `maxZoomFactor`.
+    static func zoomRange(minAvailable: CGFloat, maxAvailable: CGFloat, base: CGFloat = 1) -> ZoomRange {
+        let maximum = Swift.min(maxAvailable / base, maxZoomFactor)
+        return ZoomRange(minimum: Swift.min(minAvailable / base, maximum), maximum: maximum)
+    }
+
+    /// The display range `device` accepts.
     static func zoomRange(of device: ZoomableCaptureDevice) -> ZoomRange {
         zoomRange(minAvailable: device.minAvailableVideoZoomFactor,
-                  maxAvailable: device.maxAvailableVideoZoomFactor)
+                  maxAvailable: device.maxAvailableVideoZoomFactor,
+                  base: device.zoomLens.baseDeviceFactor)
     }
 
-    /// Clamps `factor` to `device`'s range and sets it under the device's
-    /// configuration lock. Returns the factor set, or nil when the lock could
-    /// not be taken and nothing changed.
+    /// Clamps the display factor `factor` to `device`'s range and sets the
+    /// matching device factor under the configuration lock, ramping when
+    /// `rampRate` is given. Returns the display factor set, or nil when the
+    /// lock could not be taken and nothing changed.
     @discardableResult
-    static func applyZoom(_ factor: CGFloat, to device: ZoomableCaptureDevice) -> CGFloat? {
+    static func applyZoom(_ factor: CGFloat, to device: ZoomableCaptureDevice, rampRate: Float? = nil) -> CGFloat? {
+        let lens = device.zoomLens
         let clamped = zoomRange(of: device).clamp(factor)
         do {
             try device.lockForConfiguration()
         } catch {
             return nil
         }
-        device.videoZoomFactor = clamped
+        // A pinch cuts a running ramp short rather than fighting it.
+        if device.isRampingVideoZoom { device.cancelVideoZoomRamp() }
+        let target = lens.deviceFactor(forDisplay: clamped)
+        if let rampRate {
+            device.ramp(toVideoZoomFactor: target, withRate: rampRate)
+        } else {
+            device.videoZoomFactor = target
+        }
         device.unlockForConfiguration()
         return clamped
     }
@@ -778,19 +847,27 @@ private extension CameraService {
         CameraService.configureMirroring(of: connection, for: sessionFacing)
     }
 
-    /// Puts `device` back to 1× (or its nearest allowed factor) and publishes
-    /// its range, for a camera that has just gone into the session.
+    /// Puts `device` back to 1× (the main camera, or the nearest allowed
+    /// factor) and publishes its range and presets, for a camera that has just
+    /// gone into the session.
     func resetZoom(on device: ZoomableCaptureDevice) {
         CameraService.applyZoom(1, to: device)
         publishZoom(of: device)
     }
 
-    /// Publishes `device`'s current factor and range. Runs on `sessionQueue`.
+    /// Publishes `device`'s current display factor, range and presets. Runs on
+    /// `sessionQueue`.
     func publishZoom(of device: ZoomableCaptureDevice) {
-        let range = CameraService.zoomRange(of: device)
-        let factor = device.videoZoomFactor
+        let lens = device.zoomLens
+        let plan = ZoomPlan.make(lens: lens,
+                                 minAvailable: device.minAvailableVideoZoomFactor,
+                                 maxAvailable: device.maxAvailableVideoZoomFactor,
+                                 offersCropPresets: sessionFacing == .back)
+        let range = plan.range
+        let factor = lens.displayFactor(forDevice: device.videoZoomFactor)
         onMain { [weak self] in
             guard let self else { return }
+            if self.availableZoomPresets != plan.presets { self.availableZoomPresets = plan.presets }
             if self.zoomRange != range { self.zoomRange = range }
             if self.zoomFactorSubject.value != factor { self.zoomFactorSubject.send(factor) }
         }

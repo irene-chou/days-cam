@@ -130,6 +130,8 @@ struct CameraScreen: View {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
 
+                zoomPresetBar(metrics: metrics)
+
                 zoomCapsule(metrics: metrics)
 
                 headerBar(metrics: metrics)
@@ -391,6 +393,17 @@ struct CameraScreen: View {
                 .onChanged { model.zoomModel.pinchChanged(magnification: $0.magnification) }
                 .onEnded { _ in model.zoomModel.pinchEnded() }
         )
+    }
+
+    // MARK: - Zoom presets (issue #279)
+
+    /// The quick-zoom bar on the picture's right edge; hidden while the panel
+    /// is open, and while the camera offers no preset.
+    private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
+        ZoomPresetBar(zoom: model.zoomModel,
+                      presets: model.zoomPresets,
+                      isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
+                      pictureFrame: viewfinderContentFrame(metrics: metrics))
     }
 
     // MARK: - Zoom capsule (TASK-61)

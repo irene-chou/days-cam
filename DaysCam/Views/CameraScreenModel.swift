@@ -315,7 +315,10 @@ final class CameraScreenModel: ObservableObject {
         self.cameraService = cameraService
         self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
                                              zoomRange: { [cameraService] in cameraService.zoomRange },
-                                             applyFactor: { [cameraService] in cameraService.setZoomFactor($0) })
+                                             applyFactor: { [cameraService] in cameraService.setZoomFactor($0) },
+                                             applyPreset: { [cameraService] in
+                                                 cameraService.setZoom(displayFactor: $0, animated: true)
+                                             })
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
         self.profileStore = profileStore
@@ -452,6 +455,10 @@ final class CameraScreenModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
+
+    /// The quick-zoom buttons the current camera offers (issue #279); empty
+    /// until a camera is configured.
+    var zoomPresets: [ZoomPreset] { cameraService.availableZoomPresets }
 
     /// Forwards only `isPinching` (issue #280), and starts the next pinch at
     /// 1× after a camera switch, which resets the zoom.
