@@ -57,10 +57,6 @@ struct ProfileManagerView: View {
         List {
             ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
                 profileRow(row)
-                    .frame(minHeight: Self.rowMinHeight)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 12))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
                     .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.listSpace)).minY }) {
                         // Not while dragging: the lift/slide offsets would skew the pitch.
                         if draggingID == nil { rowOrigins[index] = $0 }
@@ -74,6 +70,10 @@ struct ProfileManagerView: View {
                     .zIndex(draggingID == row.id ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: dragTarget)
                     .simultaneousGesture(reorderGesture(row: row, index: index))
+                    // List-row traits last: wrapping modifiers above would
+                    // otherwise hide them from the list (insets, separator).
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if model.canDelete {
                             Button(role: .destructive) {
@@ -93,7 +93,6 @@ struct ProfileManagerView: View {
 
     // MARK: - Reorder (TASK-58)
 
-    private static let rowMinHeight: CGFloat = 60
     private static let listSpace = "profileList"
 
     /// Distance between two neighboring rows' tops, 0 until two are laid out.
