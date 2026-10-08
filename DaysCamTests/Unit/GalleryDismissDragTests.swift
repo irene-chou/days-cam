@@ -26,3 +26,17 @@ final class GalleryDismissDragTests: XCTestCase {
         XCTAssertEqual(GalleryDismissDrag.scale(progress: 1), 0.85, accuracy: 0.0001)
     }
 }
+
+/// TASK-64 (64.4, 64.5): which notice the gallery's album switch raises.
+final class GalleryAlbumNoticeTests: XCTestCase {
+    func testOnlyANonFullResultRaisesTheNeedsFullAccessNotice() {
+        XCTAssertNil(GalleryAlbumNotice(result: .full), "64.2")
+        XCTAssertEqual(GalleryAlbumNotice(result: .limited), .needsFullAccess, "64.4")
+        XCTAssertEqual(GalleryAlbumNotice(result: .denied), .needsFullAccess, "64.4")
+    }
+
+    func testNoticesCarryTheSpecifiedWording() {
+        XCTAssertEqual(GalleryAlbumNotice.needsFullAccess.message, "需要完整照片取用權限才能存到相簿，可到設定開啟。")
+        XCTAssertFalse(GalleryAlbumNotice.accessWithdrawn.message.isEmpty)
+    }
+}

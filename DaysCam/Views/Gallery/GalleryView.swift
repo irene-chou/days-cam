@@ -18,6 +18,11 @@ struct GalleryView: View {
     @State private var dismissOffset: CGFloat = 0
     @State private var isDismissDragVertical: Bool?
 
+    /// The 「存到『DaysCam』相簿」 switch (TASK-64). Created here so it never
+    /// prompts until the user turns it on.
+    @StateObject private var albumSettings = AlbumSettingsStore()
+    @State private var albumNotice: GalleryAlbumNotice?
+
     var body: some View {
         let progress = GalleryDismissDrag.progress(offset: dismissOffset)
         VStack(spacing: 0) {
@@ -36,8 +41,21 @@ struct GalleryView: View {
         .onDisappear { model.stopObservingLibraryChanges() }
         // Back from the Photos app (or Settings): re-read the list so a
         // photo deleted there disappears (FR-15.4).
+        .task { reconcileAlbumSwitch() }
+        .alert(item: $albumNotice) { notice in
+            switch notice {
+            case .needsFullAccess:
+                Alert(title: Text(notice.title), message: Text(notice.message),
+                      primaryButton: .default(Text("前往設定")) { openSettings() },
+                      secondaryButton: .cancel(Text("好")))
+            case .accessWithdrawn:
+                Alert(title: Text(notice.title), message: Text(notice.message),
+                      dismissButton: .cancel(Text("好")))
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
+            reconcileAlbumSwitch()
             if model.phase == .denied {
                 Task { await model.requestAccessAndLoad() }
             } else {
@@ -69,10 +87,51 @@ struct GalleryView: View {
                 }
                 .accessibilityLabel("回相機")
                 Spacer()
+                albumMenu
             }
         }
         .frame(height: 52)
         .padding(.horizontal, 8)
+    }
+
+    // MARK: - Album switch (TASK-64)
+
+    /// Top-right `ellipsis.circle` menu holding the switch; the section title
+    /// is the one-line note that photos still go to 最近項目.
+    private var albumMenu: some View {
+        Menu {
+            Section("照片仍會存到「最近項目」") {
+                Toggle("存到「DaysCam」相簿", isOn: albumSwitchBinding)
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("更多")
+    }
+
+    private var albumSwitchBinding: Binding<Bool> {
+        Binding(
+            get: { albumSettings.savesToAlbum },
+            set: { isOn in
+                guard isOn else { albumSettings.disable(); return }
+                albumSettings.requestEnabling { result in
+                    albumNotice = GalleryAlbumNotice(result: result)
+                }
+            })
+    }
+
+    /// Turns the switch off, with a one-time notice, when full access has
+    /// been withdrawn since it was turned on (64.5).
+    private func reconcileAlbumSwitch() {
+        if albumSettings.reconcile() { albumNotice = .accessWithdrawn }
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     // MARK: - States
@@ -213,6 +272,39 @@ struct GalleryView: View {
                 guard model.photos.indices.contains(index) else { return }
                 withAnimation(CameraTheme.spring) { proxy.scrollTo(model.photos[index].id, anchor: .center) }
             }
+        }
+    }
+}
+
+/// The notices the album switch can raise (TASK-64, 64.4／64.5).
+enum GalleryAlbumNotice: Identifiable, Equatable {
+    /// Turning the switch on ended with limited access or a refusal.
+    case needsFullAccess
+    /// The switch was on but full access has since been withdrawn.
+    case accessWithdrawn
+
+    var id: Self { self }
+
+    /// The notice for a finished request to turn the switch on; none when
+    /// full access was granted.
+    init?(result: AlbumAccessResult) {
+        switch result {
+        case .full: return nil
+        case .limited, .denied: self = .needsFullAccess
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .needsFullAccess: return "無法存到相簿"
+        case .accessWithdrawn: return "已關閉存到相簿"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .needsFullAccess: return "需要完整照片取用權限才能存到相簿，可到設定開啟。"
+        case .accessWithdrawn: return "照片取用權限已收回，照片仍會存到「最近項目」。"
         }
     }
 }
