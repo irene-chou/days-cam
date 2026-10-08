@@ -70,7 +70,7 @@
 | 擁有者 | 檔案 |
 |---|---|
 | core-style | `Models/`（`CaptureSettings.swift` 除外）、`Services/OverlayMetrics.swift`、`OverlayRenderer.swift`、`TemplateRenderer.swift`、`DayCountCalculator.swift`、`RecentColorsStore.swift` |
-| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift` |
+| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift`、`AlbumSettingsStore.swift`（0.5 #281） |
 | ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets` |
 | ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
 | qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
