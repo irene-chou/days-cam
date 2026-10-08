@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Photos
 import UIKit
 
@@ -30,6 +31,25 @@ protocol PhotoLibraryAccessing {
     func requestAuthorization(for level: PHAccessLevel, handler: @escaping (PHAuthorizationStatus) -> Void)
     func performChanges(_ changes: @escaping () -> String?,
                         completion: @escaping (Bool, String?, Error?) -> Void)
+    /// Creates the asset and adds it to the album in **one** change block
+    /// (issue #281). The album is the one with `albumIdentifier`, else the
+    /// first album titled `albumTitle`, else a new album of that title.
+    /// Needs `.readWrite` `.authorized`; never prompts.
+    func saveToAlbum(_ image: UIImage,
+                     albumIdentifier: String?,
+                     albumTitle: String,
+                     completion: @escaping (AlbumWriteResult) -> Void)
+}
+
+/// What one `saveToAlbum` change block did.
+struct AlbumWriteResult {
+    /// The change block committed: the asset exists and is in the album.
+    let succeeded: Bool
+    /// The new asset's `localIdentifier`.
+    let assetIdentifier: String?
+    /// The album's `localIdentifier`, found or newly created.
+    let albumIdentifier: String?
+    let error: Error?
 }
 
 /// Production implementation, straight through to `PHPhotoLibrary`.
@@ -56,13 +76,65 @@ struct SystemPhotoLibrary: PhotoLibraryAccessing {
             completion(succeeded, identifier, error)
         })
     }
+
+    func saveToAlbum(_ image: UIImage,
+                     albumIdentifier: String?,
+                     albumTitle: String,
+                     completion: @escaping (AlbumWriteResult) -> Void) {
+        // Looked up before the change block: fetching inside one is not
+        // allowed. A remembered id that no longer resolves (the user deleted
+        // the album) falls back to the title, then to creating it (64.3).
+        let existing = Self.album(identifier: albumIdentifier) ?? Self.album(titled: albumTitle)
+        var assetIdentifier: String?
+        var resolvedAlbumIdentifier = existing?.localIdentifier
+        PHPhotoLibrary.shared().performChanges({
+            guard let asset = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                .placeholderForCreatedAsset else { return }
+            assetIdentifier = asset.localIdentifier
+            if let existing {
+                PHAssetCollectionChangeRequest(for: existing)?.addAssets([asset] as NSArray)
+            } else {
+                let creation = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: albumTitle)
+                creation.addAssets([asset] as NSArray)
+                resolvedAlbumIdentifier = creation.placeholderForCreatedAssetCollection.localIdentifier
+            }
+        }, completionHandler: { succeeded, error in
+            completion(AlbumWriteResult(succeeded: succeeded,
+                                        assetIdentifier: assetIdentifier,
+                                        albumIdentifier: resolvedAlbumIdentifier,
+                                        error: error))
+        })
+    }
+
+    private static func album(identifier: String?) -> PHAssetCollection? {
+        guard let identifier else { return nil }
+        return PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [identifier], options: nil).firstObject
+    }
+
+    private static func album(titled title: String) -> PHAssetCollection? {
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "title = %@", title)
+        return PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: options)
+            .firstObject
+    }
+}
+
+/// Where a photo goes (issue #281, 64.7).
+enum PhotoSaveRoute: Equatable {
+    /// 「最近項目」 only, through `.addOnly` — the 0.4 behaviour.
+    case recentsOnly
+    /// 「最近項目」 and the 「DaysCam」 album, through `.readWrite`.
+    case recentsAndAlbum
 }
 
 /// Adds a finished photo to the system photo library (PRD FR-5.3).
 ///
 /// It asks for add-only access and nothing more: the app never reads the
-/// user's photos. It also never creates an album — the photo goes to
-/// 「最近項目」 like any other capture (FR-5.6).
+/// user's photos, and the photo goes to 「最近項目」 like any other capture
+/// (FR-5.6). The one exception is the gallery's 「存到『DaysCam』相簿」
+/// switch (issue #281): with it on *and* full access already granted, the
+/// photo is also added to that album. Saving never asks for `.readWrite`
+/// itself — only the switch does.
 ///
 /// What it is handed is already final. Baking the overlay in belongs to
 /// `OverlayRenderer`; by the time a photo reaches here the text is part of the
@@ -76,9 +148,33 @@ final class PhotoSaver {
     static let accessLevel: PHAccessLevel = .addOnly
 
     private let library: PhotoLibraryAccessing
+    private let albumSettings: AlbumSaveSettings
 
-    init(library: PhotoLibraryAccessing = SystemPhotoLibrary()) {
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DaysCam",
+                                       category: "photo-saver")
+
+    /// - Parameters:
+    ///   - library: the photo library; tests pass a fake.
+    ///   - albumSettings: the album switch; defaults to the persisted one, so
+    ///     a saver created per shot always sees the current switch.
+    init(library: PhotoLibraryAccessing = SystemPhotoLibrary(),
+         albumSettings: AlbumSaveSettings = AlbumSettingsStore()) {
         self.library = library
+        self.albumSettings = albumSettings
+    }
+
+    /// The route for a save, given the switch and the current `.readWrite`
+    /// status (issue #281, 64.7).
+    ///
+    /// `readWriteStatus` is only asked when the switch is on, so a save with
+    /// it off checks nothing beyond `.addOnly` (64.1). Only `.authorized`
+    /// takes the album route: limited access is treated as none, and a
+    /// withdrawn permission silently falls back to 「最近項目」 (64.5). Never
+    /// prompts.
+    static func route(albumEnabled: Bool,
+                      readWriteStatus: () -> PHAuthorizationStatus) -> PhotoSaveRoute {
+        guard albumEnabled, readWriteStatus() == .authorized else { return .recentsOnly }
+        return .recentsAndAlbum
     }
 
     /// Saves `image` to the photo library, asking for permission the first
@@ -124,6 +220,14 @@ final class PhotoSaver {
     private func performSave<T>(_ image: UIImage,
                                map: @escaping (String) -> T,
                                completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
+        let route = Self.route(albumEnabled: albumSettings.isAlbumSavingEnabled) {
+            library.authorizationStatus(for: AlbumSettingsStore.accessLevel)
+        }
+        if route == .recentsAndAlbum {
+            writeToAlbum(image, map: map, completion: completion)
+            return
+        }
+
         let accessLevel = Self.accessLevel
 
         switch library.authorizationStatus(for: accessLevel) {
@@ -181,6 +285,34 @@ final class PhotoSaver {
                 result = .failure(.saveFailed(Self.describe(error)))
             }
             self.finish(result, completion)
+        }
+    }
+
+    /// Saves into 「最近項目」 and the album in one change block. If that block
+    /// fails, nothing was written, so the photo is saved again the 0.4 way:
+    /// the album is a nice-to-have and must not cost the user the photo. A
+    /// photo that lands only in 「最近項目」 is a success; the album failure is
+    /// only logged (issue #281).
+    private func writeToAlbum<T>(_ image: UIImage,
+                                 map: @escaping (String) -> T,
+                                 completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
+        library.saveToAlbum(image,
+                            albumIdentifier: albumSettings.albumIdentifier,
+                            albumTitle: AlbumSettingsStore.albumTitle) { result in
+            if result.succeeded {
+                if let album = result.albumIdentifier, album != self.albumSettings.albumIdentifier {
+                    self.albumSettings.rememberAlbum(identifier: album)
+                }
+                // Committed, so the photo exists: never write it a second time.
+                if let asset = result.assetIdentifier {
+                    self.finish(.success(map(asset)), completion)
+                } else {
+                    self.finish(.failure(.saveFailed("儲存成功但未取得照片識別碼")), completion)
+                }
+                return
+            }
+            Self.logger.error("Adding to the album failed, saving to recents only: \(Self.describe(result.error), privacy: .public)")
+            self.write(image, map: map, completion: completion)
         }
     }
 
