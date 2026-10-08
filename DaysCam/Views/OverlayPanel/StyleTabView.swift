@@ -53,49 +53,54 @@ struct StyleTabView: View {
     }
 
     var body: some View {
+        // The sub-tab row is fixed above the tab's own `ScrollView` (TASK-66):
+        // it used to be a pinned `LazyVStack` header inside the panel's outer
+        // scroll view, which let the row drift with the 4pt top inset, left
+        // a gap under it for the edge fade, and could push it out of view
+        // when a shorter page kept the old scroll offset.
+        //
         // No gap of its own between `subTabRow` and `content` (#106): the
         // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
         // puts the whole visual gap inside `subTabRow`'s own bottom padding
         // instead — see that view's `.padding(.top:.bottom:)`.
         //
-        // `subTabRow` is a pinned section header (#129): this view sits
-        // inside the panel's own vertical `ScrollView`, and a `LazyVStack`
-        // with `pinnedViews` pins against that enclosing scroll view, so the
-        // icon row stays on top while the (taller) font grid scrolls under
-        // it. The header's opaque panel-colored background hides content
-        // passing beneath it.
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-            Section {
-                if model.selectedSubTab.isCentered {
-                    // Short pages sit in the middle of the space below the
-                    // sub-tab row; taller content just grows and scrolls.
-                    content
-                        .frame(maxWidth: .infinity,
-                               minHeight: Self.centeredContentMinHeight(availableHeight: availableHeight),
-                               alignment: .center)
-                } else {
-                    content
-                }
-            } header: {
-                subTabRow
-                    .background(CameraTheme.background)
-                    // The font list's messages sit over the pinned row, so they
-                    // never cover the cells being tapped.
-                    .overlay(alignment: .center) {
-                        FontToastView(model: model.fontList)
-                    }
-            }
-        }
         // This tab's own `.tabbody` outer inset (`D3-style-tab.html`'s
         // style-tab-specific override, `.tabbody{padding:4px 10px 6px}` —
-        // #106 R2, the human's 2026-09-27 call: each tab owns its own
-        // `.tabbody` padding rather than a generic one shared by all four
-        // — `ui-shell` is dropping the panel container's own generic inset
-        // in #105 to avoid stacking both). Was a flat `.padding(.horizontal,
-        // 16)` with no vertical inset at all.
-        .padding(.top, Self.tabTopInset)
-        .padding(.horizontal, 10)
-        .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
+        // #106 R2) is split between the row (top, sides) and the scroll
+        // content (sides, bottom).
+        VStack(alignment: .leading, spacing: 0) {
+            subTabRow
+                .padding(.top, Self.tabTopInset)
+                .padding(.horizontal, 10)
+                // The font list's messages sit over the fixed row, so they
+                // never cover the cells being tapped.
+                .overlay(alignment: .center) {
+                    FontToastView(model: model.fontList)
+                }
+            ScrollView {
+                Group {
+                    if model.selectedSubTab.isCentered {
+                        // Short pages sit in the middle of the space below
+                        // the sub-tab row; taller content just grows and
+                        // scrolls.
+                        content
+                            .frame(maxWidth: .infinity,
+                                   minHeight: Self.centeredContentMinHeight(availableHeight: availableHeight),
+                                   alignment: .center)
+                    } else {
+                        content
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
+            }
+            // Fades at the scroll edges and one indicator flash per sub-tab
+            // (TASK-58b); the row is outside the scroll view, so no top inset.
+            .scrollEdgeHint(flashTrigger: model.selectedSubTab)
+            // A new identity per sub-tab starts every page at the top, with
+            // no animated clamp of the old offset (TASK-66).
+            .id(model.selectedSubTab)
+        }
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }

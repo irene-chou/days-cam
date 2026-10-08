@@ -39,16 +39,22 @@ struct OverlayPanelView: View {
             // D-3/D-4-specific inset (e.g. the style tab's `.tabbody{
             // padding:4px 10px 6px}`, PR #111) — adding a second, generic
             // one here would double it up on every tab.
-            ScrollView {
-                tabContent
+            if model.panelModel.selectedTab == .style, let styleTabModel = model.styleTabModel {
+                // The style tab owns its scrolling (fixed sub-tab row above
+                // its own scroll view, TASK-66), so it is not wrapped here.
+                StyleTabView(model: styleTabModel, availableHeight: contentHeight)
+                    .frame(height: contentHeight)
+            } else {
+                ScrollView {
+                    tabContent
+                }
+                .frame(height: contentHeight)
+                // Fades at the edges with more content, and one flash of the
+                // indicator per tab (TASK-58b).
+                .scrollEdgeHint(flashTrigger: model.panelModel.selectedTab)
+                // Every first-level tab starts at the top (TASK-66).
+                .id(model.panelModel.selectedTab)
             }
-            .frame(height: contentHeight)
-            // Fades at the edges with more content, and one flash of the
-            // indicator per tab (TASK-58b). The style tab's pinned sub-tab
-            // row stays clear of the top fade.
-            .scrollEdgeHint(topInset: model.panelModel.selectedTab == .style
-                                ? StyleTabView.tabTopInset + StyleTabView.subTabRowHeight : 0,
-                            flashTrigger: model.panelModel.selectedTab)
         }
         // Pinned top-aligned so the segmented control's y position stays
         // identical across every tab (#75, T.7).
