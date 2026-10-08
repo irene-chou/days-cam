@@ -58,14 +58,21 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let outlineHeight = pageHeight(model)
         // The card asks <= 160, but outline options (52) + two 42pt rows +
         // sub-tab row and insets measure 200pt; that equals the ~200pt panel
-        // #198 introduces, so it is capped there (reported to Lead).
-        XCTAssertLessThanOrEqual(outlineHeight, 200, "外框頁 \(outlineHeight)pt")
+        // #198 introduces, so it was capped there (reported to Lead). TASK-57
+        // makes the sub-tab row 6pt taller, so the cap moves to 206; it still
+        // fits the 224pt content area.
+        XCTAssertLessThanOrEqual(outlineHeight, 206, "外框頁 \(outlineHeight)pt")
+    }
+
+    /// 57.6: the sub-tab row is 6 + 36 + 4.
+    func testSubTabRowHeightIs46() {
+        XCTAssertEqual(StyleTabView.subTabRowHeight, 46)
     }
 
     /// 49.1: a centered page fills what is left below the sub-tab row (224pt
-    /// panel: 224 - 4 - 40 - 10), and never goes negative on a tiny panel.
+    /// panel: 224 - 4 - 46 - 10), and never goes negative on a tiny panel.
     func testCenteredContentMinHeightFillsPanelBelowSubTabRow() {
-        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 224), 170)
+        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 224), 164)
         XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 20), 0)
     }
 

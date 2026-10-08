@@ -41,8 +41,8 @@ struct StyleTabView: View {
 
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
-    /// Height of the pinned sub-tab row: 6 + 30 + 4.
-    static let subTabRowHeight: CGFloat = 40
+    /// Height of the pinned sub-tab row: 6 + 36 + 4.
+    static let subTabRowHeight: CGFloat = 46
     /// Space kept under a vertically centered page (TASK-49 A).
     static let centeredBottomInset: CGFloat = 10
 
@@ -118,7 +118,7 @@ struct StyleTabView: View {
         // the leftover space, so N spacer instances together always claim N
         // times what one does), which is exactly that 2:1 ratio; a single
         // `Spacer` at each end supplies the half-width edge gap. Each icon's
-        // own tap target is 44×30 (`.subA .stab{width:44px;height:30px}`).
+        // own tap target is 52×36 (TASK-57, enlarged from the design's 44×30).
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             ForEach(Array(StyleTabModel.SubTab.allCases.enumerated()), id: \.offset) { index, subTab in
@@ -130,9 +130,10 @@ struct StyleTabView: View {
                     model.selectedSubTab = subTab
                 } label: {
                     subTabIcon(subTab)
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 22, weight: .medium))
+                        .frame(width: 28, height: 28)
                         .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
-                        .frame(width: 44, height: 30)
+                        .frame(width: 52, height: 36)
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
