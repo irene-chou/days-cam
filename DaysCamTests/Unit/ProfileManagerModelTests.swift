@@ -245,6 +245,38 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 3)
     }
 
+    // MARK: - TASK-58 長按拖曳（57.1／57.2／57.6）
+
+    func testDragTargetIndexUsesAHalfRowThresholdAndClamps() {
+        let target = { (from: Int, dy: CGFloat) in
+            ProfileManagerModel.dragTargetIndex(from: from, translation: dy, rowHeight: 60, count: 4)
+        }
+        XCTAssertEqual(target(1, 0), 1)
+        XCTAssertEqual(target(1, 29), 1, "未過半列")
+        XCTAssertEqual(target(1, 30), 2, "過半列")
+        XCTAssertEqual(target(1, 125), 3, "兩格")
+        XCTAssertEqual(target(1, -31), 0)
+        XCTAssertEqual(target(1, 1000), 3, "不超過最後一列")
+        XCTAssertEqual(target(1, -1000), 0, "不超過第一列")
+        XCTAssertEqual(ProfileManagerModel.dragTargetIndex(from: 2, translation: 500, rowHeight: 0, count: 4), 2, "尚未量到列高")
+        XCTAssertEqual(ProfileManagerModel.dragTargetIndex(from: 0, translation: 50, rowHeight: 60, count: 0), 0)
+    }
+
+    func testMoveToFinalIndexMatchesWhereTheDragShowedTheRow() throws {
+        let store = try makeStore()
+        try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let first = model.profiles[0].id
+
+        model.move(id: first, toFinalIndex: 2) // 57.1: down two slots
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+        model.move(id: first, toFinalIndex: 0) // 57.2: back to the top
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        model.move(id: first, toFinalIndex: 0) // same slot: no change
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+    }
+
     func testDeletingTheCurrentProfileSelectsThePreviousRow() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)

@@ -10,6 +10,16 @@ struct ProfileManagerView: View {
     /// Closes the sheet — the checkmark key (FR-14.3).
     var onClose: () -> Void = {}
 
+    /// Reorder drag state (TASK-58): which row is lifted, how far the
+    /// finger has moved, and where the row would land.
+    @State private var draggingID: UUID?
+    @State private var dragTranslation: CGFloat = 0
+    @State private var dragTarget = 0
+    /// Each realized row's top edge in the list's space; the row pitch (row
+    /// plus the list's own spacing) is read from these, not guessed.
+    @State private var rowOrigins: [Int: CGFloat] = [:]
+    @State private var suppressTap = false
+
     var body: some View {
         NavigationStack(path: $model.path) {
             VStack(spacing: 0) {
@@ -45,15 +55,25 @@ struct ProfileManagerView: View {
 
     private var list: some View {
         List {
-            ForEach(model.rows) { row in
+            ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
                 profileRow(row)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.listSpace)).minY }) {
+                        // Not while dragging: the lift/slide offsets would skew the pitch.
+                        if draggingID == nil { rowOrigins[index] = $0 }
+                    }
+                    // Long-press lifts the row, then dragging moves it (no ≡
+                    // handle, no editMode: #226 R-5). System drag & drop and
+                    // `onMove` never delivered a drop here (TASK-58).
+                    .offset(y: reorderOffset(forRowAt: index, id: row.id))
+                    .scaleEffect(draggingID == row.id ? 1.03 : 1)
+                    .shadow(color: .black.opacity(draggingID == row.id ? 0.18 : 0), radius: 8, y: 3)
+                    .zIndex(draggingID == row.id ? 1 : 0)
+                    .animation(.easeOut(duration: 0.15), value: dragTarget)
+                    .simultaneousGesture(reorderGesture(row: row, index: index))
+                    // List-row traits last: wrapping modifiers above would
+                    // otherwise hide them from the list (insets, separator).
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    // Long-press lifts the row; no ≡ handle and no editMode
-                    // (`onMove` only works in edit mode, #226 R-5). The drop
-                    // target is the `ForEach` below: a `List` takes drops
-                    // per ForEach insertion point, not per row view.
-                    .draggable(row.id.uuidString)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if model.canDelete {
                             Button(role: .destructive) {
@@ -64,18 +84,68 @@ struct ProfileManagerView: View {
                         }
                     }
             }
-            .dropDestination(for: String.self) { items, offset in
-                guard let dragged = items.first.flatMap(UUID.init(uuidString:)) else { return }
-                model.move(id: dragged, toIndex: offset)
-            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .scrollDisabled(draggingID != nil)
+        .coordinateSpace(name: Self.listSpace)
+    }
+
+    // MARK: - Reorder (TASK-58)
+
+    private static let listSpace = "profileList"
+
+    /// Distance between two neighboring rows' tops, 0 until two are laid out.
+    private var rowHeight: CGFloat {
+        guard let low = rowOrigins.keys.min(), let high = rowOrigins.keys.max(), high > low,
+              let top = rowOrigins[low], let bottom = rowOrigins[high] else { return 0 }
+        return (bottom - top) / CGFloat(high - low)
+    }
+
+    /// Vertical shift of the row at `index` while a drag is in progress: the
+    /// dragged row follows the finger, the rows it passes slide one slot.
+    private func reorderOffset(forRowAt index: Int, id: UUID) -> CGFloat {
+        guard let draggingID, let from = model.rows.firstIndex(where: { $0.id == draggingID }) else { return 0 }
+        if id == draggingID { return dragTranslation }
+        if from < dragTarget, index > from, index <= dragTarget { return -rowHeight }
+        if from > dragTarget, index < from, index >= dragTarget { return rowHeight }
+        return 0
+    }
+
+    private func reorderGesture(row: ProfileManagerModel.Row, index: Int) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.3)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                if draggingID == nil {
+                    draggingID = row.id
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+                dragTranslation = drag?.translation.height ?? 0
+                dragTarget = ProfileManagerModel.dragTargetIndex(from: index, translation: dragTranslation,
+                                                                 rowHeight: rowHeight, count: model.rows.count)
+            }
+            .onEnded { value in
+                guard case .second(true, _) = value, draggingID == row.id else { return }
+                let target = dragTarget
+                withAnimation(.easeOut(duration: 0.15)) {
+                    draggingID = nil
+                    dragTranslation = 0
+                }
+                model.move(id: row.id, toFinalIndex: target)
+                // The release that ends a long press must not also count as a tap.
+                suppressTap = true
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    suppressTap = false
+                }
+            }
     }
 
     private func profileRow(_ row: ProfileManagerModel.Row) -> some View {
         HStack(spacing: 0) {
             Button {
+                guard !suppressTap else { return }
                 model.select(id: row.id)
                 onClose()
             } label: {

@@ -172,6 +172,24 @@ final class ProfileManagerModel: ObservableObject {
         move(fromOffsets: IndexSet(integer: from), toOffset: min(max(index, 0), profiles.count))
     }
 
+    /// Where a row dragged by `translation` points lands, as an index in the
+    /// final list (TASK-58, R-5). The row moves one slot each time its
+    /// center crosses half a row, so the threshold is half a row height;
+    /// clamped to the list. `rowHeight <= 0` means "not measured yet".
+    static func dragTargetIndex(from index: Int, translation: CGFloat, rowHeight: CGFloat, count: Int) -> Int {
+        guard count > 0, rowHeight > 0 else { return index }
+        let slots = Int((translation / rowHeight).rounded(.toNearestOrAwayFromZero))
+        return min(max(index + slots, 0), count - 1)
+    }
+
+    /// Moves `id` so it ends at `finalIndex` of the list (the destination
+    /// the drag showed), translating to `move(id:toIndex:)`'s insertion
+    /// semantics.
+    func move(id: UUID, toFinalIndex finalIndex: Int) {
+        guard let from = profiles.firstIndex(where: { $0.id == id }), finalIndex != from else { return }
+        move(id: id, toIndex: finalIndex > from ? finalIndex + 1 : finalIndex)
+    }
+
     /// Inserts "{原名} 副本" below `id` without switching to it (FR-9.5, A-3).
     func duplicate(id: UUID) {
         guard canDuplicate else { return }
