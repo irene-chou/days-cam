@@ -38,7 +38,7 @@ struct DayCountCalculator {
     /// Day count after applying the counting rule. Can be zero or negative.
     ///
     /// A negative result means the start date is in the future; the display
-    /// layer turns that into "尚未開始" (PRD §7.2).
+    /// layer turns that into "還有 N 天" (#250).
     func dayCount(from startDate: DateComponents, rule: CountingRule) -> Int {
         let raw = rawDayDifference(from: startDate)
         switch rule {

@@ -837,7 +837,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "尚未開始")
+        XCTAssertEqual(model.overlayText, "還有 31 天")
     }
 
     func testOverlayTextShowsNotStartedForEveryLegalUnitPair() throws {
@@ -855,7 +855,7 @@ final class CameraScreenModelTests: XCTestCase {
         for units in legacySets {
             future.displayUnits = units
             try store.update(future)
-            XCTAssertEqual(model.overlayText, "尚未開始", "\(units)")
+            XCTAssertEqual(model.overlayText, "還有 31 天", "\(units)")
         }
     }
 
@@ -872,7 +872,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "2025.12.01 尚未開始")
+        XCTAssertEqual(model.overlayText, "2025.12.01 還有 31 天")
     }
 
     func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {
@@ -886,7 +886,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "小寶 尚未開始")
+        XCTAssertEqual(model.overlayText, "小寶 還有 31 天")
     }
 
     func testCaptureContextShowsNotStartedForAFutureStartDate() throws {
@@ -898,7 +898,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.captureContext(for: future).text, "尚未開始")
+        XCTAssertEqual(model.captureContext(for: future).text, "還有 31 天")
     }
 
     // MARK: - processCapturedImage (TASK-10 bake wiring)

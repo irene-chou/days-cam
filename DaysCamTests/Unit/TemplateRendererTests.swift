@@ -345,7 +345,7 @@ final class TemplateRendererTests: XCTestCase {
         let start = DateFixture.components(2026, 12, 1)
         for pair in Self.legacyPairs {
             let subject = profile(start: start, largest: pair.largest, smallest: pair.smallest)
-            XCTAssertEqual(render(subject, at: capturedAt), "尚未開始",
+            XCTAssertEqual(render(subject, at: capturedAt), "還有 73 天",
                            "4.53 \(pair.largest)/\(pair.smallest)")
         }
     }
@@ -354,9 +354,9 @@ final class TemplateRendererTests: XCTestCase {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 9, 19, hour: 10))
         let start = DateFixture.components(2026, 12, 1)
         XCTAssertEqual(render(profile(start: start, showName: true), at: capturedAt),
-                       "小寶 尚未開始", "4.54")
+                       "小寶 還有 73 天", "4.54")
         XCTAssertEqual(render(profile(start: start, showDate: true), at: capturedAt),
-                       "2026.09.19 尚未開始", "4.55")
+                       "2026.09.19 還有 73 天", "4.55")
     }
 
     /// `.dayOne` with a start date one day out gives n = 0, which is still the
@@ -364,7 +364,7 @@ final class TemplateRendererTests: XCTestCase {
     func testStartDateOneDayAheadIsNotStartedUnderDayOne() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
         let subject = profile(start: DateFixture.components(2026, 3, 21))
-        XCTAssertEqual(render(subject, at: capturedAt), "尚未開始")
+        XCTAssertEqual(render(subject, at: capturedAt), "還有 1 天")
     }
 
     // MARK: - A-11 (4.56) time zones
@@ -424,7 +424,7 @@ extension TemplateRendererTests {
     func testNotStartedSitsAfterDateAndName() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 9, 19, hour: 10))
         let subject = profile(start: DateFixture.components(2026, 12, 1), showDate: true, showName: true)
-        XCTAssertEqual(render(subject, at: capturedAt), "2026.09.19 小寶 尚未開始", "51.3")
+        XCTAssertEqual(render(subject, at: capturedAt), "2026.09.19 小寶 還有 73 天", "51.3")
     }
 
     /// 51.4: a blank name drops out without leaving a double space.
@@ -530,7 +530,86 @@ final class TemplateRendererUnitSetTests: XCTestCase {
     func testFutureStartIsNotStartedForAnySet() throws {
         for units: Set<DisplayUnit> in [[.day], [.year, .week], [.month, .week, .day]] {
             XCTAssertEqual(try render(start: DateFixture.components(2026, 12, 1), capturedAt: (2026, 9, 19),
-                                      units: units), "尚未開始", "\(units)")
+                                      units: units), "還有 73 天", "\(units)")
         }
+    }
+}
+
+// MARK: - #250 (TASK-52): 還有 N 天 before the start date
+
+extension TemplateRendererTests {
+
+    /// 52.1: a start date tomorrow is one day away under either rule.
+    func testStartDateTomorrowIsOneDayAwayUnderEitherRule() throws {
+        let capturedAt = try referenceCapture()
+        let tomorrow = DateFixture.components(2026, 3, 21)
+        for rule in [CountingRule.dayOne, .dayZero] {
+            XCTAssertEqual(render(profile(start: tomorrow, rule: rule), at: capturedAt),
+                           "還有 1 天", "52.1 \(rule)")
+        }
+    }
+
+    /// 52.2: the distance is printed in days however far away it is.
+    func testDistanceIsPrintedInDays() throws {
+        let capturedAt = try referenceCapture() // 2026-03-20
+        let cases: [(DateComponents, String)] = [
+            (DateFixture.components(2026, 3, 23), "還有 3 天"),
+            (DateFixture.components(2026, 4, 29), "還有 40 天"),
+            (DateFixture.components(2027, 4, 24), "還有 400 天")
+        ]
+        for (start, expected) in cases {
+            XCTAssertEqual(render(profile(start: start), at: capturedAt), expected, "52.2")
+        }
+    }
+
+    /// 52.3: neither the checked units nor age wording reach the distance.
+    func testDistanceIgnoresUnitsAndAgeWording() throws {
+        let capturedAt = try referenceCapture()
+        let start = DateFixture.components(2026, 4, 29)
+        XCTAssertEqual(render(profile(start: start, largest: .year, smallest: .month, useAgeWording: true),
+                              at: capturedAt),
+                       "還有 40 天", "52.3")
+        XCTAssertEqual(render(profile(start: start, largest: .year, smallest: .day), at: capturedAt),
+                       "還有 40 天", "52.3")
+    }
+
+    /// 52.4: the start date itself is unchanged.
+    func testStartDateItselfIsUnchanged() throws {
+        let capturedAt = try referenceCapture()
+        let today = DateFixture.components(2026, 3, 20)
+        XCTAssertEqual(render(profile(start: today, rule: .dayOne), at: capturedAt), "第 1 天", "52.4")
+        XCTAssertEqual(render(profile(start: today, rule: .dayZero), at: capturedAt), "第 0 天", "52.4")
+    }
+
+    /// 52.5: the distance takes the count's place next to the date and name.
+    func testDistanceComposesWithDateAndName() throws {
+        let capturedAt = try referenceCapture()
+        let start = DateFixture.components(2026, 3, 23)
+        XCTAssertEqual(render(profile(start: start, showDate: true), at: capturedAt),
+                       "2026.03.20 還有 3 天", "52.5")
+        XCTAssertEqual(render(profile(start: start, showName: true), at: capturedAt),
+                       "小寶 還有 3 天", "52.5")
+        XCTAssertEqual(render(profile(start: start, showDate: true, showName: true), at: capturedAt),
+                       "2026.03.20 小寶 還有 3 天", "52.5")
+    }
+
+    /// 52.6: calendar days in the capture's time zone, across a DST change.
+    func testDistanceCountsCalendarDaysAcrossTimeZonesAndDST() throws {
+        // 2026-01-09 20:00 UTC is already 01-10 in Taipei, still 01-09 in New York.
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 20, in: DateFixture.utc))
+        let start = DateFixture.components(2026, 1, 11)
+        XCTAssertEqual(render(profile(start: start), at: instant, calendar: DateFixture.taipei),
+                       "還有 1 天", "52.6")
+        XCTAssertEqual(render(profile(start: start), at: instant, calendar: DateFixture.newYork),
+                       "還有 2 天", "52.6")
+
+        // New York springs forward on 2026-03-08; the 23-hour day still counts once.
+        let lateEvening = try XCTUnwrap(DateFixture.date(2026, 3, 7, hour: 23, in: DateFixture.newYork))
+        XCTAssertEqual(render(profile(start: DateFixture.components(2026, 3, 8)),
+                              at: lateEvening, calendar: DateFixture.newYork),
+                       "還有 1 天", "52.6")
+        XCTAssertEqual(render(profile(start: DateFixture.components(2026, 3, 10)),
+                              at: lateEvening, calendar: DateFixture.newYork),
+                       "還有 3 天", "52.6")
     }
 }
