@@ -3,21 +3,33 @@ import SwiftUI
 import UIKit
 
 /// PRD 0.2 FR-15.5～15.9 / design D-5: the photo browsing screen. Only a
-/// checkmark (back to the camera) and a trash — no share, edit or favorite
-/// (FR-15.9). All state lives in `GalleryModel`.
+/// back chevron (to the camera) and a trash — no share, edit or favorite
+/// (FR-15.9); dragging the photo down also goes back (TASK-60). All state
+/// lives in `GalleryModel`.
 struct GalleryView: View {
     @ObservedObject var model: GalleryModel
-    /// Closes the gallery — the checkmark key (FR-14.3) and "去拍照".
+    /// Closes the gallery — the back key and "去拍照".
     var onClose: () -> Void = {}
 
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Pull-down-to-close state (TASK-60): how far the finger has moved
+    /// down, and whether this drag was judged vertical (nil until decided).
+    @State private var dismissOffset: CGFloat = 0
+    @State private var isDismissDragVertical: Bool?
+
     var body: some View {
+        let progress = GalleryDismissDrag.progress(offset: dismissOffset)
         VStack(spacing: 0) {
             header
             content
         }
-        .background(CameraTheme.background.ignoresSafeArea())
+        .scaleEffect(GalleryDismissDrag.scale(progress: progress), anchor: .center)
+        .offset(y: dismissOffset)
+        // The cover itself is clear so the camera shows through as the
+        // page fades; the page's own background carries the fade.
+        .background(CameraTheme.background.opacity(1 - progress).ignoresSafeArea())
+        .presentationBackground(.clear)
         .preferredColorScheme(.light)
         .task { await model.requestAccessAndLoad() }
         // Live updates while open (started by the load); unregistered on close.
@@ -50,7 +62,7 @@ struct GalleryView: View {
             }
             HStack {
                 Button(action: onClose) {
-                    Image(systemName: "checkmark")
+                    Image(systemName: "chevron.left")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(CameraTheme.active)
                         .frame(width: 44, height: 44)
@@ -125,6 +137,7 @@ struct GalleryView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(maxHeight: .infinity)
+            .simultaneousGesture(dismissGesture)
 
             thumbnailStrip
 
@@ -144,6 +157,33 @@ struct GalleryView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 8)
         }
+    }
+
+    // MARK: - Pull down to close (TASK-60)
+
+    /// Only a mostly vertical, downward drag on the photo area counts; the
+    /// axis is decided once, at the start of the drag, so a horizontal page
+    /// swipe never turns into a dismiss halfway.
+    private var dismissGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                if isDismissDragVertical == nil {
+                    isDismissDragVertical = GalleryDismissDrag.isVertical(translation: value.translation)
+                }
+                guard isDismissDragVertical == true else { return }
+                dismissOffset = max(value.translation.height, 0)
+            }
+            .onEnded { value in
+                let wasVertical = isDismissDragVertical == true
+                isDismissDragVertical = nil
+                guard wasVertical else { return }
+                if GalleryDismissDrag.shouldDismiss(offset: value.translation.height,
+                                                    predictedEndOffset: value.predictedEndTranslation.height) {
+                    onClose()
+                } else {
+                    withAnimation(CameraTheme.spring) { dismissOffset = 0 }
+                }
+            }
     }
 
     private var thumbnailStrip: some View {
@@ -174,6 +214,39 @@ struct GalleryView: View {
                 withAnimation(CameraTheme.spring) { proxy.scrollTo(model.photos[index].id, anchor: .center) }
             }
         }
+    }
+}
+
+/// The numbers behind the pull-down-to-close drag (TASK-60), kept apart from
+/// the view so they can be tested.
+enum GalleryDismissDrag {
+    /// Downward travel that always closes on release.
+    static let closeDistance: CGFloat = 120
+    /// Predicted travel of a quick flick that closes even when short.
+    static let flickDistance: CGFloat = 360
+    /// A flick must have moved at least this far to count.
+    static let minimumFlickTravel: CGFloat = 30
+    /// Travel at which the page is fully faded.
+    static let fadeDistance: CGFloat = 300
+
+    /// A drag counts as vertical only when it is mostly up/down.
+    static func isVertical(translation: CGSize) -> Bool {
+        abs(translation.height) > abs(translation.width)
+    }
+
+    /// 0 at rest, 1 once the page is fully faded.
+    static func progress(offset: CGFloat) -> CGFloat {
+        min(max(offset, 0) / fadeDistance, 1)
+    }
+
+    /// The page shrinks up to 15% as it follows the finger.
+    static func scale(progress: CGFloat) -> CGFloat {
+        1 - 0.15 * progress
+    }
+
+    /// Past 120pt, or a quick flick that has already moved a little.
+    static func shouldDismiss(offset: CGFloat, predictedEndOffset: CGFloat) -> Bool {
+        offset > closeDistance || (offset > minimumFlickTravel && predictedEndOffset > flickDistance)
     }
 }
 
