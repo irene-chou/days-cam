@@ -358,11 +358,9 @@ final class CameraScreenModelFontTests: XCTestCase {
 
     // MARK: - 35.6, 35.7, 35.9, 35.9a applyFont
 
-    func testApplyFontDownloadsThenWritesTheProfileAndAnnouncesAfterTheListIsClosed() async throws {
+    func testApplyFontDownloadsThenWritesTheProfileAndAnnouncesOnTheCameraScreenWhenTheListIsNotShown() async throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
-        harness.model.styleTabModel?.presentFontLibrary()
-        harness.model.styleTabModel?.fontLibraryModel?.didTapRow(.xingkai)
-        harness.model.styleTabModel?.dismissFontLibrary()
+        harness.model.styleTabModel?.fontList.didTap(.xingkai)
         XCTAssertEqual(harness.library.downloads, [.xingkai], "35.6")
         XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .pingFang, "35.6: nothing before the download ends")
 
@@ -374,7 +372,7 @@ final class CameraScreenModelFontTests: XCTestCase {
 
     func testApplyFontAnnouncesInTheOpenListWhenItIsOpen() throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
-        harness.model.styleTabModel?.presentFontLibrary()
+        harness.model.styleTabModel?.fontList.listDidAppear()
         harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
         harness.library.finishDownload(.xingkai)
         XCTAssertEqual(harness.model.styleTabModel?.fontLibraryModel?.toast?.text, "已套用「行楷」")
@@ -478,7 +476,7 @@ final class CameraScreenModelFontTests: XCTestCase {
 
     func testStyleTabAndFontListShareTheScreensLibraryAndApplyPath() throws {
         let harness = try makeHarness(states: [.huninn: .available])
-        harness.model.styleTabModel?.didTapFontCell(.huninn)
+        harness.model.styleTabModel?.fontList.didTap(.huninn)
         XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .huninn, "FR-5.18: the grid goes through applyFont")
     }
 }

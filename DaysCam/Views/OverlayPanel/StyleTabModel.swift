@@ -37,8 +37,8 @@ final class StyleTabModel: ObservableObject {
     /// change goes through one of this model's setters so it is always
     /// persisted (FR-8.6).
     @Published private(set) var profile: CameraProfile {
-        // Keeps the open font list's checkmark on the profile's font.
-        didSet { fontLibraryModel?.update(profileID: profile.id, currentFontID: profile.style.fontID) }
+        // Keeps the font list's selection on the profile's font.
+        didSet { fontList.update(profileID: profile.id, currentFontID: profile.style.fontID) }
     }
     /// Which second-layer item is selected. In-memory only — not part of the
     /// profile and not persisted, matching `lastPanelTab`'s sibling state.
@@ -46,15 +46,18 @@ final class StyleTabModel: ObservableObject {
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
-    /// The font list while it is open (FR-10.2′.3); `nil` when closed.
-    @Published private(set) var fontLibraryModel: FontLibraryModel?
+    /// The font list of the 字型 page (TASK-56). Lives as long as this model.
+    let fontList: FontLibraryModel
+
+    /// The font list while it is on screen, `nil` otherwise:
+    /// `CameraScreenModel` announces "已套用" in it when there is one and on
+    /// the camera screen when there is not.
+    var fontLibraryModel: FontLibraryModel? { fontList.isVisible ? fontList : nil }
 
     private let updateProfile: (CameraProfile) throws -> Void
     private let recentColorsStore: RecentColorsStore
     private let fontLibrary: any FontListControlling
     private let applyFont: (OverlayFontID, UUID) -> Void
-    private let allProfiles: () -> [CameraProfile]
-    private let replaceFont: (OverlayFontID, OverlayFontID) throws -> [UUID]
     private var cancellables: Set<AnyCancellable> = []
 
     /// Creates a style tab model for `profile`.
@@ -72,8 +75,10 @@ final class StyleTabModel: ObservableObject {
     ///     `CameraScreenModel`. This model never writes `fontID` itself.
     ///   - allProfiles: Every profile, to count who uses a font before it is
     ///     deleted.
-    ///   - replaceFont: `ProfileStore.replaceFont`: switches every profile
-    ///     using the first font to the second and returns the changed IDs.
+    ///   - replaceFont: Unused since TASK-56: deleting a font no longer
+    ///     switches profiles to PingFang (they keep the font selected and draw
+    ///     with PingFang until it is downloaded again). Kept so
+    ///     `CameraScreenModel`'s call site did not have to change.
     ///   - updateProfile: Forwarded to the real persistence layer by the
     ///     caller, called after every change. Throws to report a failure;
     ///     this model does not interpret the error, it only surfaces it.
@@ -88,9 +93,12 @@ final class StyleTabModel: ObservableObject {
         self.recentColorsStore = recentColorsStore
         self.fontLibrary = fontLibrary ?? StaticFontLibrary()
         self.applyFont = applyFont
-        self.allProfiles = allProfiles
-        self.replaceFont = replaceFont
         self.updateProfile = updateProfile
+        self.fontList = FontLibraryModel(profileID: profile.id,
+                                         currentFontID: profile.style.fontID,
+                                         library: self.fontLibrary,
+                                         profiles: allProfiles,
+                                         applyFont: applyFont)
 
         // Forward the store's changes so a view observing only this model
         // (not the store separately) still redraws when the recent-colors
@@ -99,7 +107,7 @@ final class StyleTabModel: ObservableObject {
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
-        // A font changing state redraws the grid.
+        // A font changing state redraws the previews that use the font.
         self.fontLibrary.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -137,126 +145,21 @@ final class StyleTabModel: ObservableObject {
     }
 }
 
-// MARK: - 字型 (PRD 0.3 FR-10.2′, FR-16)
-
-/// A cell of the font grid (FR-10.2′).
-enum FontGridItem: Identifiable, Equatable {
-    /// A font, and what to show under its name.
-    case font(FontGridCell)
-    /// The last cell, which opens the font list.
-    case moreFonts
-
-    var id: String {
-        switch self {
-        case .font(let cell): return cell.fontID.rawValue
-        case .moreFonts: return "moreFonts"
-        }
-    }
-}
-
-/// One font in the grid.
-struct FontGridCell: Equatable {
-    /// The line under the name (FR-10.2′.4).
-    enum Caption: Equatable {
-        case none
-        /// `preparing`: a small ring, no text.
-        case preparing
-        /// `downloading`: "38%".
-        case percent(String)
-        /// `notDownloaded` or `failed`: "需重新下載".
-        case needsRedownload
-    }
-
-    let fontID: OverlayFontID
-    let name: String
-    let state: FontState
-    let isSelected: Bool
-    let caption: Caption
-
-    /// Whether the name is drawn with the font itself; otherwise with its
-    /// preview image (FR-16.4).
-    var usesRealFont: Bool { state.isAvailable }
-
-    var accessibilityLabel: String {
-        switch caption {
-        case .none: return name
-        case .preparing: return "\(name)，準備中"
-        case .percent(let text): return "\(name)，下載中，\(text)"
-        case .needsRedownload: return "\(name)，需重新下載"
-        }
-    }
-}
+// MARK: - 字型 (PRD 0.3 FR-16, TASK-56)
 
 extension StyleTabModel {
-    /// What the grid lists, in §4.1 order: every `available` font, plus the
-    /// current one whatever its state, then the "更多字型" cell (FR-10.2′.1,
-    /// FR-10.2′.4).
-    var fontGridItems: [FontGridItem] {
-        let current = profile.style.fontID
-        let cells: [FontGridItem] = OverlayFontID.allCases.compactMap { fontID in
-            let state = fontLibrary.state(for: fontID)
-            guard state.isAvailable || fontID == current else { return nil }
-            return .font(FontGridCell(fontID: fontID,
-                                      name: fontID.displayName,
-                                      state: state,
-                                      isSelected: fontID == current,
-                                      caption: Self.caption(for: state)))
-        }
-        return cells + [.moreFonts]
-    }
-
-    private static func caption(for state: FontState) -> FontGridCell.Caption {
-        switch state {
-        case .available: return .none
-        case .preparing: return .preparing
-        case .downloading(let progress): return .percent(FontStateText.percent(progress))
-        case .notDownloaded, .failed: return .needsRedownload
-        }
-    }
-
     /// `fontID` (default: the profile's font) at `size`, resolved the way the
     /// viewfinder and the photo resolve it (FR-5.14): the font itself when it
-    /// is available, PingFang otherwise. For the grid cells and the
+    /// is available, PingFang otherwise. For the font cells and the
     /// outline/shadow previews.
     func resolvedFont(ofSize size: CGFloat, for fontID: OverlayFontID? = nil) -> UIFont {
         OverlayMetrics.resolvedFont(for: fontID ?? profile.style.fontID, availability: fontLibrary)
             .font(ofSize: size)
     }
 
-    /// A tap on a font cell (FR-10.2′.4): an available font is applied; a
-    /// current font that needs downloading opens the list scrolled to it; one
-    /// that is preparing or downloading does nothing.
-    func didTapFontCell(_ fontID: OverlayFontID) {
-        switch fontLibrary.state(for: fontID) {
-        case .available:
-            selectFont(fontID)
-        case .notDownloaded, .failed:
-            presentFontLibrary(scrollingTo: fontID)
-        case .preparing, .downloading:
-            break
-        }
-    }
-
     /// Applies `fontID` to this profile through `applyFont` (FR-5.18).
     func selectFont(_ fontID: OverlayFontID) {
         applyFont(fontID, profile.id)
-    }
-
-    /// Opens the font list, optionally scrolled to `fontID` (FR-10.2′.3).
-    func presentFontLibrary(scrollingTo fontID: OverlayFontID? = nil) {
-        fontLibraryModel = FontLibraryModel(
-            profileID: profile.id,
-            currentFontID: profile.style.fontID,
-            library: fontLibrary,
-            scrollTarget: fontID,
-            profiles: allProfiles,
-            applyFont: applyFont,
-            replaceFont: replaceFont)
-    }
-
-    /// Closes the font list.
-    func dismissFontLibrary() {
-        fontLibraryModel = nil
     }
 }
 

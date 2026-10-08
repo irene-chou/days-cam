@@ -79,6 +79,11 @@ struct StyleTabView: View {
             } header: {
                 subTabRow
                     .background(CameraTheme.background)
+                    // The font list's messages sit over the pinned row, so they
+                    // never cover the cells being tapped.
+                    .overlay(alignment: .center) {
+                        FontToastView(model: model.fontList)
+                    }
             }
         }
         // This tab's own `.tabbody` outer inset (`D3-style-tab.html`'s
@@ -91,12 +96,6 @@ struct StyleTabView: View {
         .padding(.top, Self.tabTopInset)
         .padding(.horizontal, 10)
         .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
-        .fullScreenCover(isPresented: Binding(get: { model.fontLibraryModel != nil },
-                                              set: { if !$0 { model.dismissFontLibrary() } })) {
-            if let libraryModel = model.fontLibraryModel {
-                FontLibraryView(model: libraryModel, onClose: model.dismissFontLibrary)
-            }
-        }
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }
@@ -180,7 +179,7 @@ struct StyleTabView: View {
     @ViewBuilder
     private var content: some View {
         switch model.selectedSubTab {
-        case .font: fontRow
+        case .font: fontContent
         case .color: colorContent
         case .outline: outlineContent
         case .shadow: shadowContent
@@ -188,116 +187,12 @@ struct StyleTabView: View {
         }
     }
 
-    // MARK: - 字型 (PRD 0.3 FR-10.2′)
+    // MARK: - 字型 (PRD 0.3 FR-16, TASK-56)
 
-    /// Height of one font cell; the whole cell is the tap target (#129).
-    static let fontCellHeight: CGFloat = 48
-    /// Font name size inside a cell (#129 — was 17 in the old chip row).
-    static let fontCellTextSize: CGFloat = 15
-    /// A preview image is shrunk to this height in a cell that also has a
-    /// caption (the images differ in height; `docs/fonts-manifest.md`).
-    static let fontCellPreviewHeight: CGFloat = 22
-    /// Caption size under a name (`.st{font-size:9px}` in D-6).
-    static let fontCellCaptionSize: CGFloat = 9
-
-    /// Three equal-width columns in §4.1 order, the last cell "更多字型",
-    /// left-aligned. Scrolls vertically with the panel instead of
-    /// horizontally (#129).
-    private var fontRow: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                  alignment: .leading,
-                  spacing: 8) {
-            ForEach(model.fontGridItems) { item in
-                switch item {
-                case .font(let cell): fontCell(cell)
-                case .moreFonts: moreFontsCell
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func fontCell(_ cell: FontGridCell) -> some View {
-        Button {
-            model.didTapFontCell(cell.fontID)
-        } label: {
-            VStack(spacing: 2) {
-                if cell.usesRealFont {
-                    // The font itself, resolved as the viewfinder resolves it.
-                    Text(cell.name)
-                        .font(Font(model.resolvedFont(ofSize: Self.fontCellTextSize, for: cell.fontID)))
-                        .foregroundColor(CameraTheme.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                } else {
-                    // Not drawable yet: its preview image keeps the glyphs.
-                    FontPreviewImage(fontID: cell.fontID,
-                                     accessibilityName: cell.name,
-                                     maxHeight: Self.fontCellPreviewHeight)
-                        .frame(height: Self.fontCellPreviewHeight)
-                    fontCellCaption(cell.caption)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.fontCellHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(cell.isSelected ? CameraTheme.active.opacity(0.12) : CameraTheme.ink.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(CameraTheme.active, lineWidth: cell.isSelected ? 1.5 : 0)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(cell.accessibilityLabel)
-        .accessibilityAddTraits(cell.isSelected ? .isSelected : [])
-    }
-
-    @ViewBuilder
-    private func fontCellCaption(_ caption: FontGridCell.Caption) -> some View {
-        switch caption {
-        case .none:
-            EmptyView()
-        case .preparing:
-            FontProgressRing(progress: nil, diameter: 10)
-                .frame(height: 12)
-        case .percent(let text):
-            Text(text)
-                .font(.system(size: Self.fontCellCaptionSize, weight: .bold).monospacedDigit())
-                .foregroundColor(CameraTheme.inkTertiary)
-                .frame(height: 12)
-        case .needsRedownload:
-            Text(FontStateText.needsRedownload)
-                .font(.system(size: Self.fontCellCaptionSize, weight: .bold))
-                .foregroundColor(FontLibraryView.danger)
-                .frame(height: 12)
-        }
-    }
-
-    /// The last cell: opens the font list (FR-10.2′.3).
-    private var moreFontsCell: some View {
-        Button {
-            model.presentFontLibrary()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 14))
-                Text("更多字型")
-                    .font(.system(size: 12, weight: .bold))
-            }
-            .foregroundColor(CameraTheme.inkSecondary)
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.fontCellHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(CameraTheme.ink.opacity(0.3), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("更多字型")
+    /// The whole font list, scrolling with the panel; the pinned sub-tab row
+    /// stays on top.
+    private var fontContent: some View {
+        FontListView(model: model.fontList)
     }
 
     // MARK: - 顏色 (FR-10.4, FR-10.7)
