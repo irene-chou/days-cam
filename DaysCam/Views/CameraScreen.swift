@@ -410,7 +410,7 @@ struct CameraScreen: View {
     /// screen edge (midway to the shutter's edge, minus 8pt), open or
     /// closed, so they never shift when the panel toggles. Closed, the row sits 16pt
     /// above the bottom of the footer region; open, `footerColumn` supplies
-    /// the 8pt gap itself and the row is exactly 44pt tall.
+    /// the 8pt gap itself and the row is exactly 32pt tall (TASK-55).
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let isOpen = model.panelModel.isOpen
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
@@ -437,13 +437,17 @@ struct CameraScreen: View {
     /// decision 2026-10-08 settled on 24, issue #239).
     private static let footerIconSize: CGFloat = 24
 
+    /// Icon size of the collapse key while the panel is open (TASK-55); its
+    /// tap target is 44 wide × the 32pt open footer row.
+    private static let panelOpenFooterIconSize: CGFloat = 20
+
     @ViewBuilder
     private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.leftBottomBarAction {
         case .latestPhoto:
             thumbnailButton(isOnPhoto: isOnPhoto)
         case .empty:
-            Color.clear.frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
+            Color.clear.frame(width: Self.footerButtonSize, height: CameraScreenLayoutMetrics.panelOpenFooterRowHeight)
         }
     }
 
@@ -460,13 +464,15 @@ struct CameraScreen: View {
                 model.openOverlayPanel()
             }
         case .collapse:
-            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
+            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto,
+                       iconSize: Self.panelOpenFooterIconSize,
+                       buttonHeight: CameraScreenLayoutMetrics.panelOpenFooterRowHeight) {
                 model.closeOverlayPanel()
             }
         }
     }
 
-    /// 44×44 tap target (`footerButtonSize`; issue #128) — every
+    /// 44×44 tap target by default (`footerButtonSize`; issue #128; the collapse key is 44×32, TASK-55) — every
     /// bottom bar icon button except `thumbnailButton`, which shows a photo
     /// thumbnail of the same 44×44 size rather than a plain icon.
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
@@ -475,12 +481,14 @@ struct CameraScreen: View {
     /// where the viewfinder is never behind the footer (issue #120), so callers always pass `false` today; still
     /// threaded through properly rather than assumed, so it stays correct
     /// if that ever changes.
-    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
+    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool,
+                            iconSize: CGFloat = footerIconSize, buttonHeight: CGFloat = footerButtonSize,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: Self.footerIconSize, weight: .medium))
+                .font(.system(size: iconSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
+                .frame(width: Self.footerButtonSize, height: buttonHeight)
                 .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel(accessibilityLabel)
