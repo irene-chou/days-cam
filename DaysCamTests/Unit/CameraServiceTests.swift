@@ -597,3 +597,131 @@ final class CameraServiceMirroringTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Zoom (issue #274, TASK-61 acceptance 61.3, 61.4, 61.7)
+
+/// A capture device reduced to its zoom. Fails the test on a zoom set without
+/// holding the configuration lock, which AVFoundation would raise on.
+private final class FakeZoomDevice: ZoomableCaptureDevice {
+    let minAvailableVideoZoomFactor: CGFloat
+    let maxAvailableVideoZoomFactor: CGFloat
+    var videoZoomFactor: CGFloat = 1 {
+        didSet { XCTAssertTrue(isLocked, "videoZoomFactor set without the configuration lock") }
+    }
+    var lockFails = false
+    private(set) var isLocked = false
+    private(set) var lockCount = 0
+
+    struct LockError: Error {}
+
+    init(min: CGFloat = 1, max: CGFloat = 16) {
+        minAvailableVideoZoomFactor = min
+        maxAvailableVideoZoomFactor = max
+    }
+
+    func lockForConfiguration() throws {
+        if lockFails { throw LockError() }
+        isLocked = true
+        lockCount += 1
+    }
+
+    func unlockForConfiguration() {
+        isLocked = false
+    }
+}
+
+final class CameraServiceZoomTests: XCTestCase {
+
+    // MARK: Range
+
+    /// 61.3: never past 10×, even when the device goes further.
+    func testRangeIsCappedAtTenTimes() {
+        XCTAssertEqual(CameraService.zoomRange(minAvailable: 1, maxAvailable: 123),
+                       ZoomRange(minimum: 1, maximum: 10))
+    }
+
+    /// 61.3: a device that stops short of 10× keeps its own maximum.
+    func testRangeKeepsASmallerDeviceMaximum() {
+        XCTAssertEqual(CameraService.zoomRange(minAvailable: 1, maxAvailable: 4),
+                       ZoomRange(minimum: 1, maximum: 4))
+    }
+
+    /// A device that can go below 1× (an ultra-wide virtual device) keeps it.
+    func testRangeKeepsADeviceMinimumBelowOne() {
+        XCTAssertEqual(CameraService.zoomRange(minAvailable: 0.5, maxAvailable: 15),
+                       ZoomRange(minimum: 0.5, maximum: 10))
+    }
+
+    // MARK: Clamping (61.7)
+
+    func testFactorBelowTheMinimumIsRaisedToIt() {
+        let device = FakeZoomDevice(min: 1, max: 16)
+        XCTAssertEqual(CameraService.applyZoom(0.3, to: device), 1)
+        XCTAssertEqual(device.videoZoomFactor, 1)
+    }
+
+    func testFactorAboveTheDeviceMaximumIsLoweredToIt() {
+        let device = FakeZoomDevice(min: 1, max: 4)
+        XCTAssertEqual(CameraService.applyZoom(6, to: device), 4)
+        XCTAssertEqual(device.videoZoomFactor, 4)
+    }
+
+    func testFactorAboveTenIsLoweredToTen() {
+        let device = FakeZoomDevice(min: 1, max: 16)
+        XCTAssertEqual(CameraService.applyZoom(12.5, to: device), 10)
+        XCTAssertEqual(device.videoZoomFactor, 10)
+    }
+
+    func testFactorInRangeIsSetAsIsUnderTheLock() {
+        let device = FakeZoomDevice()
+        XCTAssertEqual(CameraService.applyZoom(2.3, to: device), 2.3)
+        XCTAssertEqual(device.videoZoomFactor, 2.3)
+        XCTAssertEqual(device.lockCount, 1)
+        XCTAssertFalse(device.isLocked, "the lock is released again")
+    }
+
+    func testFailedLockLeavesTheZoomAlone() {
+        let device = FakeZoomDevice()
+        device.lockFails = true
+        XCTAssertNil(CameraService.applyZoom(3, to: device))
+        XCTAssertEqual(device.videoZoomFactor, 1)
+    }
+
+    // MARK: Switching (61.4, 61.7)
+
+    /// 61.4: the reset a switch applies brings either side back to 1×, even
+    /// though a device keeps its factor across input swaps — going back to a
+    /// side zoomed earlier must not resume at the old factor.
+    func testSwitchResetBringsEachSideBackToOne() {
+        let back = FakeZoomDevice(min: 1, max: 16)
+        let front = FakeZoomDevice(min: 1, max: 4)
+
+        CameraService.applyZoom(3, to: back)
+        CameraService.applyZoom(1, to: front) // switch to front
+        CameraService.applyZoom(2, to: front)
+        CameraService.applyZoom(1, to: back) // switch back
+
+        XCTAssertEqual(back.videoZoomFactor, 1)
+        XCTAssertEqual(front.videoZoomFactor, 2, "front untouched until it is switched to again")
+        CameraService.applyZoom(1, to: front) // and to front again
+        XCTAssertEqual(front.videoZoomFactor, 1)
+    }
+
+    // MARK: Service
+
+    func testServiceStartsUnzoomedWithAFixedRange() {
+        let service = CameraService(isCaptureSupported: false)
+        XCTAssertEqual(service.zoomFactor, 1)
+        XCTAssertEqual(service.zoomRange, .fixed)
+    }
+
+    /// Without a camera (the simulator) zooming is a no-op, not a crash.
+    func testSetZoomFactorIsANoOpWithoutCapture() {
+        let service = CameraService(isCaptureSupported: false)
+        service.setZoomFactor(5)
+        let drained = expectation(description: "queues drain")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+        XCTAssertEqual(service.zoomFactor, 1)
+    }
+}

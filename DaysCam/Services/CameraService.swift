@@ -152,6 +152,35 @@ protocol VideoMirroringConfigurable: AnyObject {
 
 extension AVCaptureConnection: VideoMirroringConfigurable {}
 
+/// The slice of `AVCaptureDevice` that zooming touches.
+///
+/// Injected so the clamping and the lock/unlock pairing can be tested without
+/// a real camera, which the simulator does not have.
+protocol ZoomableCaptureDevice: AnyObject {
+    var minAvailableVideoZoomFactor: CGFloat { get }
+    var maxAvailableVideoZoomFactor: CGFloat { get }
+    var videoZoomFactor: CGFloat { get set }
+    func lockForConfiguration() throws
+    func unlockForConfiguration()
+}
+
+extension AVCaptureDevice: ZoomableCaptureDevice {}
+
+/// The zoom factors the current camera accepts, as `setZoomFactor(_:)` clamps
+/// them: the device's available range, capped at `CameraService.maxZoomFactor`.
+struct ZoomRange: Equatable {
+    let minimum: CGFloat
+    let maximum: CGFloat
+
+    /// No zoom at all: what is published before a camera is configured.
+    static let fixed = ZoomRange(minimum: 1, maximum: 1)
+
+    /// `factor` pulled into this range.
+    func clamp(_ factor: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(factor, minimum), maximum)
+    }
+}
+
 /// A tick source for the timer countdown (PRD 0.2 FR-7.6).
 ///
 /// Injected so the countdown state machine (`CameraScreenModel`, TASK-21) can
@@ -214,6 +243,17 @@ final class CameraService: ObservableObject {
 
     /// The side currently in use. Only changes once a switch has succeeded.
     @Published private(set) var facing: CameraFacing = .back
+
+    /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
+    /// every camera switch (issue #274).
+    @Published private(set) var zoomFactor: CGFloat = 1
+
+    /// The factors `setZoomFactor(_:)` accepts on the current camera.
+    @Published private(set) var zoomRange: ZoomRange = .fixed
+
+    /// The most the viewfinder zooms in, whatever the device allows
+    /// (issue #274).
+    static let maxZoomFactor: CGFloat = 10
 
     /// False where capture is impossible, i.e. the simulator. The view uses it
     /// for the placeholder background and the disabled shutter (PRD §2.4).
@@ -424,6 +464,9 @@ extension CameraService {
                 // The input swap rebuilds the output's connection, so its
                 // mirroring is set again for the new side (issue #272).
                 self.applyPhotoMirroring()
+                // A device keeps its zoom across input swaps, so going back to
+                // a side would otherwise resume at its old factor.
+                self.resetZoom(on: device)
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
                 self.publish(facing: target)
@@ -433,6 +476,8 @@ extension CameraService {
                 self.adoptNativeResolution(of: previous.device)
                 self.session.commitConfiguration()
                 self.applyPhotoMirroring()
+                // Still the same side, so it keeps its zoom.
+                self.publishZoom(of: previous.device)
             } else {
                 // Neither side went in: the session now has no video input at
                 // all. Say so, or the user gets a black viewfinder with a live
@@ -442,6 +487,58 @@ extension CameraService {
                 self.publish(status: .unavailable(.sessionFailure))
             }
         }
+    }
+}
+
+// MARK: - Zoom
+
+extension CameraService {
+
+    /// Zooms the current camera to `factor`, clamped to `zoomRange`.
+    ///
+    /// Optical/sensor zoom through `AVCaptureDevice.videoZoomFactor`, never a
+    /// crop after capture, so the photo matches the viewfinder and keeps the
+    /// resolution the system picks (issue #274). The device is locked and set
+    /// on the session queue; `zoomFactor` follows on the main queue once the
+    /// device has taken it. A no-op until a camera is configured.
+    ///
+    /// Call on the main queue.
+    func setZoomFactor(_ factor: CGFloat) {
+        guard isCaptureSupported else { return }
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            guard CameraService.applyZoom(factor, to: device) != nil else { return }
+            self.publishZoom(of: device)
+        }
+    }
+
+    /// The range a device with these available factors accepts: its own
+    /// range, with the top capped at `maxZoomFactor`.
+    static func zoomRange(minAvailable: CGFloat, maxAvailable: CGFloat) -> ZoomRange {
+        let maximum = Swift.min(maxAvailable, maxZoomFactor)
+        return ZoomRange(minimum: Swift.min(minAvailable, maximum), maximum: maximum)
+    }
+
+    /// The range `device` accepts.
+    static func zoomRange(of device: ZoomableCaptureDevice) -> ZoomRange {
+        zoomRange(minAvailable: device.minAvailableVideoZoomFactor,
+                  maxAvailable: device.maxAvailableVideoZoomFactor)
+    }
+
+    /// Clamps `factor` to `device`'s range and sets it under the device's
+    /// configuration lock. Returns the factor set, or nil when the lock could
+    /// not be taken and nothing changed.
+    @discardableResult
+    static func applyZoom(_ factor: CGFloat, to device: ZoomableCaptureDevice) -> CGFloat? {
+        let clamped = zoomRange(of: device).clamp(factor)
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return nil
+        }
+        device.videoZoomFactor = clamped
+        device.unlockForConfiguration()
+        return clamped
     }
 }
 
@@ -600,6 +697,7 @@ private extension CameraService {
         adoptNativeResolution(of: device)
         session.commitConfiguration()
         applyPhotoMirroring()
+        resetZoom(on: device)
 
         rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         return true
@@ -629,6 +727,24 @@ private extension CameraService {
     func applyPhotoMirroring() {
         guard let connection = photoOutput.connection(with: .video) else { return }
         CameraService.configureMirroring(of: connection, for: sessionFacing)
+    }
+
+    /// Puts `device` back to 1× (or its nearest allowed factor) and publishes
+    /// its range, for a camera that has just gone into the session.
+    func resetZoom(on device: ZoomableCaptureDevice) {
+        CameraService.applyZoom(1, to: device)
+        publishZoom(of: device)
+    }
+
+    /// Publishes `device`'s current factor and range. Runs on `sessionQueue`.
+    func publishZoom(of device: ZoomableCaptureDevice) {
+        let range = CameraService.zoomRange(of: device)
+        let factor = device.videoZoomFactor
+        onMain { [weak self] in
+            guard let self else { return }
+            if self.zoomRange != range { self.zoomRange = range }
+            if self.zoomFactor != factor { self.zoomFactor = factor }
+        }
     }
 }
 
