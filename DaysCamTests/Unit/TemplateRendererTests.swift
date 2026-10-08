@@ -109,17 +109,18 @@ final class TemplateRendererTests: XCTestCase {
         XCTAssertEqual(output, "2026.03.20", "4.9")
     }
 
-    func testDateAndCountAreSeparatedByAnIdeographicSpace() throws {
+    /// #249 replaces 4.14's ideographic space with a half-width space.
+    func testDateAndCountAreSeparatedByAHalfWidthSpace() throws {
         let output = render(profile(showDate: true), at: try referenceCapture())
-        XCTAssertEqual(output, "2026.03.20\u{3000}第 430 天", "4.10")
-        XCTAssertTrue(output.contains("\u{3000}"), "4.14 separator must be U+3000")
-        XCTAssertFalse(output.contains("2026.03.20 第"), "4.14 must not be a half-width space")
+        XCTAssertEqual(output, "2026.03.20 第 430 天", "4.10")
+        XCTAssertFalse(output.contains("\u{3000}"), "4.14 (#249) separator must be U+0020")
     }
 
-    func testNameIsPrefixedWithAHalfWidthSpace() throws {
+    /// #249: with the count shown the name sits between the date and the count.
+    func testNameSitsBetweenDateAndCount() throws {
         let capturedAt = try referenceCapture()
         XCTAssertEqual(render(profile(showDate: true, showName: true), at: capturedAt),
-                       "小寶 2026.03.20\u{3000}第 430 天", "4.11")
+                       "2026.03.20 小寶 第 430 天", "4.11 / 51.1")
         XCTAssertEqual(render(profile(showName: true), at: capturedAt),
                        "小寶 第 430 天", "4.12")
     }
@@ -355,7 +356,7 @@ final class TemplateRendererTests: XCTestCase {
         XCTAssertEqual(render(profile(start: start, showName: true), at: capturedAt),
                        "小寶 還有 73 天", "4.54")
         XCTAssertEqual(render(profile(start: start, showDate: true), at: capturedAt),
-                       "2026.09.19\u{3000}還有 73 天", "4.55")
+                       "2026.09.19 還有 73 天", "4.55")
     }
 
     /// `.dayOne` with a start date one day out gives n = 0, which is still the
@@ -396,6 +397,52 @@ final class TemplateRendererTests: XCTestCase {
         let output = render(subject, at: capturedAt)
         XCTAssertTrue(output.hasPrefix("第 13"), "expected a five-digit count, got \(output)")
         XCTAssertFalse(output.contains(","), "PRD FR-2.15 forbids digit grouping")
+    }
+}
+
+// MARK: - #249 (TASK-51): name in the middle, half-width separators
+
+extension TemplateRendererTests {
+
+    /// 51.2: every other combination keeps its order; nothing uses U+3000.
+    func testOtherCombinationsKeepTheirOrderWithHalfWidthSpaces() throws {
+        let capturedAt = try referenceCapture()
+        let cases: [(CameraProfile, String)] = [
+            (profile(), "第 430 天"),
+            (profile(showDate: true), "2026.03.20 第 430 天"),
+            (profile(showName: true), "小寶 第 430 天"),
+            (profile(showDayCount: false, showDate: true, showName: true), "小寶 2026.03.20")
+        ]
+        for (subject, expected) in cases {
+            let output = render(subject, at: capturedAt)
+            XCTAssertEqual(output, expected, "51.2")
+            XCTAssertFalse(output.contains("\u{3000}"), "51.2 \(expected)")
+        }
+    }
+
+    /// 51.3: the not-started text takes the count's place.
+    func testNotStartedSitsAfterDateAndName() throws {
+        let capturedAt = try XCTUnwrap(DateFixture.date(2026, 9, 19, hour: 10))
+        let subject = profile(start: DateFixture.components(2026, 12, 1), showDate: true, showName: true)
+        XCTAssertEqual(render(subject, at: capturedAt), "2026.09.19 小寶 還有 73 天", "51.3")
+    }
+
+    /// 51.4: a blank name drops out without leaving a double space.
+    func testBlankNameBetweenDateAndCountLeavesNoExtraSpace() throws {
+        let subject = profile(name: "  ", showDate: true, showName: true)
+        XCTAssertEqual(render(subject, at: try referenceCapture()), "2026.03.20 第 430 天", "51.4")
+    }
+
+    /// 51.5: age wording and multiple units do not move the name.
+    func testNameStaysInTheMiddleForMultiUnitAndAgeWording() throws {
+        let capturedAt = try referenceCapture()
+        XCTAssertEqual(render(profile(showDate: true, showName: true,
+                                      largest: .year, smallest: .day, useAgeWording: true),
+                              at: capturedAt),
+                       "2026.03.20 小寶 1 歲 2 個月 5 天", "51.5")
+        XCTAssertEqual(render(profile(showDate: true, showName: true, largest: .week, smallest: .day),
+                              at: capturedAt),
+                       "2026.03.20 小寶 61 週又 3 天", "51.5")
     }
 }
 
@@ -539,11 +586,11 @@ extension TemplateRendererTests {
         let capturedAt = try referenceCapture()
         let start = DateFixture.components(2026, 3, 23)
         XCTAssertEqual(render(profile(start: start, showDate: true), at: capturedAt),
-                       "2026.03.20\u{3000}還有 3 天", "52.5")
+                       "2026.03.20 還有 3 天", "52.5")
         XCTAssertEqual(render(profile(start: start, showName: true), at: capturedAt),
                        "小寶 還有 3 天", "52.5")
         XCTAssertEqual(render(profile(start: start, showDate: true, showName: true), at: capturedAt),
-                       "小寶 2026.03.20\u{3000}還有 3 天", "52.5")
+                       "2026.03.20 小寶 還有 3 天", "52.5")
     }
 
     /// 52.6: calendar days in the capture's time zone, across a DST change.
