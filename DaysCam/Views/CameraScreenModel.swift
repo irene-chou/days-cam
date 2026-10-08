@@ -18,8 +18,10 @@ import UIKit
 @MainActor
 final class CameraScreenModel: ObservableObject {
     let cameraService: CameraService
-    /// Pinch-to-zoom state of the viewfinder (TASK-61); its changes are
-    /// forwarded like `cameraService`'s.
+    /// Pinch-to-zoom state of the viewfinder (TASK-61). Only `isPinching` is
+    /// forwarded to this object's changes (the overlay drag switch reads it);
+    /// the rest changes every frame of a pinch and is observed by the capsule
+    /// alone (issue #280).
     let zoomModel: ViewfinderZoomModel
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
     /// grid. Exposed (not `private`) the same way `cameraService` is, so
@@ -311,7 +313,8 @@ final class CameraScreenModel: ObservableObject {
         self.makeGalleryModel = makeGalleryModel
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
-        self.zoomModel = ViewfinderZoomModel(currentFactor: { [cameraService] in cameraService.zoomFactor },
+        self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
+                                             zoomRange: { [cameraService] in cameraService.zoomRange },
                                              applyFactor: { [cameraService] in cameraService.setZoomFactor($0) })
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
@@ -333,9 +336,7 @@ final class CameraScreenModel: ObservableObject {
         self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
         bindToProfileStore()
         bindToCameraService()
-        zoomModel.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
+        bindToZoomModel()
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
@@ -455,6 +456,21 @@ final class CameraScreenModel: ObservableObject {
     private func bindToCameraService() {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    /// Forwards only `isPinching` (issue #280), and starts the next pinch at
+    /// 1× after a camera switch, which resets the zoom.
+    private func bindToZoomModel() {
+        zoomModel.$isPinching
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        cameraService.$facing
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.zoomModel.resetRequestedFactor() }
             .store(in: &cancellables)
     }
 

@@ -395,28 +395,10 @@ struct CameraScreen: View {
 
     // MARK: - Zoom capsule (TASK-61)
 
-    /// The magnification capsule, centered under the picture's bottom edge
-    /// inside it; shown while pinching and for a second after. Never takes
-    /// touches.
-    @ViewBuilder
+    /// The magnification capsule's layer. It observes the zoom model itself,
+    /// so a pinch redraws only the capsule, not this screen (issue #280).
     private func zoomCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
-        let frame = viewfinderContentFrame(metrics: metrics)
-        let visible = model.zoomModel.isIndicatorVisible
-        ZStack {
-            if visible {
-                Text(ViewfinderZoomModel.indicatorText(for: model.cameraService.zoomFactor))
-                    .font(.system(size: 14, weight: .semibold).monospacedDigit())
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .position(x: frame.midX, y: frame.maxY - 24)
-                    .accessibilityIdentifier("zoomCapsule")
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: visible ? 0.1 : 0.3), value: visible)
-        .allowsHitTesting(false)
+        ZoomCapsuleView(zoom: model.zoomModel, pictureFrame: viewfinderContentFrame(metrics: metrics))
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
