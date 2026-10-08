@@ -513,3 +513,87 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertFalse(service.isFlashAvailable, "the fake device reports no flash unit")
     }
 }
+
+// MARK: - Front camera mirroring (issue #272, TASK-59)
+
+/// A capture connection reduced to its mirroring switches. Starts the way
+/// AVFoundation hands a fresh connection out — automatic adjustment on — and
+/// fails the test on the two assignments AVFoundation would raise on.
+private final class FakeMirroringConnection: VideoMirroringConfigurable {
+    let isVideoMirroringSupported: Bool
+    var automaticallyAdjustsVideoMirroring = true
+    var isVideoMirrored = false {
+        didSet {
+            XCTAssertTrue(isVideoMirroringSupported, "mirroring set on an unsupported connection")
+            XCTAssertFalse(automaticallyAdjustsVideoMirroring, "mirroring set while automatic adjustment is on")
+            assignments += 1
+        }
+    }
+    private(set) var assignments = 0
+
+    init(isVideoMirroringSupported: Bool = true) {
+        self.isVideoMirroringSupported = isVideoMirroringSupported
+    }
+}
+
+final class CameraServiceMirroringTests: XCTestCase {
+
+    /// 59.1 / 59.3: front mirrored like its preview, back never.
+    func testOnlyTheFrontCameraIsMirrored() {
+        XCTAssertTrue(CameraService.isPhotoMirrored(facing: .front))
+        XCTAssertFalse(CameraService.isPhotoMirrored(facing: .back))
+    }
+
+    func testFrontConnectionIsMirroredWithAutomaticAdjustmentOff() {
+        let connection = FakeMirroringConnection()
+        CameraService.configureMirroring(of: connection, for: .front)
+        XCTAssertFalse(connection.automaticallyAdjustsVideoMirroring)
+        XCTAssertTrue(connection.isVideoMirrored)
+    }
+
+    /// 59.3: the back camera is set explicitly, not left to the default.
+    func testBackConnectionIsExplicitlyNotMirrored() {
+        let connection = FakeMirroringConnection()
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = true
+        CameraService.configureMirroring(of: connection, for: .back)
+        XCTAssertFalse(connection.automaticallyAdjustsVideoMirroring)
+        XCTAssertFalse(connection.isVideoMirrored)
+    }
+
+    func testUnsupportedConnectionIsLeftAlone() {
+        let connection = FakeMirroringConnection(isVideoMirroringSupported: false)
+        CameraService.configureMirroring(of: connection, for: .front)
+        XCTAssertTrue(connection.automaticallyAdjustsVideoMirroring)
+        XCTAssertEqual(connection.assignments, 0)
+    }
+
+    /// 59.4 on one connection: many switches end on the last side's setting.
+    func testRepeatedSwitchesOnOneConnectionFollowTheCurrentSide() {
+        let connection = FakeMirroringConnection()
+        var facing = CameraFacing.back
+        CameraService.configureMirroring(of: connection, for: facing)
+        for _ in 0..<7 {
+            facing = facing.opposite
+            CameraService.configureMirroring(of: connection, for: facing)
+            XCTAssertEqual(connection.isVideoMirrored, facing == .front, "\(facing)")
+            XCTAssertFalse(connection.automaticallyAdjustsVideoMirroring)
+        }
+        XCTAssertEqual(facing, .front)
+        XCTAssertTrue(connection.isVideoMirrored)
+    }
+
+    /// 59.4 with a rebuilt connection after every input swap, which is what
+    /// AVFoundation does: each fresh connection comes back on automatic and
+    /// still ends up right.
+    func testRepeatedSwitchesWithARebuiltConnectionFollowTheCurrentSide() {
+        var facing = CameraFacing.back
+        for _ in 0..<8 {
+            facing = facing.opposite
+            let connection = FakeMirroringConnection()
+            CameraService.configureMirroring(of: connection, for: facing)
+            XCTAssertFalse(connection.automaticallyAdjustsVideoMirroring)
+            XCTAssertEqual(connection.isVideoMirrored, facing == .front, "\(facing)")
+        }
+    }
+}

@@ -140,6 +140,18 @@ struct SystemFlashCapabilityProvider: FlashCapabilityProviding {
 
 // MARK: - Countdown ticker
 
+/// The slice of `AVCaptureConnection` that photo mirroring touches.
+///
+/// Injected so the mirroring decision can be tested without a real capture
+/// connection, which only exists with a camera attached.
+protocol VideoMirroringConfigurable: AnyObject {
+    var isVideoMirroringSupported: Bool { get }
+    var automaticallyAdjustsVideoMirroring: Bool { get set }
+    var isVideoMirrored: Bool { get set }
+}
+
+extension AVCaptureConnection: VideoMirroringConfigurable {}
+
 /// A tick source for the timer countdown (PRD 0.2 FR-7.6).
 ///
 /// Injected so the countdown state machine (`CameraScreenModel`, TASK-21) can
@@ -409,6 +421,9 @@ extension CameraService {
                 // going to the front camera.
                 self.adoptNativeResolution(of: device)
                 self.session.commitConfiguration()
+                // The input swap rebuilds the output's connection, so its
+                // mirroring is set again for the new side (issue #272).
+                self.applyPhotoMirroring()
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
                 self.publish(facing: target)
@@ -417,6 +432,7 @@ extension CameraService {
                 self.session.addInput(previous)
                 self.adoptNativeResolution(of: previous.device)
                 self.session.commitConfiguration()
+                self.applyPhotoMirroring()
             } else {
                 // Neither side went in: the session now has no video input at
                 // all. Say so, or the user gets a black viewfinder with a live
@@ -583,6 +599,7 @@ private extension CameraService {
         session.addOutput(photoOutput)
         adoptNativeResolution(of: device)
         session.commitConfiguration()
+        applyPhotoMirroring()
 
         rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         return true
@@ -600,6 +617,18 @@ private extension CameraService {
             from: device.activeFormat.supportedMaxPhotoDimensions
         ) else { return }
         photoOutput.maxPhotoDimensions = largest
+    }
+
+    /// Mirrors the photo output for the side now in the session, so a front
+    /// camera photo matches its (mirrored) preview (issue #272).
+    ///
+    /// Must be redone after every input change, once the new input is in:
+    /// the output's connection is rebuilt with it. Mirroring happens in the
+    /// capture pipeline, before the overlay is baked onto the delivered
+    /// image, so the overlay text itself is never mirrored.
+    func applyPhotoMirroring() {
+        guard let connection = photoOutput.connection(with: .video) else { return }
+        CameraService.configureMirroring(of: connection, for: sessionFacing)
     }
 }
 
@@ -803,6 +832,25 @@ extension CameraService {
     /// front-camera and no-flash-device branches by calling this directly.
     static func isFlashAvailable(facing: CameraFacing, hasFlash: Bool) -> Bool {
         facing == .back && hasFlash
+    }
+
+    /// Whether a photo taken on `facing` is mirrored: the front camera's is,
+    /// like its preview and like the system Camera with 鏡像前置相機 on; the
+    /// back camera's never is (issue #272). Fixed, not a setting, in 0.5.
+    static func isPhotoMirrored(facing: CameraFacing) -> Bool {
+        facing == .front
+    }
+
+    /// Sets `connection`'s mirroring for `facing`.
+    ///
+    /// Automatic adjustment is turned off first: assigning `isVideoMirrored`
+    /// while it is on raises an exception, as does assigning it on a
+    /// connection that does not support mirroring, which is left alone.
+    /// Internal so the decision is testable against a fake connection.
+    static func configureMirroring(of connection: VideoMirroringConfigurable, for facing: CameraFacing) {
+        guard connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = isPhotoMirrored(facing: facing)
     }
 }
 
