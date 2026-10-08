@@ -101,8 +101,8 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let model = try makeModel()
         let view = StyleTabView(model: model)
         XCTAssertEqual(width(of: view.autoColorButton(current: nil) {}), 30, accuracy: 0.5)
-        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: false) { _ in }), 30, accuracy: 0.5)
-        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: true) { _ in }), 30, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: false, onApply: { _ in }, onCommit: { _ in })), 30, accuracy: 0.5)
+        XCTAssertEqual(width(of: view.customColorPicker(current: nil, isSelected: true, onApply: { _ in }, onCommit: { _ in })), 30, accuracy: 0.5)
         let recent = try XCTUnwrap(OverlayColor(hex: "#8E5AA8"))
         XCTAssertEqual(width(of: view.colorDot(recent, isSelected: false) {}), 30, accuracy: 0.5)
         XCTAssertEqual(width(of: view.colorDot(recent, isSelected: true) {}), 30, accuracy: 0.5)
@@ -112,7 +112,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
     func testRecentCustomColorsCapAtSevenSoSecondRowHoldsNineAtMost() throws {
         let model = try makeModel()
         let hexes = ["#8E5AA8", "#2E8B8B", "#C0713A", "#3A7BC0", "#C03A6E", "#6EA83A", "#555555", "#123456", "#654321"]
-        for hex in hexes { model.pickCustomOutlineColor(try XCTUnwrap(OverlayColor(hex: hex))) }
+        for hex in hexes { model.commitCustomColor(try XCTUnwrap(OverlayColor(hex: hex))) }
         XCTAssertEqual(model.recentColors.count, 7)
         XCTAssertEqual(1 + 1 + model.recentColors.count, StyleTabView.colorColumnCount)
         XCTAssertEqual(1 + model.recentColors.count + 0, 8, "文字顏色頁：彩虹圓 + 7")

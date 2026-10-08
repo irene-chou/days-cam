@@ -233,19 +233,52 @@ final class StyleTabModelTests: XCTestCase {
 
     // MARK: - 23.6 ColorPicker 選色：寫入、加入最近、文字與外框共用
 
-    func testPickCustomTextColorUpdatesStyleRecentColorsAndIsSharedWithOutline() throws {
-        let spy = Spy()
+    func testCommitCustomColorAddsRecentAndIsSharedWithOutline() throws {
         let store = RecentColorsStore(defaults: defaults)
-        let model = makeModel(store: store, spy: spy)
+        let model = makeModel(store: store)
         let picked = try hex("#123456")
 
-        model.pickCustomTextColor(picked)
+        model.applyCustomTextColor(picked)
+        model.commitCustomColor(picked)
 
         XCTAssertEqual(model.profile.style.textColor, picked, "23.6")
         XCTAssertEqual(model.recentColors.first, picked, "23.6")
-        // "最近" is shared app-wide (A-8): a model built for outline color's
-        // section sees the same store and therefore the same recent list.
         XCTAssertEqual(store.recentCustomColors.first, picked, "23.6: 外框顏色的「最近」排也出現它")
+    }
+
+    // MARK: - 53.6 拖曳中只套用、關閉時才記錄
+
+    func testApplyingIntermediateColorsDoesNotTouchRecentUntilCommit() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let model = makeModel(store: store)
+        let steps = try ["#111111", "#222222", "#333333"].map { try hex($0) }
+
+        for color in steps { model.applyCustomTextColor(color) }
+        XCTAssertEqual(model.profile.style.textColor, steps.last, "53.2: 即時預覽")
+        XCTAssertTrue(store.recentCustomColors.isEmpty, "53.6: 只套用不新增")
+
+        model.commitCustomColor(try XCTUnwrap(steps.last))
+        XCTAssertEqual(store.recentCustomColors, [steps[2]], "53.6: 只新增最終色")
+    }
+
+    func testApplyingOutlineColorDoesNotTouchRecent() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let model = makeModel(store: store)
+        let color = try hex("#444444")
+
+        model.applyCustomOutlineColor(color)
+
+        XCTAssertEqual(model.profile.style.outlineColor, color, "53.4")
+        XCTAssertTrue(store.recentCustomColors.isEmpty, "53.4/53.6")
+    }
+
+    func testCommitPresetColorIsIgnoredByRecent() {
+        let store = RecentColorsStore(defaults: defaults)
+        let model = makeModel(store: store)
+
+        model.commitCustomColor(OverlayStyle.swatches[0])
+
+        XCTAssertTrue(store.recentCustomColors.isEmpty, "53.5")
     }
 
     // MARK: - 23.7 外框為「無」時外框顏色整塊 disabled
