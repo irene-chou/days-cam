@@ -18,7 +18,7 @@ final class StyleTabModel: ObservableObject {
     /// The five second-layer items (FR-10.1). Case order is display order and
     /// matches the accessibility-label order acceptance 23.1 checks.
     enum SubTab: CaseIterable {
-        case font, color, outline, shadow, size
+        case color, size, outline, shadow, font
 
         /// The only user-visible name — these are icon-only buttons, so this
         /// is surfaced purely through the accessibility label (FR-10.1).
@@ -42,7 +42,7 @@ final class StyleTabModel: ObservableObject {
     }
     /// Which second-layer item is selected. In-memory only — not part of the
     /// profile and not persisted, matching `lastPanelTab`'s sibling state.
-    @Published var selectedSubTab: SubTab = .font
+    @Published var selectedSubTab: SubTab = .color
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
