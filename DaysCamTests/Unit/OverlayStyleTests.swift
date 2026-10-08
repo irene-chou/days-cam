@@ -61,6 +61,9 @@ final class OverlayStyleTests: XCTestCase {
         XCTAssertEqual(style.textColor, try hex("#FFFFFF"), "17.2")
         XCTAssertEqual(style.outline, .none, "17.2")
         XCTAssertNil(style.outlineColor, "17.2")
+        XCTAssertEqual(style.autoOutlineOpacity, 1, "TASK-70")
+        XCTAssertEqual(style.strokeWidth, 2, "TASK-70")
+        XCTAssertEqual(style.boxPadding, 12, "TASK-70")
         XCTAssertEqual(style.shadow, .soft, "17.2")
         XCTAssertEqual(style.sizeScale, 100, "17.2")
     }
@@ -202,12 +205,135 @@ final class OverlayStyleTests: XCTestCase {
     func testStyleRoundTripsThroughJSON() throws {
         let style = OverlayStyle(fontID: .xingkai,
                                  textColor: try hex("#123456"),
-                                 outline: .thickStroke,
+                                 outline: .stroke,
                                  outlineColor: try hex("#0A84FF"),
+                                 autoOutlineOpacity: 0.4,
+                                 strokeWidth: 4.5,
+                                 boxPadding: 3,
                                  shadow: .hard,
                                  sizeScale: 70)
         let data = try JSONEncoder().encode(style)
         XCTAssertEqual(try JSONDecoder().decode(OverlayStyle.self, from: data), style)
+    }
+
+    // MARK: - Outline (TASK-70)
+
+    /// 70.1: three outlines, and these raw values are what files store.
+    func testOutlinesAreNoneStrokeAndBox() {
+        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box"], "70.1")
+    }
+
+    func testOutlineParameterRanges() {
+        XCTAssertEqual(OverlayStyle.strokeWidthRange, 1...6)
+        XCTAssertEqual(OverlayStyle.boxPaddingRange, 0...24)
+        for (width, valid) in [(1.0, true), (6, true), (0.99, false), (6.01, false), (0, false), (.nan, false)] {
+            XCTAssertEqual(OverlayStyle(strokeWidth: width).hasValidOutlineParameters, valid, "70.4 width \(width)")
+        }
+        for (padding, valid) in [(0.0, true), (24, true), (-0.01, false), (24.01, false), (.infinity, false)] {
+            XCTAssertEqual(OverlayStyle(boxPadding: padding).hasValidOutlineParameters, valid, "70.4 padding \(padding)")
+        }
+    }
+
+    /// 70.4: both parameters survive switching the outline away and back.
+    func testParametersAreKeptWhileAnotherOutlineIsChosen() throws {
+        var style = OverlayStyle(outline: .stroke, strokeWidth: 5, boxPadding: 20)
+        style.outline = .box
+        style.outline = .none
+        let decoded = try JSONDecoder().decode(OverlayStyle.self, from: JSONEncoder().encode(style))
+        XCTAssertEqual(decoded.strokeWidth, 5)
+        XCTAssertEqual(decoded.boxPadding, 20)
+    }
+
+    /// `outlineOpacity` edits whichever alpha is drawn: the chosen color's,
+    /// or the automatic color's.
+    func testOutlineOpacityFollowsTheDrawnColor() throws {
+        var auto = OverlayStyle(textColor: .white)
+        XCTAssertEqual(auto.outlineOpacity, 1)
+        auto.outlineOpacity = 0.3
+        XCTAssertNil(auto.outlineColor, "automatic stays automatic")
+        XCTAssertEqual(auto.autoOutlineOpacity, 0.3)
+        XCTAssertEqual(auto.resolvedOutlineColor, OverlayColor.autoContrastDark.withOpacity(0.3))
+
+        let blue = try hex("#0A84FF")
+        var chosen = OverlayStyle(outlineColor: blue)
+        chosen.outlineOpacity = 0.6
+        XCTAssertEqual(chosen.outlineColor, blue.withOpacity(0.6))
+        XCTAssertEqual(chosen.autoOutlineOpacity, 1, "the automatic alpha is untouched")
+        XCTAssertEqual(chosen.outlineOpacity, 0.6)
+    }
+
+    private func decodeStyle(outline: String, outlineColor: String?, extra: String = "") throws -> OverlayStyle {
+        let color = outlineColor.map { #","outlineColor":"\#($0)""# } ?? ""
+        let json = ##"{"fontID":"songti","textColor":"#FF6B9D","outline":"\##(outline)"\##(color),"shadow":"hard","sizeScale":115\##(extra)}"##
+        return try JSONDecoder().decode(OverlayStyle.self, from: Data(json.utf8))
+    }
+
+    /// 70.2 / 70.5: the migration table, with an automatic and a chosen
+    /// outline color. Nothing else in the style changes.
+    func testLegacyOutlinesMigrate() throws {
+        let blue = try hex("#0A84FF")
+        typealias Expected = (outline: OverlayOutline, width: Double, padding: Double, alpha: Double)
+        let table: [(String, Expected)] = [
+            ("thinStroke", (.stroke, 2, 12, 1)),
+            ("thickStroke", (.stroke, 4, 12, 1)),
+            ("translucentBox", (.box, 2, 12, 0.5)),
+            ("solidBox", (.box, 2, 12, 1))
+        ]
+        for (legacy, expected) in table {
+            for outlineColor in [nil, "#0A84FF"] {
+                let style = try decodeStyle(outline: legacy, outlineColor: outlineColor)
+                let label = "70.2 \(legacy) \(outlineColor ?? "auto")"
+                XCTAssertEqual(style.outline, expected.outline, label)
+                XCTAssertEqual(style.strokeWidth, expected.width, label)
+                XCTAssertEqual(style.boxPadding, expected.padding, label)
+                XCTAssertEqual(style.outlineOpacity, expected.alpha, label)
+                if outlineColor == nil {
+                    XCTAssertNil(style.outlineColor, "\(label): automatic is kept")
+                } else {
+                    XCTAssertEqual(style.outlineColor, blue.withOpacity(expected.alpha), label)
+                    XCTAssertEqual(style.autoOutlineOpacity, 1, label)
+                }
+                XCTAssertEqual(style.fontID, .songti, label)
+                XCTAssertEqual(style.textColor, try hex("#FF6B9D"), label)
+                XCTAssertEqual(style.shadow, .hard, label)
+                XCTAssertEqual(style.sizeScale, 115, label)
+            }
+        }
+    }
+
+    /// A translucent box over an already translucent color multiplies the
+    /// two, as 0.5 drew it; below the storable minimum it is raised to it.
+    func testTranslucentBoxHalvesAnAlreadyTranslucentColor() throws {
+        let style = try decodeStyle(outline: "translucentBox", outlineColor: "#0A84FF80")
+        XCTAssertEqual(style.outlineOpacity, 128.0 / 255 * 0.5, accuracy: 1e-12)
+        let faint = try decodeStyle(outline: "translucentBox", outlineColor: "#0A84FF0D")
+        XCTAssertEqual(faint.outlineOpacity, OverlayColor.minimumStorableOpacity)
+    }
+
+    /// The migrated style is written in the new format and reads back equal.
+    func testLegacyOutlineIsWrittenInTheNewFormat() throws {
+        let migrated = try decodeStyle(outline: "translucentBox", outlineColor: nil)
+        let data = try JSONEncoder().encode(migrated)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["outline"] as? String, "box")
+        XCTAssertEqual(object["boxPadding"] as? Double, 12)
+        XCTAssertEqual(object["autoOutlineOpacity"] as? Double, 0.5)
+        XCTAssertEqual(try JSONDecoder().decode(OverlayStyle.self, from: data), migrated)
+    }
+
+    /// Out-of-range parameters in a file are clamped, so the profile is kept
+    /// (writing them is rejected; see `CameraProfileOutlineTests`).
+    func testOutOfRangeParametersInAFileAreClamped() throws {
+        let style = try decodeStyle(outline: "stroke", outlineColor: nil,
+                                    extra: #","strokeWidth":40,"boxPadding":-3,"autoOutlineOpacity":0"#)
+        XCTAssertEqual(style.strokeWidth, 6)
+        XCTAssertEqual(style.boxPadding, 0)
+        XCTAssertEqual(style.autoOutlineOpacity, OverlayColor.minimumStorableOpacity)
+        XCTAssertTrue(style.hasValidOutlineParameters)
+    }
+
+    func testUnknownOutlineIsRejected() {
+        XCTAssertThrowsError(try decodeStyle(outline: "glitter", outlineColor: nil))
     }
 
     // MARK: - Placement coding

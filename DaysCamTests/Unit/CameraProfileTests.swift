@@ -298,6 +298,8 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
 
     /// PRD 0.2 §4.3 style table, written out independently of
     /// `OverlayStyle(legacyTheme:)` so that a wrong mapping cannot pass itself.
+    /// TASK-70 states its translucent box as a box at outline alpha 50%,
+    /// stored as 128/255.
     /// The font column is PingFang throughout: 0.3 §4.3 replaces the 0.2 fonts
     /// the table named.
     private let expectedStyles: [String: OverlayStyle] = [
@@ -306,11 +308,13 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         "retroOrange": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00),
                                     outline: .none, outlineColor: nil, shadow: .soft, sizeScale: 100),
         "filmStrip": OverlayStyle(fontID: .pingFang, textColor: .white,
-                                  outline: .translucentBox, outlineColor: nil, shadow: .none, sizeScale: 100),
+                                  outline: .box, outlineColor: nil,
+                                  autoOutlineOpacity: 128.0 / 255, shadow: .none, sizeScale: 100),
         "minimalDark": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
-                                    outline: .translucentBox, outlineColor: nil, shadow: .none, sizeScale: 100),
+                                    outline: .box, outlineColor: nil,
+                                  autoOutlineOpacity: 128.0 / 255, shadow: .none, sizeScale: 100),
         "softPink": OverlayStyle(fontID: .pingFang, textColor: OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D),
-                                 outline: .thinStroke, outlineColor: nil, shadow: .soft, sizeScale: 100)
+                                 outline: .stroke, outlineColor: nil, strokeWidth: 2, shadow: .soft, sizeScale: 100)
     ]
 
     /// 17.3 / 32.4: every 0.1 record is kept and converted, in PingFang.
@@ -353,8 +357,9 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
     private func expectedStyle02(index: Int) throws -> OverlayStyle {
         OverlayStyle(fontID: .pingFang,
                      textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
-                     outline: .thickStroke,
+                     outline: .stroke,
                      outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
+                     strokeWidth: 4,
                      shadow: .glow,
                      sizeScale: 70 + index * 5)
     }
@@ -477,8 +482,11 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         profile.position = .custom(x: 0.25, y: 0.75)
         profile.style = OverlayStyle(fontID: .songti,
                                      textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
-                                     outline: .solidBox,
+                                     outline: .box,
                                      outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
+                                     autoOutlineOpacity: 0.4,
+                                     strokeWidth: 5,
+                                     boxPadding: 18,
                                      shadow: .glow,
                                      sizeScale: 135)
         let data = try JSONEncoder().encode(profile)
@@ -635,8 +643,9 @@ final class CameraProfileColorOpacityTests: XCTestCase {
         XCTAssertEqual(profile.position, .custom(x: 0.25, y: 0.75))
         XCTAssertEqual(profile.style, OverlayStyle(fontID: .songti,
                                                    textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
-                                                   outline: .thickStroke,
+                                                   outline: .stroke,
                                                    outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
+                                                   strokeWidth: 4,
                                                    shadow: .glow,
                                                    sizeScale: 120), "69.1")
         XCTAssertEqual(profile.style.textColor.opacity, 1, "69.1: alpha 100%")
@@ -654,7 +663,7 @@ final class CameraProfileColorOpacityTests: XCTestCase {
         let store = try makeStore()
         store.load()
         var style = OverlayStyle(textColor: OverlayColor.white.withOpacity(0.5),
-                                 outline: .thinStroke,
+                                 outline: .stroke,
                                  outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF).withOpacity(0.3))
         style.sizeScale = 120
         let added = try store.add(CameraProfile(name: "半透明", startDate: DateFixture.components(2025, 1, 15),
@@ -831,5 +840,150 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
                                                calendar: DateFixture.taipei)
 
         XCTAssertEqual(output, "2026.03.20 只看日期 14 個月又 5 天", "47.4")
+    }
+}
+
+/// Covers TASK-70 70.2, 70.4 and 70.5 through `ProfileStore`: the 0.5
+/// outlines migrate with every other field kept, the new parameters
+/// survive a restart, and values out of range are never written.
+final class CameraProfileOutlineTests: XCTestCase {
+
+    private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    private var defaults = UserDefaults.standard
+    private var suiteName = ""
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("CameraProfileOutlineTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = "CameraProfileOutlineTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        try super.tearDownWithError()
+    }
+
+    private var fileURL: URL {
+        directory.appendingPathComponent(ProfileStore.fileName)
+    }
+
+    private func makeStore() throws -> ProfileStore {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+    }
+
+    /// One 0.5 record with a non-default value in every field.
+    private func record(index: Int, outline: String, outlineColor: String?) -> String {
+        let color = outlineColor.map { #""outlineColor":"\#($0)","# } ?? ""
+        return """
+        {"id":"00000000-0000-0000-0000-00000000070\(index)","name":"外框\(index)",\
+        "startDate":{"year":2025,"month":1,"day":15},\
+        "countingRule":"dayZero","showDayCount":true,"showDate":true,"showName":true,\
+        "displayUnits":["month","day"],"useAgeWording":false,\
+        "position":{"x":0.25,"y":0.75},\
+        "style":{"fontID":"songti","textColor":"#FF6B9D","outline":"\(outline)",\(color)\
+        "shadow":"glow","sizeScale":120},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+    }
+
+    /// The 0.5 outlines with an automatic and a chosen outline color, and
+    /// the style each must load as — written out independently of the
+    /// decoder. Alpha 50% is stored as 128/255.
+    private func fixture() -> [(record: String, style: OverlayStyle)] {
+        let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
+        let blue = OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
+        let half = 128.0 / 255
+        func style(_ outline: OverlayOutline, _ outlineColor: OverlayColor?, auto: Double = 1,
+                   width: Double = 2) -> OverlayStyle {
+            OverlayStyle(fontID: .songti, textColor: pink, outline: outline, outlineColor: outlineColor,
+                         autoOutlineOpacity: auto, strokeWidth: width, boxPadding: 12, shadow: .glow, sizeScale: 120)
+        }
+        return [
+            (record(index: 0, outline: "thinStroke", outlineColor: nil), style(.stroke, nil, width: 2)),
+            (record(index: 1, outline: "thinStroke", outlineColor: "#0A84FF"), style(.stroke, blue, width: 2)),
+            (record(index: 2, outline: "thickStroke", outlineColor: nil), style(.stroke, nil, width: 4)),
+            (record(index: 3, outline: "thickStroke", outlineColor: "#0A84FF"), style(.stroke, blue, width: 4)),
+            (record(index: 4, outline: "translucentBox", outlineColor: nil), style(.box, nil, auto: half)),
+            (record(index: 5, outline: "translucentBox", outlineColor: "#0A84FF"), style(.box, blue.withOpacity(half))),
+            (record(index: 6, outline: "solidBox", outlineColor: nil), style(.box, nil)),
+            (record(index: 7, outline: "solidBox", outlineColor: "#0A84FF"), style(.box, blue))
+        ]
+    }
+
+    /// 70.2 / 70.5: every 0.5 outline loads as the migration table says,
+    /// with no profile lost and every other field intact; saved and reloaded
+    /// (a restart), it is the same and names no 0.5 outline.
+    func testEveryLegacyOutlineMigratesAndSurvivesARestart() throws {
+        let rows = fixture()
+        try Data("[\(rows.map(\.record).joined(separator: ","))]".utf8).write(to: fileURL, options: [.atomic])
+
+        let store = try makeStore()
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.count, rows.count, "70.2: no profile lost")
+        for (index, row) in rows.enumerated() {
+            let profile = loaded[index]
+            XCTAssertEqual(profile.style, row.style, "70.2 \(profile.name)")
+            XCTAssertEqual(profile.name, "外框\(index)")
+            XCTAssertEqual(profile.countingRule, .dayZero)
+            XCTAssertEqual(profile.displayUnits, [.month, .day])
+            XCTAssertEqual(profile.position, .custom(x: 0.25, y: 0.75))
+        }
+
+        try store.update(loaded[0])
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        for legacy in ["thinStroke", "thickStroke", "translucentBox", "solidBox"] {
+            XCTAssertFalse(text.contains("\"\(legacy)\""), "70.2: \(legacy) written back")
+        }
+        XCTAssertEqual(try makeStore().load().map(\.style), loaded.map(\.style), "70.4 after a restart")
+    }
+
+    /// 70.4: parameters set through the store come back from a fresh store.
+    func testParametersSurviveARestart() throws {
+        let store = try makeStore()
+        store.load()
+        let style = OverlayStyle(outline: .box, autoOutlineOpacity: 0.3, strokeWidth: 5.5, boxPadding: 20)
+        let added = try store.add(CameraProfile(name: "參數", startDate: DateFixture.components(2025, 1, 15),
+                                                style: style))
+
+        let reloaded = try XCTUnwrap(try makeStore().load().first { $0.id == added.id }, "70.4: profile kept")
+        XCTAssertEqual(reloaded.style, added.style, "70.4")
+        XCTAssertEqual(reloaded.style.strokeWidth, 5.5, "70.4")
+        XCTAssertEqual(reloaded.style.boxPadding, 20, "70.4")
+        XCTAssertEqual(reloaded.style.autoOutlineOpacity, 0.3, accuracy: 0.5 / 255, "70.4")
+    }
+
+    /// 70.4: values out of range are rejected and never written.
+    func testOutOfRangeParametersAreRejected() throws {
+        let store = try makeStore()
+        store.load()
+        let cases: [(OverlayStyle, CameraProfileValidationError)] = [
+            (OverlayStyle(strokeWidth: 0.5), .outlineParameterOutOfRange),
+            (OverlayStyle(strokeWidth: 6.5), .outlineParameterOutOfRange),
+            (OverlayStyle(strokeWidth: .nan), .outlineParameterOutOfRange),
+            (OverlayStyle(boxPadding: -1), .outlineParameterOutOfRange),
+            (OverlayStyle(boxPadding: 25), .outlineParameterOutOfRange),
+            (OverlayStyle(autoOutlineOpacity: 0.04), .colorNotStorable),
+            (OverlayStyle(autoOutlineOpacity: 1.01), .colorNotStorable)
+        ]
+        for (index, (style, error)) in cases.enumerated() {
+            let name = "超出\(index)"
+            let profile = CameraProfile(name: name, startDate: DateFixture.components(2025, 1, 15), style: style)
+            XCTAssertThrowsError(try profile.validatedForPersistence(calendar: DateFixture.taipei), "70.4 \(index)") {
+                XCTAssertEqual($0 as? CameraProfileValidationError, error, "70.4 \(index)")
+            }
+            XCTAssertThrowsError(try store.add(profile), "70.4 \(index)")
+            XCTAssertFalse((try? String(contentsOf: fileURL, encoding: .utf8))?.contains(name) ?? false,
+                           "70.4: \(name) not written")
+        }
+        for style in [OverlayStyle(strokeWidth: 1, boxPadding: 0), OverlayStyle(strokeWidth: 6, boxPadding: 24)] {
+            let profile = CameraProfile(name: "邊界", startDate: DateFixture.components(2025, 1, 15), style: style)
+            XCTAssertNoThrow(try profile.validatedForPersistence(calendar: DateFixture.taipei), "70.4 bounds")
+        }
     }
 }
