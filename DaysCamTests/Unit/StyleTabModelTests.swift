@@ -50,7 +50,11 @@ final class StyleTabModelTests: XCTestCase {
 
     func testSubTabAccessibilityLabelsInOrder() {
         XCTAssertEqual(StyleTabModel.SubTab.allCases.map(\.accessibilityLabel),
-                       ["字型", "顏色", "外框", "陰影", "字級"], "23.1")
+                       ["顏色", "字級", "外框", "陰影", "字型"], "68.1")
+    }
+
+    func testDefaultSelectedSubTabIsColor() {
+        XCTAssertEqual(makeModel().selectedSubTab, .color, "68.2")
     }
 
     // MARK: - 34.1 到 34.3, 34.6, 34.6a 字型格子（PRD 0.3 FR-10.2′）
