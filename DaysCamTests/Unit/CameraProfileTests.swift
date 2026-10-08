@@ -527,11 +527,173 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
             XCTAssertEqual($0 as? CameraProfileValidationError, .colorNotStorable)
         }
 
-        var translucentOutline = profile()
-        translucentOutline.style.outlineColor = OverlayColor(red: 0, green: 0, blue: 0, opacity: 0.5)
-        XCTAssertThrowsError(try translucentOutline.validate(calendar: DateFixture.taipei)) {
-            XCTAssertEqual($0 as? CameraProfileValidationError, .colorNotStorable)
+        // TASK-69 69.4: opacity outside 0.05...1 is rejected, for both colors.
+        for opacity in [0.04, 0, -0.5, 1.01, .nan] {
+            var faintText = profile()
+            faintText.style.textColor = OverlayColor.white.withOpacity(opacity)
+            XCTAssertThrowsError(try faintText.validatedForPersistence(calendar: DateFixture.taipei), "69.4 \(opacity)") {
+                XCTAssertEqual($0 as? CameraProfileValidationError, .colorNotStorable, "69.4 \(opacity)")
+            }
+            var faintOutline = profile()
+            faintOutline.style.outlineColor = OverlayColor.black.withOpacity(opacity)
+            XCTAssertThrowsError(try faintOutline.validatedForPersistence(calendar: DateFixture.taipei), "69.4 \(opacity)") {
+                XCTAssertEqual($0 as? CameraProfileValidationError, .colorNotStorable, "69.4 \(opacity)")
+            }
         }
+    }
+
+    /// TASK-69 69.4 / 69.5: translucent text and outline colors inside
+    /// 0.05...1 are storable (PRD 0.2 §4.1 as amended).
+    func testTranslucentColorsInsideTheRangeAreAccepted() {
+        for opacity in [OverlayColor.minimumStorableOpacity, 0.5, 1] {
+            var subject = profile()
+            subject.style.textColor = OverlayColor.white.withOpacity(opacity)
+            subject.style.outlineColor = OverlayColor.black.withOpacity(opacity)
+            XCTAssertNoThrow(try subject.validatedForPersistence(calendar: DateFixture.taipei), "69.4 \(opacity)")
+        }
+    }
+
+    /// TASK-69: what is validated is what is written — colors come out of
+    /// `normalized()` on the 8-bit grid, alpha included.
+    func testNormalizedQuantizesStyleColorsToEightBits() throws {
+        var subject = profile()
+        subject.style.textColor = OverlayColor(red: 0.1234, green: 0.5, blue: 1, opacity: 0.5)
+        subject.style.outlineColor = OverlayColor(red: 0, green: 0, blue: 0, opacity: 0.3)
+        let normalized = try subject.validatedForPersistence(calendar: DateFixture.taipei)
+        XCTAssertEqual(normalized.style.textColor, OverlayColor(red8: 31, green8: 128, blue8: 255, opacity: 128.0 / 255))
+        XCTAssertEqual(normalized.style.outlineColor, OverlayColor(red8: 0, green8: 0, blue8: 0, opacity: 77.0 / 255))
+        let data = try JSONEncoder().encode(normalized)
+        XCTAssertEqual(try JSONDecoder().decode(CameraProfile.self, from: data), normalized, "exact round trip")
+    }
+}
+
+/// Covers TASK-69 69.1, 69.3 and 69.4 through `ProfileStore`: colors with
+/// an alpha channel (`#RRGGBBAA`) next to pre-TASK-69 files (`#RRGGBB`).
+final class CameraProfileColorOpacityTests: XCTestCase {
+
+    private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    private var defaults = UserDefaults.standard
+    private var suiteName = ""
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("CameraProfileColorOpacityTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = "CameraProfileColorOpacityTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        try super.tearDownWithError()
+    }
+
+    private var fileURL: URL {
+        directory.appendingPathComponent(ProfileStore.fileName)
+    }
+
+    private func makeStore() throws -> ProfileStore {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+    }
+
+    /// One 0.5 record with a non-default value in every field.
+    private func record(id: String, textColor: String, outlineColor: String) -> String {
+        """
+        {"id":"\(id)","name":"小寶","startDate":{"year":2025,"month":1,"day":15},\
+        "countingRule":"dayZero","showDayCount":true,"showDate":true,"showName":true,\
+        "displayUnits":["month","day"],"useAgeWording":false,\
+        "position":{"x":0.25,"y":0.75},\
+        "style":{"fontID":"songti","textColor":"\(textColor)","outline":"thickStroke",\
+        "outlineColor":"\(outlineColor)","shadow":"glow","sizeScale":120},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+    }
+
+    private static let firstID = "00000000-0000-0000-0000-000000000691"
+    private static let secondID = "00000000-0000-0000-0000-000000000692"
+
+    /// 69.1: a pre-TASK-69 file loads with every field intact, both colors
+    /// at alpha 100%, and is not rewritten; saving again still writes
+    /// `#RRGGBB`, so the stored text is unchanged.
+    func testOpaqueHexFileLoadsUnchangedWithFullAlpha() throws {
+        let fixture = "[\(record(id: Self.firstID, textColor: "#123456", outlineColor: "#0A84FF"))]"
+        try Data(fixture.utf8).write(to: fileURL, options: [.atomic])
+        let bytesBefore = try Data(contentsOf: fileURL)
+
+        let loaded = try makeStore().load()
+
+        let profile = try XCTUnwrap(loaded.first, "69.1: profile kept")
+        XCTAssertEqual(loaded.count, 1, "69.1")
+        XCTAssertEqual(profile.name, "小寶")
+        XCTAssertEqual(profile.startDate, DateFixture.components(2025, 1, 15))
+        XCTAssertEqual(profile.countingRule, .dayZero)
+        XCTAssertTrue(profile.showDate && profile.showName && profile.showDayCount)
+        XCTAssertEqual(profile.displayUnits, [.month, .day])
+        XCTAssertEqual(profile.position, .custom(x: 0.25, y: 0.75))
+        XCTAssertEqual(profile.style, OverlayStyle(fontID: .songti,
+                                                   textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
+                                                   outline: .thickStroke,
+                                                   outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
+                                                   shadow: .glow,
+                                                   sizeScale: 120), "69.1")
+        XCTAssertEqual(profile.style.textColor.opacity, 1, "69.1: alpha 100%")
+        XCTAssertEqual(profile.style.outlineColor?.opacity, 1, "69.1: alpha 100%")
+        XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "69.1: no write-back")
+
+        let encoded = try XCTUnwrap(String(data: JSONEncoder().encode(loaded), encoding: .utf8))
+        XCTAssertTrue(encoded.contains(##""textColor":"#123456""##), "69.1: still #RRGGBB")
+        XCTAssertTrue(encoded.contains(##""outlineColor":"#0A84FF""##), "69.1: still #RRGGBB")
+    }
+
+    /// 69.3: translucent colors saved through the store come back from a
+    /// fresh store (an app restart) as the same 8-bit values.
+    func testTranslucentColorsSurviveARestart() throws {
+        let store = try makeStore()
+        store.load()
+        var style = OverlayStyle(textColor: OverlayColor.white.withOpacity(0.5),
+                                 outline: .thinStroke,
+                                 outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF).withOpacity(0.3))
+        style.sizeScale = 120
+        let added = try store.add(CameraProfile(name: "半透明", startDate: DateFixture.components(2025, 1, 15),
+                                                style: style))
+
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertTrue(text.contains(##""#FFFFFF80""##), "69.3: stored as #RRGGBBAA, got \(text)")
+        XCTAssertTrue(text.contains(##""#0A84FF4D""##), "69.3: stored as #RRGGBBAA, got \(text)")
+
+        let reloaded = try XCTUnwrap(try makeStore().load().first { $0.id == added.id }, "69.3: profile kept")
+        XCTAssertEqual(reloaded.style, added.style, "69.3")
+        XCTAssertEqual(reloaded.style.textColor.opacity, 0.5, accuracy: 0.5 / 255, "69.3")
+        XCTAssertEqual(reloaded.style.outlineColor?.opacity ?? 0, 0.3, accuracy: 0.5 / 255, "69.3")
+    }
+
+    /// 69.4: the store refuses to write an opacity below the minimum.
+    func testStoreRejectsAnOpacityBelowTheMinimum() throws {
+        let store = try makeStore()
+        store.load()
+        let faint = CameraProfile(name: "太淡", startDate: DateFixture.components(2025, 1, 15),
+                                  style: OverlayStyle(textColor: OverlayColor.white.withOpacity(0.01)))
+        XCTAssertThrowsError(try store.add(faint), "69.4")
+        XCTAssertFalse((try? String(contentsOf: fileURL, encoding: .utf8))?.contains("太淡") ?? false, "69.4: not written")
+    }
+
+    /// 69.4: a file holding an alpha below the minimum (only possible by
+    /// hand-editing) keeps its profile, with the alpha raised into range.
+    func testFileWithTooFaintAlphaKeepsTheProfileRaisedIntoRange() throws {
+        let fixture = "[\(record(id: Self.firstID, textColor: "#FFFFFF00", outlineColor: "#00000005")),"
+            + "\(record(id: Self.secondID, textColor: "#FFFFFF80", outlineColor: "#0A84FF"))]"
+        try Data(fixture.utf8).write(to: fileURL, options: [.atomic])
+
+        let loaded = try makeStore().load()
+
+        XCTAssertEqual(loaded.map(\.id.uuidString), [Self.firstID, Self.secondID], "69.4: no profile lost")
+        let minimum = 13.0 / 255
+        XCTAssertEqual(loaded[0].style.textColor.opacity, minimum, "69.4")
+        XCTAssertEqual(loaded[0].style.outlineColor?.opacity, minimum, "69.4")
+        XCTAssertEqual(loaded[1].style.textColor.opacity, 128.0 / 255, "69.3")
     }
 }
 

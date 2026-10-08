@@ -28,8 +28,9 @@ enum CameraProfileValidationError: Error, Equatable {
     case sizeScaleOutOfRange(Int)
     /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
     case customPositionOutOfRange(x: Double, y: Double)
-    /// `style.textColor` or `style.outlineColor` has a component outside 0...1
-    /// or is not fully opaque (PRD 0.2 §4.1).
+    /// `style.textColor` or `style.outlineColor` has an RGB component outside
+    /// 0...1 or an opacity outside `OverlayColor.minimumStorableOpacity`...1
+    /// (PRD 0.2 §4.1 as amended by TASK-69).
     case colorNotStorable
 }
 
@@ -125,6 +126,9 @@ extension CameraProfile {
     ///
     /// Also turns `showDayCount` on (#226 R-13): an older profile that showed
     /// only the date is migrated rather than rejected, so no profile is lost.
+    ///
+    /// Rounds the style colors to 8 bits per component, alpha included
+    /// (TASK-69), so the saved profile equals the one read back.
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -134,6 +138,9 @@ extension CameraProfile {
         stripped.month = startDate.month
         stripped.day = startDate.day
         copy.startDate = stripped
+        // What is validated and written is exactly what reads back (TASK-69).
+        copy.style.textColor = style.textColor.quantized
+        copy.style.outlineColor = style.outlineColor?.quantized
         return copy
     }
 

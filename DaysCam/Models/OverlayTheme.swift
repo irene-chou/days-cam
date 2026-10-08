@@ -34,32 +34,66 @@ struct OverlayColor: Equatable, Hashable {
     static let autoContrastDark = OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E)
 }
 
-// MARK: - Hex strings and contrast (PRD 0.2 §4.2, FR-10.6)
+// MARK: - Opacity (TASK-69, #297)
 
-extension OverlayColor: Codable {
-    /// Parses an opaque `#RRGGBB` string (the `#` is required, case-insensitive).
-    /// Returns `nil` for anything else.
-    init?(hex: String) {
-        guard hex.count == 7, hex.hasPrefix("#") else { return nil }
-        let digits = hex.dropFirst()
-        guard digits.allSatisfy(\.isHexDigit), let value = Int(digits, radix: 16) else { return nil }
-        self.init(red8: (value >> 16) & 0xFF, green8: (value >> 8) & 0xFF, blue8: value & 0xFF)
+extension OverlayColor {
+    /// The lowest `opacity` a profile may store (TASK-69). Fainter text would
+    /// look like a missing overlay rather than a style.
+    static let minimumStorableOpacity = 0.05
+
+    /// This color with `opacity` replaced; the RGB components are kept.
+    func withOpacity(_ opacity: Double) -> OverlayColor {
+        OverlayColor(red: red, green: green, blue: blue, opacity: opacity)
     }
 
-    /// The color as an uppercase `#RRGGBB` string, rounding each component to
-    /// 8 bits and ignoring `opacity`.
+    /// This color with every component, `opacity` included, rounded to the
+    /// nearest 8-bit step — exactly what `hexString` stores and reads back.
+    /// Out-of-range components are rounded but not clamped, so validation
+    /// still sees them.
+    var quantized: OverlayColor {
+        func step(_ component: Double) -> Double { (component * 255).rounded() / 255 }
+        return OverlayColor(red: step(red), green: step(green), blue: step(blue), opacity: step(opacity))
+    }
+}
+
+// MARK: - Hex strings and contrast (PRD 0.2 §4.2, FR-10.6; TASK-69)
+
+extension OverlayColor: Codable {
+    /// Parses `#RRGGBB` (opaque) or `#RRGGBBAA` (the `#` is required,
+    /// case-insensitive). Returns `nil` for anything else.
+    ///
+    /// An alpha below `minimumStorableOpacity` is raised to it, so every
+    /// parsed color is storable and a hand-edited file loses no profile.
+    init?(hex: String) {
+        guard hex.count == 7 || hex.count == 9, hex.hasPrefix("#") else { return nil }
+        let digits = hex.dropFirst()
+        guard digits.allSatisfy(\.isHexDigit), let value = UInt32(digits, radix: 16) else { return nil }
+        let rgb = digits.count == 8 ? value >> 8 : value
+        let alpha8 = digits.count == 8 ? Int(value & 0xFF) : 0xFF
+        let minimumAlpha8 = Int((Self.minimumStorableOpacity * 255).rounded(.up))
+        self.init(red8: Int((rgb >> 16) & 0xFF), green8: Int((rgb >> 8) & 0xFF), blue8: Int(rgb & 0xFF),
+                  opacity: Double(max(alpha8, minimumAlpha8)) / 255.0)
+    }
+
+    /// The color as an uppercase hex string, rounding each component to 8
+    /// bits: `#RRGGBB` when it rounds to fully opaque — so opaque colors are
+    /// stored exactly as before TASK-69 — and `#RRGGBBAA` otherwise.
     var hexString: String {
         func byte(_ component: Double) -> Int {
             Int((min(max(component, 0), 1) * 255).rounded())
         }
-        return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+        let rgb = String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+        let alpha = byte(opacity)
+        return alpha == 0xFF ? rgb : rgb + String(format: "%02X", alpha)
     }
 
-    /// Whether every RGB component is in 0...1 and the color is fully opaque —
-    /// the only colors a profile may store (PRD 0.2 §4.1).
+    /// Whether every RGB component is in 0...1 and `opacity` is in
+    /// `minimumStorableOpacity`...1 — the colors a profile may store
+    /// (PRD 0.2 §4.1 as amended by TASK-69).
     var isStorable: Bool {
         let unit = 0.0...1.0
-        return unit.contains(red) && unit.contains(green) && unit.contains(blue) && opacity == 1.0
+        return unit.contains(red) && unit.contains(green) && unit.contains(blue)
+            && (Self.minimumStorableOpacity...1.0).contains(opacity)
     }
 
     /// WCAG relative luminance of the sRGB color, 0 (black) ... 1 (white).
@@ -76,18 +110,18 @@ extension OverlayColor: Codable {
         relativeLuminance > 0.55 ? .autoContrastDark : .white
     }
 
-    /// Decodes a `#RRGGBB` string.
+    /// Decodes a `#RRGGBB` or `#RRGGBBAA` string; see `init?(hex:)`.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let string = try container.decode(String.self)
         guard let color = OverlayColor(hex: string) else {
             throw DecodingError.dataCorruptedError(in: container,
-                                                   debugDescription: "Expected #RRGGBB, got \(string)")
+                                                   debugDescription: "Expected #RRGGBB or #RRGGBBAA, got \(string)")
         }
         self = color
     }
 
-    /// Encodes as a `#RRGGBB` string.
+    /// Encodes as `hexString`.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(hexString)
@@ -191,7 +225,9 @@ struct OverlayTheme: Equatable, Hashable {
         case .hard:
             return .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black)
         case .glow:
-            return .shadow(offset: .zero, blur: 8, opacity: 0.9, color: style.textColor)
+            // The glow is cast by the text's own ink, which already carries
+            // the text alpha; an opaque color applies that alpha only once.
+            return .shadow(offset: .zero, blur: 8, opacity: 0.9, color: style.textColor.withOpacity(1))
         }
     }
 }

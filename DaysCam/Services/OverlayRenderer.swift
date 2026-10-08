@@ -186,10 +186,17 @@ private struct OverlayLayout {
     /// builds, so a shadow is cast by the stroked or boxed text as a whole.
     func decoratedText() -> DrawingBlock {
         let textSize = (text as NSString).size(withAttributes: [.font: font])
-        let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(theme.textColor)]
+        let textOpacity = theme.textColor.opacity
+        let fill: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: uiColor(theme.textColor, opacity: 1)]
         let text = self.text
-        var block = DrawingBlock(size: textSize, overflow: glyphOverflow(textSize: textSize)) { _, origin in
-            (text as NSString).draw(at: origin, withAttributes: fill)
+        let overflow = glyphOverflow(textSize: textSize)
+        var block = DrawingBlock(size: textSize, overflow: overflow) { context, origin in
+            // Translucent text is drawn opaque and faded as one layer, so
+            // glyphs that overlap do not darken where they meet (TASK-69).
+            Self.withOpacity(textOpacity, in: context,
+                             bounds: Self.inkBounds(origin: origin, size: textSize, overflow: overflow)) {
+                (text as NSString).draw(at: origin, withAttributes: fill)
+            }
         }
 
         for decoration in theme.decorations {
@@ -228,6 +235,10 @@ private struct OverlayLayout {
     /// Core Graphics strokes the real glyph outline; a stroke is centred on
     /// the outline, so it is drawn twice as wide and the fill covers the
     /// inner half, leaving `width` visible outside the glyph.
+    ///
+    /// Translucent text would let that inner half show through, so it is
+    /// cut out of the stroke first; a translucent stroke is faded as one
+    /// layer so neighbouring glyphs' strokes do not double up (TASK-69).
     private func stroked(_ inner: DrawingBlock, textSize: CGSize, color: OverlayColor, width: Double) -> DrawingBlock {
         let lineWidth = CGFloat(width) * decorationScale * 2
         guard lineWidth > 0, fontSize > 0 else { return inner }
@@ -235,9 +246,13 @@ private struct OverlayLayout {
         // outline only, no fill.
         let outline: [NSAttributedString.Key: Any] = [
             .font: font,
-            .strokeColor: uiColor(color),
+            .strokeColor: uiColor(color, opacity: 1),
             .strokeWidth: lineWidth / fontSize * 100
         ]
+        let knockout: [NSAttributedString.Key: Any]? = theme.textColor.opacity < 1
+            ? [.font: font, .foregroundColor: UIColor.black]
+            : nil
+        let strokeOpacity = color.opacity
         let text = self.text
         let visible = lineWidth / 2
         let overflow = UIEdgeInsets(top: inner.overflow.top + visible,
@@ -252,7 +267,14 @@ private struct OverlayLayout {
             // Round joins: at photo size the stroke is ~20 pixels wide, and
             // mitred corners would spike out of every sharp glyph.
             context.setLineJoin(.round)
-            (text as NSString).draw(at: textOrigin, withAttributes: outline)
+            Self.withOpacity(strokeOpacity, isolating: knockout != nil, in: context,
+                             bounds: Self.inkBounds(origin: origin, size: inner.size, overflow: overflow)) {
+                (text as NSString).draw(at: textOrigin, withAttributes: outline)
+                if let knockout {
+                    context.setBlendMode(.destinationOut)
+                    (text as NSString).draw(at: textOrigin, withAttributes: knockout)
+                }
+            }
             context.restoreGState()
             inner.draw(context, origin)
         }
@@ -330,6 +352,36 @@ private struct OverlayLayout {
             context.endTransparencyLayer()
             context.restoreGState()
         }
+    }
+
+    /// Runs `draw` so that what it draws is faded to `opacity` as a whole.
+    ///
+    /// Fully opaque drawing goes straight to `context`, pixel-identical to
+    /// before TASK-69, unless `isolating` asks for a layer anyway (to confine
+    /// a blend mode). The layer is bounded: an unbounded one would allocate a
+    /// second full-photo bitmap.
+    private static func withOpacity(_ opacity: Double,
+                                    isolating: Bool = false,
+                                    in context: CGContext,
+                                    bounds: CGRect,
+                                    draw: () -> Void) {
+        guard opacity < 1 || isolating else {
+            draw()
+            return
+        }
+        context.saveGState()
+        context.setAlpha(CGFloat(opacity))
+        context.beginTransparencyLayer(in: bounds, auxiliaryInfo: nil)
+        draw()
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
+    /// The block at `origin` grown by everything it can draw past its size.
+    private static func inkBounds(origin: CGPoint, size: CGSize, overflow: UIEdgeInsets) -> CGRect {
+        CGRect(origin: origin, size: size)
+            .inset(by: UIEdgeInsets(top: -overflow.top, left: -overflow.left,
+                                    bottom: -overflow.bottom, right: -overflow.right))
     }
 
     private func uiColor(_ color: OverlayColor, opacity: Double? = nil) -> UIColor {

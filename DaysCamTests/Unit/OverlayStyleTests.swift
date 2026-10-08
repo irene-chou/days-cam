@@ -124,6 +124,81 @@ final class OverlayStyleTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode([OverlayColor].self, from: Data(#"["red"]"#.utf8)))
     }
 
+    // MARK: - Opacity (TASK-69)
+
+    /// 69.1: `#RRGGBB` reads as fully opaque, and an opaque color still
+    /// writes six digits, so pre-TASK-69 files read and write unchanged.
+    func testSixDigitHexIsOpaqueAndOpaqueColorsStillWriteSixDigits() throws {
+        let color = try hex("#123456")
+        XCTAssertEqual(color.opacity, 1, "69.1")
+        XCTAssertEqual(color.hexString, "#123456", "69.1")
+        XCTAssertEqual(OverlayColor.white.withOpacity(0.999).hexString, "#FFFFFF", "rounds to opaque")
+    }
+
+    /// 69.3: `#RRGGBBAA` parses, writes back the same, and round-trips
+    /// through JSON.
+    func testEightDigitHexCarriesAlphaAndRoundTrips() throws {
+        let color = try hex("#ff95004d")
+        XCTAssertEqual(color, OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00, opacity: 0x4D / 255.0), "69.3")
+        XCTAssertEqual(color.hexString, "#FF95004D", "69.3")
+        XCTAssertEqual(OverlayColor.white.withOpacity(0.5).hexString, "#FFFFFF80", "69.3: 0.5 → 0x80")
+
+        let data = try JSONEncoder().encode([color])
+        XCTAssertEqual(String(data: data, encoding: .utf8), ##"["#FF95004D"]"##, "69.3")
+        XCTAssertEqual(try JSONDecoder().decode([OverlayColor].self, from: data), [color], "69.3")
+    }
+
+    func testEightDigitHexRejectsMalformedStrings() {
+        for bad in ["FF950080", "#FF95008G", "#FF9500800", "#FF95 080"] {
+            XCTAssertNil(OverlayColor(hex: bad), bad)
+        }
+    }
+
+    /// 69.4: an alpha below the minimum read from a file is raised to the
+    /// smallest storable 8-bit step instead of discarding anything.
+    func testTooFaintAlphaIsRaisedToTheMinimumOnRead() throws {
+        for string in ["#FFFFFF00", "#FFFFFF0C"] {
+            let color = try hex(string)
+            XCTAssertEqual(color.opacity, 13.0 / 255, "69.4 \(string)")
+            XCTAssertTrue(color.isStorable, "69.4 \(string)")
+        }
+        XCTAssertEqual(try hex("#FFFFFF0D").opacity, 13.0 / 255, "the first storable step is kept")
+    }
+
+    /// 69.4: storable means RGB in 0...1 and opacity in 0.05...1.
+    func testStorableOpacityRange() {
+        XCTAssertEqual(OverlayColor.minimumStorableOpacity, 0.05)
+        for opacity in [0.05, 13.0 / 255, 0.5, 1] {
+            XCTAssertTrue(OverlayColor.white.withOpacity(opacity).isStorable, "69.4 \(opacity)")
+        }
+        for opacity in [0, 0.049, 12.0 / 255, 1.0001, -1, .nan, .infinity] {
+            XCTAssertFalse(OverlayColor.white.withOpacity(opacity).isStorable, "69.4 \(opacity)")
+        }
+    }
+
+    /// Every storable opacity still is after 8-bit rounding, so validating
+    /// before or after `quantized` cannot disagree at the lower bound.
+    func testQuantizedRoundsEveryComponentWithoutClamping() {
+        let color = OverlayColor(red: 0.1234, green: 0.5, blue: 1.2, opacity: 0.05)
+        let quantized = color.quantized
+        XCTAssertEqual(quantized.red, 31.0 / 255)
+        XCTAssertEqual(quantized.green, 128.0 / 255)
+        XCTAssertEqual(quantized.blue, 306.0 / 255, "out of range stays out of range")
+        XCTAssertEqual(quantized.opacity, 13.0 / 255)
+        XCTAssertTrue(OverlayColor.white.withOpacity(0.05).quantized.isStorable)
+        XCTAssertEqual(OverlayStyle.swatches.map(\.quantized), OverlayStyle.swatches, "8-bit colors are fixed points")
+    }
+
+    func testWithOpacityKeepsTheRGBComponents() {
+        let orange = OverlayColor(red8: 0xFF, green8: 0x95, blue8: 0x00)
+        let faded = orange.withOpacity(0.4)
+        XCTAssertEqual(faded.red, orange.red)
+        XCTAssertEqual(faded.green, orange.green)
+        XCTAssertEqual(faded.blue, orange.blue)
+        XCTAssertEqual(faded.opacity, 0.4)
+        XCTAssertEqual(faded.withOpacity(1), orange)
+    }
+
     func testStyleRoundTripsThroughJSON() throws {
         let style = OverlayStyle(fontID: .xingkai,
                                  textColor: try hex("#123456"),

@@ -142,6 +142,23 @@ final class OverlayThemeStyleTests: XCTestCase {
         }
     }
 
+    /// TASK-69: the glow is cast by the text's ink, which already carries the
+    /// text alpha, so its color is the opaque text color — the alpha is
+    /// applied once, not squared. Outline colors keep their alpha.
+    func testTranslucentColorsReachTheDecorations() {
+        let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
+        let glow = OverlayTheme(style: OverlayStyle(textColor: pink.withOpacity(0.5), outline: .none, shadow: .glow))
+        XCTAssertEqual(glow.textColor.opacity, 0.5)
+        XCTAssertEqual(glow.decorations, [.shadow(offset: .zero, blur: 8, opacity: 0.9, color: pink)], "69.2")
+
+        let faded = blue.withOpacity(0.4)
+        let stroke = OverlayTheme(style: OverlayStyle(outline: .thinStroke, outlineColor: faded, shadow: .none))
+        XCTAssertEqual(stroke.decorations, [.stroke(color: faded, width: 2)], "69.5")
+        let box = OverlayTheme(style: OverlayStyle(outline: .translucentBox, outlineColor: faded, shadow: .none))
+        XCTAssertEqual(box.decorations, [.backgroundBox(color: faded, opacity: 0.5, cornerRadius: 8, insets: insets)],
+                       "69.5: box opacity multiplies the color alpha")
+    }
+
     /// The outline comes first so the shadow is cast by the outlined text.
     func testOutlineIsAppliedBeforeShadow() {
         let theme = OverlayTheme(style: OverlayStyle(outline: .thinStroke, shadow: .soft))
