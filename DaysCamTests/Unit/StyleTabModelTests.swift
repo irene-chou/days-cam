@@ -235,7 +235,7 @@ final class StyleTabModelTests: XCTestCase {
     func testOutlineColorSectionDisabledOnlyWhenOutlineIsNone() {
         let model = makeModel()
         XCTAssertTrue(model.isOutlineColorSectionDisabled, "23.7: 預設 outline 為 .none")
-        model.selectOutline(.thinStroke)
+        model.selectOutline(.stroke)
         XCTAssertFalse(model.isOutlineColorSectionDisabled, "23.7")
         model.selectOutline(.none)
         XCTAssertTrue(model.isOutlineColorSectionDisabled, "23.7")
@@ -314,7 +314,7 @@ final class StyleTabModelTests: XCTestCase {
     func testSelectOutlineColorAutoSetsNil() throws {
         let spy = Spy()
         let model = makeModel(spy: spy)
-        model.selectOutline(.thinStroke)
+        model.selectOutline(.stroke)
         model.selectOutlineColor(try hex("#0A84FF"))
         XCTAssertEqual(model.profile.style.outlineColor, try hex("#0A84FF"))
         model.selectOutlineColor(nil)
@@ -323,7 +323,7 @@ final class StyleTabModelTests: XCTestCase {
 
     func testOutlineAndShadowOptionOrder() {
         let model = makeModel()
-        XCTAssertEqual(model.outlineOptions, [.none, .thinStroke, .thickStroke, .translucentBox, .solidBox])
+        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box])
         XCTAssertEqual(model.shadowOptions, [.none, .soft, .hard, .glow])
     }
 

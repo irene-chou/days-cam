@@ -549,10 +549,8 @@ struct StyleTabView: View {
     private func outlineName(_ outline: OverlayOutline) -> String {
         switch outline {
         case .none: return "無外框"
-        case .thinStroke: return "細描邊"
-        case .thickStroke: return "粗描邊"
-        case .translucentBox: return "半透明底框"
-        case .solidBox: return "實心底框"
+        case .stroke: return "描邊"
+        case .box: return "底框"
         }
     }
 
@@ -687,7 +685,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
 
 #Preview("外框 · iPhone SE 寬度 (375pt)") {
     var style = OverlayStyle()
-    style.outline = .translucentBox
+    style.outline = .box
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return StyleTabView(model: model)
@@ -726,7 +724,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
 
 #Preview("外框 · 內容區 120pt，捲到底，色票選定圈要完整 (375pt)") {
     var style = OverlayStyle()
-    style.outline = .thinStroke
+    style.outline = .stroke
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return ScrollView {
@@ -739,7 +737,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle(),
 
 #Preview("外框 · 內容區 160pt (375pt)") {
     var style = OverlayStyle()
-    style.outline = .thinStroke
+    style.outline = .stroke
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return ScrollView {

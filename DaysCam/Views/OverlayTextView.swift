@@ -301,7 +301,7 @@ final class OverlayTextRenderCache {
     ZStack {
         Color.gray
         OverlayTextView(text: "自訂位置",
-                         style: OverlayStyle(outline: .thinStroke, shadow: .soft),
+                         style: OverlayStyle(outline: .stroke, shadow: .soft),
                          placement: .custom(x: 1.0, y: 1.0),
                          frameSize: CGSize(width: 300, height: 400))
     }
@@ -309,7 +309,7 @@ final class OverlayTextRenderCache {
 }
 
 #Preview("Every outline and shadow, bottom trailing") {
-    let outlines: [OverlayOutline] = [.none, .thinStroke, .thickStroke, .translucentBox, .solidBox]
+    let outlines: [OverlayOutline] = [.none, .stroke, .box]
     let shadows: [OverlayShadow] = [.none, .soft, .hard, .glow]
     return ZStack {
         Color(white: 0.5)
@@ -367,7 +367,7 @@ final class OverlayTextRenderCache {
     ZStack {
         Color.white
         OverlayTextView(text: "小寶 2026.03.20　1 年 2 個月 5 天",
-                         style: OverlayStyle(outline: .translucentBox, shadow: .none),
+                         style: OverlayStyle(outline: .box, shadow: .none),
                          placement: .anchor(.bottomTrailing),
                          frameSize: CGSize(width: 300, height: 400))
     }
