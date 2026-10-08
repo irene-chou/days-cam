@@ -132,8 +132,6 @@ struct CameraScreen: View {
 
                 zoomPresetBar(metrics: metrics)
 
-                zoomCapsule(metrics: metrics)
-
                 headerBar(metrics: metrics)
 
                 footerColumn(metrics: metrics)
@@ -404,14 +402,6 @@ struct CameraScreen: View {
                       presets: model.zoomPresets,
                       isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
                       pictureFrame: viewfinderContentFrame(metrics: metrics))
-    }
-
-    // MARK: - Zoom capsule (TASK-61)
-
-    /// The magnification capsule's layer. It observes the zoom model itself,
-    /// so a pinch redraws only the capsule, not this screen (issue #280).
-    private func zoomCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
-        ZoomCapsuleView(zoom: model.zoomModel, pictureFrame: viewfinderContentFrame(metrics: metrics))
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
