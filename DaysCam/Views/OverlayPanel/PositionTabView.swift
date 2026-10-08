@@ -88,6 +88,12 @@ struct PositionTabView: View {
         // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
         .padding(.vertical, gridBoxVerticalInset)
         .padding(.horizontal, 14)
+        // Centers the whole group vertically within the content area
+        // (TASK-54), like the style tab's short pages; the inset above stays
+        // as the minimum clearance when the area is short.
+        .frame(maxWidth: .infinity,
+               minHeight: availableHeight.isFinite ? availableHeight : nil,
+               alignment: .center)
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }
