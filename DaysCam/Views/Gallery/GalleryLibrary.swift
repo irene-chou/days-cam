@@ -127,15 +127,51 @@ struct SystemGalleryLibrary: GalleryLibrary {
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
         options.resizeMode = .fast
-        return await withCheckedContinuation { continuation in
-            var resumed = false
-            PHImageManager.default().requestImage(for: asset, targetSize: targetSize,
-                                                  contentMode: .aspectFit, options: options) { image, info in
-                if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
-                guard !resumed else { return }
-                resumed = true
-                continuation.resume(returning: image)
+        guard !Task.isCancelled else { return nil }
+        // A cell scrolled away cancels its `.task`; cancel the request too,
+        // so a fast swipe does not keep decoding or downloading from iCloud
+        // photos nobody will see. Cancelling calls the handler back with a
+        // nil image, which resumes the continuation.
+        let request = ImageRequestHandle()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                var resumed = false
+                let requestID = PHImageManager.default().requestImage(for: asset, targetSize: targetSize,
+                                                                      contentMode: .aspectFit, options: options) { image, info in
+                    if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume(returning: image)
+                }
+                request.start(requestID)
             }
+        } onCancel: {
+            request.cancel()
         }
+    }
+}
+
+/// The in-flight `PHImageManager` request of one `image(id:targetSize:)`
+/// call. The cancellation handler runs on any thread and may run before the
+/// request has started, so the id and the cancelled flag share a lock.
+private final class ImageRequestHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requestID: PHImageRequestID?
+    private var isCancelled = false
+
+    func start(_ id: PHImageRequestID) {
+        lock.lock()
+        requestID = id
+        let cancelNow = isCancelled
+        lock.unlock()
+        if cancelNow { PHImageManager.default().cancelImageRequest(id) }
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let id = requestID
+        lock.unlock()
+        if let id { PHImageManager.default().cancelImageRequest(id) }
     }
 }

@@ -365,7 +365,10 @@ private struct GalleryImage: View {
         }
         .clipped()
         .task(id: photo.id) {
-            image = await model.image(for: photo, targetSize: CGSize(width: maxPixel, height: maxPixel))
+            let loaded = await model.image(for: photo, targetSize: CGSize(width: maxPixel, height: maxPixel))
+            // A cancelled load returns nil; it must not blank the cell.
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
     }
 }
