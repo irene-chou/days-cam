@@ -1,32 +1,26 @@
 import XCTest
 @testable import DaysCam
 
+/// The theme a migrated 0.1 profile draws with (PRD 0.2 §4.3).
+private func legacyTheme(_ id: ThemeID) -> OverlayTheme {
+    OverlayTheme(style: OverlayStyle(legacyTheme: id))
+}
+
 /// Covers the TASK-05 acceptance table for the five preset themes.
 final class OverlayThemeTests: XCTestCase {
-
-    /// 5.1
-    func testThereAreExactlyFiveThemes() {
-        XCTAssertEqual(OverlayTheme.all.count, 5)
-    }
-
-    /// 5.2 — order is the PRD §3.4 table order, which the picker relies on.
-    func testThemeOrderMatchesTheSpecification() {
-        XCTAssertEqual(OverlayTheme.all.map(\.id),
-                       [.classicWhite, .retroOrange, .filmStrip, .minimalDark, .softPink])
-    }
 
     /// 5.3 — every theme needs a shadow, box or stroke so the text stays legible
     /// on a pure white and a pure black photo alike (PRD FR-4.6).
     func testEveryThemeCarriesAtLeastOneDecoration() {
-        for theme in OverlayTheme.all {
-            XCTAssertFalse(theme.decorations.isEmpty, "\(theme.id) has no decoration")
+        for id in ThemeID.allCases {
+            XCTAssertFalse(legacyTheme(id).decorations.isEmpty, "\(id) has no decoration")
         }
     }
 
     /// The array is not decorative: softPink needs both a stroke and a shadow,
     /// which a single-valued field could not hold.
     func testSoftPinkCarriesBothAStrokeAndAShadow() {
-        let softPink = OverlayTheme.theme(for: .softPink)
+        let softPink = legacyTheme(.softPink)
         let hasStroke = softPink.decorations.contains { decoration in
             if case .stroke = decoration { return true }
             return false
@@ -42,7 +36,7 @@ final class OverlayThemeTests: XCTestCase {
 
     /// 5.4
     func testClassicWhiteTextColorIsPureWhite() {
-        let color = OverlayTheme.theme(for: .classicWhite).textColor
+        let color = legacyTheme(.classicWhite).textColor
         XCTAssertEqual(color.red, 1.0, accuracy: 0.01)
         XCTAssertEqual(color.green, 1.0, accuracy: 0.01)
         XCTAssertEqual(color.blue, 1.0, accuracy: 0.01)
@@ -51,7 +45,7 @@ final class OverlayThemeTests: XCTestCase {
 
     /// 5.5 — #FF9500
     func testRetroOrangeTextColorMatchesItsHexValue() {
-        let color = OverlayTheme.theme(for: .retroOrange).textColor
+        let color = legacyTheme(.retroOrange).textColor
         XCTAssertEqual(color.red, 1.0, accuracy: 0.01)
         XCTAssertEqual(color.green, 0.584, accuracy: 0.01)
         XCTAssertEqual(color.blue, 0.0, accuracy: 0.01)
@@ -59,17 +53,17 @@ final class OverlayThemeTests: XCTestCase {
     }
 
     func testRemainingThemeColorsMatchTheirHexValues() {
-        let filmStrip = OverlayTheme.theme(for: .filmStrip).textColor
+        let filmStrip = legacyTheme(.filmStrip).textColor
         XCTAssertEqual(filmStrip, .white)
 
         // #1C1C1E
-        let minimalDark = OverlayTheme.theme(for: .minimalDark).textColor
+        let minimalDark = legacyTheme(.minimalDark).textColor
         XCTAssertEqual(minimalDark.red, 28.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(minimalDark.green, 28.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(minimalDark.blue, 30.0 / 255.0, accuracy: 0.01)
 
         // #FF6B9D
-        let softPink = OverlayTheme.theme(for: .softPink).textColor
+        let softPink = legacyTheme(.softPink).textColor
         XCTAssertEqual(softPink.red, 1.0, accuracy: 0.01)
         XCTAssertEqual(softPink.green, 107.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(softPink.blue, 157.0 / 255.0, accuracy: 0.01)
@@ -79,13 +73,7 @@ final class OverlayThemeTests: XCTestCase {
     /// draw in PingFang (32.4).
     func testLegacyThemeFontsFollowTheMigrationTable() {
         for themeID in ThemeID.allCases {
-            XCTAssertEqual(OverlayTheme.theme(for: themeID).fontID, .pingFang, "32.4 \(themeID)")
-        }
-    }
-
-    func testLookupCoversEveryThemeIdentifier() {
-        for id in ThemeID.allCases {
-            XCTAssertEqual(OverlayTheme.theme(for: id).id, id)
+            XCTAssertEqual(legacyTheme(themeID).fontID, .pingFang, "32.4 \(themeID)")
         }
     }
 

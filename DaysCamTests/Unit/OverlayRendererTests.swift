@@ -16,8 +16,6 @@ final class OverlayRendererTests: XCTestCase {
     private let height = 1600
     private let renderer = OverlayRenderer()
 
-    private var classicWhite: OverlayTheme { .theme(for: .classicWhite) }
-
     // MARK: - 9.1 ... 9.3
 
     func test_9_1_outputKeepsTheInputPixelSize() throws {
@@ -100,7 +98,7 @@ final class OverlayRendererTests: XCTestCase {
 
     func test_9_6_emptyTextDrawsNoEmptyBoxForBoxedThemes() throws {
         for id in [ThemeID.filmStrip, .minimalDark] {
-            let output = try bake(makeImage(), text: "", theme: .theme(for: id))
+            let output = try bake(makeImage(), text: "", theme: id)
             let grid = try pixels(of: output)
             XCTAssertTrue(grid.all(in: region(x: 0...(width - 1), y: 0...(height - 1))) { $0 == .white },
                           "\(id) drew something for an empty string")
@@ -116,7 +114,7 @@ final class OverlayRendererTests: XCTestCase {
     func test_9_6_emptyTextStillNormalisesOrientationAndDrawsNothing() throws {
         let stored = try makeImage(pixelWidth: height, pixelHeight: width, orientation: .right)
 
-        let output = try bake(stored, text: "", theme: .theme(for: .filmStrip))
+        let output = try bake(stored, text: "", theme: .filmStrip)
 
         XCTAssertEqual(output.imageOrientation, .up)
         XCTAssertEqual(output.size, CGSize(width: width, height: height))
@@ -132,8 +130,7 @@ final class OverlayRendererTests: XCTestCase {
         var peak: UInt64 = 0
 
         for _ in 0..<100 {
-            let output = renderer.bake(image: input, text: "第 10 天", theme: classicWhite, position: .bottomTrailing)
-            XCTAssertNotNil(output)
+            _ = try bake(input, text: "第 10 天")
             peak = max(peak, try XCTUnwrap(physicalFootprint()))
         }
 
@@ -189,7 +186,7 @@ final class OverlayRendererTests: XCTestCase {
     /// on the axes it is not (PRD FR-4.3). Its insets must also be scaled up
     /// from their 17pt values — unscaled, they would be ~70px too narrow here.
     func test_everyPositionPlacesTheBoxOneMarginInAndScalesItsInsets() throws {
-        let theme = OverlayTheme.theme(for: .filmStrip)
+        let theme = ThemeID.filmStrip
         let text = "第 10 天"
         let frameWidth = CGFloat(width)
         let frameHeight = CGFloat(height)
@@ -269,7 +266,7 @@ final class OverlayRendererTests: XCTestCase {
     /// scaled up, visible outside the glyph. A stroke drawn at the nominal
     /// width rather than double would show only half that.
     func test_softPinkStrokeIsDrawnAndAsWideAsThePreviews() throws {
-        let theme = OverlayTheme.theme(for: .softPink)
+        let theme = ThemeID.softPink
         let grey = RGB(red: 128, green: 128, blue: 128)
         let grid = try pixels(of: bake(makeImage(fill: grey), text: "第 10 天", theme: theme, position: .middleCenter))
         let everywhere = region(x: 0...(width - 1), y: 0...(height - 1))
@@ -294,13 +291,13 @@ final class OverlayRendererTests: XCTestCase {
 
     /// Every theme must still be visible on a pure white and a pure black photo.
     func test_everyThemeIsVisibleOnPureWhiteAndPureBlack() throws {
-        for theme in OverlayTheme.all {
+        for theme in ThemeID.allCases {
             for background in [RGB.white, RGB.black] {
                 let grid = try pixels(of: bake(makeImage(fill: background), text: "第 10 天",
                                                theme: theme, position: .bottomTrailing))
                 XCTAssertTrue(grid.contains(in: region(x: 700...1190, y: 1300...1590)) {
                     $0.distance(to: background) > 30
-                }, "\(theme.id) is invisible on \(background)")
+                }, "\(theme) is invisible on \(background)")
             }
         }
     }
@@ -309,11 +306,12 @@ final class OverlayRendererTests: XCTestCase {
 
     private func bake(_ image: UIImage,
                       text: String,
-                      theme: OverlayTheme? = nil,
+                      theme: ThemeID = .classicWhite,
                       position: OverlayPosition = .bottomTrailing,
                       file: StaticString = #filePath,
                       line: UInt = #line) throws -> UIImage {
-        try XCTUnwrap(renderer.bake(image: image, text: text, theme: theme ?? classicWhite, position: position),
+        try XCTUnwrap(renderer.bake(image: image, text: text, style: OverlayStyle(legacyTheme: theme),
+                                    placement: .anchor(position), font: .pingFang),
                       "bake returned nil", file: file, line: line)
     }
 
