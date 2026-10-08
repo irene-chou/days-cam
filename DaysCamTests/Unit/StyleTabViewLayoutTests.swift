@@ -52,7 +52,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
         XCTAssertGreaterThanOrEqual(colorHeight, 38 + 6 + 38)
-        XCTAssertLessThanOrEqual(colorHeight, 160, "顏色頁 \(colorHeight)pt")
+        XCTAssertLessThanOrEqual(colorHeight, 190, "顏色頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
         let outlineHeight = pageHeight(model)
@@ -60,8 +60,9 @@ final class StyleTabViewLayoutTests: XCTestCase {
         // sub-tab row and insets measure 200pt; that equals the ~200pt panel
         // #198 introduces, so it was capped there (reported to Lead). TASK-57
         // makes the sub-tab row 6pt taller, so the cap moves to 206; it still
-        // fits the 224pt content area.
-        XCTAssertLessThanOrEqual(outlineHeight, 206, "外框頁 \(outlineHeight)pt")
+        // fits the 224pt content area. TASK-69 adds an opacity row to both
+        // pages: color is capped at 190, outline at the 224pt content area.
+        XCTAssertLessThanOrEqual(outlineHeight, 224, "外框頁 \(outlineHeight)pt")
     }
 
     /// 57.6: the sub-tab row is 6 + 36 + 4.

@@ -179,35 +179,95 @@ extension StyleTabModel {
     }
 
     /// Selects `color` as the text color from a swatch or the recent row.
+    /// Only the RGB changes; the current opacity is kept (TASK-69).
     func selectTextColor(_ color: OverlayColor) {
-        guard color != profile.style.textColor else { return }
-        mutate { $0.textColor = color }
+        let picked = color.withOpacity(profile.style.textColor.opacity)
+        guard picked != profile.style.textColor else { return }
+        mutate { $0.textColor = picked }
     }
 
     /// Selects `color` as the outline color from a swatch or the recent row;
-    /// `nil` selects "automatic" (FR-10.6).
+    /// `nil` selects "automatic" (FR-10.6). Only the RGB changes; the current
+    /// outline opacity is kept, and "automatic" is fully opaque.
     func selectOutlineColor(_ color: OverlayColor?) {
-        guard color != profile.style.outlineColor else { return }
-        mutate { $0.outlineColor = color }
+        let picked = color.map { $0.withOpacity(profile.style.outlineColor?.opacity ?? 1) }
+        guard picked != profile.style.outlineColor else { return }
+        mutate { $0.outlineColor = picked }
     }
 
     /// Applies a text color dragged in the custom color picker. Does not touch
     /// the recent list, so intermediate colors never land there (TASK-53);
-    /// call `commitCustomColor` once when the picker closes.
+    /// call `commitCustomColor` once when the picker closes. The picker's
+    /// alpha is raised to the storable minimum (TASK-69).
     func applyCustomTextColor(_ color: OverlayColor) {
-        mutate { $0.textColor = color }
+        let picked = Self.clampingOpacity(color)
+        mutate { $0.textColor = picked }
     }
 
     /// Applies an outline color dragged in the custom color picker, mirroring
     /// `applyCustomTextColor`.
     func applyCustomOutlineColor(_ color: OverlayColor) {
-        mutate { $0.outlineColor = color }
+        let picked = Self.clampingOpacity(color)
+        mutate { $0.outlineColor = picked }
     }
 
     /// Adds the final color of a closed custom color picker to the shared
     /// recent-colors list (FR-10.7). Preset swatches are ignored by the store.
+    /// Only the RGB is remembered: opacity belongs to the current setting, not
+    /// to the recent color (TASK-69).
     func commitCustomColor(_ color: OverlayColor) {
-        recentColorsStore.add(color)
+        recentColorsStore.add(color.withOpacity(1))
+    }
+
+    /// Whether `lhs` and `rhs` are the same color ignoring opacity, for the
+    /// selection ring (a swatch stays selected at any opacity).
+    static func hasSameRGB(_ lhs: OverlayColor, _ rhs: OverlayColor) -> Bool {
+        let a = lhs.quantized, b = rhs.quantized
+        return a.red == b.red && a.green == b.green && a.blue == b.blue
+    }
+
+    private static func clampingOpacity(_ color: OverlayColor) -> OverlayColor {
+        color.withOpacity(min(max(color.opacity, OverlayColor.minimumStorableOpacity), 1))
+    }
+}
+
+// MARK: - 透明度 (TASK-69, #297)
+
+extension StyleTabModel {
+    /// Slider bounds, in percent: the storable minimum up to fully opaque.
+    static let opacityPercentRange =
+        Int((OverlayColor.minimumStorableOpacity * 100).rounded(.up))...100
+
+    /// `color`'s opacity as a whole percent, for the label and the slider.
+    static func opacityPercent(of color: OverlayColor) -> Int {
+        min(max(Int((color.opacity * 100).rounded()), opacityPercentRange.lowerBound),
+            opacityPercentRange.upperBound)
+    }
+
+    /// The text color's opacity in percent.
+    var textOpacityPercent: Int { Self.opacityPercent(of: profile.style.textColor) }
+
+    /// The outline color's opacity in percent ("automatic" is 100).
+    var outlineOpacityPercent: Int {
+        Self.opacityPercent(of: profile.style.outlineColor ?? profile.style.resolvedOutlineColor)
+    }
+
+    /// Sets the text color's opacity from a slider value in percent, clamped
+    /// to `opacityPercentRange`.
+    func setTextOpacityPercent(_ percent: Int) {
+        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
+        guard clamped != textOpacityPercent else { return }
+        mutate { $0.textColor = $0.textColor.withOpacity(Double(clamped) / 100) }
+    }
+
+    /// Sets the outline color's opacity. While the outline color is
+    /// "automatic", this turns it into the explicit automatic color
+    /// (`resolvedOutlineColor`) with that opacity, since "automatic" itself
+    /// has no opacity.
+    func setOutlineOpacityPercent(_ percent: Int) {
+        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
+        guard clamped != outlineOpacityPercent else { return }
+        mutate { $0.outlineColor = $0.resolvedOutlineColor.withOpacity(Double(clamped) / 100) }
     }
 }
 

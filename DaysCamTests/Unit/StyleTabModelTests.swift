@@ -338,4 +338,81 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertNotNil(model.lastError)
         XCTAssertEqual(model.profile.style.textColor, OverlayStyle.swatches[2])
     }
+
+    // MARK: - TASK-69 透明度（UI 半邊）
+
+    func testSetTextOpacityWritesThroughAndKeepsRGB() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        let before = model.profile.style.textColor
+
+        model.setTextOpacityPercent(50)
+
+        let stored = model.profile.style.textColor
+        XCTAssertTrue(StyleTabModel.hasSameRGB(stored, before), "69.2")
+        XCTAssertEqual(model.textOpacityPercent, 50, "69.2")
+        XCTAssertEqual(spy.updated.last?.style.textColor, stored, "即時寫入")
+        XCTAssertTrue(stored.isStorable)
+    }
+
+    func testOpacityPercentIsClampedToTheStorableRange() {
+        let model = makeModel()
+        model.setTextOpacityPercent(0)
+        XCTAssertEqual(model.textOpacityPercent, 5, "69.4")
+        XCTAssertTrue(model.profile.style.textColor.isStorable, "69.4")
+        model.setTextOpacityPercent(250)
+        XCTAssertEqual(model.textOpacityPercent, 100, "69.4")
+        XCTAssertEqual(model.profile.style.textColor.opacity, 1)
+    }
+
+    func testSwatchAndRecentSelectionKeepTheCurrentOpacity() throws {
+        let model = makeModel()
+        model.setTextOpacityPercent(40)
+        model.selectTextColor(OverlayStyle.swatches[3])
+        XCTAssertEqual(model.textOpacityPercent, 40)
+        XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.textColor, OverlayStyle.swatches[3]))
+
+        model.setOutlineOpacityPercent(30)
+        model.selectOutlineColor(try hex("#123456"))
+        XCTAssertEqual(model.outlineOpacityPercent, 30)
+    }
+
+    func testCustomPickerAlphaIsClampedToTheMinimumAndKept() throws {
+        let model = makeModel()
+        model.applyCustomTextColor(try hex("#123456").withOpacity(0.5))
+        XCTAssertEqual(model.textOpacityPercent, 50, "69.2: 滑桿同步")
+        model.applyCustomTextColor(try hex("#123456").withOpacity(0.01))
+        XCTAssertEqual(model.profile.style.textColor.opacity, OverlayColor.minimumStorableOpacity, "69.4")
+        model.applyCustomOutlineColor(try hex("#654321").withOpacity(0))
+        XCTAssertEqual(model.profile.style.outlineColor?.opacity, OverlayColor.minimumStorableOpacity, "69.4")
+    }
+
+    func testRecentColorsRememberRGBOnly() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let model = makeModel(store: store)
+        model.commitCustomColor(try hex("#123456").withOpacity(0.5))
+        XCTAssertEqual(model.recentColors, [try hex("#123456")])
+    }
+
+    func testOutlineOpacityOnAutomaticBecomesExplicitAutomaticColor() {
+        let model = makeModel()
+        let resolved = model.profile.style.resolvedOutlineColor
+        XCTAssertNil(model.profile.style.outlineColor)
+
+        model.setOutlineOpacityPercent(50)
+
+        let outline = model.profile.style.outlineColor
+        XCTAssertNotNil(outline, "69.5")
+        XCTAssertTrue(StyleTabModel.hasSameRGB(outline ?? .white, resolved), "69.5")
+        XCTAssertEqual(model.outlineOpacityPercent, 50, "69.5")
+        XCTAssertEqual(model.profile.style.textColor.opacity, 1, "文字不受影響")
+    }
+
+    func testOpacityRoundTripsThroughTheProfileFile() throws {
+        let model = makeModel()
+        model.setTextOpacityPercent(50)
+        let encoded = try JSONEncoder().encode(model.profile)
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: encoded)
+        XCTAssertEqual(StyleTabModel.opacityPercent(of: decoded.style.textColor), 50, "69.3")
+    }
 }
