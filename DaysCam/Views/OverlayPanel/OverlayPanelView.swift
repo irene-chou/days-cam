@@ -43,7 +43,12 @@ struct OverlayPanelView: View {
                 tabContent
             }
             .frame(height: contentHeight)
-            .overlay(alignment: .bottom) { scrollFade }
+            // Fades at the edges with more content, and one flash of the
+            // indicator per tab (TASK-58b). The style tab's pinned sub-tab
+            // row stays clear of the top fade.
+            .scrollEdgeHint(topInset: model.panelModel.selectedTab == .style
+                                ? StyleTabView.tabTopInset + StyleTabView.subTabRowHeight : 0,
+                            flashTrigger: model.panelModel.selectedTab)
         }
         // Pinned top-aligned so the segmented control's y position stays
         // identical across every tab (#75, T.7).
@@ -76,15 +81,6 @@ struct OverlayPanelView: View {
                 .fill(CameraTheme.fill)
         )
         .padding(.horizontal, 2)
-    }
-
-    /// 16pt fade from transparent to the panel's own background at the
-    /// content area's bottom edge, hinting that it scrolls (issue #128).
-    private var scrollFade: some View {
-        LinearGradient(colors: [CameraTheme.background.opacity(0), CameraTheme.background],
-                       startPoint: .top, endPoint: .bottom)
-            .frame(height: 16)
-            .allowsHitTesting(false)
     }
 
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,
