@@ -124,20 +124,3 @@ extension DisplaySettingsModel {
         mutate { $0.useAgeWording = newValue }
     }
 }
-
-// MARK: - Position and theme (FR-4.1–FR-4.9)
-
-extension DisplaySettingsModel {
-    func setPosition(_ newValue: OverlayPosition) {
-        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
-        guard .anchor(newValue) != profile.position else { return }
-        mutate { $0.position = .anchor(newValue) }
-    }
-
-    func setThemeID(_ newValue: ThemeID) {
-        // TEMP(TASK-17): adapter until TASK-21/24 replaces this view layer
-        let newStyle = OverlayStyle(legacyTheme: newValue)
-        guard newStyle != profile.style else { return }
-        mutate { $0.style = newStyle }
-    }
-}

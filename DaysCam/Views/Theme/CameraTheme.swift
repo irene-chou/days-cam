@@ -49,12 +49,6 @@ enum CameraTheme {
     /// own layout, the same way it already picks `active` over `ink` for a
     /// tool that is on.
     static let inkOnPhoto = Color.white
-    /// Secondary on-photo text/icon color: `inkOnPhoto` at 62%, mirroring
-    /// `inkSecondary`'s own opacity.
-    static let inkOnPhotoSecondary = inkOnPhoto.opacity(0.62)
-    /// Tertiary on-photo text/icon color: `inkOnPhoto` at 38%, mirroring
-    /// `inkTertiary`'s own opacity.
-    static let inkOnPhotoTertiary = inkOnPhoto.opacity(0.38)
 
     /// The shutter's outer ring (`#EADFD3`), stated directly since it is
     /// used in exactly one place and does not need an Asset Catalog entry.

@@ -231,34 +231,18 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 位置與主題 (FR-4.1, FR-4.9)
-
-    func testSetPositionUpdatesProfile() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setPosition(.topLeading)
-        XCTAssertEqual(model.profile.position, .anchor(.topLeading))
-    }
-
-    func testSetThemeIDUpdatesProfile() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setThemeID(.retroOrange)
-        XCTAssertEqual(model.profile.style, OverlayStyle(legacyTheme: .retroOrange))
-    }
-
     // MARK: - A-6 持久化 (11.32–11.33)
 
     func testEveryMutationForwardsTheUpdatedProfileToUpdateProfile() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setShowName(true)
-        model.setPosition(.topLeading)
-        model.setThemeID(.softPink)
+        model.setShowDate(!model.profile.showDate)
+        model.toggleUnit(.week)
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.showName, true)
-        XCTAssertEqual(spy.updated.last?.position, .anchor(.topLeading))
-        XCTAssertEqual(spy.updated.last?.style, OverlayStyle(legacyTheme: .softPink))
+        XCTAssertEqual(spy.updated.last?.showDate, model.profile.showDate)
+        XCTAssertEqual(spy.updated.last?.displayUnits, model.profile.displayUnits)
     }
 
     func testDistinctModelsForDifferentProfilesDoNotShareState() throws {
@@ -266,9 +250,8 @@ final class DisplaySettingsModelTests: XCTestCase {
         let spyB = Spy()
         let modelA = makeModel(profile: baselineProfile(name: "A"), now: try fixedNow(), spy: spyA)
         let modelB = makeModel(profile: baselineProfile(name: "B"), now: try fixedNow(), spy: spyB)
-        modelA.setPosition(.topLeading)
-        XCTAssertEqual(modelA.profile.position, .anchor(.topLeading))
-        XCTAssertEqual(modelB.profile.position, .anchor(.bottomTrailing))
+        modelA.setShowName(!modelA.profile.showName)
+        XCTAssertNotEqual(modelA.profile.showName, modelB.profile.showName)
     }
 
     // MARK: - Failure surfaces as lastError

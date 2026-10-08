@@ -133,14 +133,6 @@ struct OverlayRenderer {
                                              baseFontSize: baseFontSize,
                                              availableWidth: availableWidth)
     }
-
-    /// TEMP(TASK-18): 0.1-shaped adapter the renderer tests still call;
-    /// draws exactly what `bake(image:text:style:placement:font:)` draws for
-    /// the theme's style at that anchor, in PingFang (every 0.1 theme
-    /// migrates to PingFang, PRD 0.3 §4.3).
-    func bake(image: UIImage, text: String, theme: OverlayTheme, position: OverlayPosition) -> UIImage? {
-        bake(image: image, text: text, style: theme.style, placement: .anchor(position), font: .pingFang)
-    }
 }
 
 /// Overlay text drawn on its own by `OverlayRenderer.renderText`.
