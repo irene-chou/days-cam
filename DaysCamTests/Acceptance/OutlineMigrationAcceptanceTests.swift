@@ -271,10 +271,10 @@ final class OutlineMigrationAcceptanceTests: XCTestCase {
         for profile in loaded { XCTAssertTrue(profile.style.hasValidOutlineParameters, profile.name) }
     }
 
-    /// 70.1: the outline has exactly three cases, and decoding no longer
-    /// invents a fourth one from the current format.
+    /// 70.1 / 81: the outline has exactly these cases (TASK-81 added `squareBox`), and decoding no
+    /// longer invents the 0.5 names from the current format.
     func testOutlineHasOnlyNoneStrokeBox() {
-        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box"])
+        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox"])
     }
 
     /// A current-format file with a 0.5 name still decodes (the two formats
