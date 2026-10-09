@@ -13,7 +13,11 @@ struct DaysCamApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            LimitedAlbumSpikeView()
+            #else
             CameraScreen(model: cameraScreenModel)
+            #endif
         }
     }
 
