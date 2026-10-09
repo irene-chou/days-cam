@@ -286,6 +286,60 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertEqual(model.displayedBias, 0)
     }
 
+    /// QA on #363: a tap whose device lock failed changed nothing; the display
+    /// shows the device's own bias and lock, not 0 and not a fake success.
+    func testFailedTapShowsTheDevicesOwnBiasAndLock() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 1))
+        tap(model, at: CGPoint(x: 40, y: 60))
+        XCTAssertEqual(model.displayedBias, 0, "until the camera answers")
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 1)
+        XCTAssertTrue(model.isLocked)
+    }
+
+    /// The tap's confirmation ends the wait even when the camera published no state.
+    func testTapResetConfirmationEndsTheWaitAndKeepsTheReticle() {
+        let model = makeModel()
+        tap(model)
+        model.receiveTapReset(appliedRequestID: requestCounter)
+        XCTAssertEqual(model.displayedBias, 0)
+        XCTAssertNotNil(model.reticle)
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 0)
+    }
+
+    /// A confirmation for an older tap leaves the newest tap waiting.
+    func testOlderTapConfirmationDoesNotEndTheNewestWait() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
+        tap(model, at: CGPoint(x: 40, y: 60))
+        let first = requestCounter
+        tap(model, at: CGPoint(x: 200, y: 60))
+        model.receiveTapReset(appliedRequestID: first)
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 1)
+    }
+
+    /// 88.5c: the drag's bias carries the tap it belongs to.
+    func testBiasRequestCarriesItsFocusRequestID() {
+        var tagged: [(Float, Int)] = []
+        let model = ViewfinderFocusModel(
+            actions: FocusExposureActions(
+                focusAndExpose: { _ in 7 }, lock: { _ in 8 }, setBias: { _ in XCTFail("untagged") },
+                setBiasForRequest: { tagged.append(($0, $1)) }, deviceBiasRange: { -2...2 }),
+            convert: { p, s in CGPoint(x: p.x / s.width, y: p.y / s.height) },
+            holdDuration: .seconds(5))
+        let start = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        model.touchEnded()
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 100), viewfinderSize: size)
+        XCTAssertFalse(tagged.isEmpty)
+        XCTAssertTrue(tagged.allSatisfy { $0.1 == 7 })
+    }
+
     // MARK: exposure drag
 
     private func startAdjusting(_ model: ViewfinderFocusModel) -> CGPoint {

@@ -202,6 +202,7 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     func testLateRepliesAfterReleaseKeepTheReticleAndTheLastBias() {
         let model = makeModel()
         tap(model, at: CGPoint(x: 150, y: 200))
+        model.receive(.initial) // TASK-88: the camera answers a tap with the default exposure
         model.receive(FocusExposureState(isLocked: false, exposureBias: 1.0))
         drag(model, from: CGPoint(x: 150, y: 100), dy: 120) // 1.0 down through 0 to about -0.5
         XCTAssertEqual(try XCTUnwrap(biases.last), -0.5, accuracy: 0.11)
@@ -246,6 +247,7 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     func testLateResetKeepsTheLockLabel() {
         let model = makeModel()
         tap(model, at: CGPoint(x: 100, y: 100)) // id 1
+        model.receive(.initial) // TASK-88: the camera answers a tap with the default exposure
         model.receive(FocusExposureState(isLocked: true, exposureBias: 0))
         model.receiveReset(appliedRequestID: 0)
         XCTAssertTrue(model.isLocked)

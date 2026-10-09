@@ -330,6 +330,7 @@ final class CameraScreenModel: ObservableObject {
             focusAndExpose: { [cameraService] in cameraService.focusAndExpose(at: $0) },
             lock: { [cameraService] in cameraService.lockFocusAndExposure(at: $0) },
             setBias: { [cameraService] in cameraService.setExposureBias($0) },
+            setBiasForRequest: { [cameraService] in cameraService.setExposureBias($0, forFocusRequestID: $1) },
             deviceBiasRange: { [cameraService] in cameraService.exposureBiasRange })
         let focusModel: ViewfinderFocusModel
         #if DEBUG
@@ -548,6 +549,9 @@ final class CameraScreenModel: ObservableObject {
         focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
         cameraService.focusExposureStatePublisher
             .sink { [weak self] in self?.focusModel.receive($0) }
+            .store(in: &cancellables)
+        cameraService.focusExposureTapResetPublisher
+            .sink { [weak self] in self?.focusModel.receiveTapReset(appliedRequestID: $0) }
             .store(in: &cancellables)
         cameraService.focusExposureResetPublisher
             .sink { [weak self] in self?.focusModel.receiveReset(appliedRequestID: $0) }

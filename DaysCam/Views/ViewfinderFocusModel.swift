@@ -25,6 +25,10 @@ struct FocusExposureActions {
     var focusAndExpose: (CGPoint) -> Int
     var lock: (CGPoint) -> Int
     var setBias: (Float) -> Void
+    /// Like `setBias`, but tagged with the focus request the drag belongs to,
+    /// so the camera can refuse a bias that arrives after a newer tap
+    /// (TASK-88). Preferred over `setBias` when set.
+    var setBiasForRequest: ((Float, Int) -> Void)?
     /// The exposure bias range the live device accepts.
     var deviceBiasRange: () -> ClosedRange<Float>
 }
@@ -267,7 +271,11 @@ final class ViewfinderFocusModel: ObservableObject {
         lastSentBias = value
         pendingBias = value
         refreshDisplayedBias()
-        actions.setBias(value)
+        if let setBiasForRequest = actions.setBiasForRequest, latestFocusRequestID > 0 {
+            setBiasForRequest(value, latestFocusRequestID)
+        } else {
+            actions.setBias(value)
+        }
     }
 
     // MARK: Service feedback
@@ -286,6 +294,18 @@ final class ViewfinderFocusModel: ObservableObject {
         // Until a state without the lock comes, an old lock answer is stale.
         if !state.isLocked { isLockClearPending = false }
         isLocked = state.isLocked && !isLockClearPending
+        refreshDisplayedBias()
+    }
+
+    /// The camera applied a tap's reset (bias 0, unlocked), even when its
+    /// state was already at rest and so published nothing. Ends the wait for
+    /// the default exposure that `focus(at:)` started; the reticle stays.
+    /// A confirmation for an older tap says nothing about the newest one.
+    func receiveTapReset(appliedRequestID: Int) {
+        guard appliedRequestID >= latestFocusRequestID else { return }
+        if pendingBias == 0 { pendingBias = nil }
+        isLockClearPending = false
+        isLocked = serviceState.isLocked
         refreshDisplayedBias()
     }
 
