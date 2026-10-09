@@ -598,13 +598,14 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    /// Fixed opacity icon of the three opacity rows (TASK-83): monochrome like
-    /// the other slider icons, so it never follows the selected color.
+    /// Fixed opacity legend of the three opacity rows (TASK-83): a plain gray
+    /// and white checkerboard circle in the same 24pt column as the other
+    /// slider icons, so it never follows the selected color.
     private var opacityLegend: some View {
-        Image(systemName: "circle.lefthalf.striped.horizontal")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(CameraTheme.ink)
+        CheckerboardView()
             .frame(width: 24, height: 24)
+            .clipShape(Circle())
+            .overlay(swatchEdge)
             .accessibilityHidden(true)
     }
 
