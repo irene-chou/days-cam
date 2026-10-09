@@ -68,7 +68,6 @@ struct ProfileManagerView: View {
                     .scaleEffect(draggingID == row.id ? 1.03 : 1)
                     .shadow(color: .black.opacity(draggingID == row.id ? 0.18 : 0), radius: 8, y: 3)
                     .zIndex(draggingID == row.id ? 1 : 0)
-                    .animation(.easeOut(duration: 0.15), value: dragTarget)
                     .simultaneousGesture(reorderGesture(row: row, index: index))
                     // List-row traits last: wrapping modifiers above would
                     // otherwise hide them from the list (insets, separator).
@@ -129,28 +128,42 @@ struct ProfileManagerView: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
                 dragTranslation = drag?.translation.height ?? 0
-                dragTarget = ProfileManagerModel.dragTargetIndex(from: index, translation: dragTranslation,
+                let target = ProfileManagerModel.dragTargetIndex(from: index, translation: dragTranslation,
                                                                  rowHeight: rowHeight, count: model.rows.count)
+                // Animate only the neighbors' slide. A value-bound `.animation`
+                // on the row also animated the List's row move at release (TASK-76).
+                if target != dragTarget {
+                    withAnimation(.easeOut(duration: 0.15)) { dragTarget = target }
+                }
             }
             .onEnded { value in
                 guard case .second(true, _) = value, draggingID == row.id else { return }
                 let target = dragTarget
-                // Reorder and re-base the offsets in one non-animated
-                // transaction: the rows jump to their new slots while the
-                // dragged row keeps its on-screen position (the finger's
-                // distance from the new slot) and neighbors need no offset.
-                // Only that residual then animates to 0 (TASK-76).
+                // Reorder and re-base the offsets with animations disabled:
+                // the rows jump to their new slots while the dragged row
+                // keeps its on-screen position (the finger's distance from
+                // the new slot) and neighbors need no offset. Only that
+                // residual then eases to 0, stepped by hand: any ambient
+                // animation (`withAnimation`) during the reorder would also
+                // animate the List's own row move from the old slots, the
+                // jump TASK-76 fixes.
                 let residual = ProfileManagerModel.releaseResidual(translation: dragTranslation, from: index,
                                                                    to: target, rowHeight: rowHeight)
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) {
                     model.move(id: row.id, toFinalIndex: target)
                     dragTranslation = residual
                 }
-                withAnimation(.easeOut(duration: 0.15)) {
-                    draggingID = nil
-                    dragTranslation = 0
+                Task { @MainActor in
+                    let steps = 9
+                    for step in 1...steps {
+                        try? await Task.sleep(nanoseconds: 16_000_000)
+                        let progress = Double(step) / Double(steps)
+                        let remaining = CGFloat((1 - progress) * (1 - progress)) // ease-out
+                        withTransaction(instant) { dragTranslation = residual * remaining }
+                    }
+                    withAnimation(.easeOut(duration: 0.15)) { draggingID = nil }
                 }
                 // The release that ends a long press must not also count as a tap.
                 suppressTap = true
