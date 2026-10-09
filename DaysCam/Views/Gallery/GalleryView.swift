@@ -43,9 +43,9 @@ struct GalleryView: View {
         // Back from the Photos app (or Settings): re-read the list so a
         // photo deleted there disappears (FR-15.4).
         .task { reconcileAlbumSwitch() }
-        .sheet(isPresented: $isShowingSettings) { settingsSheet }
+        .sheet(isPresented: $isShowingSettings, onDismiss: { albumNotice = GalleryAlbumNotice.afterSheetDismissed(albumNotice) }) { settingsSheet }
         // While the settings sheet is open the notice shows inside it instead.
-        .alert(item: Binding(get: { isShowingSettings ? nil : albumNotice },
+        .alert(item: Binding(get: { GalleryAlbumNotice.alertNotice(albumNotice, isSheetShowing: isShowingSettings) },
                              set: { albumNotice = $0 })) { notice in
             switch notice {
             case .needsFullAccess:
@@ -338,6 +338,16 @@ enum GalleryAlbumNotice: Identifiable, Equatable {
     case accessWithdrawn
 
     var id: Self { self }
+
+    /// The notice to raise as an alert: none while the settings sheet is
+    /// open, since the sheet shows it inline.
+    static func alertNotice(_ notice: GalleryAlbumNotice?, isSheetShowing: Bool) -> GalleryAlbumNotice? {
+        isSheetShowing ? nil : notice
+    }
+
+    /// Closing the sheet consumes its notice, so it neither pops up as an
+    /// alert nor reappears when the sheet is reopened.
+    static func afterSheetDismissed(_ notice: GalleryAlbumNotice?) -> GalleryAlbumNotice? { nil }
 
     /// The notice for a finished request to turn the switch on; none when
     /// full access was granted.
