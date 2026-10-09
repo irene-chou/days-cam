@@ -256,7 +256,6 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
 
     /// onEnded lost, then the user taps the very same spot: the tap must still count.
     func testNextTapAtTheSamePointAfterALostEndStillFocuses() async {
-        XCTExpectFailure("TASK-85: model drops a stale touch only when the start differs; same-point retap is swallowed unless the GestureState cancel path (device) resets it. Remove when fixed")
         let model = makeModel()
         let spot = CGPoint(x: 150, y: 200)
         model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
