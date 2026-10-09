@@ -75,6 +75,29 @@ final class AlbumSettingsStoreTests: XCTestCase {
         return (result, wasOnMain)
     }
 
+    /// 79.2: only `.limited` reads as limited, and asking never prompts.
+    func testIsLimitedAccessOnlyForLimited() {
+        let statuses: [PHAuthorizationStatus] = [.notDetermined, .denied, .restricted, .authorized, .limited]
+        for status in statuses {
+            let library = FakeLibrary(readWriteStatus: status)
+            let store = AlbumSettingsStore(defaults: defaults, library: library)
+            XCTAssertEqual(store.isLimitedAccess, status == .limited, "79.2 \(status.rawValue)")
+            XCTAssertTrue(library.requestedLevels.isEmpty)
+        }
+    }
+
+    /// The DEBUG fake: undecided until asked, then answers with its mode.
+    func testUITestLibraryAnswersWithItsMode() throws {
+        XCTAssertNil(UITestPhotoLibrary(mode: "bogus"))
+        let limited = try XCTUnwrap(UITestPhotoLibrary(mode: "limited"))
+        XCTAssertEqual(limited.authorizationStatus(for: .readWrite), .notDetermined)
+        limited.requestAuthorization(for: .readWrite) { _ in }
+        XCTAssertEqual(limited.authorizationStatus(for: .readWrite), .limited)
+        let withdrawn = try XCTUnwrap(UITestPhotoLibrary(mode: "withdrawn"))
+        XCTAssertTrue(withdrawn.startsOn)
+        XCTAssertEqual(withdrawn.authorizationStatus(for: .readWrite), .denied)
+    }
+
     // MARK: - Default and persistence (64.1, 64.6)
 
     func testOffByDefault() {
