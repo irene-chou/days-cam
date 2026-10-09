@@ -456,4 +456,77 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(decoded.style.strokeWidth, 5, "70.4")
         XCTAssertEqual(decoded.style.boxPadding, 20, "70.4")
     }
+
+    // MARK: - TASK-71 陰影參數
+
+    func testPresetFillsParametersAndAdjustingClearsTheSelection() {
+        let model = makeModel()
+        model.selectShadow(.hard)
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "71.3")
+        XCTAssertEqual(model.profile.style.shadowOffsetX, 2, "71.3")
+        XCTAssertEqual(model.profile.style.shadowBlur, 0, "71.3")
+        model.setShadowBlur(3)
+        XCTAssertNil(model.profile.style.shadowPreset, "71.3: 改參數後預設不再選中")
+        model.selectShadow(.hard)
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard)
+        XCTAssertEqual(model.profile.style.shadowBlur, 0)
+    }
+
+    func testShadowParametersSnapClampAndWriteThrough() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.selectShadow(.soft)
+        model.setShadowOffsetX(-20)
+        model.setShadowOffsetY(3.4)
+        model.setShadowBlur(99)
+        XCTAssertEqual(model.profile.style.shadowOffsetX, -8, "71.5")
+        XCTAssertEqual(model.profile.style.shadowOffsetY, 3, "71.5")
+        XCTAssertEqual(model.profile.style.shadowBlur, 16, "71.5")
+        XCTAssertEqual(spy.updated.last?.style.shadowBlur, 16)
+        XCTAssertTrue(model.profile.style.hasValidShadowParameters)
+    }
+
+    func testShadowOpacityIsClampedAndKeepsTheColor() {
+        let model = makeModel()
+        model.selectShadow(.soft)
+        model.setShadowOpacityPercent(0)
+        XCTAssertEqual(model.shadowOpacityPercent, 5)
+        model.setShadowOpacityPercent(40)
+        XCTAssertEqual(model.shadowOpacityPercent, 40)
+        XCTAssertEqual(model.profile.style.shadowColor.red, 0)
+    }
+
+    func testGlowFollowsTheTextColorUntilACustomShadowColorIsPicked() {
+        let model = makeModel()
+        model.selectShadow(.glow)
+        XCTAssertEqual(model.profile.style.shadowColorSource, .textColor, "71.4")
+        model.selectTextColor(OverlayStyle.swatches[3])
+        XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.resolvedShadowColor, OverlayStyle.swatches[3]), "71.4")
+        model.selectShadowColor(OverlayStyle.swatches[5])
+        XCTAssertEqual(model.profile.style.shadowColorSource, .custom)
+        XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.resolvedShadowColor, OverlayStyle.swatches[5]))
+        XCTAssertEqual(model.shadowOpacityPercent, StyleTabModel.opacityPercent(of: model.profile.style.shadowColor))
+        model.selectShadowColor(nil)
+        XCTAssertEqual(model.profile.style.shadowColorSource, .textColor)
+    }
+
+    func testShadowParametersAreDisabledOnlyWhileTheShadowIsOff() {
+        let model = makeModel()
+        model.selectShadow(.none)
+        XCTAssertTrue(model.isShadowParametersDisabled)
+        model.selectShadow(.soft)
+        XCTAssertFalse(model.isShadowParametersDisabled)
+    }
+
+    func testShadowParametersRoundTrip() throws {
+        let model = makeModel()
+        model.selectShadow(.soft)
+        model.setShadowOffsetX(-3)
+        model.setShadowBlur(9)
+        model.setShadowOpacityPercent(35)
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(model.profile))
+        XCTAssertEqual(decoded.style.shadowOffsetX, -3, "71.5")
+        XCTAssertEqual(decoded.style.shadowBlur, 9, "71.5")
+        XCTAssertEqual(StyleTabModel.opacityPercent(of: decoded.style.shadowColor), 35, "71.5")
+    }
 }
