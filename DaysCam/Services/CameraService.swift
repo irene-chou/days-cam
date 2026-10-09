@@ -222,6 +222,33 @@ protocol FocusExposureCaptureDevice: AnyObject {
 
 extension AVCaptureDevice: FocusExposureCaptureDevice {}
 
+/// What triggered a possible focus/exposure reset.
+enum FocusExposureTrigger: Equatable {
+    /// The scene changed enough that the old focus/exposure no longer fits.
+    case subjectAreaChanged
+    /// The other camera went into the session.
+    case cameraFlipped
+    /// A quick-zoom preset was chosen, possibly changing the physical lens.
+    case zoomPresetSelected
+    /// The app came back to the foreground.
+    case enteredForeground
+    /// A pinch changed the zoom factor. Never resets.
+    case pinchZoomed
+}
+
+/// Decides whether a trigger resets focus and exposure to continuous auto
+/// (issue #303). Pure, so the rules are testable without a device.
+enum FocusExposurePolicy {
+    /// True when `trigger` must reset to continuous auto with bias 0.
+    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool) -> Bool {
+        switch trigger {
+        case .subjectAreaChanged: return !isLocked
+        case .cameraFlipped, .zoomPresetSelected, .enteredForeground: return true
+        case .pinchZoomed: return false
+        }
+    }
+}
+
 /// What the viewfinder's focus/exposure UI needs to know. Published through
 /// `CameraService.focusExposureStatePublisher`.
 struct FocusExposureState: Equatable {
@@ -617,7 +644,9 @@ extension CameraService {
                 // A device keeps its zoom across input swaps, so going back to
                 // a side would otherwise resume at its old factor.
                 self.resetZoom(on: device)
-                self.resetFocusExposure(on: device)
+                if FocusExposurePolicy.shouldReset(on: .cameraFlipped, isLocked: self.focusExposureShadow.isLocked) {
+                    self.resetFocusExposure(on: device)
+                }
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
                 self.publish(facing: target)
@@ -682,7 +711,9 @@ extension CameraService {
             guard CameraService.applyZoom(displayFactor, to: device, rampRate: rate) != nil else { return }
             // A preset can change the physical lens, whose focus and exposure
             // the old tap no longer describes (issue #303).
-            self.resetFocusExposure(on: device)
+            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: self.focusExposureShadow.isLocked) {
+                self.resetFocusExposure(on: device)
+            }
             self.publishZoom(of: device)
         }
     }
@@ -871,6 +902,12 @@ extension CameraService {
         applyOnDevice { self.resetFocusExposure(on: $0) }
     }
 
+    /// Foreground return: resets as the policy says. Call on the main queue.
+    func resetForForeground() {
+        guard FocusExposurePolicy.shouldReset(on: .enteredForeground, isLocked: false) else { return }
+        resetToContinuousAuto()
+    }
+
     /// Runs `work` with the live device on the session queue; a no-op where
     /// there is no camera.
     private func applyOnDevice(_ work: @escaping (AVCaptureDevice) -> Void) {
@@ -894,7 +931,8 @@ extension CameraService {
     private func subjectAreaDidChange(from source: AnyObject?) {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoInput?.device, source === device else { return }
-            guard !self.focusExposureShadow.isLocked else { return }
+            guard FocusExposurePolicy.shouldReset(on: .subjectAreaChanged,
+                                                  isLocked: self.focusExposureShadow.isLocked) else { return }
             self.resetFocusExposure(on: device)
         }
     }
@@ -1159,7 +1197,7 @@ private extension CameraService {
                                             object: nil,
                                             queue: .main) { [weak self] _ in
             self?.refreshPermission()
-            self?.resetToContinuousAuto()
+            self?.resetForForeground()
         })
 
         // Posted by the device itself; the current device changes on a flip,

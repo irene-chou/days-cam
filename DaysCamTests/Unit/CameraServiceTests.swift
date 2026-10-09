@@ -881,3 +881,33 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         XCTAssertEqual(service.focusExposureState, .initial)
     }
 }
+
+final class FocusExposurePolicyTests: XCTestCase {
+
+    func testSubjectChangeWhileLockedDoesNotReset() {
+        XCTAssertFalse(FocusExposurePolicy.shouldReset(on: .subjectAreaChanged, isLocked: true))
+    }
+
+    func testSubjectChangeWhileUnlockedResets() {
+        XCTAssertTrue(FocusExposurePolicy.shouldReset(on: .subjectAreaChanged, isLocked: false))
+    }
+
+    func testFlipPresetAndForegroundAlwaysReset() {
+        for trigger in [FocusExposureTrigger.cameraFlipped, .zoomPresetSelected, .enteredForeground] {
+            XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: true), "\(trigger) locked")
+            XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: false), "\(trigger) unlocked")
+        }
+    }
+
+    func testPinchAcrossLensesNeverResets() {
+        XCTAssertFalse(FocusExposurePolicy.shouldReset(on: .pinchZoomed, isLocked: false))
+        XCTAssertFalse(FocusExposurePolicy.shouldReset(on: .pinchZoomed, isLocked: true))
+    }
+
+    func testResetClearsBiasAndLockOnTheDevice() {
+        let device = FakeFocusDevice()
+        CameraService.applyExposureBias(1.5, to: device)
+        CameraService.applyContinuousAuto(to: device)
+        XCTAssertEqual(device.bias, 0)
+    }
+}
