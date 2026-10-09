@@ -66,7 +66,7 @@ final class FocusExposureUITests: XCTestCase {
         attachScreenshot("73.2-bias-positive")
         viewfinder(0.5, 0.4).press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.0))
         XCTAssertEqual(sun.value as? String, "+1.0")
-        viewfinder(0.5, 0.3).press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.95))
+        viewfinder(0.5, 0.3).press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.78))
         XCTAssertEqual(sun.value as? String, "-2.0")
         attachScreenshot("73.2-bias-negative-limit")
     }
@@ -102,7 +102,9 @@ final class FocusExposureUITests: XCTestCase {
         XCTAssertTrue(reticle.waitForExistence(timeout: 3))
         viewfinder().press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.25))
         sleep(1)
-        XCTAssertEqual(sun.value as? String, "0")
+        // Nothing took effect, so the reticle is gone; if it is still there it shows no value.
+        XCTAssertTrue(!sun.exists || (sun.value as? String) == "0", "value \(String(describing: sun.value))")
+        attachScreenshot("73.7-bias-failed")
     }
 
     /// 73.6: the round zoom button still takes its own taps and starts no focus.

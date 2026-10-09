@@ -398,7 +398,7 @@ struct CameraScreen: View {
         // #303). One zero-distance drag tracks the finger and the model
         // tells the three apart; it ignores touches while the panel or a
         // capsule is open and while two fingers pinch. Simultaneous, so the
-        // pinch and the tap below keep working.
+        // pinch and the tap above keep working.
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged {
