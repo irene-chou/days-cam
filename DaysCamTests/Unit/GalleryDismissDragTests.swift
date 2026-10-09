@@ -36,7 +36,8 @@ final class GalleryAlbumNoticeTests: XCTestCase {
     }
 
     func testNoticesCarryTheSpecifiedWording() {
-        XCTAssertEqual(GalleryAlbumNotice.needsFullAccess.message, "需要完整照片取用權限才能存到相簿，可到設定開啟。")
+        XCTAssertEqual(GalleryAlbumNotice.needsFullAccess.message, "需要完整照片取用權限才能自動加入相簿，可到設定開啟。")
+        XCTAssertEqual(GalleryAlbumNotice.accessWithdrawn.title, "已關閉自動加入相簿")
         XCTAssertFalse(GalleryAlbumNotice.accessWithdrawn.message.isEmpty)
     }
 }
