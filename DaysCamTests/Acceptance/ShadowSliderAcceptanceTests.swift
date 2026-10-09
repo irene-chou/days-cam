@@ -59,13 +59,13 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
         XCTAssertTrue(model.isShadowParametersDisabled, "無 disables the rows")
     }
 
-    /// 71.3: every parameter change leaves no preset selected; tapping one restores it.
+    /// 71.3, updated by TASK-86 (86.2/86.3): only a shape change (offsets, blur)
+    /// leaves no preset selected; opacity and color changes keep it.
     func testAnyParameterChangeDropsThePreset() throws {
         let model = try makeModel(store: makeStore())
         let changes: [(String, (StyleTabModel) -> Void)] = [
             ("x", { $0.setShadowOffsetX(3) }), ("y", { $0.setShadowOffsetY(-3) }),
-            ("blur", { $0.setShadowBlur(9) }), ("opacity", { $0.setShadowOpacityPercent(40) }),
-            ("color", { $0.selectShadowColor(OverlayColor(hex: "#FF0000")) })
+            ("blur", { $0.setShadowBlur(9) })
         ]
         for (name, change) in changes {
             model.selectShadow(.hard)
@@ -76,12 +76,19 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
             model.selectShadow(.hard)
             XCTAssertEqual(model.profile.style.shadowPreset, .hard, "\(name): tapping restores it")
         }
+        model.setShadowOpacityPercent(40)
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 opacity keeps the preset")
+        model.selectShadowColor(OverlayColor(hex: "#FF0000"))
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 color keeps the preset")
     }
 
-    /// 71.4: glow follows the text color; a custom shadow color does not.
+    /// 71.4, updated by TASK-86: glow no longer forces the text color; the
+    /// follow-text source, once chosen, follows; a custom shadow color does not.
     func testGlowFollowsTextColorAndCustomDoesNot() throws {
         let model = try makeModel(store: makeStore())
         model.selectShadow(.glow)
+        XCTAssertEqual(model.profile.style.shadowColorSource, .custom, "86.1 glow does not force follow-text")
+        model.selectShadowColor(nil)
         XCTAssertEqual(model.profile.style.shadowColorSource, .textColor)
         for hex in ["#FFD60A", "#0A84FF", "#FF453A"] {
             model.selectTextColor(try XCTUnwrap(OverlayColor(hex: hex)))
