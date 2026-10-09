@@ -2,10 +2,10 @@ import CoreText
 import XCTest
 @testable import DaysCam
 
-/// TASK-80: compare outlines against an independently dilated opaque glyph mask.
+/// TASK-80: compare outlines against an independently dilated glyph mask.
 final class OverlayRendererStrokeTests: XCTestCase {
-    private let origin = CGPoint(x: 65, y: 35)
-    private let size = CGSize(width: 600, height: 230)
+    private let origin = CGPoint(x: 65, y: 80)
+    private let size = CGSize(width: 600, height: 400)
     private var fontSize: CGFloat = 68
 
     private func fonts() throws -> [UIFont] {
@@ -64,49 +64,49 @@ final class OverlayRendererStrokeTests: XCTestCase {
 
     func test80_1MaximumOutlineHasNoHolesWithinGlyphDilation() throws {
         for pointSize: CGFloat in [17, 68, 166] {
-        fontSize = pointSize
-        let radius = max(1, Int(6 * fontSize / 17) - 2) // Exclude raster hinting and the antialiased outside boundary (up to 2px).
-        let offsets = (-radius...radius).flatMap { y in
-            (-radius...radius).compactMap { x in x*x + y*y <= radius*radius ? (x, y) : nil }
-        }
-        for font in try fonts() {
-            for text in ["0", "8", "日", "囍", "&", "fi &"] {
-                let plain = image { _ in
-                    (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: UIColor.white])
-                }
-                let mask = try alpha(plain)
-                XCTAssertTrue(mask.contains(255), "fixture has no opaque ink")
-                let outlined = try rendered(text, font: font, width: 6)
-                let actual = try alpha(outlined)
-                var expected = mask.map { $0 == 255 }
-                for y in 0..<Int(size.height) {
-                    for x in 1..<(Int(size.width) - 1) where y > 0 && y < Int(size.height) - 1 && mask[y * Int(size.width) + x] == 255 {
-                        let i = y * Int(size.width) + x
-                        guard mask[i - 1] < 255 || mask[i + 1] < 255 || mask[i - Int(size.width)] < 255 || mask[i + Int(size.width)] < 255 else { continue }
-                        for (dx, dy) in offsets {
-                            let xx = x + dx, yy = y + dy
-                            if xx >= 0, xx < Int(size.width), yy >= 0, yy < Int(size.height) {
-                                expected[yy * Int(size.width) + xx] = true
+            fontSize = pointSize
+            let radius = max(1, Int(6 * fontSize / 17) - 2) // Exclude raster hinting and the antialiased outside boundary (up to 2px).
+            let offsets = (-radius...radius).flatMap { y in
+                (-radius...radius).compactMap { x in x*x + y*y <= radius*radius ? (x, y) : nil }
+            }
+            for font in try fonts() {
+                for text in ["0", "8", "日", "囍", "&", "fi &"] {
+                    let plain = image { _ in
+                        (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: UIColor.white])
+                    }
+                    let mask = try alpha(plain)
+                    XCTAssertTrue(mask.contains { $0 > 0 }, "fixture has no ink")
+                    let outlined = try rendered(text, font: font, width: 6)
+                    let actual = try alpha(outlined)
+                    var expected = mask.map { $0 > 0 }
+                    for y in 0..<Int(size.height) {
+                        for x in 1..<(Int(size.width) - 1) where y > 0 && y < Int(size.height) - 1 && mask[y * Int(size.width) + x] > 0 {
+                            let i = y * Int(size.width) + x
+                            guard mask[i - 1] == 0 || mask[i + 1] == 0 || mask[i - Int(size.width)] == 0 || mask[i + Int(size.width)] == 0 else { continue }
+                            for (dx, dy) in offsets {
+                                let xx = x + dx, yy = y + dy
+                                if xx >= 0, xx < Int(size.width), yy >= 0, yy < Int(size.height) {
+                                    expected[yy * Int(size.width) + xx] = true
+                                }
                             }
                         }
                     }
-                }
-                let holes = expected.indices.filter { expected[$0] && actual[$0] < 240 }.count
-                print("TASK80 \(pointSize)pt \(font.fontName) \(text): missing pixels=\(holes)")
-                if pointSize == 68 { attach(outlined, name: "80.1-\(font.fontName)-\(text)") }
-                if holes > 0, pointSize == 68 {
-                    let diagnostic = image { context in
-                        outlined.draw(at: .zero)
-                        context.setFillColor(UIColor.red.cgColor)
-                        for i in expected.indices where expected[i] && actual[i] < 240 {
-                            context.fill(CGRect(x: i % Int(size.width), y: Int(size.height) - 1 - i / Int(size.width), width: 1, height: 1))
+                    let holes = expected.indices.filter { expected[$0] && actual[$0] < 240 }.count
+                    print("TASK80 \(pointSize)pt \(font.fontName) \(text): missing pixels=\(holes)")
+                    if pointSize == 68 { attach(outlined, name: "80.1-\(font.fontName)-\(text)") }
+                    if holes > 0, pointSize == 68 {
+                        let diagnostic = image { context in
+                            outlined.draw(at: .zero)
+                            context.setFillColor(UIColor.red.cgColor)
+                            for i in expected.indices where expected[i] && actual[i] < 240 {
+                                context.fill(CGRect(x: i % Int(size.width), y: Int(size.height) - 1 - i / Int(size.width), width: 1, height: 1))
+                            }
                         }
+                        attach(diagnostic, name: "80.1-missing-\(font.fontName)-\(text)")
                     }
-                    attach(diagnostic, name: "80.1-missing-\(font.fontName)-\(text)")
+                    XCTAssertEqual(holes, 0, "\(pointSize)pt \(font.fontName) \(text)")
                 }
-                XCTAssertEqual(holes, 0, "\(pointSize)pt \(font.fontName) \(text)")
             }
-        }
         }
     }
 
@@ -171,6 +171,37 @@ final class OverlayRendererStrokeTests: XCTestCase {
         XCTAssertTrue(try rgba(plain) == rgba(rendered(text, font: font, width: 6)), "bitmap emoji changed")
     }
 
+    func test80_4StyleSwatchMatchesRendererOutline() throws {
+        fontSize = 68
+        let font = try XCTUnwrap(try fonts().first { $0.fontName == "Task80Thin" })
+        let text = "0 8 日 囍 &"
+        let width: CGFloat = 24 // 6 × 68 / 17, matching the renderer's scale.
+        let swatch = StyleSwatchPreview.strokedText(text, font: font, fill: .black,
+                                                   stroke: .white, strokeWidth: width)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = swatch.scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let composed = renderer.image { _ in
+            swatch.draw(at: CGPoint(x: origin.x - ceil(width * 2), y: origin.y - ceil(width * 2)))
+        }
+        let resolved = OverlayMetrics.resolvedFont(state: .available, postScriptName: font.fontName)
+        let style = OverlayStyle(textColor: .black, outline: .stroke, outlineColor: .white,
+                                 strokeWidth: 6, shadow: .none)
+        let overlay = try XCTUnwrap(OverlayRenderer().renderText(text, style: style, fontSize: fontSize,
+                                                                displayScale: format.scale, font: resolved))
+        let rendered = renderer.image { _ in
+            overlay.image.draw(in: overlay.imageFrame(forBlockOrigin: origin))
+        }
+        let expected = try alpha(rendered)
+        let actual = try alpha(composed)
+        let ink = expected.indices.filter { expected[$0] > 0 || actual[$0] > 0 }
+        let difference = Double(ink.reduce(0) { $0 + abs(Int(expected[$1]) - Int(actual[$1])) })
+            / Double(max(1, ink.count)) / 255
+        XCTAssertLessThan(difference, 0.01, "swatch differs beyond scale resampling tolerance")
+        attach(composed, name: "80.4-style-swatch")
+        attach(rendered, name: "80.4-renderer")
+    }
+
     func test80_4PreviewAndBakeShareTheOutline() throws {
         let font = try XCTUnwrap(try fonts().first { $0.fontName == "Task80Thin" })
         let resolved = OverlayMetrics.resolvedFont(state: .available, postScriptName: font.fontName)
@@ -214,67 +245,6 @@ final class OverlayRendererStrokeTests: XCTestCase {
         XCTAssertLessThan(difference, 0.005, "preview raster resampling exceeded antialias tolerance")
         attach(preview, name: "80.4-preview")
         attach(baked, name: "80.4-bake")
-    }
-
-    func test80_DiagnoseMaximumOutlineBounds() throws {
-        for font in try fonts() where font.fontName == "Task80Thin" || font.fontName == "PingFangTC-Thin" {
-            let text = font.fontName == "Task80Thin" ? "0" : "fi &"
-            let geometry = OverlayStrokeGeometry(text: text, font: font, width: 24)
-            let direct = image { context in
-                geometry.draw(in: context, at: origin, color: .white, excludingFill: false)
-                (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: UIColor.black])
-            }
-            let resolved = OverlayMetrics.resolvedFont(state: .available, postScriptName: font.fontName)
-            let overlay = try XCTUnwrap(OverlayRenderer().renderText(text, style: OverlayStyle(textColor: .black,
-                outline: .stroke, outlineColor: .white, strokeWidth: 6, shadow: .none), fontSize: fontSize,
-                displayScale: 1, font: resolved))
-            print("TASK80 bounds \(font.fontName): fill=\(geometry.fillPath.boundingBoxOfPath) outline=\(geometry.outlinePath.boundingBoxOfPath) image=\(overlay.image.size) insets=\(overlay.textInsets)")
-            let rasterStroke = image { context in
-                context.saveGState()
-                context.translateBy(x: origin.x, y: origin.y)
-                context.setFillColor(UIColor.white.cgColor)
-                context.setStrokeColor(UIColor.white.cgColor)
-                context.setLineWidth(48)
-                context.setLineCap(.round)
-                context.setLineJoin(.round)
-                context.addPath(geometry.fillPath)
-                context.drawPath(using: .fillStroke)
-                context.restoreGState()
-            }
-            let segmented = image { context in
-                context.saveGState()
-                context.translateBy(x: origin.x, y: origin.y)
-                context.setFillColor(UIColor.white.cgColor)
-                context.setStrokeColor(UIColor.white.cgColor)
-                context.setLineWidth(48)
-                context.setLineCap(.round)
-                context.setLineJoin(.round)
-                context.addPath(geometry.fillPath)
-                context.fillPath()
-                var current = CGPoint.zero, start = CGPoint.zero
-                geometry.fillPath.applyWithBlock { pointer in
-                    let element = pointer.pointee
-                    context.beginPath()
-                    context.move(to: current)
-                    switch element.type {
-                    case .moveToPoint: current = element.points[0]; start = current
-                    case .addLineToPoint: context.addLine(to: element.points[0]); current = element.points[0]
-                    case .addQuadCurveToPoint:
-                        context.addQuadCurve(to: element.points[1], control: element.points[0]); current = element.points[1]
-                    case .addCurveToPoint:
-                        context.addCurve(to: element.points[2], control1: element.points[0], control2: element.points[1]); current = element.points[2]
-                    case .closeSubpath: context.addLine(to: start); current = start
-                    @unknown default: break
-                    }
-                    context.strokePath()
-                }
-                context.restoreGState()
-            }
-            attach(segmented, name: "80-diagnostic-segmented-\(font.fontName)")
-            attach(rasterStroke, name: "80-diagnostic-rasterStroke-\(font.fontName)")
-            attach(direct, name: "80-diagnostic-direct-\(font.fontName)")
-            attach(try rendered(text, font: font, width: 6), name: "80-diagnostic-renderer-\(font.fontName)")
-        }
     }
 
 }
