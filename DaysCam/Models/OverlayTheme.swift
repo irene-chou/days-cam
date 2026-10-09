@@ -214,18 +214,14 @@ struct OverlayTheme: Equatable, Hashable {
         }
     }
 
+    /// The shadow for `style`, in its parameters (TASK-71). The color goes
+    /// in opaque and its alpha in `opacity`, so the shadow's alpha is applied
+    /// once, as 0.5's fixed shadows did; the text's own alpha reaches the
+    /// shadow through the ink casting it (#305).
     private static func shadowDecoration(for style: OverlayStyle) -> OverlayDecoration? {
-        switch style.shadow {
-        case .none:
-            return nil
-        case .soft:
-            return .shadow(offset: CGSize(width: 0, height: 2), blur: 4, opacity: 0.6, color: .black)
-        case .hard:
-            return .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black)
-        case .glow:
-            // The glow is cast by the text's own ink, which already carries
-            // the text alpha; an opaque color applies that alpha only once.
-            return .shadow(offset: .zero, blur: 8, opacity: 0.9, color: style.textColor.withOpacity(1))
-        }
+        guard style.showsShadow else { return nil }
+        let color = style.resolvedShadowColor
+        return .shadow(offset: CGSize(width: style.shadowOffsetX, height: style.shadowOffsetY),
+                       blur: style.shadowBlur, opacity: color.opacity, color: color.withOpacity(1))
     }
 }

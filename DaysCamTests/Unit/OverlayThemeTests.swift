@@ -90,8 +90,10 @@ final class OverlayThemeTests: XCTestCase {
 /// against the PRD 0.2 FR-10 decoration table.
 final class OverlayThemeStyleTests: XCTestCase {
 
+    /// The 0.5 opacities stored on 8-bit steps (TASK-71): 0.6 is exact,
+    /// 0.75 and 0.9 become 191/255 and 230/255.
     private let softShadow = OverlayDecoration.shadow(offset: CGSize(width: 0, height: 2), blur: 4,
-                                                      opacity: 0.6, color: .black)
+                                                      opacity: 153.0 / 255, color: .black)
     private let dark = OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E)
     private let blue = OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
     private let insets = OverlayInsets(horizontal: 12, vertical: 6)
@@ -160,12 +162,12 @@ final class OverlayThemeStyleTests: XCTestCase {
 
     func testEveryShadowMatchesTheConstantTable() {
         let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
-        let expected: [OverlayShadow: OverlayDecoration] = [
+        let expected: [OverlayShadowPreset: OverlayDecoration] = [
             .soft: softShadow,
-            .hard: .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black),
-            .glow: .shadow(offset: .zero, blur: 8, opacity: 0.9, color: pink)
+            .hard: .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 191.0 / 255, color: .black),
+            .glow: .shadow(offset: .zero, blur: 8, opacity: 230.0 / 255, color: pink)
         ]
-        for shadow in OverlayShadow.allCases {
+        for shadow in OverlayShadowPreset.allCases {
             let theme = OverlayTheme(style: OverlayStyle(textColor: pink, outline: .none, shadow: shadow))
             XCTAssertEqual(theme.decorations.first, expected[shadow], "\(shadow)")
         }
@@ -178,7 +180,7 @@ final class OverlayThemeStyleTests: XCTestCase {
         let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
         let glow = OverlayTheme(style: OverlayStyle(textColor: pink.withOpacity(0.5), outline: .none, shadow: .glow))
         XCTAssertEqual(glow.textColor.opacity, 0.5)
-        XCTAssertEqual(glow.decorations, [.shadow(offset: .zero, blur: 8, opacity: 0.9, color: pink)], "69.2")
+        XCTAssertEqual(glow.decorations, [.shadow(offset: .zero, blur: 8, opacity: 230.0 / 255, color: pink)], "69.2")
 
         let faded = blue.withOpacity(0.4)
         let stroke = OverlayTheme(style: OverlayStyle(outline: .stroke, outlineColor: faded, shadow: .none))
@@ -186,6 +188,29 @@ final class OverlayThemeStyleTests: XCTestCase {
         let box = OverlayTheme(style: OverlayStyle(outline: .box, outlineColor: faded, shadow: .none))
         XCTAssertEqual(box.decorations, [.backgroundBox(color: faded, opacity: 1, cornerRadius: 8, insets: insets)],
                        "69.5: the box is drawn in the color's alpha")
+    }
+
+    /// TASK-71 71.1: the offsets and blur come from the style as 17pt values;
+    /// the color goes in opaque with its alpha as `opacity`, so the alpha is
+    /// applied once.
+    func testShadowParametersReachTheDecoration() {
+        var style = OverlayStyle(textColor: blue, outline: .none)
+        style.shadowColor = OverlayColor(red8: 0xED, green8: 0x49, blue8: 0x56, opacity: 0.4)
+        style.shadowOffsetX = -8
+        style.shadowOffsetY = 5.5
+        style.shadowBlur = 16
+        XCTAssertEqual(OverlayTheme(style: style).decorations,
+                       [.shadow(offset: CGSize(width: -8, height: 5.5), blur: 16, opacity: 0.4,
+                                color: OverlayColor(red8: 0xED, green8: 0x49, blue8: 0x56))], "71.1")
+
+        style.shadowColorSource = .textColor
+        style.textColor = blue.withOpacity(0.5)
+        XCTAssertEqual(OverlayTheme(style: style).decorations,
+                       [.shadow(offset: CGSize(width: -8, height: 5.5), blur: 16, opacity: 0.4, color: blue)],
+                       "71.4: the text color's RGB at the shadow's own alpha")
+
+        style.showsShadow = false
+        XCTAssertTrue(OverlayTheme(style: style).decorations.isEmpty, "off draws no shadow")
     }
 
     /// The outline comes first so the shadow is cast by the outlined text.

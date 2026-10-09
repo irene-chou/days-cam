@@ -423,7 +423,7 @@ final class OverlayRendererStyleTests: XCTestCase {
     }
 
     func testEveryShadowAndOutlineCombinationBakes() throws {
-        for shadow in OverlayShadow.allCases {
+        for shadow in OverlayShadowPreset.allCases {
             for outline in OverlayOutline.allCases {
                 let style = OverlayStyle(textColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
                                          outline: outline, shadow: shadow)
@@ -595,7 +595,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
         let legacy: String
         let textColor: String
         let outlineColor: String?
-        let shadow: OverlayShadow
+        let shadow: OverlayShadowPreset
     }
 
     private var cases: [Case] {
@@ -603,7 +603,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
         for legacy in ["thinStroke", "thickStroke", "translucentBox", "solidBox"] {
             // White text casts the soft shadow, dark text none, so both
             // orders of outline and shadow are covered.
-            for (textColor, shadow) in [("#FFFFFF", OverlayShadow.soft), ("#1C1C1E", .none)] {
+            for (textColor, shadow) in [("#FFFFFF", OverlayShadowPreset.soft), ("#1C1C1E", .none)] {
                 for outlineColor in [nil, "#0A84FF", "#0A84FF80"] {
                     cases.append(Case(legacy: legacy, textColor: textColor, outlineColor: outlineColor, shadow: shadow))
                 }
@@ -646,7 +646,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
     /// storage); Core Graphics fills an 8-bit bitmap with an 8-bit alpha
     /// either way.
     func testMigratedProfilesBakeTheSamePixels() throws {
-        let photo = try gradientPhoto()
+        let photo = try Self.gradientPhoto()
         for testCase in cases {
             let label = "70.2 \(testCase.legacy) \(testCase.textColor) \(testCase.outlineColor ?? "auto") \(testCase.shadow)"
             let pair = try [before(testCase), after(testCase)].map { style in
@@ -677,13 +677,13 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
         }
     }
 
-    private struct Difference: CustomStringConvertible {
+    fileprivate struct Difference: CustomStringConvertible {
         var maximum = 0
         var bytes = 0
         var description: String { "max \(maximum), \(bytes) bytes differ" }
     }
 
-    private static func difference(_ first: [UInt8], _ second: [UInt8]) -> Difference {
+    fileprivate static func difference(_ first: [UInt8], _ second: [UInt8]) -> Difference {
         var result = Difference()
         guard first.count == second.count else { return Difference(maximum: 255, bytes: max(first.count, second.count)) }
         for index in first.indices where first[index] != second[index] {
@@ -694,7 +694,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
     }
 
     /// Premultiplied 8-bit sRGB RGBA, alpha included.
-    private static func rgba(_ image: UIImage) -> [UInt8]? {
+    fileprivate static func rgba(_ image: UIImage) -> [UInt8]? {
         guard let cgImage = image.cgImage, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         var buffer = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
         let drew = buffer.withUnsafeMutableBytes { raw -> Bool in
@@ -709,7 +709,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
 
     /// A 1200×900 photo running through every hue left to right and dark
     /// to light top to bottom, so a change in any alpha shows somewhere.
-    private func gradientPhoto() throws -> UIImage {
+    fileprivate static func gradientPhoto() throws -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -720,6 +720,123 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
                     context.fill(CGRect(x: x, y: y, width: 4, height: 4))
                 }
             }
+        }
+    }
+}
+
+// MARK: - TASK-71 71.2: shadow migration
+
+/// TASK-71 71.2: a 0.2–0.5 shadow, loaded the way `ProfileStore` loads it,
+/// draws the same pixels as 0.5 did — alone, behind each kind of outline, and
+/// under translucent text, which the shadow must not fade twice (#305).
+final class OverlayRendererShadowMigrationTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "小寶 第 100 天"
+
+    private struct Case {
+        let shadow: String
+        let textColor: String
+        let outline: String
+    }
+
+    private var cases: [Case] {
+        var cases: [Case] = []
+        for shadow in ["soft", "hard", "glow", "none"] {
+            for textColor in ["#FFFFFF", "#FF6B9D80"] {
+                for outline in ["none", "thickStroke", "translucentBox"] {
+                    cases.append(Case(shadow: shadow, textColor: textColor, outline: outline))
+                }
+            }
+        }
+        return cases
+    }
+
+    /// What 0.5 drew for `testCase`: its fixed shadows at their exact
+    /// opacities, before 8-bit storage (PRD 0.2 decoration table).
+    private func before(_ testCase: Case) throws -> OverlayStyle {
+        let textColor = try XCTUnwrap(OverlayColor(hex: testCase.textColor))
+        var style = OverlayStyle(textColor: textColor, shadow: .none)
+        switch testCase.outline {
+        case "thickStroke": style.outline = .stroke; style.strokeWidth = 4
+        case "translucentBox": style.outline = .box; style.autoOutlineOpacity = 0.5
+        default: style.outline = .none
+        }
+        let shadows: [String: (OverlayShadowColorSource, OverlayColor, Double, Double, Double)] = [
+            "soft": (.custom, OverlayColor.black.withOpacity(0.6), 0, 2, 4),
+            "hard": (.custom, OverlayColor.black.withOpacity(0.75), 2, 2, 0),
+            "glow": (.textColor, OverlayColor.black.withOpacity(0.9), 0, 0, 8)
+        ]
+        if let (source, color, x, y, blur) = shadows[testCase.shadow] {
+            style.showsShadow = true
+            style.shadowColorSource = source
+            style.shadowColor = color
+            style.shadowOffsetX = x
+            style.shadowOffsetY = y
+            style.shadowBlur = blur
+        }
+        return style
+    }
+
+    /// `testCase` as a 0.5 file record, loaded the way `ProfileStore` does.
+    private func after(_ testCase: Case) throws -> OverlayStyle {
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000710","name":"陰影","startDate":{"year":2025,"month":1,"day":15},\
+        "countingRule":"dayOne","showDayCount":true,"showDate":false,"showName":false,\
+        "displayUnits":["day"],"useAgeWording":false,"position":"bottomTrailing",\
+        "style":{"fontID":"pingFang","textColor":"\(testCase.textColor)","outline":"\(testCase.outline)",\
+        "shadow":"\(testCase.shadow)","sizeScale":100},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+        let profile = try JSONDecoder().decode(CameraProfile.self, from: Data(json.utf8))
+        return try profile.validatedForPersistence(calendar: DateFixture.taipei).style
+    }
+
+    /// The largest change 8-bit storage may make to `testCase`'s pixels.
+    /// 0.75 and 0.9 are stored as 191/255 and 230/255, which Core Graphics
+    /// draws exactly as before — except a glow under translucent text, where
+    /// it applies the shadow alpha in floating point and no 8-bit step
+    /// equals 0.9: some channels move by one level (Lead decision, #299).
+    private func tolerance(_ testCase: Case) -> Int {
+        testCase.shadow == "glow" && testCase.textColor.count == 9 ? 1 : 0
+    }
+
+    private func assertSame(_ difference: OverlayRendererOutlineMigrationTests.Difference, _ testCase: Case,
+                            _ label: String) {
+        if tolerance(testCase) == 0 {
+            XCTAssertEqual(difference.bytes, 0, "\(label): \(difference)")
+        } else {
+            XCTAssertLessThanOrEqual(difference.maximum, tolerance(testCase), "\(label): \(difference)")
+        }
+    }
+
+    /// 71.2: the baked photo is unchanged, byte for byte (see `tolerance`).
+    func testMigratedShadowsBakeTheSamePixels() throws {
+        let photo = try OverlayRendererOutlineMigrationTests.gradientPhoto()
+        for testCase in cases {
+            let label = "71.2 \(testCase.shadow) \(testCase.textColor) \(testCase.outline)"
+            let pair = try [before(testCase), after(testCase)].map { style in
+                try autoreleasepool {
+                    let output = try XCTUnwrap(renderer.bake(image: photo, text: text, style: style,
+                                                             placement: .anchor(.middleCenter), font: .pingFang))
+                    return try XCTUnwrap(PixelGrid(output)).bytes
+                }
+            }
+            assertSame(OverlayRendererOutlineMigrationTests.difference(pair[0], pair[1]), testCase, label)
+        }
+    }
+
+    /// 71.2: the viewfinder preview is unchanged too.
+    func testMigratedShadowsPreviewTheSamePixels() throws {
+        for testCase in cases {
+            let label = "71.2 \(testCase.shadow) \(testCase.textColor) \(testCase.outline)"
+            let pair = try [before(testCase), after(testCase)].map { style in
+                let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 24, displayScale: 3,
+                                                                 font: .pingFang))
+                return try XCTUnwrap(OverlayRendererOutlineMigrationTests.rgba(rendered.image))
+            }
+            XCTAssertEqual(pair[0].count, pair[1].count, "\(label): image size changed")
+            assertSame(OverlayRendererOutlineMigrationTests.difference(pair[0], pair[1]), testCase, label)
         }
     }
 }
@@ -766,7 +883,14 @@ final class OverlayRendererRenderTextTests: XCTestCase {
             (OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 0, shadow: .none),
              .pingFang),
             (OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 24, shadow: .hard),
-             .pingFang)
+             .pingFang),
+            // TASK-71 71.1: shadow parameters, custom colors and the extremes.
+            (Self.shadowed(OverlayStyle(textColor: blue, outline: .none), x: -8, y: 8, blur: 16,
+                           color: OverlayColor(red8: 0xED, green8: 0x49, blue8: 0x56, opacity: 0.5)), .pingFang),
+            (Self.shadowed(OverlayStyle(textColor: blue.withOpacity(0.5), outline: .stroke, outlineColor: .black),
+                           x: 8, y: -8, blur: 0, color: OverlayColor.black.withOpacity(0.3)), .pingFang),
+            (Self.shadowed(OverlayStyle(textColor: blue, outline: .box, outlineColor: .white, boxPadding: 0),
+                           x: 3, y: 5, blur: 6, color: blue.withOpacity(0.8), source: .textColor), .pingFang)
         ]
         let frameSize = CGSize(width: 1200, height: 1600)
         for (style, font) in cases {
@@ -816,7 +940,13 @@ final class OverlayRendererRenderTextTests: XCTestCase {
             // TASK-70: the widest stroke and a box with no padding, which
             // swash ink can reach past.
             OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 6, shadow: .glow),
-            OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 0, shadow: .glow)
+            OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 0, shadow: .glow),
+            // TASK-71: the longest offsets and the widest blur.
+            Self.shadowed(OverlayStyle(textColor: .white, outline: .none), x: 8, y: 8, blur: 16, color: .black),
+            Self.shadowed(OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 6),
+                          x: -8, y: -8, blur: 16, color: .black),
+            Self.shadowed(OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 24),
+                          x: 8, y: -8, blur: 16, color: .black)
         ].map { ($0, .pingFang) }
         for name in ["SnellRoundhand-Bold", "Zapfino", "Didot-Bold"] {
             let font = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
@@ -830,12 +960,26 @@ final class OverlayRendererRenderTextTests: XCTestCase {
                                                                  font: font))
                 let alpha = try XCTUnwrap(AlphaGrid(rendered.image))
                 XCTAssertTrue(alpha.hasInk, "D.2: \(style) drew nothing")
-                XCTAssertEqual(alpha.maxOnBorder, 0, "D.2: \(font.postScriptName) \(style.outline) \(style.shadow) is clipped")
+                XCTAssertEqual(alpha.maxOnBorder, 0, "D.2: \(font.postScriptName) \(style.outline) \(String(describing: style.shadowPreset)) is clipped")
             }
         }
     }
 
     /// D.3: doubling the font size doubles the image and the stroke.
+    /// `style` with its shadow on and set to these parameters (TASK-71).
+    private static func shadowed(_ style: OverlayStyle, x: Double, y: Double, blur: Double,
+                                 color: OverlayColor,
+                                 source: OverlayShadowColorSource = .custom) -> OverlayStyle {
+        var style = style
+        style.showsShadow = true
+        style.shadowColorSource = source
+        style.shadowColor = color
+        style.shadowOffsetX = x
+        style.shadowOffsetY = y
+        style.shadowBlur = blur
+        return style
+    }
+
     func test_D3_doublingTheFontSizeDoublesTheImageAndTheStroke() throws {
         let plain = OverlayStyle(textColor: .white, outline: .none, shadow: .none)
         let stroked = OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 4, shadow: .none)
