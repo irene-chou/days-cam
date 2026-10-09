@@ -59,7 +59,25 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
     }()
 
     /// Digests produced by origin/main fca680c.
-    private let golden: [String: String] = [:]
+    private let golden: [String: String] = [
+        "new-custom-green-25": "86f26ada5031d90caa01ef5e08dcf654379565af0201b8324a3ee1ff36a5e254",
+        "new-follow-text-25": "f5b00b53b35658907c07c4fded38bf18c32097a0c0bbedf33df6d21397528b4f",
+        "new-shadow-off": "8910e79bbf784de02184c082abc9437b044207127332cd18fd1390d4d942af4d",
+        "pre05-glow-#1C1C1E": "da7ebbcdab4c801921d5c4bcef97a72793eb4a06ebf9d5df6359e1a98f804a4a",
+        "pre05-glow-#FF6B9D80": "c26b760f730dd31018b3b1e5c7629d9939c5a567c06bdb02b82b3dbbdd3520bf",
+        "pre05-glow-#FFFFFF": "1c63628bcbc5ccd807a3d4ce0a35140d1f710eb16a184ea3d3192f6823b4fdde",
+        "pre05-glow-thinStroke": "b7648d4460d99f00a64426a9193a92735ca11393d2854eb78156ff18ee1ce225",
+        "pre05-hard-#1C1C1E": "dd7ef8c3f3fd3685bf6718df9b8e5d52151d254474251b3d56545cd47b0fa2b6",
+        "pre05-hard-#FF6B9D80": "a91bdf98cd12cc485361c2dca3bcdd49c9da5d6c35661a69491773ab87fc5d93",
+        "pre05-hard-#FFFFFF": "4a3dc762c2a4df42888aed79d769a21173406d3b28093e1e92bd964c0ef3c2d7",
+        "pre05-hard-solidBox": "1da2858115a3503e0f9c4c9df492aa3bc41cc6d06d51db036dec94710940009f",
+        "pre05-none-#1C1C1E": "3c47677728762e7642f2d612ae5ec1e9e9af56ed094c9bf9321a72cc340bb312",
+        "pre05-none-#FF6B9D80": "d7a65e5af9ac853b340ff6a56adc7c6cc87e54eee7bcdc5c7043c16539da67bf",
+        "pre05-none-#FFFFFF": "8910e79bbf784de02184c082abc9437b044207127332cd18fd1390d4d942af4d",
+        "pre05-soft-#1C1C1E": "d6bb0376248c14b03e16e5d30b3eca66ba45a3e8375162a47fe5ca0b49261e14",
+        "pre05-soft-#FF6B9D80": "206c54182d62888f5734b90311a6a76430e3acb3c58de58ce590c625c026ccef",
+        "pre05-soft-#FFFFFF": "5ab3fbdce017487daef097dfd7553d6116d80fd7c5dcaefe6945efcea0f9e15f"
+    ]
 
     private func record(_ fixture: Fixture) -> String {
         """
