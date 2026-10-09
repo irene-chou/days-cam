@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import UIKit
 
@@ -232,9 +233,8 @@ private struct OverlayLayout {
 
     /// An outline around the glyphs, drawn under `inner`.
     ///
-    /// Core Graphics strokes the real glyph outline; a stroke is centred on
-    /// the outline, so it is drawn twice as wide and the fill covers the
-    /// inner half, leaving `width` visible outside the glyph.
+    /// The shared geometry unions filled glyphs with their round expanded
+    /// outlines before drawing, so intersecting contours cannot erase ink.
     ///
     /// Translucent text would let that inner half show through, so it is
     /// cut out of the stroke first; a translucent stroke is faded as one
@@ -242,18 +242,9 @@ private struct OverlayLayout {
     private func stroked(_ inner: DrawingBlock, textSize: CGSize, color: OverlayColor, width: Double) -> DrawingBlock {
         let lineWidth = CGFloat(width) * decorationScale * 2
         guard lineWidth > 0, fontSize > 0 else { return inner }
-        // `.strokeWidth` is a percentage of the font size; positive means
-        // outline only, no fill.
-        let outline: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .strokeColor: uiColor(color, opacity: 1),
-            .strokeWidth: lineWidth / fontSize * 100
-        ]
-        let knockout: [NSAttributedString.Key: Any]? = theme.textColor.opacity < 1
-            ? [.font: font, .foregroundColor: UIColor.black]
-            : nil
+        let geometry = OverlayStrokeGeometry(text: text, font: font, width: lineWidth / 2)
+        let excludesFill = theme.textColor.opacity < 1
         let strokeOpacity = color.opacity
-        let text = self.text
         let visible = lineWidth / 2
         let overflow = UIEdgeInsets(top: inner.overflow.top + visible,
                                     left: inner.overflow.left + visible,
@@ -267,13 +258,10 @@ private struct OverlayLayout {
             // Round joins: at photo size the stroke is ~20 pixels wide, and
             // mitred corners would spike out of every sharp glyph.
             context.setLineJoin(.round)
-            Self.withOpacity(strokeOpacity, isolating: knockout != nil, in: context,
+            Self.withOpacity(strokeOpacity, in: context,
                              bounds: Self.inkBounds(origin: origin, size: inner.size, overflow: overflow)) {
-                (text as NSString).draw(at: textOrigin, withAttributes: outline)
-                if let knockout {
-                    context.setBlendMode(.destinationOut)
-                    (text as NSString).draw(at: textOrigin, withAttributes: knockout)
-                }
+                geometry.draw(in: context, at: textOrigin, color: uiColor(color, opacity: 1),
+                              excludingFill: excludesFill)
             }
             context.restoreGState()
             inner.draw(context, origin)
@@ -401,4 +389,76 @@ private struct DrawingBlock {
     /// ignores it, but an image of just this block has to make room for it.
     let overflow: UIEdgeInsets
     let draw: (CGContext, CGPoint) -> Void
+}
+
+
+/// Vector outline geometry shared by the photo renderer and style swatches.
+/// Coordinates match `NSString.draw(at:withAttributes:)` in a UIKit context.
+/// Bitmap glyphs (such as emoji) have no outline; callers keep their original
+/// text fill drawing to preserve them, including their colors and shaping.
+struct OverlayStrokeGeometry {
+    let fillPath: CGPath
+    let outlinePath: CGPath
+    let exteriorPath: CGPath
+
+    /// Builds a round outline with `width` points visible outside the glyphs.
+    init(text: String, font: UIFont, width: CGFloat) {
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        // NSString drawing uses TextKit's fallback metrics and baselines.
+        // A tight Core Text frame can reject a line whose fallback ascent is
+        // taller than NSString's measured height, so do not use a CTFrame.
+        let storage = NSTextStorage(attributedString: attributed)
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: max(1, size.width + 1),
+                                                      height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        let range = layout.glyphRange(for: container)
+        var fill: CGPath = CGMutablePath()
+        var expanded: CGPath = CGMutablePath()
+        layout.enumerateLineFragments(forGlyphRange: range) { rect, _, _, glyphRange, _ in
+            guard glyphRange.length > 0 else { return }
+            let characters = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            let line = CTLineCreateWithAttributedString(attributed.attributedSubstring(from: characters))
+            let baseline = rect.minY + font.ascender
+            for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+                let attributes = CTRunGetAttributes(run) as NSDictionary
+                // Core Text supplies the actual fallback font for each run.
+                let runFont = attributes[kCTFontAttributeName] as! CTFont
+                let count = CTRunGetGlyphCount(run)
+                var glyphs = [CGGlyph](repeating: 0, count: count)
+                var positions = [CGPoint](repeating: .zero, count: count)
+                CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+                CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
+                for index in 0..<count {
+                    guard let path = CTFontCreatePathForGlyph(runFont, glyphs[index], nil) else { continue }
+                    var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
+                        tx: rect.minX + positions[index].x,
+                        ty: baseline - positions[index].y)
+                    guard let positioned = path.copy(using: &transform) else { continue }
+                    let glyph = positioned.normalized(using: .winding)
+                    fill = fill.union(glyph, using: .winding)
+                    let stroke = glyph.copy(strokingWithWidth: max(0, width) * 2,
+                                            lineCap: .round, lineJoin: .round, miterLimit: 10)
+                    expanded = expanded.union(stroke.union(glyph, using: .winding), using: .winding)
+                }
+            }
+        }
+        fillPath = fill
+        outlinePath = expanded
+        exteriorPath = expanded.subtracting(fill, using: .winding)
+    }
+
+    /// Draws one solid, nonzero-winding outline; callers apply opacity once.
+    /// Exclude the fill for translucent text so its interior stays undarkened.
+    func draw(in context: CGContext, at origin: CGPoint, color: UIColor, excludingFill: Bool) {
+        context.saveGState()
+        context.translateBy(x: origin.x, y: origin.y)
+        context.setFillColor(color.cgColor)
+        context.addPath(excludingFill ? exteriorPath : outlinePath)
+        context.fillPath(using: .winding)
+        context.restoreGState()
+    }
 }
