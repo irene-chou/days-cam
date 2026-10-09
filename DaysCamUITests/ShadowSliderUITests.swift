@@ -22,12 +22,15 @@ final class ShadowSliderUITests: XCTestCase {
     private var offsetY: XCUIElement { app.sliders["Y 偏移"] }
     private var blur: XCUIElement { app.sliders["模糊"] }
 
-    /// The panel is short, so a lower row may sit under its bottom edge:
-    /// drag the page up slowly (no fling, from the left margin so a slider does not take the drag) until `element` can be touched.
+    /// The panel is short, so a lower row may sit under its bottom edge, where
+    /// it still counts as hittable although a fade hides it. Drag the page up
+    /// slowly (no fling, from the left margin so a slider does not take the
+    /// drag) until `element`'s middle is well above that edge.
     private func scrollToReveal(_ element: XCUIElement) {
+        let screenHeight = app.windows.firstMatch.frame.height
         var tries = 0
-        while !element.isHittable && tries < 6 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.90))
+        while (!element.isHittable || element.frame.midY > screenHeight * 0.82) && tries < 10 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.88))
                 .press(forDuration: 0.1,
                        thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.76)),
                        withVelocity: .slow, thenHoldForDuration: 0.5)
@@ -35,6 +38,37 @@ final class ShadowSliderUITests: XCTestCase {
         }
         if !element.isHittable { attach("not-hittable") }
         XCTAssertTrue(element.isHittable, "scrolled into view")
+    }
+
+    /// Waits until `element` stops moving, so a scroll that is still settling
+    /// does not carry the slider away from the finger.
+    private func waitForSettled(_ element: XCUIElement) {
+        var last = element.frame
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.4)
+            let now = element.frame
+            if now == last { return }
+            last = now
+        }
+    }
+
+    /// Drags `slider`'s thumb to the far right. On the SE the row sits at the
+    /// panel's bottom edge, and one drag now and then missed (the value stayed
+    /// put), so: reveal, let the page settle, drag from the thumb, check, and
+    /// try again a few times before giving up.
+    private func dragToEnd(_ slider: XCUIElement, expecting end: String) {
+        for attempt in 0..<3 {
+            scrollToReveal(slider)
+            waitForSettled(slider)
+            // The blur slider runs 0...16.
+            let fraction = (Double((slider.value as? String ?? "").split(separator: " ").first ?? "") ?? 0) / 16
+            let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: min(max(fraction, 0.03), 0.97), dy: 0.5))
+            let target = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
+            thumb.press(forDuration: 0.2, thenDragTo: target)
+            if slider.value as? String == end { return }
+            if attempt == 2 { attach("slider-drag-missed") }
+        }
+        XCTAssertEqual(slider.value as? String, end, "dragged to the end")
     }
 
     private func attach(_ name: String) {
@@ -72,9 +106,7 @@ final class ShadowSliderUITests: XCTestCase {
     func testAdjustingAParameterClearsThePreset() {
         app.buttons["硬陰影"].tap()
         XCTAssertTrue(app.buttons["硬陰影"].isSelected)
-        scrollToReveal(blur)
-        blur.adjust(toNormalizedSliderPosition: 1)
-        XCTAssertEqual(blur.value as? String, "16 點")
+        dragToEnd(blur, expecting: "16 點")
         XCTAssertFalse(app.buttons["硬陰影"].isSelected)
         for name in ["無陰影", "柔和", "發光"] { XCTAssertFalse(app.buttons[name].isSelected, name) }
         app.buttons["硬陰影"].tap()
