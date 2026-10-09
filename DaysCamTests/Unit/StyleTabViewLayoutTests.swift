@@ -61,8 +61,9 @@ final class StyleTabViewLayoutTests: XCTestCase {
         // #198 introduces, so it was capped there (reported to Lead). TASK-57
         // makes the sub-tab row 6pt taller, so the cap moves to 206; it still
         // fits the 224pt content area. TASK-69 adds an opacity row to both
-        // pages: color is capped at 190, outline at the 224pt content area.
-        XCTAssertLessThanOrEqual(outlineHeight, 224, "外框頁 \(outlineHeight)pt")
+        // pages: color is capped at 190; the outline page may exceed the 224pt
+        // content area and then scrolls under the pinned sub-tab row (TASK-66).
+        XCTAssertLessThanOrEqual(outlineHeight, 260, "外框頁 \(outlineHeight)pt")
     }
 
     /// 57.6: the sub-tab row is 6 + 36 + 4.
