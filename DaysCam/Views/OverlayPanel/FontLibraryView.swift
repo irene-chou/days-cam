@@ -3,24 +3,27 @@ import UIKit
 
 /// The font list inside the style tab's 字型 page (TASK-56): the downloaded
 /// fonts first, then the ones still to download by category, then the 字型授權
-/// row. Three 48pt cells per row; state shows as a corner icon only. All state
-/// and actions live in `FontLibraryModel`.
+/// row. One font per row with its full name; the state icon sits at the
+/// trailing edge. All state and actions live in `FontLibraryModel`.
 struct FontListView: View {
     @ObservedObject var model: FontLibraryModel
 
     @State private var showsLicense = false
+    /// The name and size text follow Dynamic Type, so a row grows with them.
+    @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
+    @ScaledMetric(relativeTo: .caption) private var sizeTextSize: CGFloat = 12
 
-    /// Cell height and corner radius (TASK-49 D).
-    static let cellHeight: CGFloat = 48
-    static let cellCornerRadius: CGFloat = 12
-    /// Font name size in a downloaded cell.
-    static let cellTextSize: CGFloat = 15
+    /// Row metrics (TASK-77): a row is at least 52pt and grows with the name.
+    static let rowMinHeight: CGFloat = 52
+    static let rowHorizontalPadding: CGFloat = 12
+    /// Font name size in a downloaded row.
+    static let rowTextSize: CGFloat = 17
     /// A preview image is shrunk to this height (the images differ in height;
     /// `docs/fonts-manifest.md`).
-    static let previewMaxHeight: CGFloat = 22
-    /// The corner icon's size and its inset from the cell's top-right corner.
-    static let statusIconSize: CGFloat = 15
-    static let statusIconInset: CGFloat = 5
+    static let previewMaxHeight: CGFloat = 24
+    static let statusIconSize: CGFloat = 20
+    /// The selection bar left of the name.
+    static let selectionBarWidth: CGFloat = 3
     /// The `danger` token of the design (`#E0503F`).
     static let danger = Color(red: 0xE0 / 255, green: 0x50 / 255, blue: 0x3F / 255)
 
@@ -37,11 +40,9 @@ struct FontListView: View {
                         .padding(.bottom, 6)
                         .accessibilityAddTraits(.isHeader)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                          alignment: .leading,
-                          spacing: 8) {
+                LazyVStack(spacing: 0) {
                     ForEach(section.cells) { cell in
-                        cellView(cell)
+                        cellView(cell, showsSeparator: cell.id != section.cells.last?.id)
                     }
                 }
             }
@@ -65,14 +66,14 @@ struct FontListView: View {
         }
     }
 
-    // MARK: - Cells
+    // MARK: - Rows
 
     @ViewBuilder
-    private func cellView(_ cell: FontLibraryModel.Cell) -> some View {
+    private func cellView(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
         let button = Button {
             model.didTap(cell.fontID)
         } label: {
-            cellLabel(cell)
+            cellLabel(cell, showsSeparator: showsSeparator)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(cell.accessibilityLabel)
@@ -96,42 +97,63 @@ struct FontListView: View {
         }
     }
 
-    private func cellLabel(_ cell: FontLibraryModel.Cell) -> some View {
-        let isGet = !cell.state.isAvailable && !cell.isSelected
-        return ZStack {
-            if cell.usesRealFont {
-                // The font itself, resolved as the viewfinder resolves it.
-                Text(cell.name)
-                    .font(Font(OverlayMetrics.resolvedFont(for: cell.fontID, availability: model.availability)
-                        .font(ofSize: Self.cellTextSize)))
-                    .foregroundColor(CameraTheme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            } else {
-                // Not drawable yet: its preview image keeps the glyphs.
-                FontPreviewImage(fontID: cell.fontID,
-                                 accessibilityName: cell.name,
-                                 maxHeight: Self.previewMaxHeight,
-                                 tint: cell.isSelected ? CameraTheme.ink : CameraTheme.inkTertiary)
+    private func cellLabel(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
+        HStack(spacing: 8) {
+            nameView(cell)
+            Spacer(minLength: 8)
+            if case .notDownloaded = cell.status,
+               let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
+                Text(size)
+                    .font(.system(size: sizeTextSize))
+                    .foregroundColor(CameraTheme.inkTertiary)
+                    .fixedSize()
+            }
+            statusIcon(cell.status)
+                .frame(minWidth: Self.statusIconSize)
+        }
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .frame(minHeight: Self.rowMinHeight)
+        .background(cell.isSelected ? CameraTheme.active.opacity(0.12) : Color.clear)
+        .overlay(alignment: .leading) {
+            if cell.isSelected {
+                Capsule()
+                    .fill(CameraTheme.active)
+                    .frame(width: Self.selectionBarWidth)
+                    .padding(.vertical, 12)
+                    .padding(.leading, 4)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: Self.cellHeight)
-        .background(
-            RoundedRectangle(cornerRadius: Self.cellCornerRadius, style: .continuous)
-                .fill(cell.isSelected ? CameraTheme.active.opacity(0.12)
-                      : (isGet ? Color.clear : CameraTheme.ink.opacity(0.05)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Self.cellCornerRadius, style: .continuous)
-                .strokeBorder(cell.isSelected ? CameraTheme.active : CameraTheme.ink.opacity(isGet ? 0.12 : 0),
-                              lineWidth: cell.isSelected ? 1.5 : 1)
-        )
-        .overlay(alignment: .topTrailing) {
-            statusIcon(cell.status)
-                .padding(Self.statusIconInset)
+        .overlay(alignment: .bottom) {
+            if showsSeparator {
+                Rectangle()
+                    .fill(CameraTheme.ink.opacity(0.08))
+                    .frame(height: 1)
+            }
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func nameView(_ cell: FontLibraryModel.Cell) -> some View {
+        if cell.usesRealFont {
+            // The font itself, resolved as the viewfinder resolves it. Long
+            // names wrap onto a second line, never shrink or truncate.
+            Text(cell.name)
+                .font(Font(OverlayMetrics.resolvedFont(for: cell.fontID, availability: model.availability)
+                    .font(ofSize: nameSize)))
+                .foregroundColor(CameraTheme.ink)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 8)
+        } else {
+            // Not drawable yet: its preview image keeps the glyphs.
+            FontPreviewImage(fontID: cell.fontID,
+                             accessibilityName: cell.name,
+                             maxHeight: Self.previewMaxHeight,
+                             tint: cell.isSelected ? CameraTheme.ink : CameraTheme.inkTertiary)
+                .padding(.vertical, 8)
+        }
     }
 
     @ViewBuilder
