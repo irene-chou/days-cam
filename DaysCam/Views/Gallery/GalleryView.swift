@@ -18,10 +18,11 @@ struct GalleryView: View {
     @State private var dismissOffset: CGFloat = 0
     @State private var isDismissDragVertical: Bool?
 
-    /// The 「存到『DaysCam』相簿」 switch (TASK-64). Created here so it never
-    /// prompts until the user turns it on.
+    /// The 「自動加入『DaysCam』相簿」 switch (TASK-64, TASK-74). Created here so
+    /// it never prompts until the user turns it on.
     @StateObject private var albumSettings = AlbumSettingsStore()
     @State private var albumNotice: GalleryAlbumNotice?
+    @State private var isShowingSettings = false
 
     var body: some View {
         let progress = GalleryDismissDrag.progress(offset: dismissOffset)
@@ -42,7 +43,10 @@ struct GalleryView: View {
         // Back from the Photos app (or Settings): re-read the list so a
         // photo deleted there disappears (FR-15.4).
         .task { reconcileAlbumSwitch() }
-        .alert(item: $albumNotice) { notice in
+        .sheet(isPresented: $isShowingSettings) { settingsSheet }
+        // While the settings sheet is open the notice shows inside it instead.
+        .alert(item: Binding(get: { isShowingSettings ? nil : albumNotice },
+                             set: { albumNotice = $0 })) { notice in
             switch notice {
             case .needsFullAccess:
                 Alert(title: Text(notice.title), message: Text(notice.message),
@@ -87,7 +91,7 @@ struct GalleryView: View {
                 }
                 .accessibilityLabel("回相機")
                 Spacer()
-                albumMenu
+                settingsButton
             }
         }
         .frame(height: 52)
@@ -96,26 +100,26 @@ struct GalleryView: View {
 
     // MARK: - Album switch (TASK-64)
 
-    /// Top-right `ellipsis.circle` menu holding the switch; the section title
-    /// is the one-line note that photos still go to 最近項目.
-    private var albumMenu: some View {
-        Menu {
-            Section("照片仍會存到「最近項目」") {
-                Toggle("存到「DaysCam」相簿", isOn: albumSwitchBinding)
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
+    /// Top-right gear opening the gallery settings sheet (TASK-74).
+    private var settingsButton: some View {
+        Button { isShowingSettings = true } label: {
+            Image(systemName: "gearshape")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(CameraTheme.ink)
                 .frame(width: 44, height: 44)
         }
-        .accessibilityLabel("更多")
+        .accessibilityLabel("圖庫設定")
+    }
+
+    private var settingsSheet: some View {
+        GallerySettingsSheet(isOn: albumSwitchBinding, notice: albumNotice, openSettings: openSettings)
     }
 
     private var albumSwitchBinding: Binding<Bool> {
         Binding(
             get: { albumSettings.savesToAlbum },
             set: { isOn in
+                albumNotice = nil
                 guard isOn else { albumSettings.disable(); return }
                 albumSettings.requestEnabling { result in
                     albumNotice = GalleryAlbumNotice(result: result)
@@ -276,6 +280,47 @@ struct GalleryView: View {
     }
 }
 
+/// Half-height sheet with the one switch (TASK-74); a refusal or withdrawn
+/// access shows its notice under the footer, with a shortcut to Settings.
+struct GallerySettingsSheet: View {
+    @Binding var isOn: Bool
+    var notice: GalleryAlbumNotice?
+    var openSettings: () -> Void = {}
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("自動加入「DaysCam」相簿", isOn: $isOn)
+                        .tint(.green)
+                        .accessibilityLabel("自動加入 DaysCam 相簿")
+                } footer: {
+                    Text(Self.footerText)
+                }
+                if let notice {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(notice.title).font(.subheadline.weight(.semibold))
+                            Text(notice.message).font(.footnote).foregroundColor(.secondary)
+                            if notice == .needsFullAccess {
+                                Button("前往設定", action: openSettings)
+                                    .font(.footnote.weight(.semibold))
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("圖庫設定")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.height(notice == nil ? 300 : 440)])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.light)
+    }
+
+    static let footerText = "開啟後，之後拍的照片會同時放進「DaysCam」相簿。照片一律會存在「最近項目」。"
+}
+
 /// The notices the album switch can raise (TASK-64, 64.4／64.5).
 enum GalleryAlbumNotice: Identifiable, Equatable {
     /// Turning the switch on ended with limited access or a refusal.
@@ -296,14 +341,14 @@ enum GalleryAlbumNotice: Identifiable, Equatable {
 
     var title: String {
         switch self {
-        case .needsFullAccess: return "無法存到相簿"
-        case .accessWithdrawn: return "已關閉存到相簿"
+        case .needsFullAccess: return "無法自動加入相簿"
+        case .accessWithdrawn: return "已關閉自動加入相簿"
         }
     }
 
     var message: String {
         switch self {
-        case .needsFullAccess: return "需要完整照片取用權限才能存到相簿，可到設定開啟。"
+        case .needsFullAccess: return "需要完整照片取用權限才能自動加入相簿，可到設定開啟。"
         case .accessWithdrawn: return "照片取用權限已收回，照片仍會存到「最近項目」。"
         }
     }
