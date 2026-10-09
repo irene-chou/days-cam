@@ -725,3 +725,159 @@ final class CameraServiceZoomTests: XCTestCase {
         XCTAssertEqual(service.zoomFactor, 1)
     }
 }
+
+// MARK: - Focus and exposure (issue #303, acceptance 73.7 / 73.8)
+
+private final class FakeFocusDevice: FocusExposureCaptureDevice {
+    var isFocusPointOfInterestSupported = true
+    var isExposurePointOfInterestSupported = true
+    var supportedFocusModes: Set<AVCaptureDevice.FocusMode> = [.locked, .autoFocus, .continuousAutoFocus]
+    var supportedExposureModes: Set<AVCaptureDevice.ExposureMode> = [.locked, .autoExpose, .continuousAutoExposure]
+    var focusPointOfInterest = CGPoint(x: 0.5, y: 0.5)
+    var exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5)
+    var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus
+    var exposureMode: AVCaptureDevice.ExposureMode = .continuousAutoExposure
+    var minExposureTargetBias: Float = -8
+    var maxExposureTargetBias: Float = 8
+    var isSubjectAreaChangeMonitoringEnabled = false
+    private(set) var bias: Float = 0
+    var lockFails = false
+    private(set) var isLocked = false
+    private(set) var lockCount = 0
+    private(set) var unlockCount = 0
+
+    struct LockError: Error {}
+
+    func isFocusModeSupported(_ focusMode: AVCaptureDevice.FocusMode) -> Bool { supportedFocusModes.contains(focusMode) }
+    func isExposureModeSupported(_ exposureMode: AVCaptureDevice.ExposureMode) -> Bool {
+        supportedExposureModes.contains(exposureMode)
+    }
+
+    func setExposureTargetBias(_ bias: Float, completionHandler handler: ((CMTime) -> Void)?) {
+        XCTAssertTrue(isLocked, "bias set without the configuration lock")
+        self.bias = bias
+    }
+
+    func lockForConfiguration() throws {
+        if lockFails { throw LockError() }
+        isLocked = true
+        lockCount += 1
+    }
+
+    func unlockForConfiguration() {
+        isLocked = false
+        unlockCount += 1
+    }
+}
+
+final class CameraServiceFocusExposureTests: XCTestCase {
+
+    func testTapSetsPointsModesAndMonitoring() {
+        let device = FakeFocusDevice()
+        let outcome = CameraService.applyFocusAndExpose(at: CGPoint(x: 0.2, y: 0.7), to: device)
+        XCTAssertEqual(outcome, CameraService.FocusExposureOutcome(focus: true, exposure: true))
+        XCTAssertEqual(device.focusPointOfInterest, CGPoint(x: 0.2, y: 0.7))
+        XCTAssertEqual(device.exposurePointOfInterest, CGPoint(x: 0.2, y: 0.7))
+        XCTAssertEqual(device.focusMode, .autoFocus)
+        XCTAssertEqual(device.exposureMode, .autoExpose)
+        XCTAssertTrue(device.isSubjectAreaChangeMonitoringEnabled)
+        XCTAssertEqual(device.lockCount, device.unlockCount)
+    }
+
+    func testPointOutsideTheRangeIsClamped() {
+        let device = FakeFocusDevice()
+        CameraService.applyFocusAndExpose(at: CGPoint(x: -1, y: 3), to: device)
+        XCTAssertEqual(device.focusPointOfInterest, CGPoint(x: 0, y: 1))
+    }
+
+    func testNonFinitePointChangesNothing() {
+        let device = FakeFocusDevice()
+        let outcome = CameraService.applyFocusAndExpose(at: CGPoint(x: .nan, y: 0.5), to: device)
+        XCTAssertEqual(outcome, CameraService.FocusExposureOutcome())
+        XCTAssertEqual(device.lockCount, 0)
+        XCTAssertEqual(device.focusMode, .continuousAutoFocus)
+    }
+
+    func testUnsupportedFocusPointIsSkippedAndExposureStillApplies() {
+        let device = FakeFocusDevice()
+        device.isFocusPointOfInterestSupported = false
+        let outcome = CameraService.applyFocusAndExpose(at: CGPoint(x: 0.1, y: 0.1), to: device)
+        XCTAssertEqual(outcome, CameraService.FocusExposureOutcome(focus: false, exposure: true))
+        XCTAssertEqual(device.focusMode, .continuousAutoFocus)
+        XCTAssertEqual(device.exposureMode, .autoExpose)
+    }
+
+    func testNothingSupportedTakesNoEffectAndKeepsMonitoringOff() {
+        let device = FakeFocusDevice()
+        device.isFocusPointOfInterestSupported = false
+        device.isExposurePointOfInterestSupported = false
+        let outcome = CameraService.applyFocusAndExpose(at: CGPoint(x: 0.1, y: 0.1), to: device)
+        XCTAssertEqual(outcome?.tookEffect, false)
+        XCTAssertFalse(device.isSubjectAreaChangeMonitoringEnabled)
+    }
+
+    func testFailedLockReturnsNilAndChangesNothing() {
+        let device = FakeFocusDevice()
+        device.lockFails = true
+        XCTAssertNil(CameraService.applyFocusAndExpose(at: CGPoint(x: 0.1, y: 0.1), to: device))
+        XCTAssertNil(CameraService.applyExposureBias(1, to: device))
+        XCTAssertFalse(CameraService.applyContinuousAuto(to: device))
+        XCTAssertEqual(device.focusMode, .continuousAutoFocus)
+        XCTAssertEqual(device.bias, 0)
+    }
+
+    func testBiasIsClampedToTwoEV() {
+        let device = FakeFocusDevice()
+        XCTAssertEqual(CameraService.applyExposureBias(5, to: device), 2)
+        XCTAssertEqual(device.bias, 2)
+        XCTAssertEqual(CameraService.applyExposureBias(-5, to: device), -2)
+        XCTAssertEqual(CameraService.applyExposureBias(0.7, to: device), 0.7)
+        XCTAssertEqual(device.lockCount, device.unlockCount)
+    }
+
+    func testBiasIsClampedToANarrowerDeviceRange() {
+        let device = FakeFocusDevice()
+        device.minExposureTargetBias = -1
+        device.maxExposureTargetBias = 1.5
+        XCTAssertEqual(CameraService.applyExposureBias(2, to: device), 1.5)
+        XCTAssertEqual(CameraService.applyExposureBias(-2, to: device), -1)
+    }
+
+    func testNonFiniteBiasIsRejected() {
+        let device = FakeFocusDevice()
+        XCTAssertNil(CameraService.applyExposureBias(.nan, to: device))
+        XCTAssertEqual(device.lockCount, 0)
+    }
+
+    func testResetGoesBackToContinuousCentreBiasZero() {
+        let device = FakeFocusDevice()
+        CameraService.applyFocusAndExpose(at: CGPoint(x: 0.1, y: 0.9), to: device)
+        CameraService.applyExposureBias(1.5, to: device)
+        XCTAssertTrue(CameraService.applyContinuousAuto(to: device))
+        XCTAssertEqual(device.focusMode, .continuousAutoFocus)
+        XCTAssertEqual(device.exposureMode, .continuousAutoExposure)
+        XCTAssertEqual(device.focusPointOfInterest, CGPoint(x: 0.5, y: 0.5))
+        XCTAssertEqual(device.bias, 0)
+        XCTAssertFalse(device.isSubjectAreaChangeMonitoringEnabled)
+    }
+
+    func testResetSkipsUnsupportedModes() {
+        let device = FakeFocusDevice()
+        device.supportedFocusModes = [.locked]
+        device.focusMode = .locked
+        XCTAssertTrue(CameraService.applyContinuousAuto(to: device))
+        XCTAssertEqual(device.focusMode, .locked)
+        XCTAssertEqual(device.exposureMode, .continuousAutoExposure)
+    }
+
+    // MARK: Service level (no camera, so the calls are no-ops and must not crash)
+
+    func testServiceCallsWithoutACameraDoNothing() {
+        let service = CameraService(isCaptureSupported: false)
+        service.focusAndExpose(at: CGPoint(x: 0.5, y: 0.5))
+        service.lockFocusAndExposure(at: CGPoint(x: 0.5, y: 0.5))
+        service.setExposureBias(1)
+        service.resetToContinuousAuto()
+        XCTAssertEqual(service.focusExposureState, .initial)
+    }
+}
