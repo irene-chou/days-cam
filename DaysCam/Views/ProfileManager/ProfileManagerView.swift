@@ -118,7 +118,14 @@ struct ProfileManagerView: View {
             .onChanged { value in
                 guard case .second(true, let drag) = value else { return }
                 if draggingID == nil {
-                    draggingID = row.id
+                    // Start from this row's own slot without animating a stale
+                    // `dragTarget` left over from the previous drag (TASK-76).
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        dragTarget = index
+                        draggingID = row.id
+                    }
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
                 dragTranslation = drag?.translation.height ?? 0
@@ -128,11 +135,23 @@ struct ProfileManagerView: View {
             .onEnded { value in
                 guard case .second(true, _) = value, draggingID == row.id else { return }
                 let target = dragTarget
+                // Reorder and re-base the offsets in one non-animated
+                // transaction: the rows jump to their new slots while the
+                // dragged row keeps its on-screen position (the finger's
+                // distance from the new slot) and neighbors need no offset.
+                // Only that residual then animates to 0 (TASK-76).
+                let residual = ProfileManagerModel.releaseResidual(translation: dragTranslation, from: index,
+                                                                   to: target, rowHeight: rowHeight)
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    model.move(id: row.id, toFinalIndex: target)
+                    dragTranslation = residual
+                }
                 withAnimation(.easeOut(duration: 0.15)) {
                     draggingID = nil
                     dragTranslation = 0
                 }
-                model.move(id: row.id, toFinalIndex: target)
                 // The release that ends a long press must not also count as a tap.
                 suppressTap = true
                 Task { @MainActor in

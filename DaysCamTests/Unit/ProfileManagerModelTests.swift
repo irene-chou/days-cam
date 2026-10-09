@@ -262,6 +262,40 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(ProfileManagerModel.dragTargetIndex(from: 0, translation: 50, rowHeight: 60, count: 0), 0)
     }
 
+    // MARK: - TASK-76 放手不跳動（76.1／76.2／76.4）
+
+    func testReleaseResidualIsTheFingerOffsetFromTheNewSlot() {
+        let residual = { (dy: CGFloat, from: Int, to: Int) in
+            ProfileManagerModel.releaseResidual(translation: dy, from: from, to: to, rowHeight: 60)
+        }
+        XCTAssertEqual(residual(40, 1, 2), -20, "往下 1 格：手指比新槽少 20，列從新槽上方滑回")
+        XCTAssertEqual(residual(-100, 3, 2), -40, "往上 1 格")
+        XCTAssertEqual(residual(200, 0, 3), 20, "往下 3 格，手指略過頭")
+        XCTAssertEqual(residual(-190, 4, 1), -10, "往上 3 格")
+        XCTAssertEqual(residual(25, 2, 2), 25, "拖回原位：剩餘位移就是整段位移")
+        // Dragged row's on-screen offset before and after the reorder is continuous.
+        let (dy, from, to): (CGFloat, Int, Int) = (130, 1, 3)
+        XCTAssertEqual(CGFloat(from) * 60 + dy, CGFloat(to) * 60 + residual(dy, from, to))
+    }
+
+    func testReleaseInPlaceDoesNotWriteAndReleaseElsewherePersists() throws {
+        let store = try makeStore()
+        try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let url = directory.appendingPathComponent("profiles.json")
+        let before = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+
+        model.move(id: model.profiles[1].id, toFinalIndex: 1) // 76.2: dropped back in place
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        let after = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        XCTAssertEqual(before, after, "原位放手不寫入")
+
+        model.move(id: model.profiles[0].id, toFinalIndex: 2) // 76.4: order survives a restart
+        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
+        XCTAssertEqual(reloaded.load().map(\.name), ["小寶", "阿公", "預設"])
+    }
+
     func testMoveToFinalIndexMatchesWhereTheDragShowedTheRow() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)
