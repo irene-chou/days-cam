@@ -113,4 +113,37 @@ final class OutlineSliderAcceptanceTests: XCTestCase {
             raw += 0.37
         }
     }
+
+    /// #314: choosing an outline or moving a slider leaves the shadow preset alone, and applying a
+    /// shadow preset leaves the outline parameters alone.
+    func testOutlineAndShadowPresetsDoNotInterfere() throws {
+        let store = try makeStore()
+        let model = try makeModel(store: store)
+        model.selectShadow(.glow)
+        let shadowBefore = model.profile.style
+        model.selectOutline(.stroke)
+        model.setStrokeWidth(5)
+        model.selectOutline(.box)
+        model.setBoxPadding(18)
+        var style = model.profile.style
+        XCTAssertEqual(style.showsShadow, shadowBefore.showsShadow)
+        XCTAssertEqual(style.shadowColor, shadowBefore.shadowColor)
+        XCTAssertEqual(style.shadowBlur, shadowBefore.shadowBlur)
+        XCTAssertEqual(style.shadowOffsetX, shadowBefore.shadowOffsetX)
+        XCTAssertEqual(style.shadowOffsetY, shadowBefore.shadowOffsetY)
+
+        var preview = style
+        preview.applyShadowPreset(.none)
+        XCTAssertEqual(preview.strokeWidth, 5)
+        XCTAssertEqual(preview.boxPadding, 18)
+        XCTAssertEqual(preview.outline, .box)
+        style.applyShadowPreset(.hard)
+        XCTAssertEqual(style.strokeWidth, 5)
+        XCTAssertEqual(style.boxPadding, 18)
+        XCTAssertEqual(style.outline, .box)
+
+        let reopened = try XCTUnwrap(makeStore().load().first).style
+        XCTAssertEqual(reopened.showsShadow, shadowBefore.showsShadow)
+        XCTAssertEqual(reopened.outline, .box)
+    }
 }
