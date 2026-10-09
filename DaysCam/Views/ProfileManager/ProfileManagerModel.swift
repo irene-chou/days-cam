@@ -182,6 +182,14 @@ final class ProfileManagerModel: ObservableObject {
         return min(max(index + slots, 0), count - 1)
     }
 
+    /// How far the dragged row sits from its new slot at release (TASK-76):
+    /// the finger's translation minus the slots already travelled. Applied
+    /// right after the reorder so the row stays where the finger let go and
+    /// only this remainder animates to 0.
+    static func releaseResidual(translation: CGFloat, from index: Int, to target: Int, rowHeight: CGFloat) -> CGFloat {
+        translation - CGFloat(target - index) * rowHeight
+    }
+
     /// Moves `id` so it ends at `finalIndex` of the list (the destination
     /// the drag showed), translating to `move(id:toIndex:)`'s insertion
     /// semantics.
