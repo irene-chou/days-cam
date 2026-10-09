@@ -539,8 +539,6 @@ extension CameraService {
         setEnabled(true)
     }
 
-
-
     /// Entry point for the camera screen: resolves permission, prompting the
     /// first time, and starts the session when it is granted.
     ///
