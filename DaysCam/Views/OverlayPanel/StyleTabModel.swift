@@ -318,6 +318,76 @@ extension StyleTabModel {
         guard shadow != profile.style.shadowPreset else { return }
         mutate { $0.applyShadowPreset(shadow) }
     }
+
+    /// Whether the shadow parameter rows are disabled: there is no shadow to
+    /// tune while it is off (preset 無, TASK-71).
+    var isShadowParametersDisabled: Bool { !profile.style.showsShadow }
+
+    /// Slider step of the shadow offsets and blur, in points at a 17pt font.
+    static let shadowStep = 1.0
+
+    /// Selects the shadow color from a swatch or the recent row: a custom
+    /// color at the current shadow opacity. `nil` follows the text color
+    /// (the glow preset's way, TASK-71).
+    func selectShadowColor(_ color: OverlayColor?) {
+        mutate { style in
+            guard let color else {
+                style.shadowColorSource = .textColor
+                return
+            }
+            style.shadowColorSource = .custom
+            style.shadowColor = color.withOpacity(style.shadowOpacity)
+        }
+    }
+
+    /// Applies a color dragged in the custom color picker (alpha included,
+    /// clamped to the storable range) as a custom shadow color.
+    func applyCustomShadowColor(_ color: OverlayColor) {
+        let picked = Self.clampingOpacity(color)
+        mutate {
+            $0.shadowColorSource = .custom
+            $0.shadowColor = picked
+        }
+    }
+
+    /// The shadow color's opacity in percent.
+    var shadowOpacityPercent: Int { Self.opacityPercent(of: profile.style.shadowColor) }
+
+    /// Sets the shadow's opacity from a slider value in percent, clamped to
+    /// `opacityPercentRange`.
+    func setShadowOpacityPercent(_ percent: Int) {
+        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
+        guard clamped != shadowOpacityPercent else { return }
+        mutate { $0.shadowOpacity = Double(clamped) / 100 }
+    }
+
+    /// Sets `shadowOffsetX` from a raw slider value, snapped to `shadowStep`
+    /// and clamped to `OverlayStyle.shadowOffsetRange`.
+    func setShadowOffsetX(_ rawValue: Double) {
+        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
+        guard clamped != profile.style.shadowOffsetX else { return }
+        mutate { $0.shadowOffsetX = clamped }
+    }
+
+    /// Sets `shadowOffsetY`, like `setShadowOffsetX`.
+    func setShadowOffsetY(_ rawValue: Double) {
+        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
+        guard clamped != profile.style.shadowOffsetY else { return }
+        mutate { $0.shadowOffsetY = clamped }
+    }
+
+    /// Sets `shadowBlur` from a raw slider value, snapped to `shadowStep` and
+    /// clamped to `OverlayStyle.shadowBlurRange`.
+    func setShadowBlur(_ rawValue: Double) {
+        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowBlurRange)
+        guard clamped != profile.style.shadowBlur else { return }
+        mutate { $0.shadowBlur = clamped }
+    }
+
+    private static func snappedShadow(_ rawValue: Double, in range: ClosedRange<Double>) -> Double {
+        let snapped = (rawValue / shadowStep).rounded() * shadowStep
+        return min(max(snapped, range.lowerBound), range.upperBound)
+    }
 }
 
 // MARK: - 字級 (FR-10.9)

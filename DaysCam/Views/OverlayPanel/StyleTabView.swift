@@ -299,6 +299,7 @@ struct StyleTabView: View {
     private func parameterSlider(label: String? = nil, iconName: String? = nil,
                                  accessibilityName: String, identifier: String, value: Double,
                                  range: ClosedRange<Double>, step: Double,
+                                 isDisabled: Bool = false,
                                  onChange: @escaping (Double) -> Void) -> some View {
         let valueText = value.truncatingRemainder(dividingBy: 1) == 0
             ? String(format: "%.0f", value) : String(format: "%.1f", value)
@@ -332,36 +333,70 @@ struct StyleTabView: View {
                 .frame(width: 44, alignment: .trailing)
                 .accessibilityHidden(true)
         }
+        .opacity(isDisabled ? 0.35 : 1)
+        .disabled(isDisabled)
     }
 
     // MARK: - 陰影 (FR-10.8, FR-10.10)
 
     private var shadowContent: some View {
-        // Four transparent boxes, centered as a row (TASK-49 C).
-        HStack(spacing: 18) {
-            ForEach(model.shadowOptions, id: \.self) { shadow in
-                // Isolates the shadow, clearing outline, mirroring
-                // `outlineContent`'s options (which isolate the outline
-                // by clearing shadow) so the two pages behave symmetrically.
-                let previewStyle: OverlayStyle = {
-                    var style = model.profile.style
-                    style.applyShadowPreset(shadow)
-                    style.outline = .none
-                    return style
-                }()
-                let isSelected = model.profile.style.shadowPreset == shadow
-                Button {
-                    model.selectShadow(shadow)
-                } label: {
-                    optionCell(isNone: shadow == .none, previewStyle: previewStyle,
-                               isSelected: isSelected, side: Self.shadowOptionSide)
+        let style = model.profile.style
+        let isDisabled = model.isShadowParametersDisabled
+        return VStack(alignment: .leading, spacing: 12) {
+            // Four quick presets: tapping one fills in the parameters below
+            // (TASK-71); none stays selected once a parameter is changed.
+            HStack(spacing: 18) {
+                ForEach(model.shadowOptions, id: \.self) { shadow in
+                    // Isolates the shadow, clearing outline, mirroring
+                    // `outlineContent`'s options (which isolate the outline
+                    // by clearing shadow) so the two pages behave symmetrically.
+                    let previewStyle: OverlayStyle = {
+                        var style = model.profile.style
+                        style.applyShadowPreset(shadow)
+                        style.outline = .none
+                        return style
+                    }()
+                    let isSelected = style.shadowPreset == shadow
+                    Button {
+                        model.selectShadow(shadow)
+                    } label: {
+                        optionCell(isNone: shadow == .none, previewStyle: previewStyle,
+                                   isSelected: isSelected, side: Self.shadowOptionSide)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(shadowName(shadow))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(shadowName(shadow))
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
+            .frame(maxWidth: .infinity)
+            colorPalette(current: style.shadowColorSource == .textColor ? nil : style.shadowColor,
+                        swatches: model.outlineColorSwatches,
+                        showAutoButton: true,
+                        autoLabel: "跟隨文字顏色",
+                        isDisabled: isDisabled,
+                        onSelectSwatch: { model.selectShadowColor($0) },
+                        onSelectAuto: { model.selectShadowColor(nil) },
+                        onApplyCustom: { model.applyCustomShadowColor($0) },
+                        onCommitCustom: { model.commitCustomColor($0) })
+            opacitySlider(label: "陰影透明度",
+                          color: style.resolvedShadowColor,
+                          percent: model.shadowOpacityPercent,
+                          isDisabled: isDisabled,
+                          onChange: { model.setShadowOpacityPercent($0) })
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "X 偏移", identifier: "shadowOffsetXSlider",
+                            value: style.shadowOffsetX, range: OverlayStyle.shadowOffsetRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowOffsetX($0) })
+            parameterSlider(iconName: "arrow.up.and.down", accessibilityName: "Y 偏移", identifier: "shadowOffsetYSlider",
+                            value: style.shadowOffsetY, range: OverlayStyle.shadowOffsetRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowOffsetY($0) })
+            parameterSlider(iconName: "drop.halffull", accessibilityName: "模糊", identifier: "shadowBlurSlider",
+                            value: style.shadowBlur, range: OverlayStyle.shadowBlurRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowBlur($0) })
         }
-        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
     // MARK: - 字級 (FR-10.9)
@@ -413,6 +448,7 @@ struct StyleTabView: View {
     private func colorPalette(current: OverlayColor?,
                               swatches: [OverlayColor],
                               showAutoButton: Bool,
+                              autoLabel: String = "自動（黑或白）",
                               isDisabled: Bool,
                               onSelectSwatch: @escaping (OverlayColor) -> Void,
                               onSelectAuto: @escaping () -> Void = {},
@@ -430,7 +466,7 @@ struct StyleTabView: View {
             // the same column as the first row's swatch above it, left-aligned.
             paletteRow {
                 if showAutoButton {
-                    autoColorButton(current: current, onSelectAuto: onSelectAuto)
+                    autoColorButton(current: current, label: autoLabel, onSelectAuto: onSelectAuto)
                 }
                 // The rainbow swatch is "selected" when `current` is a custom
                 // color that does not match any preset or recent swatch —
@@ -465,7 +501,8 @@ struct StyleTabView: View {
     }
 
     /// The 外框顏色 "auto" button: one grid column wide like every swatch.
-    func autoColorButton(current: OverlayColor?, onSelectAuto: @escaping () -> Void) -> some View {
+    func autoColorButton(current: OverlayColor?, label: String = "自動（黑或白）",
+                         onSelectAuto: @escaping () -> Void) -> some View {
         Button {
             onSelectAuto()
         } label: {
@@ -481,7 +518,7 @@ struct StyleTabView: View {
             .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("自動（黑或白）")
+        .accessibilityLabel(label)
         .accessibilityAddTraits(current == nil ? .isSelected : [])
     }
 
@@ -700,12 +737,13 @@ struct StyleTabView: View {
 }
 
 extension StyleTabModel.SubTab {
-    /// Short pages (color, shadow, size) are centered vertically; the
-    /// outline and font pages start from the top (TASK-49 A).
+    /// Short pages (color, size) are centered vertically; the outline, shadow
+    /// and font pages start from the top (TASK-49 A; the shadow page grew
+    /// parameter rows in TASK-71).
     var isCentered: Bool {
         switch self {
-        case .color, .shadow, .size: return true
-        case .font, .outline: return false
+        case .color, .size: return true
+        case .font, .outline, .shadow: return false
         }
     }
 }

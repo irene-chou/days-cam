@@ -67,6 +67,18 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(outlineHeight, 300, "外框頁 \(outlineHeight)pt")
     }
 
+    /// TASK-71: the shadow page is presets, color palette, opacity and three
+    /// slider rows. Taller than the panel, so it scrolls under the pinned
+    /// sub-tab row (TASK-66); the cap is the 4 + 64 + 12 + 82 + 12 + 30 + 3 x 43
+    /// of the rows plus the page's insets, with some slack.
+    func testShadowPageScrollsButStaysBounded() throws {
+        let model = try makeModel()
+        model.selectedSubTab = .shadow
+        let height = pageHeight(model)
+        XCTAssertGreaterThan(height, 224, "比面板高，靠捲動 \(height)pt")
+        XCTAssertLessThanOrEqual(height, 400, "陰影頁 \(height)pt")
+    }
+
     /// 57.6: the sub-tab row is 6 + 36 + 4.
     func testSubTabRowHeightIs46() {
         XCTAssertEqual(StyleTabView.subTabRowHeight, 46)
@@ -79,10 +91,11 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 20), 0)
     }
 
-    /// 49.1 / 49.2: only the color, shadow and size pages are centered.
+    /// 49.1 / 49.2: only the color and size pages are centered (TASK-71: the
+    /// shadow page has parameter rows now and starts from the top).
     func testOnlyShortPagesAreCentered() {
         let centered = StyleTabModel.SubTab.allCases.filter(\.isCentered)
-        XCTAssertEqual(Set(centered), [.color, .shadow, .size])
+        XCTAssertEqual(Set(centered), [.color, .size])
     }
 
     /// 49.5 / 49.6: option boxes fit one row at SE content width (355pt).
@@ -94,7 +107,7 @@ final class StyleTabViewLayoutTests: XCTestCase {
     /// 49.1: a centered page measures exactly the panel's content height.
     func testCenteredPagesFillRegularPanelHeight() throws {
         let model = try makeModel()
-        for subTab in [StyleTabModel.SubTab.color, .shadow, .size] {
+        for subTab in [StyleTabModel.SubTab.color, .size] {
             model.selectedSubTab = subTab
             XCTAssertEqual(pageHeight(model, availableHeight: 224), 224, accuracy: 0.5, "\(subTab)")
         }
