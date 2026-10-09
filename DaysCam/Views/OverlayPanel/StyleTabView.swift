@@ -203,6 +203,17 @@ struct StyleTabView: View {
     // MARK: - 顏色 (FR-10.4, FR-10.7)
 
     private var colorContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            opacitySlider(label: "文字透明度",
+                          color: model.profile.style.textColor,
+                          percent: model.textOpacityPercent,
+                          isDisabled: false,
+                          onChange: { model.setTextOpacityPercent($0) })
+            textColorPalette
+        }
+    }
+
+    private var textColorPalette: some View {
         colorPalette(current: model.profile.style.textColor,
                     swatches: model.textColorSwatches,
                     showAutoButton: false,
@@ -239,6 +250,11 @@ struct StyleTabView: View {
                 }
             }
             .padding(.top, 4)
+            opacitySlider(label: "外框透明度",
+                          color: model.profile.style.outlineColor ?? model.profile.style.resolvedOutlineColor,
+                          percent: model.outlineOpacityPercent,
+                          isDisabled: model.isOutlineColorSectionDisabled,
+                          onChange: { model.setOutlineOpacityPercent($0) })
             colorPalette(current: model.profile.style.outlineColor,
                         swatches: model.outlineColorSwatches,
                         showAutoButton: true,
@@ -339,7 +355,7 @@ struct StyleTabView: View {
             // First row: nine swatches filling the content width, equal gaps.
             paletteRow {
                 ForEach(swatches, id: \.hexString) { swatch in
-                    colorDot(swatch, isSelected: current == swatch) { onSelectSwatch(swatch) }
+                    colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
                 }
             }
             // Second row: (auto,) rainbow, then recent custom colors, each in
@@ -353,12 +369,12 @@ struct StyleTabView: View {
                 // those already show their own ring, so this only fires for
                 // an actually custom color (R.3).
                 let isCustomSelected = current != nil
-                    && !swatches.contains(current!)
-                    && !model.recentColors.contains(current!)
+                    && !swatches.contains { isSame(current, $0) }
+                    && !model.recentColors.contains { isSame(current, $0) }
                 customColorPicker(current: current, isSelected: isCustomSelected,
                                   onApply: onApplyCustom, onCommit: onCommitCustom)
                 ForEach(model.recentColors, id: \.hexString) { color in
-                    colorDot(color, isSelected: current == color, labelPrefix: "最近自訂 ") {
+                    colorDot(color, isSelected: isSame(current, color), labelPrefix: "最近自訂 ") {
                         onSelectSwatch(color)
                     }
                 }
@@ -407,6 +423,7 @@ struct StyleTabView: View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
+                .background(CheckerboardView().clipShape(Circle()))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchEdge)
                 .overlay(swatchSelectionRing(isSelected))
@@ -423,7 +440,7 @@ struct StyleTabView: View {
 
     /// Custom-color entry point: a solid rainbow circle, same diameter as the
     /// other swatches (issue #83). Tapping it presents the system color picker
-    /// (`UIColorPickerViewController`, no alpha). Dragging calls `onApply`
+    /// (`UIColorPickerViewController`, with alpha). Dragging calls `onApply`
     /// continuously for the live preview; `onCommit` runs once when the picker
     /// closes, and only if the final color differs from the one it opened
     /// with, so the recent list gets one entry per pick (TASK-53).
@@ -439,6 +456,43 @@ struct StyleTabView: View {
                 .overlay(swatchSelectionRing(isSelected))
         }
         .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+    }
+
+    /// Whether `color` is `swatch` ignoring opacity (a swatch stays selected
+    /// at any opacity, TASK-69).
+    private func isSame(_ color: OverlayColor?, _ swatch: OverlayColor) -> Bool {
+        guard let color else { return false }
+        return StyleTabModel.hasSameRGB(color, swatch)
+    }
+
+    /// The opacity row of the color and outline pages (TASK-69): a checkerboard
+    /// chip showing the color as it will look, the slider, and the percentage.
+    private func opacitySlider(label: String, color: OverlayColor, percent: Int,
+                               isDisabled: Bool, onChange: @escaping (Int) -> Void) -> some View {
+        let range = StyleTabModel.opacityPercentRange
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(swiftUIColor(color))
+                .background(CheckerboardView().clipShape(Circle()))
+                .frame(width: 24, height: 24)
+                .overlay(swatchEdge)
+                .accessibilityHidden(true)
+            Slider(
+                value: Binding(get: { Double(percent) }, set: { onChange(Int($0.rounded())) }),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: 1
+            )
+            .tint(CameraTheme.accentControl)
+            .accessibilityLabel(label)
+            .accessibilityValue("\(percent)%")
+            Text("\(percent)%")
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .opacity(isDisabled ? 0.35 : 1)
+        .disabled(isDisabled)
     }
 
     /// Option box sides (TASK-49 C): outline 48, shadow 64.
@@ -587,7 +641,7 @@ private extension OverlayColor {
     init?(_ color: Color) {
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
-        self.init(red: Double(red), green: Double(green), blue: Double(blue), opacity: 1.0)
+        self.init(red: Double(red), green: Double(green), blue: Double(blue), opacity: Double(alpha))
     }
 }
 
@@ -798,9 +852,9 @@ private struct ColorPickerPresenter: UIViewControllerRepresentable {
         coordinator.parent = self
         guard isPresented, host.presentedViewController == nil else { return }
         let picker = UIColorPickerViewController()
-        picker.supportsAlpha = false
+        picker.supportsAlpha = true
         picker.selectedColor = UIColor(red: initial.red, green: initial.green,
-                                       blue: initial.blue, alpha: 1)
+                                       blue: initial.blue, alpha: initial.opacity)
         picker.delegate = coordinator
         coordinator.startColor = initial
         coordinator.latestColor = initial
@@ -825,5 +879,26 @@ private struct ColorPickerPresenter: UIViewControllerRepresentable {
             }
             parent?.isPresented = false
         }
+    }
+}
+
+/// A light gray checkerboard, drawn behind translucent colors so their
+/// opacity can be seen (TASK-69). Fills whatever frame it is given.
+private struct CheckerboardView: View {
+    private let cell: CGFloat = 5
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            let columns = Int((size.width / cell).rounded(.up))
+            let rows = Int((size.height / cell).rounded(.up))
+            for row in 0..<rows {
+                for column in 0..<columns where (row + column).isMultiple(of: 2) {
+                    let rect = CGRect(x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell, height: cell)
+                    context.fill(Path(rect), with: .color(Color(white: 0.78)))
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
