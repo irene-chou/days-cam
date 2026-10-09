@@ -55,6 +55,11 @@ struct CameraScreen: View {
             // FR-16.11: downloads do not continue in the background.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { model.sceneDidEnterBackground() }
+                // The camera is back to continuous auto (issue #303).
+                if phase == .active { model.focusModel.hideReticle() }
+            }
+            .onChange(of: model.panelModel.isOpen) { _, isOpen in
+                if isOpen { model.focusModel.hideReticle() }
             }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileManagerPresented) {
@@ -321,12 +326,16 @@ struct CameraScreen: View {
                 // overlay would sit against a boundary the picture doesn't
                 // actually end at (code review finding carried over from
                 // 0.1, PRD FR-6.1/6.3).
-                CameraPreviewView(session: model.cameraService.session)
+                CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
             }
 
             if model.captureSettingsStore.showsGrid {
                 GridLinesView()
             }
+
+            // Tap-to-focus reticle, exposure sun and AE/AF lock label
+            // (issue #303); below the overlay text, never takes touches.
+            FocusExposureOverlay(focus: model.focusModel, frameSize: frameSize)
 
             // Overlay text tracks the viewfinder's own size (not the
             // screen's), matching FR-6.1's requirement that the preview and
@@ -375,6 +384,21 @@ struct CameraScreen: View {
                 PermissionGuidanceView()
             }
         }
+        .frame(width: frameSize.width, height: frameSize.height)
+        .contentShape(Rectangle())
+        // Tap to focus, drag up/down for exposure, hold to lock AE/AF (issue
+        // #303). One zero-distance drag tracks the finger and the model
+        // tells the three apart; it ignores touches while the panel or a
+        // capsule is open and while two fingers pinch. Simultaneous, so the
+        // pinch and the tap below keep working.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged {
+                    model.focusModel.touchChanged(startLocation: $0.startLocation, location: $0.location,
+                                                  viewfinderSize: frameSize)
+                }
+                .onEnded { _ in model.focusModel.touchEnded() }
+        )
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
         // collapses the panel, only while it is open. `OverlayTextView`
         // itself claims its own hit-testing area only while draggable

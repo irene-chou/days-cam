@@ -421,6 +421,11 @@ final class CameraService: ObservableObject {
     /// The most the exposure compensation moves either way, in EV.
     static let maxExposureBiasMagnitude: Float = 2
 
+    /// The exposure compensation range the live camera accepts: ±2 EV narrowed
+    /// to the device's own limits (`exposureBiasRange(of:)`). Refreshed on every
+    /// focus/exposure request and camera flip; ±2 until then.
+    @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
+
     /// The display factors `setZoomFactor(_:)` accepts on the current camera.
     @Published private(set) var zoomRange: ZoomRange = .fixed
 
@@ -914,12 +919,23 @@ extension CameraService {
         guard isCaptureSupported else { return }
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoInput?.device else { return }
+            self.publishExposureBiasRange(of: device)
             work(device)
+        }
+    }
+
+    /// Publishes `exposureBiasRange(of: device)`. Runs on `sessionQueue`.
+    private func publishExposureBiasRange(of device: FocusExposureCaptureDevice) {
+        let range = CameraService.exposureBiasRange(of: device)
+        onMain { [weak self] in
+            guard let self, self.exposureBiasRange != range else { return }
+            self.exposureBiasRange = range
         }
     }
 
     /// Resets `device` and the published state. Runs on `sessionQueue`.
     func resetFocusExposure(on device: FocusExposureCaptureDevice) {
+        publishExposureBiasRange(of: device)
         guard CameraService.applyContinuousAuto(to: device) else {
             return reportFocusExposureFailure()
         }
