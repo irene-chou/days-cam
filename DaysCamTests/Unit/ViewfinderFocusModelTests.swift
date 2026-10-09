@@ -447,7 +447,7 @@ final class ViewfinderFocusModelTests: XCTestCase {
         locked.removeAll()
         let second = CGPoint(x: 200, y: 300)
         tap(model, at: second)
-        XCTAssertEqual(focused, [CGPoint(x: 200 / 300, y: 300 / 400)])
+        XCTAssertEqual(focused, [CGPoint(x: 200.0 / 300.0, y: 300.0 / 400.0)])
     }
 
     /// 82.3: the stale touch is dropped, not ended: no tap comes from it.
@@ -458,7 +458,7 @@ final class ViewfinderFocusModelTests: XCTestCase {
         let second = CGPoint(x: 200, y: 300)
         model.touchChanged(startLocation: second, location: second, viewfinderSize: size)
         model.touchEnded()
-        XCTAssertEqual(focused, [CGPoint(x: 200 / 300, y: 300 / 400)])
+        XCTAssertEqual(focused, [CGPoint(x: 200.0 / 300.0, y: 300.0 / 400.0)])
     }
 
     /// 82.3: a cancelled gesture is discarded without a tap, and the hold dies.
