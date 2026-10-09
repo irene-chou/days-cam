@@ -51,10 +51,11 @@ final class CameraScreenModel: ObservableObject {
     /// drawing PingFang (PRD 0.3 FR-5.15). Injectable so tests need not wait
     /// the real 3 seconds.
     private let fontPreparationTimeout: TimeInterval
-    /// Turns a font ID into the face to draw (`OverlayMetrics.resolvedFont`
-    /// in the app). Injectable so tests can resolve to a face that ships
-    /// with iOS instead of a downloaded one.
-    private let resolveFont: @MainActor (OverlayFontID, any FontAvailabilityProviding) -> ResolvedOverlayFont
+    /// Turns a style's font and weight into the face to draw
+    /// (`OverlayMetrics.resolvedFont(for: style, ...)` in the app).
+    /// Injectable so tests can resolve to a face that ships with iOS instead
+    /// of a downloaded one.
+    private let resolveFont: @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont
     /// "Profile → font" the user asked for that is still downloading; the
     /// download finishing writes it (PRD 0.3 FR-5.18, A-8). One entry per
     /// profile, the last request wins. Owned here, not by the font list, so
@@ -63,8 +64,8 @@ final class CameraScreenModel: ObservableObject {
     /// Fonts whose launch/switch preparation ran past the timeout; the
     /// shutter no longer waits for them (they still resolve to PingFang until
     /// `available`).
-    private var timedOutPreparingFonts: Set<OverlayFontID> = []
-    private var preparationTimeoutTasks: [OverlayFontID: Task<Void, Never>] = [:]
+    private var timedOutPreparingFonts: Set<FontDownloadID> = []
+    private var preparationTimeoutTasks: [FontDownloadID: Task<Void, Never>] = [:]
     /// The profile the font hooks last saw as current.
     private var lastSeenProfileID: UUID?
     /// Profile/font pairs the "needs re-download" notice was already shown
@@ -313,7 +314,7 @@ final class CameraScreenModel: ObservableObject {
          },
          fontLibrary: (any FontShellControlling)? = nil,
          fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
-         resolveFont: @escaping @MainActor (OverlayFontID, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
+         resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
              OverlayMetrics.resolvedFont(for: $0, availability: $1)
          }) {
         self.resolveFont = resolveFont
@@ -392,8 +393,8 @@ final class CameraScreenModel: ObservableObject {
         // The launch-time preparation of the current profile's font starts
         // counting its 3 seconds now (FR-5.15); `prepareFontsAtLaunch()`
         // does the actual work.
-        if let font = selectedProfile?.style.fontID {
-            startPreparationTimeoutIfNeeded(for: font)
+        if let style = selectedProfile?.style {
+            startPreparationTimeoutIfNeeded(for: Self.downloadID(of: style))
         }
     }
 
@@ -688,8 +689,10 @@ final class CameraScreenModel: ObservableObject {
     /// launch or a profile switch, within its 3 seconds (PRD 0.3 FR-5.15):
     /// the shutter waits so a photo is never baked in PingFang by mistake.
     var isWaitingForFont: Bool {
-        guard let fontID = selectedProfile?.style.fontID else { return false }
-        return fontLibrary.state(for: fontID) == .preparing && !timedOutPreparingFonts.contains(fontID)
+        guard let style = selectedProfile?.style else { return false }
+        let unit = Self.downloadID(of: style)
+        return fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing
+            && !timedOutPreparingFonts.contains(unit)
     }
 
     /// A transient reason the viewfinder cannot show a live picture even
@@ -736,7 +739,7 @@ extension CameraScreenModel {
     /// when it is `available`, PingFang otherwise (PRD 0.3 FR-5.14). Resolved
     /// afresh on every read, so the viewfinder follows the library.
     var overlayFont: ResolvedOverlayFont {
-        resolveFont(overlayStyle.fontID, fontLibrary)
+        resolveFont(overlayStyle, fontLibrary)
     }
 
     /// Where `selectedProfile` draws its overlay: a grid anchor or a custom
@@ -975,7 +978,7 @@ extension CameraScreenModel {
     func captureContext(for profile: CameraProfile) -> CaptureContext {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        let font = resolveFont(profile.style.fontID, fontLibrary)
+        let font = resolveFont(profile.style, fontLibrary)
         return (capturedAt, text, profile.style, profile.position, font)
     }
 
@@ -1241,15 +1244,20 @@ extension CameraScreenModel {
 /// and the background cancel. `FontLibrary` conforms; tests inject a fake.
 @MainActor
 protocol FontShellControlling: FontListControlling {
-    /// Fires with the font ID each time a download finishes successfully;
-    /// the state is already `.available` by then.
-    var downloadDidFinish: PassthroughSubject<OverlayFontID, Never> { get }
+    /// Fires with the exact font and weight each time a download finishes
+    /// successfully; the state is already `.available` by then. The older
+    /// per-font event only speaks for the default weight.
+    var weightDownloadDidFinish: PassthroughSubject<FontDownloadID, Never> { get }
     /// Starts a download; `false` when none was started.
     @discardableResult func download(_ fontID: OverlayFontID) -> Bool
     /// Settles one `.preparing` font now (FR-5.16).
     func prepare(_ fontID: OverlayFontID) async
+    /// Settles one exact face.
+    func prepare(_ fontID: OverlayFontID, weightID: String?) async
     /// Settles the fonts on the device after launch (FR-5.15).
     func prepareAtLaunch(priority: OverlayFontID?) async
+    /// Same, with the priority font's exact weight first.
+    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async
     /// Cancels every download in progress (FR-16.11).
     func cancelAllDownloads()
 }
@@ -1262,7 +1270,7 @@ extension FontLibrary: FontShellControlling {}
 @MainActor
 private final class InertFontLibrary: FontShellControlling {
     let objectWillChange = ObservableObjectPublisher()
-    let downloadDidFinish = PassthroughSubject<OverlayFontID, Never>()
+    let weightDownloadDidFinish = PassthroughSubject<FontDownloadID, Never>()
 
     func state(for fontID: OverlayFontID) -> FontState {
         fontID == .pingFang ? .available : .notDownloaded
@@ -1271,17 +1279,25 @@ private final class InertFontLibrary: FontShellControlling {
     func delete(_ fontID: OverlayFontID) -> Bool { false }
     func download(_ fontID: OverlayFontID) -> Bool { false }
     func prepare(_ fontID: OverlayFontID) async {}
+    func prepare(_ fontID: OverlayFontID, weightID: String?) async {}
     func prepareAtLaunch(priority: OverlayFontID?) async {}
+    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async {}
     func cancelAllDownloads() {}
 }
 
 extension CameraScreenModel {
+    /// The exact face `style` draws with, as the font library counts it.
+    static func downloadID(of style: OverlayStyle) -> FontDownloadID {
+        FontDownloadID(fontID: style.fontID, weightID: style.resolvedFontWeight.id)
+    }
+
     /// Settles the fonts on the device after launch, the current profile's
     /// font first (PRD 0.3 FR-5.15). Returns once that font is settled; the
     /// shutter waits for it, for at most `fontPreparationTimeout`. Call once,
     /// from the screen's `.task`.
     func prepareFontsAtLaunch() async {
-        await fontLibrary.prepareAtLaunch(priority: selectedProfile?.style.fontID)
+        await fontLibrary.prepareAtLaunch(priority: selectedProfile?.style.fontID,
+                                          weightID: selectedProfile?.style.resolvedFontWeight.id)
     }
 
     /// The app went to the background: pending downloads stop and nobody is
@@ -1355,7 +1371,7 @@ extension CameraScreenModel {
                 DispatchQueue.main.async { self?.fontLibraryDidChange() }
             }
             .store(in: &cancellables)
-        fontLibrary.downloadDidFinish
+        fontLibrary.weightDownloadDidFinish
             .sink { [weak self] _ in self?.fontLibraryDidChange() }
             .store(in: &cancellables)
     }
@@ -1393,12 +1409,12 @@ extension CameraScreenModel {
     func selectedProfileDidChange() {
         guard let profile = selectedProfile, profile.id != lastSeenProfileID else { return }
         lastSeenProfileID = profile.id
-        let fontID = profile.style.fontID
-        if fontLibrary.state(for: fontID) == .preparing {
-            timedOutPreparingFonts.remove(fontID)
-            startPreparationTimeoutIfNeeded(for: fontID)
+        let unit = Self.downloadID(of: profile.style)
+        if fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing {
+            timedOutPreparingFonts.remove(unit)
+            startPreparationTimeoutIfNeeded(for: unit)
             Task { [weak self] in
-                await self?.fontLibrary.prepare(fontID)
+                await self?.fontLibrary.prepare(unit.fontID, weightID: unit.weightID)
                 guard self?.selectedProfileID == profile.id else { return }
                 self?.noticeUnavailableFontIfNeeded()
             }
@@ -1409,14 +1425,14 @@ extension CameraScreenModel {
 
     /// Gives a `.preparing` font its 3 seconds from now; after that the
     /// shutter stops waiting (FR-5.15, FR-5.16).
-    fileprivate func startPreparationTimeoutIfNeeded(for fontID: OverlayFontID) {
-        guard fontLibrary.state(for: fontID) == .preparing else { return }
-        preparationTimeoutTasks[fontID]?.cancel()
+    fileprivate func startPreparationTimeoutIfNeeded(for unit: FontDownloadID) {
+        guard fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing else { return }
+        preparationTimeoutTasks[unit]?.cancel()
         let seconds = fontPreparationTimeout
-        preparationTimeoutTasks[fontID] = Task { [weak self] in
+        preparationTimeoutTasks[unit] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
-            self.timedOutPreparingFonts.insert(fontID)
+            self.timedOutPreparingFonts.insert(unit)
             self.objectWillChange.send()
         }
     }
@@ -1427,7 +1443,7 @@ extension CameraScreenModel {
     func noticeUnavailableFontIfNeeded() {
         guard let profile = selectedProfile else { return }
         let fontID = profile.style.fontID
-        switch fontLibrary.state(for: fontID) {
+        switch fontLibrary.state(for: fontID, weightID: profile.style.resolvedFontWeight.id) {
         case .available, .preparing, .downloading:
             return
         case .notDownloaded, .failed:
