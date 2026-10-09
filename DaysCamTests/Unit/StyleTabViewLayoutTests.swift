@@ -45,6 +45,13 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.columnSpacing(forContentWidth: 355), 10.625, accuracy: 0.01)
     }
 
+    /// 84: every page except the font list insets its content 14pt a side.
+    func testContentHorizontalInsetKeepsFontListAtTen() {
+        for subTab in StyleTabModel.SubTab.allCases {
+            XCTAssertEqual(StyleTabView.contentHorizontalInset(for: subTab), subTab == .font ? 10 : 14)
+        }
+    }
+
     /// 39.8a: the color page fits a regular panel's content area (160pt cap);
     /// the outline page is capped at the ~200pt panel of #198. Small screens may scroll.
     func testColorAndOutlinePagesFitRegularContentArea() throws {
