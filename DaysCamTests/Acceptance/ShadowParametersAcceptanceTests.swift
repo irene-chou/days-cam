@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import DaysCam
 
 /// TASK-71 independent QA (71.2, 71.4, 71.5), end to end through the real
@@ -72,6 +73,51 @@ final class ShadowParametersAcceptanceTests: XCTestCase {
         ("hard", CGSize(width: 2, height: 2), 0, 0.75, false),
         ("glow", CGSize(width: 0, height: 0), 8, 0.9, true)
     ]
+
+    /// 86.5: load actual pre-0.5 profiles and compare every output pixel
+    /// against explicit origin/main parameters (fca680c), using its unchanged renderer.
+    func test86LegacyProfilesBakePixelIdenticallyToOriginMain() throws {
+        let colors = ["#FFFFFF", "#FF6B9D80", "#1C1C1E"]
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let input = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800), format: format).image {
+            UIColor.gray.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+        }
+        let renderer = OverlayRenderer()
+        for (index, old) in legacy.enumerated() {
+            for color in colors {
+                try write([record(index: index, textColor: color,
+                                  shadowFields: "\"shadow\":\"\(old.name)\",")])
+                let loaded = try XCTUnwrap(try makeStore().load().first).style
+                // Literal values from origin/main's decoder and preset implementation;
+                // do not derive the oracle from applyShadowPreset or the loaded style.
+                var baseline = OverlayStyle(textColor: try XCTUnwrap(OverlayColor(hex: color)), shadow: .none)
+                baseline.showsShadow = true
+                baseline.shadowOffsetX = old.offset.width
+                baseline.shadowOffsetY = old.offset.height
+                baseline.shadowBlur = old.blur
+                baseline.shadowColorSource = old.followsText ? .textColor : .custom
+                let alpha: Double = old.name == "soft" ? 153.0 / 255 : old.name == "hard" ? 191.0 / 255 : 230.0 / 255
+                baseline.shadowColor = .black.withOpacity(alpha)
+                let actual = try XCTUnwrap(renderer.bake(image: input, text: "第 10 天",
+                    style: loaded, placement: .custom(x: 0.5, y: 0.5), font: .pingFang))
+                let expected = try XCTUnwrap(renderer.bake(image: input, text: "第 10 天",
+                    style: baseline, placement: .custom(x: 0.5, y: 0.5), font: .pingFang))
+                let actualPixels = try XCTUnwrap(PixelGrid(actual))
+                let expectedPixels = try XCTUnwrap(PixelGrid(expected))
+                XCTAssertEqual(actualPixels.width, expectedPixels.width)
+                XCTAssertEqual(actualPixels.height, expectedPixels.height)
+                XCTAssertTrue(actualPixels.bytes == expectedPixels.bytes, "86.5: \(old.name) \(color) every pixel identical")
+                XCTAssertEqual(loaded.shadowPreset?.rawValue, old.name)
+                var recolored = loaded
+                recolored.shadowColorSource = .custom
+                recolored.shadowColor = .white.withOpacity(0.31)
+                XCTAssertEqual(recolored.shadowPreset?.rawValue, old.name, "86.5: selection uses geometry only")
+            }
+        }
+    }
 
     // MARK: 71.2
 
@@ -295,6 +341,8 @@ final class ShadowParametersAcceptanceTests: XCTestCase {
         store.load()
         var profile = try XCTUnwrap(store.profiles.first)
         profile.style.applyShadowPreset(.glow)
+        profile.style.shadowColorSource = .textColor
+        profile.style.shadowOpacity = 230.0 / 255
         profile.style.textColor = OverlayColor(hex: "#0A84FF") ?? .white
         _ = try store.update(profile)
         var reopened = try XCTUnwrap(try makeStore().load().first)

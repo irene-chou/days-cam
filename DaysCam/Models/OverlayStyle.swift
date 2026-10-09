@@ -75,7 +75,7 @@ enum OverlayOutline: String, Codable, CaseIterable {
 }
 
 /// A quick preset for the shadow (TASK-71, replacing PRD 0.2 FR-10.8's four
-/// fixed shadows): applying one fills in the style's shadow parameters, and
+/// fixed shadows): applying one fills in only the style's shadow geometry, and
 /// `OverlayStyle.shadowPreset` names the one they still equal, if any.
 ///
 /// The raw values are also the four shadows 0.2–0.5 stored in `shadow`, which
@@ -86,27 +86,6 @@ enum OverlayShadowPreset: String, CaseIterable {
     case soft
     case hard
     case glow
-
-    /// Where the preset's color comes from; `nil` for `.none`.
-    var colorSource: OverlayShadowColorSource? {
-        switch self {
-        case .none: return nil
-        case .soft, .hard: return .custom
-        case .glow: return .textColor
-        }
-    }
-
-    /// The preset's alpha, on an 8-bit step so a saved style still equals
-    /// the preset; `nil` for `.none`. 0.5 drew 0.6, 0.75 and 0.9, which bake
-    /// to the same pixels (`OverlayRendererShadowMigrationTests`).
-    var opacity: Double? {
-        switch self {
-        case .none: return nil
-        case .soft: return 153.0 / 255
-        case .hard: return 191.0 / 255
-        case .glow: return 230.0 / 255
-        }
-    }
 
     /// The preset's offset and blur, in points at a 17pt font; `nil` for
     /// `.none`.
@@ -123,7 +102,7 @@ enum OverlayShadowPreset: String, CaseIterable {
 /// Where the shadow's color comes from (TASK-71).
 enum OverlayShadowColorSource: String, Codable, CaseIterable {
     /// The text color's RGB at the shadow color's alpha, following later
-    /// text color changes: how the glow preset glows.
+    /// text color changes when explicitly selected.
     case textColor
     /// `OverlayStyle.shadowColor` as is.
     case custom
@@ -230,7 +209,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
         self.sizeScale = sizeScale
         showsShadow = false
         shadowColorSource = .custom
-        shadowColor = .black
+        shadowColor = OverlayColor.black.withOpacity(153.0 / 255)
         shadowOffsetX = 0
         shadowOffsetY = 0
         shadowBlur = 0
@@ -300,37 +279,25 @@ extension OverlayStyle {
         set { shadowColor = shadowColor.withOpacity(newValue) }
     }
 
-    /// The preset the shadow currently equals, or `nil` once a parameter has
-    /// been changed away from every preset (TASK-71 71.3). Any style with the
-    /// shadow off is `.none`. Compares the stored values exactly, after the
-    /// 8-bit rounding of the shadow color; the RGB is ignored while following
-    /// the text color.
+    /// The preset matching only the enabled state and geometry (TASK-86).
+    /// Color source, RGB and opacity do not affect selection.
     var shadowPreset: OverlayShadowPreset? {
         guard showsShadow else { return OverlayShadowPreset.none }
-        let color = shadowColor.quantized
         return OverlayShadowPreset.allCases.first { preset in
-            guard let source = preset.colorSource, let opacity = preset.opacity,
-                  let geometry = preset.geometry else { return false }
-            let colorMatches = source == .textColor
-                || (color.red == 0 && color.green == 0 && color.blue == 0)
-            return source == shadowColorSource && colorMatches && color.opacity == opacity
-                && geometry.offsetX == shadowOffsetX && geometry.offsetY == shadowOffsetY
+            guard let geometry = preset.geometry else { return false }
+            return geometry.offsetX == shadowOffsetX && geometry.offsetY == shadowOffsetY
                 && geometry.blur == shadowBlur
         }
     }
 
-    /// Fills in `preset`'s parameters and turns the shadow on, or for
-    /// `.none` only turns it off (TASK-71 71.3). Soft and hard are black;
-    /// glow follows the text color and keeps `shadowColor`'s RGB.
+    /// Applies geometry and enables the shadow, preserving its color and alpha.
+    /// `.none` only disables it, keeping every parameter (TASK-86).
     mutating func applyShadowPreset(_ preset: OverlayShadowPreset) {
-        guard let source = preset.colorSource, let opacity = preset.opacity,
-              let geometry = preset.geometry else {
+        guard let geometry = preset.geometry else {
             showsShadow = false
             return
         }
         showsShadow = true
-        shadowColorSource = source
-        shadowColor = (source == .custom ? OverlayColor.black : shadowColor).withOpacity(opacity)
         shadowOffsetX = geometry.offsetX
         shadowOffsetY = geometry.offsetY
         shadowBlur = geometry.blur
@@ -431,7 +398,17 @@ extension OverlayStyle {
             }
             preset = legacyPreset
         }
-        let base = OverlayStyle(shadow: preset)
+        var base = OverlayStyle(shadow: preset)
+        // Preserve pre-0.5 colors independently of the geometry-only presets.
+        if showsShadow == nil {
+            switch preset {
+            case .none, .soft: break
+            case .hard: base.shadowColor = .black.withOpacity(191.0 / 255)
+            case .glow:
+                base.shadowColorSource = .textColor
+                base.shadowColor = .black.withOpacity(230.0 / 255)
+            }
+        }
         self.showsShadow = showsShadow ?? base.showsShadow
         shadowColorSource = try container.decodeIfPresent(OverlayShadowColorSource.self,
                                                           forKey: .shadowColorSource) ?? base.shadowColorSource

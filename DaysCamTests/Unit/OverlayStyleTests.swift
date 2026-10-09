@@ -400,16 +400,13 @@ final class OverlayStyleTests: XCTestCase {
 
     // MARK: - Shadow (TASK-71)
 
-    /// The presets are 0.5's fixed shadows (PRD 0.2 decoration table), their
-    /// alphas on the nearest 8-bit step that draws the same pixels
-    /// (`OverlayRendererShadowMigrationTests`). The raw values are what 0.5
-    /// stored.
-    func testShadowPresetsAreThe05Shadows() {
+    /// 86: new presets share black at 60%; only geometry differs.
+    func testShadowPresetsHaveGeometryAndCommonDefaultColor() {
         XCTAssertEqual(OverlayShadowPreset.allCases.map(\.rawValue), ["none", "soft", "hard", "glow"])
         let table: [(OverlayShadowPreset, OverlayShadowColorSource, Double, Double, Double, Double)] = [
             (.soft, .custom, 0.6, 0, 2, 4),
-            (.hard, .custom, 0.75, 2, 2, 0),
-            (.glow, .textColor, 0.9, 0, 0, 8)
+            (.hard, .custom, 0.6, 2, 2, 0),
+            (.glow, .custom, 0.6, 0, 0, 8)
         ]
         for (preset, source, opacity, x, y, blur) in table {
             let style = OverlayStyle(shadow: preset)
@@ -425,6 +422,28 @@ final class OverlayStyleTests: XCTestCase {
             }
         }
         XCTAssertFalse(OverlayStyle(shadow: .none).showsShadow)
+    }
+
+    /// 86.1 / 86.4: every type preserves exact color, including unquantized alpha.
+    func testChangingShadowTypePreservesColorAndSource() throws {
+        for source in OverlayShadowColorSource.allCases {
+            var style = OverlayStyle()
+            style.shadowColorSource = source
+            style.shadowColor = try hex("#FF0000").withOpacity(0.371)
+            let color = style.shadowColor
+            for preset in [OverlayShadowPreset.soft, .hard, .glow, .none, .hard] {
+                let before = style
+                style.applyShadowPreset(preset)
+                XCTAssertEqual(style.shadowColor, color)
+                XCTAssertEqual(style.shadowColorSource, source)
+                XCTAssertEqual(style.shadowPreset, preset)
+                if preset == .none {
+                    XCTAssertEqual(style.shadowOffsetX, before.shadowOffsetX)
+                    XCTAssertEqual(style.shadowOffsetY, before.shadowOffsetY)
+                    XCTAssertEqual(style.shadowBlur, before.shadowBlur)
+                }
+            }
+        }
     }
 
     func testShadowParameterRanges() {
@@ -461,20 +480,28 @@ final class OverlayStyleTests: XCTestCase {
         let edits: [(String, (inout OverlayStyle) -> Void)] = [
             ("x", { $0.shadowOffsetX = 1 }),
             ("y", { $0.shadowOffsetY = 3 }),
-            ("blur", { $0.shadowBlur = 4.5 }),
-            ("alpha", { $0.shadowOpacity = 0.5 }),
-            ("color", { $0.shadowColor = OverlayColor.white.withOpacity($0.shadowOpacity) }),
-            ("source", { $0.shadowColorSource = .textColor })
+            ("blur", { $0.shadowBlur = 4.5 })
         ]
         for (name, edit) in edits {
             var style = OverlayStyle(shadow: .soft)
             edit(&style)
-            XCTAssertNil(style.shadowPreset, "71.3: \(name) leaves no preset selected")
+            XCTAssertNil(style.shadowPreset, "86.3: \(name)")
+            style.applyShadowPreset(.soft)
+            XCTAssertEqual(style.shadowPreset, .soft)
+        }
+        let colorEdits: [(String, (inout OverlayStyle) -> Void)] = [
+            ("alpha", { $0.shadowOpacity = 0.5 }),
+            ("color", { $0.shadowColor = OverlayColor.white.withOpacity($0.shadowOpacity) }),
+            ("source", { $0.shadowColorSource = .textColor })
+        ]
+        for (name, edit) in colorEdits {
+            var style = OverlayStyle(shadow: .soft)
+            edit(&style)
+            XCTAssertEqual(style.shadowPreset, .soft, "86.2: \(name)")
         }
     }
 
-    /// 71.3: the glow ignores the stored RGB, which only the custom source
-    /// draws; any style with the shadow off is "none".
+    /// 86.2: preset selection ignores RGB; any disabled shadow is none.
     func testShadowPresetIgnoresWhatIsNotDrawn() throws {
         var glow = OverlayStyle(shadow: .glow)
         glow.shadowColor = try hex("#0A84FF").withOpacity(glow.shadowOpacity)
@@ -502,6 +529,8 @@ final class OverlayStyleTests: XCTestCase {
     /// RGB, at the shadow's own alpha.
     func testTextColorShadowFollowsTheTextColor() throws {
         var style = OverlayStyle(textColor: try hex("#FF6B9D"), shadow: .glow)
+        style.shadowColorSource = .textColor
+        style.shadowOpacity = 230.0 / 255
         XCTAssertEqual(style.resolvedShadowColor, try hex("#FF6B9D").withOpacity(230.0 / 255), "71.4")
         style.textColor = try hex("#3897F080")
         XCTAssertEqual(style.resolvedShadowColor, try hex("#3897F0").withOpacity(230.0 / 255), "71.4")
@@ -529,8 +558,13 @@ final class OverlayStyleTests: XCTestCase {
         for preset in OverlayShadowPreset.allCases {
             let style = try decodeShadow(preset.rawValue)
             let label = "71.2 \(preset)"
-            let expected = OverlayStyle(fontID: .songti, textColor: try hex("#FF6B9D"), outline: .stroke,
+            var expected = OverlayStyle(fontID: .songti, textColor: try hex("#FF6B9D"), outline: .stroke,
                                         strokeWidth: 3, shadow: preset, sizeScale: 115)
+            if preset == .hard { expected.shadowOpacity = 191.0 / 255 }
+            if preset == .glow {
+                expected.shadowColorSource = .textColor
+                expected.shadowOpacity = 230.0 / 255
+            }
             XCTAssertEqual(style, expected, label)
             XCTAssertEqual(style.shadowPreset, preset, label)
             if preset == .none {
