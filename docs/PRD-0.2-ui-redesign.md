@@ -137,6 +137,7 @@
 - 新增：`position` 為 `.custom` 時，x、y 皆介於 0 與 1 之間（含）
 - 新增：`style.textColor` 與 `style.outlineColor` 的 RGB 各分量介於 0 與 1 之間；alpha 介於 0.05 與 1 之間（含），存檔量化為 8 bit（TASK-69 #297 取代「alpha 固定為 1」）。讀檔遇到低於 0.05 的 alpha（只可能是手改檔案）提高到最小可存值 13/255 並採用該筆，不丟棄
 - 新增（TASK-70 #298）：`style.strokeWidth` 介於 1 與 6 之間、`style.boxPadding` 介於 0 與 24 之間（含）；`style.autoOutlineOpacity` 介於 0.05 與 1 之間（含），存檔量化為 8 bit。寫入時超出範圍一律拒絕；讀檔遇到超出範圍的值（只可能是手改檔案）夾回範圍內並採用該筆，不丟棄
+- 新增（TASK-71 #299）：`style.shadowOffsetX`、`style.shadowOffsetY` 介於 −8 與 8 之間，`style.shadowBlur` 介於 0 與 16 之間（含），陰影關閉時也檢查；`style.shadowColor` 同 `textColor` 的色彩規則（alpha 0.05～1，存檔量化為 8 bit）。寫入與讀檔的處理同 TASK-70
 
 讀檔時遇到**未知的 `fontID`**（例如日後移除某字型），改用 `sfRounded` 並採用該筆，不丟棄。
 
@@ -151,7 +152,11 @@
 | `autoOutlineOpacity` | `Double` | `1` | 0.05～1；只在 `outlineColor` 為 `nil`（自動）時作為自動外框色的 alpha（TASK-70） |
 | `strokeWidth` | `Double`（pt，17pt 字級基準） | `2` | 1～6；描邊露在字形外的寬度。選其他外框時保留 |
 | `boxPadding` | `Double`（pt，17pt 字級基準） | `12` | 0～24；底框水平內距，垂直內距 ＝ 水平 × 0.5。選其他外框時保留 |
-| `shadow` | `OverlayShadow` | `.soft` | `none`／`soft`／`hard`／`glow` |
+| `showsShadow` | `Bool` | `true` | 陰影開關；關閉時保留下列參數（TASK-71 #299） |
+| `shadowColorSource` | `OverlayShadowColorSource` | `.custom` | `custom`＝用 `shadowColor`；`textColor`＝用文字色的 RGB，改文字色時跟著變（光暈） |
+| `shadowColor` | `OverlayColor`（格式同 `textColor`） | `#00000099` | alpha 即陰影透明度（5%～100%），無論顏色來源都使用；RGB 只在 `custom` 時使用，跟隨文字色期間保留 |
+| `shadowOffsetX`、`shadowOffsetY` | `Double`（pt，17pt 字級基準） | `0`、`2` | −8～8；Y 正值向下 |
+| `shadowBlur` | `Double`（pt，17pt 字級基準） | `4` | 0～16 |
 | `sizeScale` | `Int`（百分比） | `100` | 70～160，步進 5 |
 
 預設值等同 0.1 的「經典白」。
@@ -182,6 +187,17 @@ TASK-70 起，上表的「半透明底框」存成 `box`＋`autoOutlineOpacity` 
 | `solidBox` | `box` | `boxPadding` 12 | 不變 |
 
 alpha 存檔量化為 8 bit，50% 存成 128/255；烘焙與預覽的像素實測與升級前完全相同（`OverlayRendererOutlineMigrationTests`）。
+
+**陰影（0.2～0.5 → TASK-71，#299）**：沒有 `showsShadow` 的樣式是舊格式，讀 `shadow` 的舊值轉成對應的快速預設參數後採用，下次寫入存成新格式，不再寫 `shadow`。**不得丟棄設定檔**；未知的 `shadow` 值與改版前一樣解碼失敗。
+
+| 舊 `shadow` | `showsShadow` | 顏色來源 | `shadowColor` | X, Y | 模糊 |
+|---|---|---|---|---|---|
+| `none` | 關 | 自訂 | `#00000099` | 0, 2 | 4（保留柔和參數，打開即為柔和） |
+| `soft` | 開 | 自訂 | `#00000099`（0.6＝153/255） | 0, 2 | 4 |
+| `hard` | 開 | 自訂 | `#000000BF`（0.75 → 191/255） | 2, 2 | 0 |
+| `glow` | 開 | 文字色 | `#000000E6`（0.9 → 230/255，只用 alpha） | 0, 0 | 8 |
+
+預設值都落在 8 bit 上，所以讀舊檔不會觸發回寫。烘焙與預覽實測：文字不透明時所有組合與升級前逐 byte 相同；`hard` 配半透明文字也相同。**例外**：`glow` 配半透明文字（TASK-69 之後才有）時，Core Graphics 以浮點計算陰影 alpha，沒有任何 8 bit 值等於 0.9，部分像素差 1/255（`OverlayRendererShadowMigrationTests`）。
 
 **單位**：`(largestUnit, smallestUnit)` 轉成兩者之間（含）的軌道單位，例如 `(year, day)` → `[.year, .month, .day]`、`(week, day)` → `[.week, .day]`。轉換後的輸出文字與 0.1 **完全相同**（§4.5 的規則保證）。
 
@@ -312,7 +328,7 @@ alpha 存檔量化為 8 bit，50% 存成 128/255；烘焙與預覽的像素實�
 | FR-10.5 | **外框**：無｜描邊｜底框（TASK-70 #298 取代 無｜細描邊｜粗描邊｜半透明底框｜實心底框；粗細、留白的調整介面見 #298）。每個選項為無底色的透明方塊（外框 48pt、陰影 64pt），畫單一個「A」，字型**固定** SF Rounded Semibold（不跟目前字型），**固定配色**（不透明灰字 `#78746F`＋淡灰 `#C9C1B8` 描邊、底框、陰影；發光用字色），描邊用與烘焙相同的真正字形外框；「無」用 `nosign` 圖示；選中為方塊內緣 2pt `active` 圓角框（圓角 12）（TASK-49 取代 #155 的「Aa」與圓角 10／1.5pt）。**不顯示文字名稱**（2026-10-01 人類決定，#155） |
 | FR-10.6 | **外框顏色**：外框選項下方，同樣兩排、不加標題。第一排：「自動」（`circle.lefthalf.filled`，預設）＋全部 9 色色票＋彩虹圓；第二排同 FR-10.4 的「最近」。自動 ＝ 文字相對亮度 > 0.55 時用 `#1C1C1E`，否則 `#FFFFFF`。外框為「無」時整塊 disabled |
 | FR-10.7 | 用彩虹圓選定顏色後（文字或外框皆然），該色加到 `recentCustomColors` 最前面；已存在則移到最前；超過 7 個丟掉最舊的；和第一排色票相同的顏色不加入 |
-| FR-10.8 | **陰影**：無｜柔和｜硬陰影｜發光，選項樣式同 FR-10.5（固定配色：深色字＋灰色陰影；「無」用 `nosign`；圓角方形選定框）。預設柔和 |
+| FR-10.8 | **陰影**：無｜柔和｜硬陰影｜發光，選項樣式同 FR-10.5（固定配色：深色字＋灰色陰影；「無」用 `nosign`；圓角方形選定框）。預設柔和。TASK-71 #299 起這四個是**快速預設**：點了就填入參數（「無」只關閉陰影、保留參數），參數不等於任何預設時都不顯示選中；參數為顏色（自訂或跟隨文字色）、透明度（顏色 alpha）、X／Y 偏移、模糊，調整介面見 #299 |
 | FR-10.9 | **字級**：滑桿 70%～160%，步進 5%，右側顯示百分比。100% ＝ 0.1 的基準字級（照片短邊 5.5%） |
 | FR-10.10 | 外框與陰影**可以同時選「無」**，不顯示任何警告（解除 0.1 FR-4.6） |
 
@@ -322,9 +338,10 @@ alpha 存檔量化為 8 bit，50% 存成 128/255；烘焙與預覽的像素實�
 |---|---|
 | 描邊 | 寬 `strokeWidth`（1～6，預設 2），外框色 |
 | 底框 | 外框色（透明度即其 alpha），圓角 8，內距 `boxPadding` × `boxPadding`×0.5（0～24，預設 12×6） |
-| 柔和陰影 | 黑色，offset (0, 2)，blur 4，opacity 0.6 |
-| 硬陰影 | 黑色，offset (2, 2)，blur 0，opacity 0.75 |
-| 發光 | 文字色，offset (0, 0)，blur 8，opacity 0.9 |
+| 陰影 | 偏移 (`shadowOffsetX`, `shadowOffsetY`)、模糊 `shadowBlur`；顏色為 `shadowColor` 或（跟隨文字色時）文字色 RGB，alpha 一律取 `shadowColor` 的 alpha，只套用一次（文字 alpha 已透過投影的字形帶入，#305）。疊在描邊／底框外 |
+| 柔和陰影預設 | 黑色，offset (0, 2)，blur 4，opacity 0.6 |
+| 硬陰影預設 | 黑色，offset (2, 2)，blur 0，opacity 191/255（0.5 為 0.75） |
+| 發光預設 | 跟隨文字色，offset (0, 0)，blur 8，opacity 230/255（0.5 為 0.9） |
 
 ### 5.5 FR-11：格式分頁（D-4）
 

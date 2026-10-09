@@ -987,3 +987,164 @@ final class CameraProfileOutlineTests: XCTestCase {
         }
     }
 }
+
+// MARK: - TASK-71: shadow parameters
+
+/// Covers TASK-71 71.2 and 71.5 through `ProfileStore`: 0.5 shadows load as
+/// their presets without a rewrite, parameters survive a restart, and values
+/// out of range are never written.
+final class CameraProfileShadowTests: XCTestCase {
+
+    private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    private var defaults = UserDefaults.standard
+    private var suiteName = ""
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("CameraProfileShadowTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = "CameraProfileShadowTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        try super.tearDownWithError()
+    }
+
+    private var fileURL: URL {
+        directory.appendingPathComponent(ProfileStore.fileName)
+    }
+
+    private func makeStore() throws -> ProfileStore {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+    }
+
+    /// One 0.5 record with a non-default value in every field.
+    private func record(index: Int, shadow: String) -> String {
+        """
+        {"id":"00000000-0000-0000-0000-00000000071\(index)","name":"陰影\(index)",\
+        "startDate":{"year":2025,"month":1,"day":15},\
+        "countingRule":"dayZero","showDayCount":true,"showDate":true,"showName":true,\
+        "displayUnits":["month","day"],"useAgeWording":false,\
+        "position":{"x":0.25,"y":0.75},\
+        "style":{"fontID":"songti","textColor":"#FF6B9DB3","outline":"thickStroke","outlineColor":"#0A84FF",\
+        "shadow":"\(shadow)","sizeScale":120},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+    }
+
+    /// 71.2 / 71.5: every 0.5 shadow loads as its preset — written out here
+    /// independently of the decoder — with no profile lost, every other
+    /// field intact and the file untouched; saved and reloaded (a restart),
+    /// it is the same and no `shadow` name is written.
+    func testEveryLegacyShadowMigratesAndSurvivesARestart() throws {
+        let shadows = ["none", "soft", "hard", "glow"]
+        let before = Data("[\(shadows.enumerated().map { record(index: $0, shadow: $1) }.joined(separator: ","))]".utf8)
+        try before.write(to: fileURL, options: [.atomic])
+        typealias Expected = (shows: Bool, source: OverlayShadowColorSource, alpha8: Int, x: Double, y: Double,
+                              blur: Double)
+        let expected: [Expected] = [
+            (false, .custom, 153, 0, 2, 4),
+            (true, .custom, 153, 0, 2, 4),
+            (true, .custom, 191, 2, 2, 0),
+            (true, .textColor, 230, 0, 0, 8)
+        ]
+
+        let store = try makeStore()
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.count, shadows.count, "71.2: no profile lost")
+        for (index, profile) in loaded.enumerated() {
+            let style = profile.style
+            let row = expected[index]
+            let label = "71.2 \(shadows[index])"
+            XCTAssertEqual(style.showsShadow, row.shows, label)
+            XCTAssertEqual(style.shadowColorSource, row.source, label)
+            XCTAssertEqual(style.shadowColor, OverlayColor(red8: 0, green8: 0, blue8: 0,
+                                                           opacity: Double(row.alpha8) / 255), label)
+            XCTAssertEqual(style.shadowOffsetX, row.x, label)
+            XCTAssertEqual(style.shadowOffsetY, row.y, label)
+            XCTAssertEqual(style.shadowBlur, row.blur, label)
+            XCTAssertEqual(style.shadowPreset?.rawValue, shadows[index], label)
+            XCTAssertEqual(style.textColor, OverlayColor(hex: "#FF6B9DB3"), label)
+            XCTAssertEqual(style.outline, .stroke, label)
+            XCTAssertEqual(style.strokeWidth, 4, label)
+            XCTAssertEqual(style.outlineColor, OverlayColor(hex: "#0A84FF"), label)
+            XCTAssertEqual(style.fontID, .songti, label)
+            XCTAssertEqual(style.sizeScale, 120, label)
+            XCTAssertEqual(profile.name, "陰影\(index)")
+            XCTAssertEqual(profile.countingRule, .dayZero)
+            XCTAssertEqual(profile.position, .custom(x: 0.25, y: 0.75))
+        }
+        XCTAssertEqual(try Data(contentsOf: fileURL), before, "71.2: loading alone does not rewrite the file")
+
+        try store.update(loaded[0])
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertFalse(text.contains("\"shadow\""), "71.2: the 0.5 shadow name is written back")
+        XCTAssertEqual(try makeStore().load().map(\.style), loaded.map(\.style), "71.5 after a restart")
+    }
+
+    /// 71.5: parameters set through the store come back from a fresh store.
+    func testParametersSurviveARestart() throws {
+        let store = try makeStore()
+        store.load()
+        var style = OverlayStyle(shadow: .glow)
+        style.shadowColorSource = .custom
+        style.shadowColor = OverlayColor(red8: 0xED, green8: 0x49, blue8: 0x56, opacity: 0.35)
+        style.shadowOffsetX = -6.5
+        style.shadowOffsetY = 8
+        style.shadowBlur = 12.5
+        let added = try store.add(CameraProfile(name: "陰影參數", startDate: DateFixture.components(2025, 1, 15),
+                                                style: style))
+
+        let reloaded = try XCTUnwrap(try makeStore().load().first { $0.id == added.id }, "71.5: profile kept")
+        XCTAssertEqual(reloaded.style, added.style, "71.5")
+        XCTAssertEqual(reloaded.style.shadowColorSource, .custom, "71.5")
+        XCTAssertEqual(reloaded.style.shadowOffsetX, -6.5, "71.5")
+        XCTAssertEqual(reloaded.style.shadowOffsetY, 8, "71.5")
+        XCTAssertEqual(reloaded.style.shadowBlur, 12.5, "71.5")
+        XCTAssertEqual(reloaded.style.shadowOpacity, 0.35, accuracy: 0.5 / 255, "71.5")
+        XCTAssertNil(reloaded.style.shadowPreset, "71.3: custom parameters name no preset")
+    }
+
+    /// 71.5: values out of range are rejected and never written.
+    func testOutOfRangeParametersAreRejected() throws {
+        let store = try makeStore()
+        store.load()
+        func style(_ edit: (inout OverlayStyle) -> Void) -> OverlayStyle {
+            var style = OverlayStyle()
+            edit(&style)
+            return style
+        }
+        let cases: [(OverlayStyle, CameraProfileValidationError)] = [
+            (style { $0.shadowOffsetX = -8.5 }, .shadowParameterOutOfRange),
+            (style { $0.shadowOffsetX = .nan }, .shadowParameterOutOfRange),
+            (style { $0.shadowOffsetY = 9 }, .shadowParameterOutOfRange),
+            (style { $0.shadowBlur = -0.1 }, .shadowParameterOutOfRange),
+            (style { $0.shadowBlur = 16.5 }, .shadowParameterOutOfRange),
+            (style { $0.showsShadow = false; $0.shadowBlur = 30 }, .shadowParameterOutOfRange),
+            (style { $0.shadowOpacity = 0.04 }, .colorNotStorable),
+            (style { $0.shadowColor = OverlayColor(red: 1.2, green: 0, blue: 0) }, .colorNotStorable)
+        ]
+        for (index, (style, error)) in cases.enumerated() {
+            let name = "陰影超出\(index)"
+            let profile = CameraProfile(name: name, startDate: DateFixture.components(2025, 1, 15), style: style)
+            XCTAssertThrowsError(try profile.validatedForPersistence(calendar: DateFixture.taipei), "71.5 \(index)") {
+                XCTAssertEqual($0 as? CameraProfileValidationError, error, "71.5 \(index)")
+            }
+            XCTAssertThrowsError(try store.add(profile), "71.5 \(index)")
+            XCTAssertFalse((try? String(contentsOf: fileURL, encoding: .utf8))?.contains(name) ?? false,
+                           "71.5: \(name) not written")
+        }
+        let bounds = [style { $0.shadowOffsetX = -8; $0.shadowOffsetY = 8; $0.shadowBlur = 0 },
+                      style { $0.shadowOffsetX = 8; $0.shadowOffsetY = -8; $0.shadowBlur = 16 }]
+        for style in bounds {
+            let profile = CameraProfile(name: "邊界", startDate: DateFixture.components(2025, 1, 15), style: style)
+            XCTAssertNoThrow(try profile.validatedForPersistence(calendar: DateFixture.taipei), "71.5 bounds")
+        }
+    }
+}

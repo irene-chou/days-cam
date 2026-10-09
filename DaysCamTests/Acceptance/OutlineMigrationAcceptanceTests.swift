@@ -93,7 +93,7 @@ final class OutlineMigrationAcceptanceTests: XCTestCase {
                 let style = profile.style
                 XCTAssertEqual(style.outline, old.drawing.outline, label)
                 XCTAssertEqual(style.textColor, .white, label)
-                XCTAssertEqual(style.shadow, .soft, label)
+                XCTAssertEqual(style.shadowPreset, .soft, label)
                 XCTAssertEqual(style.sizeScale, 100, label)
                 let expectedColor = color.flatMap(OverlayColor.init(hex:))
                 XCTAssertEqual(style.outlineColor?.red, expectedColor?.red, "70.2: \(label): RGB untouched")

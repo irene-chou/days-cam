@@ -64,12 +64,59 @@ enum OverlayOutline: String, Codable, CaseIterable {
     case box
 }
 
-/// The shadow drawn behind the text (PRD 0.2 FR-10.8).
-enum OverlayShadow: String, Codable, CaseIterable {
+/// A quick preset for the shadow (TASK-71, replacing PRD 0.2 FR-10.8's four
+/// fixed shadows): applying one fills in the style's shadow parameters, and
+/// `OverlayStyle.shadowPreset` names the one they still equal, if any.
+///
+/// The raw values are also the four shadows 0.2–0.5 stored in `shadow`, which
+/// migrate to the same parameters.
+enum OverlayShadowPreset: String, CaseIterable {
+    /// Turns the shadow off, keeping its parameters.
     case none
     case soft
     case hard
     case glow
+
+    /// Where the preset's color comes from; `nil` for `.none`.
+    var colorSource: OverlayShadowColorSource? {
+        switch self {
+        case .none: return nil
+        case .soft, .hard: return .custom
+        case .glow: return .textColor
+        }
+    }
+
+    /// The preset's alpha, on an 8-bit step so a saved style still equals
+    /// the preset; `nil` for `.none`. 0.5 drew 0.6, 0.75 and 0.9, which bake
+    /// to the same pixels (`OverlayRendererShadowMigrationTests`).
+    var opacity: Double? {
+        switch self {
+        case .none: return nil
+        case .soft: return 153.0 / 255
+        case .hard: return 191.0 / 255
+        case .glow: return 230.0 / 255
+        }
+    }
+
+    /// The preset's offset and blur, in points at a 17pt font; `nil` for
+    /// `.none`.
+    var geometry: (offsetX: Double, offsetY: Double, blur: Double)? {
+        switch self {
+        case .none: return nil
+        case .soft: return (0, 2, 4)
+        case .hard: return (2, 2, 0)
+        case .glow: return (0, 0, 8)
+        }
+    }
+}
+
+/// Where the shadow's color comes from (TASK-71).
+enum OverlayShadowColorSource: String, Codable, CaseIterable {
+    /// The text color's RGB at the shadow color's alpha, following later
+    /// text color changes: how the glow preset glows.
+    case textColor
+    /// `OverlayStyle.shadowColor` as is.
+    case custom
 }
 
 /// How an overlay looks: font, colors, outline, shadow and size
@@ -108,6 +155,11 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     static let boxPaddingRange = 0.0...24.0
     /// `boxPadding` of a new style, and of 0.5's two boxes (TASK-70).
     static let defaultBoxPadding = 12.0
+    /// Allowed `shadowOffsetX` and `shadowOffsetY`, in points at a 17pt font
+    /// (TASK-71).
+    static let shadowOffsetRange = -8.0...8.0
+    /// Allowed `shadowBlur`, in points at a 17pt font (TASK-71).
+    static let shadowBlurRange = 0.0...16.0
 
     var fontID: OverlayFontID
     var textColor: OverlayColor
@@ -127,7 +179,23 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// `OverlayTheme.boxVerticalPaddingRatio`. Kept while another outline
     /// is chosen.
     var boxPadding: Double
-    var shadow: OverlayShadow
+    /// Whether a shadow is drawn (TASK-71). Turning it off keeps the
+    /// parameters below.
+    var showsShadow: Bool
+    /// Where the shadow's RGB comes from (TASK-71).
+    var shadowColorSource: OverlayShadowColorSource
+    /// The shadow color. Its alpha is the shadow's opacity whatever
+    /// `shadowColorSource` is; its RGB is used only for `.custom`, and kept
+    /// while the text color is followed. Draw with `resolvedShadowColor`.
+    var shadowColor: OverlayColor
+    /// Horizontal shadow offset, in points at a 17pt font, positive to the
+    /// right; `shadowOffsetRange`.
+    var shadowOffsetX: Double
+    /// Vertical shadow offset, in points at a 17pt font, positive downward;
+    /// `shadowOffsetRange`.
+    var shadowOffsetY: Double
+    /// Shadow blur radius, in points at a 17pt font; `shadowBlurRange`.
+    var shadowBlur: Double
     /// Size relative to the 0.1 base size, in percent: 70...160, step 5.
     var sizeScale: Int
 
@@ -140,7 +208,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
          autoOutlineOpacity: Double = 1.0,
          strokeWidth: Double = Self.defaultStrokeWidth,
          boxPadding: Double = Self.defaultBoxPadding,
-         shadow: OverlayShadow = .soft,
+         shadow: OverlayShadowPreset = .soft,
          sizeScale: Int = 100) {
         self.fontID = fontID
         self.textColor = textColor
@@ -149,8 +217,17 @@ struct OverlayStyle: Equatable, Hashable, Codable {
         self.autoOutlineOpacity = autoOutlineOpacity
         self.strokeWidth = strokeWidth
         self.boxPadding = boxPadding
-        self.shadow = shadow
         self.sizeScale = sizeScale
+        showsShadow = false
+        shadowColorSource = .custom
+        shadowColor = .black
+        shadowOffsetX = 0
+        shadowOffsetY = 0
+        shadowBlur = 0
+        // Soft first, so that a style created without a shadow turns on to
+        // the soft one.
+        applyShadowPreset(.soft)
+        applyShadowPreset(shadow)
     }
 
     /// The color outlines and boxes are actually drawn in: the chosen
@@ -179,10 +256,74 @@ struct OverlayStyle: Equatable, Hashable, Codable {
         Self.strokeWidthRange.contains(strokeWidth) && Self.boxPaddingRange.contains(boxPadding)
     }
 
+    /// Whether the shadow offsets and blur lie in their ranges (TASK-71).
+    var hasValidShadowParameters: Bool {
+        Self.shadowOffsetRange.contains(shadowOffsetX) && Self.shadowOffsetRange.contains(shadowOffsetY)
+            && Self.shadowBlurRange.contains(shadowBlur)
+    }
+
     /// Whether `sizeScale` lies in 70...160 and is a multiple of 5.
     var hasValidSizeScale: Bool {
         (Self.minimumSizeScale...Self.maximumSizeScale).contains(sizeScale)
             && sizeScale % Self.sizeScaleStep == 0
+    }
+}
+
+// MARK: - Shadow (TASK-71)
+
+extension OverlayStyle {
+    /// The color the shadow is actually drawn in: `shadowColor`, or the text
+    /// color's RGB at `shadowColor`'s alpha when following the text color.
+    /// Opaque text or not, the alpha is the shadow's own: the text's alpha
+    /// already reaches the shadow through the ink casting it (#305).
+    var resolvedShadowColor: OverlayColor {
+        switch shadowColorSource {
+        case .textColor: return textColor.withOpacity(shadowColor.opacity)
+        case .custom: return shadowColor
+        }
+    }
+
+    /// The shadow's alpha, `shadowColor.opacity`, whichever color source is
+    /// used.
+    var shadowOpacity: Double {
+        get { shadowColor.opacity }
+        set { shadowColor = shadowColor.withOpacity(newValue) }
+    }
+
+    /// The preset the shadow currently equals, or `nil` once a parameter has
+    /// been changed away from every preset (TASK-71 71.3). Any style with the
+    /// shadow off is `.none`. Compares the stored values exactly, after the
+    /// 8-bit rounding of the shadow color; the RGB is ignored while following
+    /// the text color.
+    var shadowPreset: OverlayShadowPreset? {
+        guard showsShadow else { return OverlayShadowPreset.none }
+        let color = shadowColor.quantized
+        return OverlayShadowPreset.allCases.first { preset in
+            guard let source = preset.colorSource, let opacity = preset.opacity,
+                  let geometry = preset.geometry else { return false }
+            let colorMatches = source == .textColor
+                || (color.red == 0 && color.green == 0 && color.blue == 0)
+            return source == shadowColorSource && colorMatches && color.opacity == opacity
+                && geometry.offsetX == shadowOffsetX && geometry.offsetY == shadowOffsetY
+                && geometry.blur == shadowBlur
+        }
+    }
+
+    /// Fills in `preset`'s parameters and turns the shadow on, or for
+    /// `.none` only turns it off (TASK-71 71.3). Soft and hard are black;
+    /// glow follows the text color and keeps `shadowColor`'s RGB.
+    mutating func applyShadowPreset(_ preset: OverlayShadowPreset) {
+        guard let source = preset.colorSource, let opacity = preset.opacity,
+              let geometry = preset.geometry else {
+            showsShadow = false
+            return
+        }
+        showsShadow = true
+        shadowColorSource = source
+        shadowColor = (source == .custom ? OverlayColor.black : shadowColor).withOpacity(opacity)
+        shadowOffsetX = geometry.offsetX
+        shadowOffsetY = geometry.offsetY
+        shadowBlur = geometry.blur
     }
 }
 
@@ -220,12 +361,15 @@ extension OverlayStyle {
     }
 }
 
-// MARK: - Coding, including 0.2–0.5 outlines (TASK-70)
+// MARK: - Coding, including 0.2–0.5 outlines (TASK-70) and shadows (TASK-71)
 
 extension OverlayStyle {
     private enum CodingKeys: String, CodingKey {
         case fontID, textColor, outline, outlineColor, autoOutlineOpacity, strokeWidth, boxPadding
-        case shadow, sizeScale
+        case showsShadow, shadowColorSource, shadowColor, shadowOffsetX, shadowOffsetY, shadowBlur
+        case sizeScale
+        /// The 0.2–0.5 shadow name. Read, never written (TASK-71).
+        case shadow
     }
 
     /// The four outlines 0.2–0.5 stored in `outline`. Read, never written.
@@ -253,6 +397,11 @@ extension OverlayStyle {
     /// The halved alpha goes to `outlineColor`, or to `autoOutlineOpacity`
     /// when the color is automatic, so "automatic" survives. It is raised to
     /// `OverlayColor.minimumStorableOpacity` if halving goes below it.
+    /// A style without `showsShadow` is from 0.2–0.5: its `shadow` name
+    /// becomes that preset's parameters (TASK-71 71.2), which draw the same.
+    /// `none` keeps the soft parameters, so turning the shadow on gives the
+    /// soft one.
+    ///
     /// Parameters out of range — only a hand-edited file has them — are
     /// clamped into range, so the profile is kept.
     init(from decoder: Decoder) throws {
@@ -260,8 +409,32 @@ extension OverlayStyle {
         fontID = try container.decode(OverlayFontID.self, forKey: .fontID)
         textColor = try container.decode(OverlayColor.self, forKey: .textColor)
         outlineColor = try container.decodeIfPresent(OverlayColor.self, forKey: .outlineColor)
-        shadow = try container.decode(OverlayShadow.self, forKey: .shadow)
         sizeScale = try container.decode(Int.self, forKey: .sizeScale)
+
+        let showsShadow = try container.decodeIfPresent(Bool.self, forKey: .showsShadow)
+        var preset = OverlayShadowPreset.soft
+        if showsShadow == nil {
+            let shadowName = try container.decode(String.self, forKey: .shadow)
+            guard let legacyPreset = OverlayShadowPreset(rawValue: shadowName) else {
+                throw DecodingError.dataCorruptedError(forKey: .shadow, in: container,
+                                                       debugDescription: "Unknown shadow \(shadowName)")
+            }
+            preset = legacyPreset
+        }
+        let base = OverlayStyle(shadow: preset)
+        self.showsShadow = showsShadow ?? base.showsShadow
+        shadowColorSource = try container.decodeIfPresent(OverlayShadowColorSource.self,
+                                                          forKey: .shadowColorSource) ?? base.shadowColorSource
+        shadowColor = try container.decodeIfPresent(OverlayColor.self, forKey: .shadowColor) ?? base.shadowColor
+        shadowOffsetX = Self.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .shadowOffsetX) ?? base.shadowOffsetX,
+            to: Self.shadowOffsetRange)
+        shadowOffsetY = Self.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .shadowOffsetY) ?? base.shadowOffsetY,
+            to: Self.shadowOffsetRange)
+        shadowBlur = Self.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .shadowBlur) ?? base.shadowBlur,
+            to: Self.shadowBlurRange)
 
         let minimumOpacity = OverlayColor.minimumStorableOpacity
         autoOutlineOpacity = Self.clamped(
@@ -301,7 +474,8 @@ extension OverlayStyle {
         }
     }
 
-    /// Encodes the current format; never writes a 0.2–0.5 outline name.
+    /// Encodes the current format; never writes a 0.2–0.5 outline or shadow
+    /// name.
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(fontID, forKey: .fontID)
@@ -311,7 +485,12 @@ extension OverlayStyle {
         try container.encode(autoOutlineOpacity, forKey: .autoOutlineOpacity)
         try container.encode(strokeWidth, forKey: .strokeWidth)
         try container.encode(boxPadding, forKey: .boxPadding)
-        try container.encode(shadow, forKey: .shadow)
+        try container.encode(showsShadow, forKey: .showsShadow)
+        try container.encode(shadowColorSource, forKey: .shadowColorSource)
+        try container.encode(shadowColor, forKey: .shadowColor)
+        try container.encode(shadowOffsetX, forKey: .shadowOffsetX)
+        try container.encode(shadowOffsetY, forKey: .shadowOffsetY)
+        try container.encode(shadowBlur, forKey: .shadowBlur)
         try container.encode(sizeScale, forKey: .sizeScale)
     }
 

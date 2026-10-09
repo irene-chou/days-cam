@@ -28,14 +28,18 @@ enum CameraProfileValidationError: Error, Equatable {
     case sizeScaleOutOfRange(Int)
     /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
     case customPositionOutOfRange(x: Double, y: Double)
-    /// `style.textColor` or `style.outlineColor` has an RGB component outside
-    /// 0...1, or one of them or `style.autoOutlineOpacity` has an opacity
-    /// outside `OverlayColor.minimumStorableOpacity`...1 (PRD 0.2 §4.1 as
-    /// amended by TASK-69 and TASK-70).
+    /// `style.textColor`, `style.outlineColor` or `style.shadowColor` has an
+    /// RGB component outside 0...1, or one of them or
+    /// `style.autoOutlineOpacity` has an opacity outside
+    /// `OverlayColor.minimumStorableOpacity`...1 (PRD 0.2 §4.1 as amended by
+    /// TASK-69, TASK-70 and TASK-71).
     case colorNotStorable
     /// `style.strokeWidth` or `style.boxPadding` is outside its range
     /// (TASK-70).
     case outlineParameterOutOfRange
+    /// `style.shadowOffsetX`, `style.shadowOffsetY` or `style.shadowBlur` is
+    /// outside its range (TASK-71).
+    case shadowParameterOutOfRange
 }
 
 /// One saved set of overlay settings: what to print, how to count and how it looks.
@@ -133,7 +137,8 @@ extension CameraProfile {
     ///
     /// Rounds the style colors to 8 bits per component, alpha included
     /// (TASK-69), and `style.autoOutlineOpacity` to the same 8-bit steps
-    /// (TASK-70), so the saved profile equals the one read back.
+    /// (TASK-70), so the saved profile equals the one read back. The shadow
+    /// color too (TASK-71).
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,6 +152,7 @@ extension CameraProfile {
         copy.style.textColor = style.textColor.quantized
         copy.style.outlineColor = style.outlineColor?.quantized
         copy.style.autoOutlineOpacity = (style.autoOutlineOpacity * 255).rounded() / 255
+        copy.style.shadowColor = style.shadowColor.quantized
         return copy
     }
 
@@ -209,13 +215,17 @@ extension CameraProfile {
             throw CameraProfileValidationError.customPositionOutOfRange(x: x, y: y)
         }
 
-        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true,
+        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true, style.shadowColor.isStorable,
               (OverlayColor.minimumStorableOpacity...1.0).contains(style.autoOutlineOpacity) else {
             throw CameraProfileValidationError.colorNotStorable
         }
 
         guard style.hasValidOutlineParameters else {
             throw CameraProfileValidationError.outlineParameterOutOfRange
+        }
+
+        guard style.hasValidShadowParameters else {
+            throw CameraProfileValidationError.shadowParameterOutOfRange
         }
     }
 
