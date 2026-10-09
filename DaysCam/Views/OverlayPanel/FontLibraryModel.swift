@@ -225,6 +225,7 @@ final class FontLibraryModel: ObservableObject {
     }
 
     static let licenseRowTitle = "字型授權"
+    static let weightSaveFailedMessage = "無法儲存字重設定"
     static let deleteFailedMessage = "無法刪除，請再試一次"
     /// How long the check of a just-finished download stays.
     static let completionCheckDuration: TimeInterval = 1.5
@@ -245,9 +246,9 @@ final class FontLibraryModel: ObservableObject {
     private let library: any FontListControlling
     private let profiles: () -> [CameraProfile]
     private let applyFont: (OverlayFontID, UUID) -> Void
-    /// Writes an already usable weight to the profile; never called for a
-    /// face that is still being downloaded.
-    var applyWeight: (OverlayFontID, String) -> Void
+    /// Writes an already usable weight to the profile and returns whether it
+    /// was saved; never called for a face that is still being downloaded.
+    var applyWeight: (OverlayFontID, String) -> Bool
     private var knownStates: [OverlayFontID: FontState]
     /// States of the non-default faces of the current font, as last seen.
     private var knownWeightStates: [FontDownloadID: FontState] = [:]
@@ -278,7 +279,7 @@ final class FontLibraryModel: ObservableObject {
          library: any FontListControlling,
          profiles: @escaping () -> [CameraProfile],
          applyFont: @escaping (OverlayFontID, UUID) -> Void,
-         applyWeight: @escaping (OverlayFontID, String) -> Void = { _, _ in }) {
+         applyWeight: @escaping (OverlayFontID, String) -> Bool = { _, _ in true }) {
         self.profileID = profileID
         self.currentFontID = currentFontID
         self.currentWeightID = currentWeightID
@@ -431,7 +432,7 @@ final class FontLibraryModel: ObservableObject {
         switch library.state(for: fontID, weightID: weight.id) {
         case .available:
             pendingWeight = nil
-            applyWeight(fontID, weight.id)
+            if !applyWeight(fontID, weight.id) { post(Self.weightSaveFailedMessage) }
         case .notDownloaded, .failed:
             pendingWeight = unit
             if !library.download(fontID, weightID: weight.id) { pendingWeight = nil }
@@ -447,7 +448,11 @@ final class FontLibraryModel: ObservableObject {
         guard pendingWeight == unit else { return }
         pendingWeight = nil
         guard unit.fontID == currentFontID else { return }
-        applyWeight(unit.fontID, unit.weightID)
+        guard applyWeight(unit.fontID, unit.weightID) else {
+            // Saving failed: the old weight stays and the failure is shown.
+            if isVisible { post(Self.weightSaveFailedMessage) }
+            return
+        }
         if isVisible {
             post("已套用「\(FontStateText.weightName(fontID: unit.fontID, weightID: unit.weightID))」")
         }

@@ -419,7 +419,7 @@ final class FontWeightListTests: XCTestCase {
                                      library: library,
                                      profiles: { [] },
                                      applyFont: { id, _ in calls.fonts.append(id) },
-                                     applyWeight: { _, weightID in calls.weights.append(weightID) })
+                                     applyWeight: { _, weightID in calls.weights.append(weightID); return true })
         model.listDidAppear()
         return model
     }

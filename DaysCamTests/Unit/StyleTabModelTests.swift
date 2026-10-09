@@ -201,6 +201,41 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
+    func testASaveFailureAfterTheDownloadKeepsTheOldWeightAndShowsFailure() {
+        struct SaveError: Error {}
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let unit = FontDownloadID(fontID: .notoSerifTC, weightID: "black")
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("black")
+        spy.shouldThrow = SaveError()
+        library.weightStates[unit] = .available
+        library.weightDownloadDidFinish.send(unit)
+        XCTAssertEqual(model.profile.style.fontWeight, "bold", "存檔失敗保留原字重")
+        XCTAssertEqual(model.fontList.currentWeightID, "bold")
+        XCTAssertNil(model.fontList.pendingWeight, "pending 清除")
+        XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage, "顯示失敗而非已套用")
+        XCTAssertNotNil(model.lastError)
+        XCTAssertTrue(spy.updated.isEmpty)
+        // The next edit does not write the unsaved weight back.
+        spy.shouldThrow = nil
+        model.selectTextColor(OverlayStyle.swatches[2])
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "bold")
+    }
+
+    func testASaveFailureOnAnAvailableWeightKeepsTheOldOneAndShowsFailure() {
+        struct SaveError: Error {}
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[FontDownloadID(fontID: .notoSerifTC, weightID: "regular")] = .available
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        spy.shouldThrow = SaveError()
+        model.fontList.didTapWeight("regular")
+        XCTAssertEqual(model.profile.style.fontWeight, "bold")
+        XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage)
+    }
+
     func testApplyFontWeightIgnoresOtherFontsUnknownIDsAndTheCurrentWeight() {
         let spy = Spy()
         let model = makeWeightModel(library: FakeFontLibrary([.notoSerifTC: .available]), spy: spy)
