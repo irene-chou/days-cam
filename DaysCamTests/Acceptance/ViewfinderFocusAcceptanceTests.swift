@@ -201,7 +201,6 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     /// Codex P2 on #337: replies to earlier requests arriving after the lift
     /// must not drop the reticle or the last requested bias.
     func testLateRepliesAfterReleaseKeepTheReticleAndTheLastBias() {
-        XCTExpectFailure("QA #337 (Codex P2, remove when fix/task-73-focus-followups merges): late intermediate replies clear pending and the .initial one hides the reticle")
         let model = makeModel()
         tap(model, at: CGPoint(x: 150, y: 200))
         model.receive(FocusExposureState(isLocked: false, exposureBias: 1.0))
@@ -214,7 +213,24 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
         XCTAssertEqual(model.displayedBias, biases.last ?? 0, accuracy: 0.001)
     }
 
-    // MARK: cross ownership: CameraService.exposureBiasRange
+    /// Codex P2 on #337: a reset at rest (state already .initial) still reaches the UI.
+    func testResetPublisherFiresEvenWhenTheStateWasAlreadyAtRest() {
+        let service = CameraService(isCaptureSupported: false)
+        var resets = 0
+        let cancel = service.focusExposureResetPublisher.sink { resets += 1 }
+        service.resetFocusExposure(on: BiasRangeDevice()); pump()
+        XCTAssertEqual(resets, 1)
+        cancel.cancel()
+    }
+
+    func testResetEventRemovesTheReticleOfAPlainTap() {
+        let model = makeModel()
+        tap(model, at: CGPoint(x: 150, y: 200))
+        model.receiveReset()
+        XCTAssertNil(model.reticle)
+    }
+
+    // MARK: cross ownership: CameraService.exposureBiasRange: CameraService.exposureBiasRange
 
     private func pump() {
         let done = expectation(description: "main drained")
