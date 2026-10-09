@@ -253,8 +253,10 @@ final class ViewfinderFocusModel: ObservableObject {
         // A new point starts from the default exposure and no lock (TASK-88,
         // as the system camera does). Until the camera answers, 0 and no lock
         // show, and a bias request still waiting is void. If the request
-        // fails, `receiveFailure` shows what the device really has.
-        pendingBias = 0
+        // fails, `receiveFailure` shows what the device really has. A long
+        // press lock keeps the bias (the camera does not reset it), so it
+        // waits for no zero and shows the device's own value.
+        pendingBias = lock ? nil : 0
         lastSentBias = nil
         isLockClearPending = !lock
         if !lock { isLocked = false }

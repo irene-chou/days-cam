@@ -340,6 +340,25 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertTrue(tagged.allSatisfy { $0.1 == 7 })
     }
 
+    /// Codex P1 on #370: a long-press lock keeps the bias, so the display must too.
+    func testLongPressLockKeepsTheDisplayedBias() async {
+        let model = makeModel(hold: .milliseconds(40))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 110), viewfinderSize: size)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
+        model.touchEnded()
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001)
+        let spot = CGPoint(x: 60, y: 80)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        await settle(150)
+        XCTAssertEqual(locked.count, 1)
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001, "no zero is waited for")
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 0.5))
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001)
+        XCTAssertTrue(model.isLocked)
+    }
+
     // MARK: exposure drag
 
     private func startAdjusting(_ model: ViewfinderFocusModel) -> CGPoint {
