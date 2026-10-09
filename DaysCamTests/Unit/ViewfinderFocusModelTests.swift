@@ -12,14 +12,20 @@ final class ViewfinderFocusModelTests: XCTestCase {
     private var accepts = true
     private var pinching = false
     private let size = CGSize(width: 300, height: 400)
+    private var requestCounter = 0
+
+    private func nextRequestID() -> Int {
+        requestCounter += 1
+        return requestCounter
+    }
 
     private func makeModel(hold: Duration = .milliseconds(40),
                            dim: Duration = .milliseconds(60),
                            hide: Duration = .milliseconds(60)) -> ViewfinderFocusModel {
         let model = ViewfinderFocusModel(
             actions: FocusExposureActions(
-                focusAndExpose: { [unowned self] in focused.append($0) },
-                lock: { [unowned self] in locked.append($0) },
+                focusAndExpose: { [unowned self] in focused.append($0); return nextRequestID() },
+                lock: { [unowned self] in locked.append($0); return nextRequestID() },
                 setBias: { [unowned self] in biases.append($0) },
                 deviceBiasRange: { [unowned self] in deviceRange }),
             convert: { point, size in CGPoint(x: point.x / size.width, y: point.y / size.height) },
@@ -90,8 +96,8 @@ final class ViewfinderFocusModelTests: XCTestCase {
     /// 73.7: an unconvertible point does nothing and shows nothing.
     func testUnconvertiblePointIsIgnored() {
         let model = ViewfinderFocusModel(
-            actions: FocusExposureActions(focusAndExpose: { [unowned self] in focused.append($0) },
-                                          lock: { _ in }, setBias: { _ in }, deviceBiasRange: { -2...2 }),
+            actions: FocusExposureActions(focusAndExpose: { [unowned self] in focused.append($0); return 1 },
+                                          lock: { _ in 1 }, setBias: { _ in }, deviceBiasRange: { -2...2 }),
             convert: { _, _ in nil })
         model.touchChanged(startLocation: .zero, location: .zero, viewfinderSize: size)
         model.touchEnded()
@@ -374,6 +380,105 @@ final class ViewfinderFocusModelTests: XCTestCase {
         model.touchEnded()
         model.receive(.initial)
         XCTAssertNotNil(model.reticle)
+    }
+
+    /// TASK-82: a reset the device ran before a newer tap, announced after it,
+    /// must not close the new tap's frame.
+    func testLateResetFromBeforeTheLatestTapKeepsTheFrame() {
+        let model = makeModel()
+        tap(model)
+        model.receiveReset(appliedRequestID: 0)
+        XCTAssertNotNil(model.reticle)
+    }
+
+    /// A reset that ran after the latest tap closes it.
+    func testResetAfterTheLatestTapClosesTheFrame() {
+        let model = makeModel()
+        tap(model)
+        model.receiveReset(appliedRequestID: requestCounter)
+        XCTAssertNil(model.reticle)
+    }
+
+    /// The race in order: tap, reset on the device, second tap, then the
+    /// reset's event arrives. The second frame stays; an event for a reset
+    /// after the second tap closes it.
+    func testResetBetweenTwoTapsKeepsTheSecondFrameOnly() {
+        let model = makeModel()
+        tap(model)
+        let first = requestCounter
+        tap(model, at: CGPoint(x: 60, y: 80))
+        model.receiveReset(appliedRequestID: first)
+        XCTAssertEqual(model.reticle?.layerPoint, CGPoint(x: 60, y: 80))
+        model.receiveReset(appliedRequestID: requestCounter)
+        XCTAssertNil(model.reticle)
+    }
+
+    /// A late reset also leaves a lock and a bias the new request owns alone.
+    func testLateResetDoesNotClearLockOrBias() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 1))
+        tap(model)
+        model.receiveReset(appliedRequestID: 0)
+        XCTAssertTrue(model.isLocked)
+        XCTAssertEqual(model.displayedBias, 1)
+    }
+
+    // MARK: TASK-82 gaps from QA #337
+
+    /// 82.2: a panel that opens under the finger during the hold means no lock.
+    func testPanelOpeningDuringTheHoldDoesNotLock() async {
+        let model = makeModel()
+        let start = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        accepts = false
+        await settle(150)
+        model.touchEnded()
+        XCTAssertTrue(locked.isEmpty)
+        XCTAssertTrue(focused.isEmpty)
+        XCTAssertNil(model.reticle)
+    }
+
+    /// 82.3: a touch whose end never came does not swallow the next one.
+    func testNextTapIsHandledAfterATouchThatNeverEnded() async {
+        let model = makeModel()
+        let first = CGPoint(x: 40, y: 40)
+        model.touchChanged(startLocation: first, location: first, viewfinderSize: size)
+        await settle(150)
+        locked.removeAll()
+        let second = CGPoint(x: 200, y: 300)
+        tap(model, at: second)
+        XCTAssertEqual(focused, [CGPoint(x: 200 / 300, y: 300 / 400)])
+    }
+
+    /// 82.3: the stale touch is dropped, not ended: no tap comes from it.
+    func testAStaleTouchMakesNoTapOfItsOwn() {
+        let model = makeModel(hold: .seconds(5))
+        let first = CGPoint(x: 40, y: 40)
+        model.touchChanged(startLocation: first, location: first, viewfinderSize: size)
+        let second = CGPoint(x: 200, y: 300)
+        model.touchChanged(startLocation: second, location: second, viewfinderSize: size)
+        model.touchEnded()
+        XCTAssertEqual(focused, [CGPoint(x: 200 / 300, y: 300 / 400)])
+    }
+
+    /// 82.3: a cancelled gesture is discarded without a tap, and the hold dies.
+    func testDiscardedTouchNeitherTapsNorLocks() async {
+        let model = makeModel()
+        let start = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        model.discardTouch()
+        await settle(150)
+        XCTAssertTrue(focused.isEmpty)
+        XCTAssertTrue(locked.isEmpty)
+    }
+
+    /// 82.4: the UI and the service cut a device range beyond 2 EV the same way.
+    func testRangeBeyondTwoEVMatchesTheService() {
+        for range: ClosedRange<Float> in [3...5, -5 ... -3, -8...8, -1.5...1, 0...0] {
+            XCTAssertEqual(ViewfinderFocusModel.effectiveBiasRange(deviceRange: range),
+                           CameraService.exposureBiasRange(minimum: range.lowerBound, maximum: range.upperBound),
+                           "\(range)")
+        }
     }
 
     func testHideReticleClearsIt() {

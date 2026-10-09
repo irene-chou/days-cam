@@ -33,6 +33,10 @@ struct CameraScreen: View {
     /// ~0.15s, softer under Reduce Motion.
     @State private var flashOpacity: Double = 0
 
+    /// True while a finger is down on the viewfinder; SwiftUI resets it when a
+    /// gesture is cancelled too, which `onEnded` does not report (issue #303).
+    @GestureState private var isViewfinderTouched = false
+
     /// The panel's segmented control height, scaled with Dynamic Type
     /// (issue #139); fed to the layout metrics so the viewfinder yields the
     /// extra height.
@@ -401,12 +405,16 @@ struct CameraScreen: View {
         // pinch and the tap above keep working.
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
+                .updating($isViewfinderTouched) { _, state, _ in state = true }
                 .onChanged {
                     model.focusModel.touchChanged(startLocation: $0.startLocation, location: $0.location,
                                                   viewfinderSize: frameSize)
                 }
                 .onEnded { _ in model.focusModel.touchEnded() }
         )
+        .onChange(of: isViewfinderTouched) { _, touched in
+            if !touched { model.focusModel.discardTouch() }
+        }
         // Pinch to zoom (TASK-61, #274). Simultaneous so the overlay text's
         // own drag keeps working with one finger; once two fingers are down
         // `isPinching` turns that drag off (see the closures above).
