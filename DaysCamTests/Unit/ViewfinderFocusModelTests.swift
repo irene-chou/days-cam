@@ -317,6 +317,21 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertFalse(model.isLocked)
     }
 
+    /// Dragging the bias back through 0 is not a reset: the reticle stays.
+    func testDraggingTheBiasBackToZeroKeepsTheReticle() {
+        let model = makeModel(hold: .seconds(5))
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 190), viewfinderSize: size)
+        XCTAssertEqual(biases.last, 0)
+        model.receive(.initial)
+        XCTAssertNotNil(model.reticle)
+        model.touchEnded()
+        model.receive(.initial)
+        XCTAssertNotNil(model.reticle)
+    }
+
     func testHideReticleClearsIt() {
         let model = makeModel()
         tap(model)

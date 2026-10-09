@@ -239,11 +239,14 @@ final class ViewfinderFocusModel: ObservableObject {
         let wasAtRest = serviceState == .initial
         let isUnlockAnswer = expectsUnlockAnswer && !state.isLocked && state.exposureBias == serviceState.exposureBias
         expectsUnlockAnswer = false
+        // Dragging the bias back to 0 also lands on the initial state; that
+        // is the user's own request, not a reset.
+        let isOwnBiasAnswer = touch?.mode == .adjusting || pendingBias == state.exposureBias
         serviceState = state
         if touch?.mode != .adjusting { pendingBias = nil }
         if state == .initial {
             lastSentBias = nil
-            if !wasAtRest, !isUnlockAnswer { hideReticle() }
+            if !wasAtRest, !isUnlockAnswer, !isOwnBiasAnswer { hideReticle() }
         }
         isLocked = state.isLocked
         refreshDisplayedBias()
