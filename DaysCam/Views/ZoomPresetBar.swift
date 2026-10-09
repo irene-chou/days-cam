@@ -105,7 +105,7 @@ final class ZoomPresetExpansion: ObservableObject {
     }
 }
 
-/// The quick-zoom control in the picture's bottom-right corner (issues #279,
+/// The quick-zoom control in the picture's bottom-left corner (issues #279,
 /// #302): a 32pt round button showing the current zoom, which opens upward
 /// into the vertical capsule of presets, largest on top. Hidden while the
 /// panel is open. Observes the zoom model itself, so a pinch redraws only
@@ -130,7 +130,7 @@ struct ZoomPresetBar: View {
             // Out of the tree while hidden, so it is gone for VoiceOver and
             // takes no touches either.
             if shown {
-                ZStack(alignment: .bottomTrailing) {
+                ZStack(alignment: .bottomLeading) {
                     if expansion.isExpanded {
                         capsule(selected: selected)
                             .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
@@ -139,9 +139,9 @@ struct ZoomPresetBar: View {
                             .transition(.opacity)
                     }
                 }
-                .padding(.trailing, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2)
+                .padding(.leading, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2)
                 .padding(.bottom, Self.cornerInset)
-                .frame(width: pictureFrame.width, height: pictureFrame.height, alignment: .bottomTrailing)
+                .frame(width: pictureFrame.width, height: pictureFrame.height, alignment: .bottomLeading)
                 .position(x: pictureFrame.midX, y: pictureFrame.midY)
             }
         }

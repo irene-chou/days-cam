@@ -316,7 +316,9 @@ final class CameraScreenModel: ObservableObject {
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
         self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
-                                             zoomRange: { [cameraService] in cameraService.zoomRange },
+                                             zoomRange: { [cameraService] in
+                                                 Self.usesUITestZoomPlan ? ZoomRange(minimum: 0.5, maximum: 10) : cameraService.zoomRange
+                                             },
                                              applyFactor: { [cameraService] in cameraService.setZoomFactor($0) },
                                              applyPreset: { [cameraService] in
                                                  cameraService.setZoom(displayFactor: $0, animated: true)
@@ -460,7 +462,22 @@ final class CameraScreenModel: ObservableObject {
 
     /// The quick-zoom buttons the current camera offers (issue #279); empty
     /// until a camera is configured.
-    var zoomPresets: [ZoomPreset] { cameraService.availableZoomPresets }
+    var zoomPresets: [ZoomPreset] {
+        Self.usesUITestZoomPlan ? Self.uiTestZoomPresets : cameraService.availableZoomPresets
+    }
+
+    /// The simulator has no camera and so no zoom plan; the UI tests pass
+    /// `-UITestZoomPresets` to get a fixed one (issue #302). Debug builds only.
+    private static let uiTestZoomPresets = [ZoomPreset(displayFactor: 0.5),
+                                            ZoomPreset(displayFactor: 1),
+                                            ZoomPreset(displayFactor: 2)]
+    private static var usesUITestZoomPlan: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestZoomPresets")
+        #else
+        false
+        #endif
+    }
 
     /// Forwards only `isPinching` (issue #280), and starts the next pinch at
     /// 1× after a camera switch, which resets the zoom.
