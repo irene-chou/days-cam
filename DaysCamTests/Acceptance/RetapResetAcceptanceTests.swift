@@ -166,4 +166,49 @@ final class RetapResetAcceptanceTests: XCTestCase {
         drainMain()
         XCTAssertEqual(service.focusExposureState, .initial)
     }
+
+    // 88.5 (P2 fix): with neither focus nor exposure supported the tap must not
+    // report success, yet the zeroed bias is still published truthfully.
+    func testUnsupportedDeviceDoesNotConfirmButPublishesZeroBias() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = OrderedFocusDevice()
+        service.lastAppliedFocusRequestID = 1
+        service.applyBias(1, forFocusRequestID: 1, to: device)
+        device.isFocusPointOfInterestSupported = false
+        device.isExposurePointOfInterestSupported = false
+        device.supportedFocusModes = []
+        device.supportedExposureModes = []
+        var confirmations = 0
+        let sub = service.focusExposureTapResetPublisher.sink { _ in confirmations += 1 }
+        service.lastAppliedFocusRequestID = 2
+        service.applyTap(at: CGPoint(x: 0.4, y: 0.4), to: device)
+        drainMain()
+        XCTAssertEqual(confirmations, 0)
+        XCTAssertEqual(device.bias, 0)
+        XCTAssertEqual(service.focusExposureState.exposureBias, 0)
+        XCTAssertFalse(service.focusExposureState.isLocked)
+        sub.cancel()
+    }
+
+    // 88.5: support for only one of focus/exposure is still a tap that took effect.
+    func testPartialSupportStillConfirms() {
+        for focusOnly in [true, false] {
+            let service = CameraService(isCaptureSupported: false)
+            let device = OrderedFocusDevice()
+            if focusOnly {
+                device.isExposurePointOfInterestSupported = false
+                device.supportedExposureModes = []
+            } else {
+                device.isFocusPointOfInterestSupported = false
+                device.supportedFocusModes = []
+            }
+            var ids: [Int] = []
+            let sub = service.focusExposureTapResetPublisher.sink { ids.append($0) }
+            service.lastAppliedFocusRequestID = 4
+            service.applyTap(at: CGPoint(x: 0.4, y: 0.4), to: device)
+            drainMain()
+            XCTAssertEqual(ids, [4], "focusOnly=\(focusOnly)")
+            sub.cancel()
+        }
+    }
 }
