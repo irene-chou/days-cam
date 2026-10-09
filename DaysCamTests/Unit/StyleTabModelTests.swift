@@ -327,6 +327,13 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.shadowOptions, [.none, .soft, .hard, .glow])
     }
 
+    // ui-panel will update this temporary contract when adding the UI (#334).
+    func testOutlineOptionsRemainThreeUntilSquareBoxUIIsAdded() {
+        let model = makeModel()
+        XCTAssertEqual(model.outlineOptions.count, 3)
+        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box])
+    }
+
     // MARK: - 失敗回報為 lastError
 
     func testUpdateProfileFailureIsSurfacedAsLastError() {
