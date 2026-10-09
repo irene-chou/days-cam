@@ -32,13 +32,17 @@ struct DaysCamApp: App {
                                  fontLibrary: FontLibrary())
     }
 
-    /// UI tests pass `-UITestFreshProfiles` to start from an empty profile
-    /// directory instead of the app's saved one (TASK-70). Debug builds only.
+    /// UI tests pass `-UITestFreshProfiles <name>` to start from an empty
+    /// profile directory instead of the app's saved one (TASK-70). The same
+    /// name reaches the same directory, so a test can relaunch and find its
+    /// profile; different names stay apart. Debug builds only.
     private static var uiTestProfileDirectory: URL? {
         #if DEBUG
-        guard ProcessInfo.processInfo.arguments.contains("-UITestFreshProfiles") else { return nil }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestFreshProfiles"),
+              arguments.indices.contains(flag + 1) else { return nil }
         return FileManager.default.temporaryDirectory
-            .appendingPathComponent("DaysCamUITest-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("DaysCamUITest-\(arguments[flag + 1])", isDirectory: true)
         #else
         return nil
         #endif

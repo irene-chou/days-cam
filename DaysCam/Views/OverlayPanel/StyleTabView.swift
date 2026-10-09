@@ -272,20 +272,23 @@ struct StyleTabView: View {
     }
 
     /// The slider of the chosen outline (TASK-70): 粗細 for 描邊, 留白 for
-    /// 底框, nothing for 無. Same row layout and spacing as `opacitySlider`.
+    /// 底框, nothing for 無, both marked by the "distance" icon. Same row
+    /// layout and spacing as `opacitySlider`.
     @ViewBuilder
     private var outlineParameterSlider: some View {
         switch model.profile.style.outline {
         case .none:
             EmptyView()
         case .stroke:
-            parameterSlider(label: "粗細", identifier: "outlineStrokeWidthSlider",
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "描邊粗細",
+                            identifier: "outlineStrokeWidthSlider",
                             value: model.profile.style.strokeWidth,
                             range: OverlayStyle.strokeWidthRange,
                             step: StyleTabModel.strokeWidthStep,
                             onChange: { model.setStrokeWidth($0) })
         case .box:
-            parameterSlider(label: "留白", identifier: "outlineBoxPaddingSlider",
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "底框留白",
+                            identifier: "outlineBoxPaddingSlider",
                             value: model.profile.style.boxPadding,
                             range: OverlayStyle.boxPaddingRange,
                             step: StyleTabModel.boxPaddingStep,
@@ -293,24 +296,34 @@ struct StyleTabView: View {
         }
     }
 
-    private func parameterSlider(label: String, identifier: String, value: Double,
+    private func parameterSlider(label: String? = nil, iconName: String? = nil,
+                                 accessibilityName: String, identifier: String, value: Double,
                                  range: ClosedRange<Double>, step: Double,
                                  onChange: @escaping (Double) -> Void) -> some View {
         let valueText = value.truncatingRemainder(dividingBy: 1) == 0
             ? String(format: "%.0f", value) : String(format: "%.1f", value)
         return HStack(spacing: 10) {
-            Text(label)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(CameraTheme.ink)
-                // As wide as the opacity row's 24pt chip, so both sliders start
-                // at the same x; the two characters just spill into the gap.
-                .lineLimit(1)
-                .fixedSize()
-                .frame(width: 24, alignment: .leading)
-                .accessibilityHidden(true)
+            // The row's mark sits where the opacity row has its 24pt chip, so
+            // every slider starts at the same x: an icon, or a short text
+            // label whose characters may spill into the gap.
+            Group {
+                if let iconName {
+                    Image(systemName: iconName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(CameraTheme.ink)
+                } else if let label {
+                    Text(label)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(CameraTheme.ink)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(width: 24, height: 24, alignment: iconName == nil ? .leading : .center)
+            .accessibilityHidden(true)
             Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
                 .tint(CameraTheme.accentControl)
-                .accessibilityLabel(label)
+                .accessibilityLabel(accessibilityName)
                 .accessibilityValue("\(valueText) 點")
                 .accessibilityIdentifier(identifier)
             Text(valueText)
