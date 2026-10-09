@@ -18,7 +18,9 @@ final class FontWeightUITests: XCTestCase {
 
     private func openFontPage() {
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
-        app.buttons["疊字設定"].tap()
+        // After a relaunch the panel may already be open.
+        if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }
+        XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
     }
