@@ -116,15 +116,11 @@ struct GalleryView: View {
     }
 
     private var albumSwitchBinding: Binding<Bool> {
-        Binding(
-            get: { albumSettings.savesToAlbum },
-            set: { isOn in
-                albumNotice = nil
-                guard isOn else { albumSettings.disable(); return }
-                albumSettings.requestEnabling { result in
-                    albumNotice = GalleryAlbumNotice(result: result)
-                }
-            })
+        let base = albumSettings.galleryBinding { result in
+            albumNotice = GalleryAlbumNotice(result: result)
+        }
+        return Binding(get: { base.wrappedValue },
+                       set: { albumNotice = nil; base.wrappedValue = $0 })
     }
 
     /// Turns the switch off, with a one-time notice, when full access has
@@ -319,6 +315,19 @@ struct GallerySettingsSheet: View {
     }
 
     static let footerText = "開啟後，之後拍的照片會同時放進「DaysCam」相簿。照片一律會存在「最近項目」。"
+}
+
+extension AlbumSettingsStore {
+    /// The gallery sheet's switch: reads the persisted state, turning it on
+    /// goes through `requestEnabling`, off through `disable` (TASK-74).
+    func galleryBinding(onEnableResult: @escaping (AlbumAccessResult) -> Void) -> Binding<Bool> {
+        Binding(
+            get: { self.savesToAlbum },
+            set: { isOn in
+                guard isOn else { self.disable(); return }
+                self.requestEnabling(completion: onEnableResult)
+            })
+    }
 }
 
 /// The notices the album switch can raise (TASK-64, 64.4／64.5).
