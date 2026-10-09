@@ -131,12 +131,24 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertEqual(try cell(.pingFang, in: model).status, .none)
     }
 
+    func testEveryRowUsesFullNameRegardlessOfAvailability() throws {
+        for state in [FontState.notDownloaded, .available] {
+            let library = FakeFontLibrary(Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, state) }))
+            let model = makeModel(library: library)
+            for entry in FontCatalog.entries {
+                let row = try cell(entry.fontID, in: model)
+                XCTAssertEqual(row.name, entry.fullName, "78.1")
+                XCTAssertTrue(row.accessibilityLabel.hasPrefix(entry.fullName), "78.4")
+            }
+        }
+    }
+
     func testVoiceOverLabelsCarryTheStateButCellsShowNoText() throws {
         let library = FakeFontLibrary([.songti: .notDownloaded, .kaiti: .downloading(progress: 0.38)])
         let model = makeModel(library: library)
-        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體，未下載，點兩下下載", "56.14")
-        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體，下載中，38%", "56.14")
-        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方", "56.14")
+        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體-繁 粗體，未下載，點兩下下載", "56.14")
+        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體-繁 粗體，下載中，38%", "56.14")
+        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方-繁 中粗體", "56.14")
     }
 
     // MARK: - 56.5 到 56.6 點擊
