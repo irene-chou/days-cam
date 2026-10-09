@@ -329,7 +329,7 @@ extension StyleTabModel {
 
     /// Selects the shadow color from a swatch or the recent row: a custom
     /// color at the current shadow opacity. `nil` follows the text color
-    /// (the glow preset's way, TASK-71).
+    /// ("跟隨文字色"). Presets never touch the color (TASK-86).
     func selectShadowColor(_ color: OverlayColor?) {
         mutate { style in
             guard let color else {
