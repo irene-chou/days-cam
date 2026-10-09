@@ -280,9 +280,9 @@ final class OverlayStyleTests: XCTestCase {
 
     // MARK: - Outline (TASK-70)
 
-    /// 70.1: three outlines, and these raw values are what files store.
-    func testOutlinesAreNoneStrokeAndBox() {
-        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box"], "70.1")
+    /// 70.1 / 81.5: the four raw values stored in profiles.
+    func testOutlinesIncludeSquareBox() {
+        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox"], "70.1 / 81.5")
     }
 
     func testOutlineParameterRanges() {
