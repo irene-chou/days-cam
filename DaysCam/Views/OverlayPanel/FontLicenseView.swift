@@ -12,13 +12,28 @@ struct FontLicenseModel {
         var id: String { title }
     }
 
+    /// One downloadable font file (one weight) and its own notice.
+    struct FileNotice: Identifiable, Equatable {
+        /// "NotoSerifTC-Black.otf".
+        let fileName: String
+        /// The weight it carries, e.g. "特粗".
+        let weightName: String
+        let version: String
+        /// The copyright notice, verbatim from the catalog.
+        let copyright: String
+        var id: String { fileName }
+    }
+
     /// One open-source font and its notices.
     struct Entry: Identifiable, Equatable {
         let fontID: OverlayFontID
         let name: String
+        /// The default face's version and copyright.
         let version: String
-        /// The copyright notice, verbatim from the catalog.
         let copyright: String
+        /// Every file the font ships, one per weight (TASK-89).
+        let files: [FileNotice]
+        /// Each license text once, even when several files share it.
         let licenses: [License]
         var id: OverlayFontID { fontID }
     }
@@ -35,11 +50,25 @@ struct FontLicenseModel {
          loadText: (String) -> String? = FontLicenseModel.bundleText) {
         entries = catalog.compactMap { entry in
             guard let asset = entry.openSource else { return nil }
+            // One notice per weight file; a license shared by several files
+            // is listed (and read) once.
+            let weights = entry.weights.filter { $0.openSource != nil }
+            let files = weights.compactMap { weight in
+                weight.openSource.map {
+                    FileNotice(fileName: $0.fileName, weightName: weight.displayName,
+                               version: $0.version, copyright: $0.copyright)
+                }
+            }
+            var seen = Set<String>()
+            let licenseNames = (weights.isEmpty ? [asset] : weights.compactMap(\.openSource))
+                .flatMap(\.licenseFileNames)
+                .filter { seen.insert($0).inserted }
             return Entry(fontID: entry.fontID,
                          name: entry.displayName,
                          version: asset.version,
                          copyright: asset.copyright,
-                         licenses: asset.licenseFileNames.map { fileName in
+                         files: files,
+                         licenses: licenseNames.map { fileName in
                              License(title: Self.licenseTitle(forFileName: fileName), text: loadText(fileName) ?? "")
                          })
         }
@@ -110,13 +139,30 @@ struct FontLicenseView: View {
 
     private func entryView(_ entry: FontLicenseModel.Entry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(entry.name)　版本 \(entry.version)")
-                .font(CameraTheme.toolFont(.subheadline))
-                .foregroundColor(CameraTheme.ink)
-            Text(entry.copyright)
-                .font(.footnote)
-                .foregroundColor(CameraTheme.inkSecondary)
-                .textSelection(.enabled)
+            if entry.files.count > 1 {
+                Text(entry.name)
+                    .font(CameraTheme.toolFont(.subheadline))
+                    .foregroundColor(CameraTheme.ink)
+                ForEach(entry.files) { file in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(file.fileName)　\(file.weightName)　版本 \(file.version)")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(CameraTheme.ink)
+                        Text(file.copyright)
+                            .font(.footnote)
+                            .foregroundColor(CameraTheme.inkSecondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            } else {
+                Text("\(entry.name)　版本 \(entry.version)")
+                    .font(CameraTheme.toolFont(.subheadline))
+                    .foregroundColor(CameraTheme.ink)
+                Text(entry.copyright)
+                    .font(.footnote)
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .textSelection(.enabled)
+            }
             ForEach(entry.licenses) { license in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(license.title)

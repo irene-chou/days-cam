@@ -12,6 +12,25 @@ final class FakeFontLibrary: FontListControlling {
     var deleteResult = true
     /// Called when `delete` runs, to record its order relative to others.
     var onDelete: (() -> Void)?
+    /// States of non-default faces; unlisted ones are `.notDownloaded`
+    /// (PingFang's are always available).
+    var weightStates: [FontDownloadID: FontState] = [:]
+    private(set) var weightDownloads: [FontDownloadID] = []
+    let weightDownloadDidFinish = PassthroughSubject<FontDownloadID, Never>()
+
+    func state(for fontID: OverlayFontID, weightID: String?) -> FontState {
+        let entry = FontCatalog.entry(for: fontID)
+        let weight = entry.weight(for: weightID)
+        if entry.source == .builtIn || weight.id == entry.defaultWeight.id { return state(for: fontID) }
+        return weightStates[FontDownloadID(fontID: fontID, weightID: weight.id)] ?? .notDownloaded
+    }
+
+    func download(_ fontID: OverlayFontID, weightID: String?) -> Bool {
+        let unit = FontDownloadID(fontID: fontID, weightID: FontCatalog.entry(for: fontID).weight(for: weightID).id)
+        weightDownloads.append(unit)
+        weightStates[unit] = .downloading(progress: 0)
+        return true
+    }
 
     init(_ states: [OverlayFontID: FontState] = [:]) {
         self.states = states
@@ -381,6 +400,204 @@ final class FontLibraryModelTests: XCTestCase {
     }
 }
 
+/// TASK-89 acceptance 89.3 to 89.5 and 89.7 at the font list: the expanded
+/// card, weight taps, pending downloads.
+@MainActor
+final class FontWeightListTests: XCTestCase {
+    private let profileID = UUID()
+
+    private final class Calls {
+        var weights: [String] = []
+        var fonts: [OverlayFontID] = []
+    }
+
+    private func makeModel(library: FakeFontLibrary, current: OverlayFontID = .notoSerifTC,
+                           weight: String? = nil, calls: Calls = Calls()) -> FontLibraryModel {
+        let model = FontLibraryModel(profileID: profileID,
+                                     currentFontID: current,
+                                     currentWeightID: weight,
+                                     library: library,
+                                     profiles: { [] },
+                                     applyFont: { id, _ in calls.fonts.append(id) },
+                                     applyWeight: { _, weightID in calls.weights.append(weightID) })
+        model.listDidAppear()
+        return model
+    }
+
+    private func cell(_ fontID: OverlayFontID, in model: FontLibraryModel) throws -> FontLibraryModel.Cell {
+        try XCTUnwrap(model.sections.flatMap(\.cells).first { $0.fontID == fontID })
+    }
+
+    private func noto(_ weightID: String) -> FontDownloadID {
+        FontDownloadID(fontID: .notoSerifTC, weightID: weightID)
+    }
+
+    func testOnlyTheSelectedMultiWeightFontExpands() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available, .huninn: .available])
+        let model = makeModel(library: library)
+        let selected = try cell(.notoSerifTC, in: model)
+        XCTAssertEqual(selected.weights.map(\.name), ["標準", "粗", "特粗"], "89.7")
+        XCTAssertEqual(selected.weights.map(\.isSelected), [false, true, false], "89.7 預設字重為粗")
+        XCTAssertNil(selected.weightCountText, "展開時不顯示 N 種字重")
+        let songti = try cell(.songti, in: model)
+        XCTAssertTrue(songti.weights.isEmpty, "89.7 同時只展開選中的一列")
+        XCTAssertEqual(songti.weightCountText, "3 種字重", "89.7")
+        XCTAssertEqual(try cell(.hiraginoSans, in: model).weightCountText, "2 種字重", "89.7")
+        let single = try cell(.huninn, in: model)
+        XCTAssertNil(single.weightCountText, "89.7 單一字重不標示")
+        XCTAssertNil(try cell(.chenyuluoyan, in: model).weightCountText, "89.7 辰宇落雁體只有細體")
+    }
+
+    func testSingleWeightSelectedFontDoesNotExpand() throws {
+        let model = makeModel(library: FakeFontLibrary([.huninn: .available]), current: .huninn)
+        XCTAssertTrue(try cell(.huninn, in: model).weights.isEmpty, "89.7")
+        let chenyu = makeModel(library: FakeFontLibrary([.chenyuluoyan: .available]), current: .chenyuluoyan)
+        XCTAssertTrue(try cell(.chenyuluoyan, in: chenyu).weights.isEmpty, "89.7")
+    }
+
+    func testSelectedWeightFollowsTheProfile() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let model = makeModel(library: library, weight: "black")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.isSelected), [false, false, true], "89.3")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).nameWeightID, "black")
+        model.update(profileID: profileID, currentFontID: .notoSerifTC, currentWeightID: "regular")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.isSelected), [true, false, false])
+    }
+
+    func testBuiltInWeightsAreAllUsable() throws {
+        let model = makeModel(library: FakeFontLibrary(), current: .pingFang)
+        let weights = try cell(.pingFang, in: model).weights
+        XCTAssertEqual(weights.map(\.name), ["細", "標準", "粗"])
+        XCTAssertTrue(weights.allSatisfy { $0.status == .none }, "內建字重不需下載")
+    }
+
+    func testTappingAnAvailableWeightAppliesAtOnce() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[noto("regular")] = .available
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("regular")
+        XCTAssertEqual(calls.weights, ["regular"], "89.3")
+        XCTAssertTrue(library.weightDownloads.isEmpty)
+        XCTAssertNil(model.pendingWeight)
+    }
+
+    func testTappingAMissingWeightKeepsTheOldOneUntilItFinishes() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[2].status, .notDownloaded, "89.5 顯示下載圖示")
+        model.didTapWeight("black")
+        XCTAssertEqual(library.weightDownloads, [noto("black")], "89.5 先下載")
+        XCTAssertTrue(calls.weights.isEmpty, "89.5 下載中不套用，保留舊字重")
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[2].status, .downloading(progress: 0), "89.5")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.isSelected), [false, true, false])
+
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertEqual(calls.weights, ["black"], "89.5 完成後才套用")
+        XCTAssertNil(model.pendingWeight)
+        XCTAssertEqual(model.toast?.text, "已套用「思源宋體　特粗」")
+    }
+
+    func testAnotherWeightFinishingDoesNotApplyThePendingOne() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        library.weightDownloadDidFinish.send(noto("regular"))
+        library.weightDownloadDidFinish.send(FontDownloadID(fontID: .songti, weightID: "black"))
+        XCTAssertTrue(calls.weights.isEmpty, "89.5 只收符合 pending 的完成事件")
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+    }
+
+    func testFailedDownloadKeepsTheOldWeightAndSaysSo() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        library.weightStates[noto("black")] = .failed(.other)
+        model.libraryDidChange()
+        XCTAssertTrue(calls.weights.isEmpty, "89.5 失敗不套用")
+        XCTAssertNil(model.pendingWeight)
+        XCTAssertEqual(model.toast?.text, FontStateText.failedMessage(name: "思源宋體　特粗"), "89.5 顯示失敗")
+        let button = try cell(.notoSerifTC, in: model).weights[2]
+        XCTAssertEqual(button.status, .failed)
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.isSelected), [false, true, false], "89.5 保留原字重")
+        // A late finish for the dropped request must not apply.
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertTrue(calls.weights.isEmpty)
+    }
+
+    func testOfflineFailureUsesTheOfflineMessage() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let model = makeModel(library: library)
+        model.didTapWeight("regular")
+        library.weightStates[noto("regular")] = .failed(.noNetwork)
+        model.libraryDidChange()
+        XCTAssertEqual(model.toast?.text, FontStateText.offlineMessage, "89.5")
+    }
+
+    func testFailureReadsOnlyTheRequestedFace() {
+        // The default face failing must not be taken for the pending face failing.
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        library.states[.notoSerifTC] = .failed(.other)
+        model.libraryDidChange()
+        XCTAssertEqual(model.pendingWeight, noto("black"), "89.5 只讀該 unit 的狀態")
+    }
+
+    func testRetryAfterFailureDownloadsAgain() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[noto("black")] = .failed(.other)
+        let model = makeModel(library: library)
+        model.didTapWeight("black")
+        XCTAssertEqual(library.weightDownloads, [noto("black")])
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+    }
+
+    func testChangingFontOrProfileDropsThePendingWeight() {
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
+        XCTAssertNil(model.pendingWeight, "換字型後不再套用舊請求")
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertTrue(calls.weights.isEmpty)
+    }
+
+    func testPickingAnAvailableWeightDropsAPendingOne() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[noto("regular")] = .available
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        model.didTapWeight("regular")
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertEqual(calls.weights, ["regular"], "後點的字重取代先前的 pending")
+    }
+
+    func testWeightTapsAreIgnoredForSingleWeightFonts() {
+        let library = FakeFontLibrary([.huninn: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .huninn, calls: calls)
+        model.didTapWeight("regular")
+        XCTAssertTrue(calls.weights.isEmpty)
+        XCTAssertTrue(library.weightDownloads.isEmpty)
+    }
+
+    func testAccessibilityLabelsNameTheWeightState() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let model = makeModel(library: library)
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[2].accessibilityLabel, "特粗，未下載，點兩下下載")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[1].accessibilityLabel, "粗")
+    }
+}
+
 /// TASK-34 acceptance 34.10 and 34.11: the license page.
 @MainActor
 final class FontLicenseViewTests: XCTestCase {
@@ -413,6 +630,18 @@ final class FontLicenseViewTests: XCTestCase {
         _ = FontLicenseModel(loadText: { requested.append($0); return "text" })
         XCTAssertEqual(requested, ["huninn-OFL.txt", "huninn-Apache-2.0.txt",
                                    "notoSerifTC-OFL.txt", "iansui-OFL.txt", "chenyuluoyan-OFL.txt"])
+    }
+
+    func testListsEveryWeightFileWithItsOwnNotice() throws {
+        let model = FontLicenseModel()
+        let noto = try XCTUnwrap(model.entries.first { $0.fontID == .notoSerifTC })
+        XCTAssertEqual(noto.files.map(\.fileName),
+                       ["NotoSerifTC-Regular.otf", "NotoSerifTC-Bold.otf", "NotoSerifTC-Black.otf"], "89.5 授權頁逐字重列檔名")
+        XCTAssertEqual(noto.files.map(\.weightName), ["標準", "粗", "特粗"])
+        XCTAssertTrue(noto.files.allSatisfy { !$0.copyright.isEmpty && !$0.version.isEmpty }, "每個檔案都有 copyright")
+        XCTAssertEqual(noto.licenses.map(\.title), ["SIL Open Font License 1.1"], "共用授權全文只列一次")
+        let huninn = try XCTUnwrap(model.entries.first { $0.fontID == .huninn })
+        XCTAssertEqual(huninn.files.map(\.fileName).count, 1)
     }
 
     func testSystemFontsAreCreditedToApple() {
