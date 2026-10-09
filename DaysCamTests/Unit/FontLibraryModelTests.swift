@@ -156,8 +156,10 @@ final class FontLibraryModelTests: XCTestCase {
             let model = makeModel(library: library)
             for entry in FontCatalog.entries {
                 let row = try cell(entry.fontID, in: model)
-                XCTAssertEqual(row.name, entry.fullName, "78.1")
-                XCTAssertTrue(row.accessibilityLabel.hasPrefix(entry.fullName), "78.4")
+                // A multi-weight font shows its family name only (TASK-89).
+                let expected = entry.weights.count > 1 ? FontLibraryModel.listName(of: entry) : entry.fullName
+                XCTAssertEqual(row.name, expected, "78.1")
+                XCTAssertTrue(row.accessibilityLabel.hasPrefix(expected), "78.4")
             }
         }
     }
@@ -165,9 +167,9 @@ final class FontLibraryModelTests: XCTestCase {
     func testVoiceOverLabelsCarryTheStateButCellsShowNoText() throws {
         let library = FakeFontLibrary([.songti: .notDownloaded, .kaiti: .downloading(progress: 0.38)])
         let model = makeModel(library: library)
-        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體-繁 粗體，未下載，點兩下下載", "56.14")
-        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體-繁 粗體，下載中，38%", "56.14")
-        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方-繁 中粗體", "56.14")
+        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體-繁，未下載，點兩下下載", "56.14")
+        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體-繁，下載中，38%", "56.14")
+        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方-繁", "56.14")
     }
 
     // MARK: - 56.5 到 56.6 點擊
@@ -446,6 +448,21 @@ final class FontWeightListTests: XCTestCase {
         let single = try cell(.huninn, in: model)
         XCTAssertNil(single.weightCountText, "89.7 單一字重不標示")
         XCTAssertNil(try cell(.chenyuluoyan, in: model).weightCountText, "89.7 辰宇落雁體只有細體")
+    }
+
+    func testMultiWeightRowsShowOnlyTheFamilyName() throws {
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available]))
+        let expected: [OverlayFontID: String] = [
+            .pingFang: "蘋方-繁", .notoSerifTC: "Noto Serif TC", .hiraginoSans: "冬青黑體繁體中文",
+            .songti: "宋體-繁", .kaiti: "楷體-繁", .yuanti: "圓體-繁", .hannotate: "手札體-繁",
+        ]
+        for (fontID, name) in expected {
+            XCTAssertEqual(try cell(fontID, in: model).name, name, "展開與收合都不帶字重字樣")
+        }
+        XCTAssertEqual(expected.count, FontCatalog.entries.filter { $0.weights.count > 1 }.count, "名單涵蓋所有多字重字型")
+        XCTAssertEqual(try cell(.huninn, in: model).name, "jf open 粉圓 2.1", "單一字重維持 fullName")
+        XCTAssertEqual(try cell(.chenyuluoyan, in: model).name, "辰宇落雁體 2.0 細體")
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).accessibilityLabel, "Noto Serif TC")
     }
 
     func testSingleWeightSelectedFontDoesNotExpand() throws {

@@ -331,12 +331,29 @@ final class FontLibraryModel: ObservableObject {
         return result
     }
 
+    /// The row title: the full face name, except that a font with several
+    /// weights shows the family name alone, since the weight is read from the
+    /// buttons below it and the "N 種字重" text (TASK-89, design A).
+    static func listName(of entry: FontCatalogEntry) -> String {
+        guard entry.weights.count > 1 else { return entry.fullName }
+        switch entry.fontID {
+        case .pingFang: return "蘋方-繁"
+        case .notoSerifTC: return "Noto Serif TC"
+        case .hiraginoSans: return "冬青黑體繁體中文"
+        case .songti: return "宋體-繁"
+        case .kaiti: return "楷體-繁"
+        case .yuanti: return "圓體-繁"
+        case .hannotate: return "手札體-繁"
+        default: return entry.displayName
+        }
+    }
+
     private func cell(for entry: FontCatalogEntry) -> Cell {
         let state = library.state(for: entry.fontID)
         let isSelected = entry.fontID == currentFontID
         let selectedWeight = entry.weight(for: isSelected ? currentWeightID : nil)
         return Cell(fontID: entry.fontID,
-                    name: entry.fullName,
+                    name: Self.listName(of: entry),
                     state: state,
                     isSelected: isSelected,
                     status: status(of: entry.fontID, state: state),
