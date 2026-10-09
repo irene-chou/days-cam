@@ -103,14 +103,14 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
     }
 
     /// Call when the gallery appears (64.5, 79.5). If the switch is on but
-    /// access is denied or restricted, turns the switch off and returns
+    /// access is neither full nor limited, turns the switch off and returns
     /// true, once: the gallery shows its notice for that. Reads the status
     /// without prompting.
     @discardableResult
     func reconcile() -> Bool {
         guard savesToAlbum else { return false }
         let status = library.authorizationStatus(for: Self.accessLevel)
-        guard status == .denied || status == .restricted else {
+        guard Self.accessResult(for: status) == .denied else {
             return false
         }
         setSavesToAlbum(false)

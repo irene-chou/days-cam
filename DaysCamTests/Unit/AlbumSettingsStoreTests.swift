@@ -194,6 +194,31 @@ final class AlbumSettingsStoreTests: XCTestCase {
         XCTAssertTrue(library.requestedLevels.isEmpty, "reconciling never prompts")
     }
 
+    /// A privacy reset withdraws the persisted switch without requesting access again.
+    func testNotDeterminedAfterPrivacyResetWithdrawsTheSwitchAndAlbumRoute() {
+        let library = FakeLibrary(readWriteStatus: .authorized)
+        let store = AlbumSettingsStore(defaults: defaults, library: library)
+        _ = enable(store)
+        store.rememberAlbum(identifier: "album-9")
+        library.readWriteStatus = .notDetermined
+
+        XCTAssertEqual(PhotoSaver.route(albumEnabled: store.isAlbumSavingEnabled) {
+            library.readWriteStatus
+        }, .recentsOnly, "undecided access cannot route to the album even before reconciliation")
+        XCTAssertTrue(store.reconcile(), "the gallery shows the withdrawn-permission notice")
+        XCTAssertFalse(store.savesToAlbum)
+        XCTAssertFalse(store.isAlbumSavingEnabled)
+        XCTAssertFalse(store.reconcile(), "the notice appears only once")
+        XCTAssertEqual(PhotoSaver.route(albumEnabled: store.isAlbumSavingEnabled) {
+            XCTFail("a disabled switch must not check readWrite access")
+            return library.readWriteStatus
+        }, .recentsOnly)
+        XCTAssertTrue(library.requestedLevels.isEmpty)
+        let relaunched = AlbumSettingsStore(defaults: defaults, library: library)
+        XCTAssertFalse(relaunched.savesToAlbum, "withdrawal persists across a relaunch")
+        XCTAssertEqual(relaunched.albumIdentifier, "album-9")
+    }
+
     func testReconcileKeepsTheSwitchAndIdentifierAcrossLimitedAndFullAccess() {
         let library = FakeLibrary(readWriteStatus: .authorized)
         let store = AlbumSettingsStore(defaults: defaults, library: library)
