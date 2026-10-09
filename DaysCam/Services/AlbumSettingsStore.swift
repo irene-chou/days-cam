@@ -17,12 +17,12 @@ protocol AlbumSaveSettings: AnyObject {
     func rememberAlbum(identifier: String)
 }
 
-/// How a request for full photo access ended, as the gallery switch shows it
+/// How a request for photo access ended, as the gallery switch shows it
 /// (issue #281, 64.4).
 enum AlbumAccessResult: Equatable {
     /// `.authorized`: the switch is now on.
     case full
-    /// `.limited`: treated as no permission; the switch stays off.
+    /// `.limited`: the switch is now on; the gallery can explain limited visibility.
     case limited
     /// Denied, restricted, or anything else: the switch stays off.
     case denied
@@ -43,8 +43,7 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
     /// The album's fixed name; 0.5 has no custom names.
     static let albumTitle = "DaysCam"
 
-    /// The access level the switch needs. Limited access cannot reliably
-    /// create or add to an album, so only `.authorized` counts.
+    /// The access level the switch needs; full and limited access both allow album saving.
     static let accessLevel: PHAccessLevel = .readWrite
 
     /// The switch as the gallery shows it. Main queue only.
@@ -85,8 +84,8 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
     /// The user turned the switch on (64.2, 64.4).
     ///
     /// Asks for `.readWrite` only if it has not been decided yet; the switch
-    /// goes on only with full access. `completion` runs once, on the main
-    /// queue; on anything but `.full` the gallery shows the 「前往設定」 notice.
+    /// goes on with full or limited access. `completion` runs once, on the main
+    /// queue; `.denied` asks the gallery to show the 「前往設定」 notice.
     func requestEnabling(completion: @escaping (AlbumAccessResult) -> Void) {
         let status = library.authorizationStatus(for: Self.accessLevel)
         guard status == .notDetermined else {
@@ -103,13 +102,15 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
         setSavesToAlbum(false)
     }
 
-    /// Call when the gallery appears (64.5). If the switch is on but full
-    /// access has since been withdrawn, turns the switch off and returns
+    /// Call when the gallery appears (64.5, 79.5). If the switch is on but
+    /// access is denied or restricted, turns the switch off and returns
     /// true, once: the gallery shows its notice for that. Reads the status
     /// without prompting.
     @discardableResult
     func reconcile() -> Bool {
-        guard savesToAlbum, library.authorizationStatus(for: Self.accessLevel) != .authorized else {
+        guard savesToAlbum else { return false }
+        let status = library.authorizationStatus(for: Self.accessLevel)
+        guard status == .denied || status == .restricted else {
             return false
         }
         setSavesToAlbum(false)
@@ -129,7 +130,7 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
                                 completion: @escaping (AlbumAccessResult) -> Void) {
         let result = Self.accessResult(for: status)
         let apply = {
-            self.setSavesToAlbum(result == .full)
+            self.setSavesToAlbum(result == .full || result == .limited)
             completion(result)
         }
         if Thread.isMainThread {

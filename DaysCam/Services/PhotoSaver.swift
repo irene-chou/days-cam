@@ -34,7 +34,9 @@ protocol PhotoLibraryAccessing {
     /// Creates the asset and adds it to the album in **one** change block
     /// (issue #281). The album is the one with `albumIdentifier`, else the
     /// first album titled `albumTitle`, else a new album of that title.
-    /// Needs `.readWrite` `.authorized`; never prompts.
+    /// Needs `.readWrite` full or limited access; never prompts.
+    /// Title lookup is best effort: limited access can hide a user-created
+    /// namesake, so creating a separate DaysCam album is expected.
     func saveToAlbum(_ image: UIImage,
                      albumIdentifier: String?,
                      albumTitle: String,
@@ -84,6 +86,8 @@ struct SystemPhotoLibrary: PhotoLibraryAccessing {
         // Looked up before the change block: fetching inside one is not
         // allowed. A remembered id that no longer resolves (the user deleted
         // the album) falls back to the title, then to creating it (64.3).
+        // Under limited access, title lookup may hide a user-created namesake;
+        // creating another album in that case is expected (TASK-79, #306).
         let existing = Self.album(identifier: albumIdentifier) ?? Self.album(titled: albumTitle)
         var assetIdentifier: String?
         var resolvedAlbumIdentifier = existing?.localIdentifier
@@ -132,7 +136,7 @@ enum PhotoSaveRoute: Equatable {
 /// It asks for add-only access and nothing more: the app never reads the
 /// user's photos, and the photo goes to 「最近項目」 like any other capture
 /// (FR-5.6). The one exception is the gallery's 「存到『DaysCam』相簿」
-/// switch (issue #281): with it on *and* full access already granted, the
+/// switch (issue #281): with it on and full or limited access granted, the
 /// photo is also added to that album. Saving never asks for `.readWrite`
 /// itself — only the switch does.
 ///
@@ -167,13 +171,15 @@ final class PhotoSaver {
     /// status (issue #281, 64.7).
     ///
     /// `readWriteStatus` is only asked when the switch is on, so a save with
-    /// it off checks nothing beyond `.addOnly` (64.1). Only `.authorized`
-    /// takes the album route: limited access is treated as none, and a
-    /// withdrawn permission silently falls back to 「最近項目」 (64.5). Never
+    /// it off checks nothing beyond `.addOnly` (64.1). Full and limited access
+    /// take the album route (79.5); denied or restricted access falls back
+    /// to 「最近項目」 (64.5). Never
     /// prompts.
     static func route(albumEnabled: Bool,
                       readWriteStatus: () -> PHAuthorizationStatus) -> PhotoSaveRoute {
-        guard albumEnabled, readWriteStatus() == .authorized else { return .recentsOnly }
+        guard albumEnabled else { return .recentsOnly }
+        let status = readWriteStatus()
+        guard status == .authorized || status == .limited else { return .recentsOnly }
         return .recentsAndAlbum
     }
 

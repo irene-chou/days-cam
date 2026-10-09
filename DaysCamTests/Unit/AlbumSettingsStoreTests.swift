@@ -134,14 +134,15 @@ final class AlbumSettingsStoreTests: XCTestCase {
         XCTAssertEqual(library.requestedLevels, [.readWrite])
     }
 
-    /// 64.4: choosing limited access leaves the switch off.
-    func testGrantingOnlyLimitedAccessLeavesTheSwitchOff() {
+    /// 79.5 replaces the limited-access branch of 64.4.
+    func testGrantingLimitedAccessTurnsTheSwitchOn() {
         let library = FakeLibrary(readWriteStatus: .notDetermined, grants: .limited)
         let store = AlbumSettingsStore(defaults: defaults, library: library)
         let (result, _) = enable(store)
         XCTAssertEqual(result, .limited)
-        XCTAssertFalse(store.savesToAlbum)
-        XCTAssertFalse(store.isAlbumSavingEnabled)
+        XCTAssertTrue(store.savesToAlbum)
+        XCTAssertTrue(store.isAlbumSavingEnabled)
+        XCTAssertEqual(library.requestedLevels, [.readWrite])
     }
 
     /// 64.4: refusing leaves the switch off.
@@ -153,8 +154,7 @@ final class AlbumSettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.savesToAlbum)
     }
 
-    /// Already settled to something short of full: no prompt (the system
-    /// would suppress it anyway), the switch stays off.
+    /// Settled permissions never prompt again; limited access enables saving.
     func testSettledLimitedOrDeniedNeverPromptsAgain() {
         let cases: [(PHAuthorizationStatus, AlbumAccessResult)] = [
             (.limited, .limited), (.denied, .denied), (.restricted, .denied)
@@ -164,7 +164,8 @@ final class AlbumSettingsStoreTests: XCTestCase {
             let store = AlbumSettingsStore(defaults: defaults, library: library)
             let (result, _) = enable(store)
             XCTAssertEqual(result, expected, "\(status.rawValue)")
-            XCTAssertFalse(store.savesToAlbum)
+            XCTAssertEqual(store.savesToAlbum, status == .limited)
+            XCTAssertEqual(store.isAlbumSavingEnabled, status == .limited)
             XCTAssertTrue(library.requestedLevels.isEmpty)
         }
     }
@@ -179,19 +180,47 @@ final class AlbumSettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.savesToAlbum)
     }
 
-    /// 64.5: reduced to limited in Settings — the switch goes off and the
-    /// notice is asked for exactly once.
+    /// Denied and restricted access still trigger the 64.5 notice once.
     func testReconcileTurnsOffAndAsksForTheNoticeOnce() {
         let library = FakeLibrary(readWriteStatus: .authorized)
         let store = AlbumSettingsStore(defaults: defaults, library: library)
         _ = enable(store)
-        library.readWriteStatus = .limited
+        library.readWriteStatus = .denied
 
         XCTAssertTrue(store.reconcile(), "first visit shows the notice")
         XCTAssertFalse(store.savesToAlbum)
         XCTAssertFalse(store.isAlbumSavingEnabled)
         XCTAssertFalse(store.reconcile(), "and only once")
         XCTAssertTrue(library.requestedLevels.isEmpty, "reconciling never prompts")
+    }
+
+    func testReconcileKeepsTheSwitchAndIdentifierAcrossLimitedAndFullAccess() {
+        let library = FakeLibrary(readWriteStatus: .authorized)
+        let store = AlbumSettingsStore(defaults: defaults, library: library)
+        _ = enable(store)
+        store.rememberAlbum(identifier: "album-9")
+        for status: PHAuthorizationStatus in [.limited, .authorized, .limited] {
+            library.readWriteStatus = status
+            XCTAssertFalse(store.reconcile())
+            XCTAssertTrue(store.savesToAlbum)
+            XCTAssertTrue(store.isAlbumSavingEnabled)
+            XCTAssertEqual(store.albumIdentifier, "album-9")
+        }
+        XCTAssertTrue(library.requestedLevels.isEmpty)
+        let relaunched = AlbumSettingsStore(defaults: defaults, library: library)
+        XCTAssertFalse(relaunched.reconcile())
+        XCTAssertTrue(relaunched.savesToAlbum)
+        XCTAssertEqual(relaunched.albumIdentifier, "album-9")
+    }
+
+    func testRestrictedAccessWithdrawsTheSwitchOnce() {
+        let library = FakeLibrary(readWriteStatus: .limited)
+        let store = AlbumSettingsStore(defaults: defaults, library: library)
+        _ = enable(store)
+        library.readWriteStatus = .restricted
+        XCTAssertTrue(store.reconcile())
+        XCTAssertFalse(store.isAlbumSavingEnabled)
+        XCTAssertFalse(store.reconcile())
     }
 
     func testReconcileWithTheSwitchOffDoesNothing() {

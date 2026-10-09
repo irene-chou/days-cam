@@ -435,10 +435,10 @@ extension PhotoSaverTests {
         }
     }
 
-    func testSwitchOnRoutesToTheAlbumOnlyWithFullAccess() {
+    func testSwitchOnRoutesToTheAlbumWithFullOrLimitedAccess() {
         let cases: [(PHAuthorizationStatus, PhotoSaveRoute)] = [
             (.authorized, .recentsAndAlbum),
-            (.limited, .recentsOnly),
+            (.limited, .recentsAndAlbum),
             (.denied, .recentsOnly),
             (.restricted, .recentsOnly),
             (.notDetermined, .recentsOnly)
@@ -493,17 +493,17 @@ extension PhotoSaverTests {
         XCTAssertEqual(settings.albumIdentifier, "album-recreated")
     }
 
-    /// 64.5: on, but access was reduced to limited — saved to 「最近項目」 the
-    /// add-only way, no error, no prompt.
-    func testSwitchOnWithLimitedAccessFallsBackToRecentsSilently() throws {
+    /// 79.5 replaces 64.5: limited access keeps writing to the album without prompting.
+    func testSwitchOnWithLimitedAccessSavesIntoTheAlbumSilently() throws {
         let library = StubLibrary(status: .authorized)
         library.readWriteStatus = .limited
 
         let result = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: true))
 
         XCTAssertEqual(try result.get(), "stub-asset-identifier")
-        XCTAssertTrue(library.albumWrites.isEmpty)
-        XCTAssertEqual(library.writeCount, 1)
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.writeCount, 0)
+        XCTAssertTrue(library.requestedLevels.isEmpty)
     }
 
     func testSwitchOnWithAccessWithdrawnFallsBackToRecents() throws {
@@ -542,8 +542,24 @@ extension PhotoSaverTests {
         XCTAssertNil(settings.albumIdentifier)
     }
 
-    /// If the fallback write fails too, the photo is not saved and that is
-    /// reported (a failure must never read as success).
+    /// A rejected album transaction must preserve the photo via add-only fallback.
+    func testLimitedAlbumError3311PreservesPhotoAndRememberedAlbum() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .limited
+        library.albumWriteError = NSError(domain: "PHPhotosErrorDomain", code: 3311)
+        let settings = FakeAlbumSettings(enabled: true, albumIdentifier: "remembered-album")
+
+        let result = try saveReturningIdentifier(with: library, settings: settings)
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.writeCount, 1)
+        XCTAssertEqual(settings.albumIdentifier, "remembered-album")
+        XCTAssertEqual(settings.rememberCount, 0)
+        XCTAssertTrue(library.requestedLevels.isEmpty)
+    }
+
+    /// If the fallback also fails, the photo must not be reported as saved.
     func testAlbumFailureFollowedByAFailedFallbackFails() throws {
         let library = StubLibrary(status: .authorized)
         library.readWriteStatus = .authorized
