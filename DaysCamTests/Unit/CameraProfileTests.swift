@@ -406,13 +406,17 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
 
     /// The style `record02(index:fontID:)` should read back as, in PingFang.
     private func expectedStyle02(index: Int) throws -> OverlayStyle {
-        OverlayStyle(fontID: .pingFang,
+        var style = OverlayStyle(fontID: .pingFang,
                      textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
                      outline: .stroke,
                      outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
                      strokeWidth: 4,
                      shadow: .glow,
                      sizeScale: 70 + index * 5)
+        // Legacy glow preserves its text color and alpha; current presets only change geometry.
+        style.shadowColorSource = .textColor
+        style.shadowOpacity = 230.0 / 255
+        return style
     }
 
     /// 32.3: a 0.2 `profiles.json` with one record per removed font loads with
