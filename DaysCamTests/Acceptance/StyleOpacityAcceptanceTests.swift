@@ -35,7 +35,7 @@ final class StyleOpacityAcceptanceTests: XCTestCase {
             var saved = makeProfile()
             let model = makeModel(makeProfile()) { saved = $0 }
             model.setTextOpacityPercent(percent)
-            model.selectOutline(.thinStroke)
+            model.selectOutline(.stroke)
             model.setOutlineOpacityPercent(percent)
             let data = try JSONEncoder().encode(saved)
             let reloaded = try JSONDecoder().decode(CameraProfile.self, from: data)
@@ -71,7 +71,7 @@ final class StyleOpacityAcceptanceTests: XCTestCase {
     func testSwatchAndRecentKeepAlphaAndRecentIsOpaque() throws {
         let model = makeModel(makeProfile())
         model.setTextOpacityPercent(40)
-        model.selectOutline(.thickStroke)
+        model.selectOutline(.stroke)
         model.setOutlineOpacityPercent(60)
         let custom = OverlayColor(red: 0.1, green: 0.5, blue: 0.9, opacity: 0.3)
         model.commitCustomColor(custom)
@@ -96,7 +96,7 @@ final class StyleOpacityAcceptanceTests: XCTestCase {
     func testAutomaticOutlineBecomesExplicitThenReturnsToAutomatic() {
         var profile = makeProfile()
         profile.style.textColor = OverlayColor(red: 1, green: 1, blue: 1, opacity: 1)
-        profile.style.outline = .thinStroke
+        profile.style.outline = .stroke
         profile.style.outlineColor = nil
         let model = makeModel(profile)
         XCTAssertEqual(model.outlineOpacityPercent, 100)
@@ -119,7 +119,7 @@ final class StyleOpacityAcceptanceTests: XCTestCase {
         let model = makeModel(makeProfile())
         model.selectOutline(.none)
         XCTAssertTrue(model.isOutlineColorSectionDisabled)
-        model.selectOutline(.thinStroke)
+        model.selectOutline(.stroke)
         XCTAssertFalse(model.isOutlineColorSectionDisabled)
     }
 }
