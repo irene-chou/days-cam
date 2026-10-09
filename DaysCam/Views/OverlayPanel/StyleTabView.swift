@@ -204,8 +204,7 @@ struct StyleTabView: View {
 
     private var colorContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            opacitySlider(label: "文字透明度",
-                          color: model.profile.style.textColor,
+            opacitySlider(label: "文字不透明度",
                           percent: model.textOpacityPercent,
                           isDisabled: false,
                           onChange: { model.setTextOpacityPercent($0) })
@@ -255,8 +254,7 @@ struct StyleTabView: View {
             }
             .padding(.top, 4)
             outlineParameterSlider
-            opacitySlider(label: "外框透明度",
-                          color: model.profile.style.outlineColor ?? model.profile.style.resolvedOutlineColor,
+            opacitySlider(label: "外框不透明度",
                           percent: model.outlineOpacityPercent,
                           isDisabled: model.isOutlineColorSectionDisabled,
                           onChange: { model.setOutlineOpacityPercent($0) })
@@ -378,8 +376,7 @@ struct StyleTabView: View {
                         onSelectAuto: { model.selectShadowColor(nil) },
                         onApplyCustom: { model.applyCustomShadowColor($0) },
                         onCommitCustom: { model.commitCustomColor($0) })
-            opacitySlider(label: "陰影透明度",
-                          color: style.resolvedShadowColor,
+            opacitySlider(label: "陰影不透明度",
                           percent: model.shadowOpacityPercent,
                           isDisabled: isDisabled,
                           onChange: { model.setShadowOpacityPercent($0) })
@@ -575,22 +572,14 @@ struct StyleTabView: View {
         return StyleTabModel.hasSameRGB(color, swatch)
     }
 
-    /// The opacity row of the color and outline pages (TASK-69): a checkerboard
-    /// chip showing the color as it will look, the slider, and the percentage.
-    private func opacitySlider(label: String, color: OverlayColor, percent: Int,
+    /// The opacity row of the color, outline and shadow pages (TASK-69, TASK-83):
+    /// a fixed legend (transparent checkerboard half, solid half), the slider,
+    /// and the percentage. The legend does not follow the selected color.
+    private func opacitySlider(label: String, percent: Int,
                                isDisabled: Bool, onChange: @escaping (Int) -> Void) -> some View {
         let range = StyleTabModel.opacityPercentRange
         return HStack(spacing: 10) {
-            // A disabled row shows a plain gray chip: the dimmed color over
-            // the checkerboard read as a broken, see-through swatch (#310 QA).
-            Circle()
-                .fill(isDisabled ? CameraTheme.ink.opacity(0.12) : swiftUIColor(color))
-                .background {
-                    if !isDisabled { CheckerboardView().clipShape(Circle()) }
-                }
-                .frame(width: 24, height: 24)
-                .overlay(swatchEdge)
-                .accessibilityHidden(true)
+            opacityLegend
             Slider(
                 value: Binding(get: { Double(percent) }, set: { onChange(Int($0.rounded())) }),
                 in: Double(range.lowerBound)...Double(range.upperBound),
@@ -607,6 +596,22 @@ struct StyleTabView: View {
         }
         .opacity(isDisabled ? 0.35 : 1)
         .disabled(isDisabled)
+    }
+
+    /// Fixed "transparent to opaque" legend: checkerboard on the left half,
+    /// solid `ink` on the right (TASK-83).
+    private var opacityLegend: some View {
+        ZStack {
+            CheckerboardView()
+            HStack(spacing: 0) {
+                Color.clear
+                CameraTheme.ink
+            }
+        }
+        .frame(width: 24, height: 24)
+        .clipShape(Circle())
+        .overlay(swatchEdge)
+        .accessibilityHidden(true)
     }
 
     /// Option box sides (TASK-49 C): outline 48, shadow 64.

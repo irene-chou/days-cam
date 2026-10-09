@@ -88,7 +88,7 @@ final class OutlineSliderUITests: XCTestCase {
 
     /// The disabled opacity row (outline 無) is audited for the plain chip.
     func testDisabledOpacityRowShowsForNone() {
-        XCTAssertTrue(app.sliders["外框透明度"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sliders["外框不透明度"].waitForExistence(timeout: 3))
         attach("outline-none-disabled-chip")
     }
 }
