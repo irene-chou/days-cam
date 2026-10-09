@@ -4,7 +4,9 @@ import Foundation
 /// ten Latin fonts).
 ///
 /// Case order is the order the grid and the font list show them in, whatever
-/// their download state. Weights are fixed per font (FR-10.3′). Names, sources
+/// their download state. Each font offers up to three weights (TASK-89,
+/// replacing FR-10.3′'s fixed weight); `OverlayStyle.fontWeight` picks one.
+/// Names, sources
 /// and download facts live in `FontCatalog`; turning an ID into a drawable font
 /// is the rendering layer's job (`OverlayMetrics.resolvedFont`), so this type
 /// stays free of UIKit.
@@ -48,8 +50,14 @@ enum OverlayFontID: String, Codable, CaseIterable {
     /// The font's Chinese name, as the grid and the list show it.
     var displayName: String { FontCatalog.entry(for: self).displayName }
 
-    /// The PostScript name of the one face this font is drawn in (§4.1).
+    /// The PostScript name of this font's default weight (§4.1).
     var postScriptName: String { FontCatalog.entry(for: self).postScriptName }
+
+    /// The PostScript name of `weight`, or of the default weight when this
+    /// font does not offer it (TASK-89).
+    func postScriptName(for weight: OverlayFontWeight?) -> String {
+        FontCatalog.entry(for: self).postScriptName(for: weight)
+    }
 }
 
 /// The outline or background box drawn around the text (PRD 0.2 FR-10.5 as
@@ -150,7 +158,34 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Allowed `shadowBlur`, in points at a 17pt font (TASK-71).
     static let shadowBlurRange = 0.0...16.0
 
-    var fontID: OverlayFontID
+    /// The font. Changing it resets `fontWeight` to the new font's default
+    /// (TASK-89 85.4).
+    var fontID: OverlayFontID {
+        didSet {
+            if fontID != oldValue { storedFontWeight = nil }
+        }
+    }
+    /// The chosen weight; `nil` means the font's default. Kept `nil` for the
+    /// default so that a style saved before TASK-89 and one with the default
+    /// chosen are equal and encode the same.
+    private var storedFontWeight: OverlayFontWeight?
+    /// The weight drawn: the chosen one if `fontID` offers it, else the
+    /// font's default (TASK-89 85.2, 85.6). Setting a weight the font does
+    /// not offer selects the default.
+    var fontWeight: OverlayFontWeight {
+        get { FontCatalog.entry(for: fontID).resolvedWeight(storedFontWeight) }
+        set { storedFontWeight = Self.storableWeight(newValue, for: fontID) }
+    }
+
+    /// `weight` as stored: `nil` for the default or a weight `fontID` does
+    /// not offer.
+    private static func storableWeight(_ weight: OverlayFontWeight?, for fontID: OverlayFontID) -> OverlayFontWeight? {
+        let entry = FontCatalog.entry(for: fontID)
+        let resolved = entry.resolvedWeight(weight)
+        return resolved == entry.defaultWeight ? nil : resolved
+    }
+    /// The PostScript name of `fontID` in `fontWeight` (TASK-89).
+    var fontPostScriptName: String { fontID.postScriptName(for: fontWeight) }
     var textColor: OverlayColor
     var outline: OverlayOutline
     /// The outline or box color; `nil` means "automatic" (FR-10.6).
@@ -200,6 +235,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
          shadow: OverlayShadowPreset = .soft,
          sizeScale: Int = 100) {
         self.fontID = fontID
+        storedFontWeight = nil
         self.textColor = textColor
         self.outline = outline
         self.outlineColor = outlineColor
@@ -342,7 +378,7 @@ extension OverlayStyle {
 
 extension OverlayStyle {
     private enum CodingKeys: String, CodingKey {
-        case fontID, textColor, outline, outlineColor, autoOutlineOpacity, strokeWidth, boxPadding
+        case fontID, fontWeight, textColor, outline, outlineColor, autoOutlineOpacity, strokeWidth, boxPadding
         case showsShadow, shadowColorSource, shadowColor, shadowOffsetX, shadowOffsetY, shadowBlur
         case sizeScale
         /// The 0.2–0.5 shadow name. Read, never written (TASK-71).
@@ -384,6 +420,10 @@ extension OverlayStyle {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontID = try container.decode(OverlayFontID.self, forKey: .fontID)
+        // Missing (before TASK-89), unknown or malformed: the default
+        // weight, never an error, so the profile is kept (85.2, 85.6).
+        let decodedWeight = (try? container.decodeIfPresent(OverlayFontWeight.self, forKey: .fontWeight)) ?? nil
+        storedFontWeight = Self.storableWeight(decodedWeight, for: fontID)
         textColor = try container.decode(OverlayColor.self, forKey: .textColor)
         outlineColor = try container.decodeIfPresent(OverlayColor.self, forKey: .outlineColor)
         sizeScale = try container.decode(Int.self, forKey: .sizeScale)
@@ -466,6 +506,9 @@ extension OverlayStyle {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(fontID, forKey: .fontID)
+        // Written only when not the default, so a default style encodes
+        // exactly as before TASK-89.
+        try container.encodeIfPresent(storedFontWeight, forKey: .fontWeight)
         try container.encode(textColor, forKey: .textColor)
         try container.encode(outline, forKey: .outline)
         try container.encodeIfPresent(outlineColor, forKey: .outlineColor)

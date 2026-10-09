@@ -44,4 +44,20 @@ protocol FontAvailabilityProviding {
     /// The current state of `fontID`. `pingFang` is always `.available`;
     /// resolution does not even ask for it.
     func state(for fontID: OverlayFontID) -> FontState
+
+    /// The current state of one weight of `fontID` (TASK-89): weights are
+    /// downloaded one by one.
+    func state(for fontID: OverlayFontID, weight: OverlayFontWeight) -> FontState
+}
+
+extension FontAvailabilityProviding {
+    /// Until a provider tracks weights, the default weight is the font's
+    /// state and every other weight is `.notDownloaded`, so it is drawn in
+    /// PingFang rather than claimed available (TASK-89).
+    func state(for fontID: OverlayFontID, weight: OverlayFontWeight) -> FontState {
+        guard weight == FontCatalog.entry(for: fontID).defaultWeight else {
+            return fontID == .pingFang ? .available : .notDownloaded
+        }
+        return state(for: fontID)
+    }
 }

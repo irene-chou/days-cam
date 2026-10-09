@@ -631,3 +631,75 @@ final class OverlayStyleTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([OverlayPlacement].self, from: data), placements)
     }
 }
+
+/// Covers TASK-89 (#362) 85.2, 85.4, 85.6 and 85.9: `fontWeight` decoding,
+/// defaults and reset on font change.
+final class OverlayStyleFontWeightTests: XCTestCase {
+    private func styleJSON(fontWeight: String?) throws -> Data {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(OverlayStyle(fontID: .notoSerifTC))) as? [String: Any])
+        XCTAssertNil(object["fontWeight"], "a default style writes no fontWeight")
+        if let fontWeight { object["fontWeight"] = fontWeight }
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    /// 85.2: a profile saved before TASK-89 has no `fontWeight`.
+    func testMissingWeightIsTheDefault() throws {
+        let style = try JSONDecoder().decode(OverlayStyle.self, from: styleJSON(fontWeight: nil))
+        XCTAssertEqual(style.fontWeight, .bold)
+        XCTAssertEqual(style.fontPostScriptName, "NotoSerifTC-Bold")
+        XCTAssertEqual(style, OverlayStyle(fontID: .notoSerifTC))
+    }
+
+    /// 85.3 (model part): a chosen weight survives a save and reload.
+    func testChosenWeightRoundTrips() throws {
+        var style = OverlayStyle(fontID: .notoSerifTC)
+        style.fontWeight = .heavy
+        let data = try JSONEncoder().encode(style)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["fontWeight"] as? String, "heavy")
+        let decoded = try JSONDecoder().decode(OverlayStyle.self, from: data)
+        XCTAssertEqual(decoded.fontWeight, .heavy)
+        XCTAssertEqual(decoded.fontPostScriptName, "NotoSerifTC-Black")
+        XCTAssertEqual(decoded, style)
+    }
+
+    /// 85.6: unknown, unoffered or malformed values fall back, never throw.
+    func testUnknownOrMalformedWeightFallsBack() throws {
+        for value in ["ultraBlack", "light", ""] {
+            let style = try JSONDecoder().decode(OverlayStyle.self, from: styleJSON(fontWeight: value))
+            XCTAssertEqual(style.fontWeight, .bold, value)
+            XCTAssertEqual(style, OverlayStyle(fontID: .notoSerifTC), value)
+        }
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: styleJSON(fontWeight: nil)) as? [String: Any])
+        for malformed: Any in [3, ["bold"], NSNull()] {
+            object["fontWeight"] = malformed
+            let data = try JSONSerialization.data(withJSONObject: object)
+            XCTAssertEqual(try JSONDecoder().decode(OverlayStyle.self, from: data).fontWeight, .bold,
+                           "\(malformed)")
+        }
+    }
+
+    /// 85.4: changing the font resets the weight to the new font's default.
+    func testChangingFontResetsWeight() {
+        var style = OverlayStyle(fontID: .notoSerifTC)
+        style.fontWeight = .regular
+        style.fontID = .notoSerifTC
+        XCTAssertEqual(style.fontWeight, .regular, "same font keeps the weight")
+        style.fontID = .iansui
+        XCTAssertEqual(style.fontWeight, FontCatalog.entry(for: .iansui).defaultWeight)
+        style.fontID = .notoSerifTC
+        XCTAssertEqual(style.fontWeight, .bold, "85.4")
+    }
+
+    /// Choosing the default, or a weight the font lacks, stores nothing.
+    func testDefaultOrUnofferedWeightStoresNothing() throws {
+        var style = OverlayStyle(fontID: .kaiti)
+        style.fontWeight = .heavy
+        XCTAssertEqual(style.fontWeight, .bold)
+        style.fontWeight = .bold
+        XCTAssertEqual(style, OverlayStyle(fontID: .kaiti))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(style)) as? [String: Any])
+        XCTAssertNil(object["fontWeight"])
+    }
+}

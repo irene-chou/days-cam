@@ -170,10 +170,10 @@ final class FontCatalogTests: XCTestCase {
                        "Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.\n(c) 2022 王立宇、劉韋辰 版權所有。", "40.2")
         XCTAssertEqual(asset.licenseFileNames, ["chenyuluoyan-OFL.txt"])
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
     }
 
@@ -198,22 +198,22 @@ final class FontCatalogTests: XCTestCase {
     }
 
     /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag
-    /// (`v2` since TASK-40, 40.2).
+    /// (`v2` since TASK-40, 40.2; `v3` since TASK-89).
     func testOpenSourceURLsPointAtTheFixedTag() throws {
         let asset = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).openSource)
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fileExtension, "otf")
         XCTAssertEqual(FontCatalog.entries.compactMap(\.openSource).count, 4, "40.2")
         for entry in FontCatalog.entries {
             guard let asset = entry.openSource else { continue }
             XCTAssertEqual(asset.primaryURL.absoluteString,
-                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/\(asset.repositoryPath)",
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertEqual(asset.fallbackURL.absoluteString,
-                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/\(asset.repositoryPath)",
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertTrue(asset.primaryURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
             XCTAssertTrue(asset.fallbackURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
@@ -222,5 +222,97 @@ final class FontCatalogTests: XCTestCase {
             // §4.1 lists the open-source sizes as these byte counts in MB.
             XCTAssertEqual(entry.downloadSizeText, String(format: "%.1f MB", Double(asset.byteCount) / 1_000_000))
         }
+    }
+}
+
+/// Covers TASK-89 (#362) 85.1 and 85.9: the weights confirmed by Lead, and
+/// the per-weight download unit.
+final class FontCatalogWeightTests: XCTestCase {
+    /// 85.1: the confirmed list, light to heavy, default marked.
+    func testWeightsMatchTheConfirmedList() {
+        let expected: [OverlayFontID: [(OverlayFontWeight, String)]] = [
+            .pingFang: [(.light, "PingFangTC-Light"), (.regular, "PingFangTC-Regular"),
+                        (.bold, "PingFangTC-Semibold")],
+            .notoSerifTC: [(.regular, "NotoSerifTC-Regular"), (.bold, "NotoSerifTC-Bold"),
+                           (.heavy, "NotoSerifTC-Black")],
+            .hiraginoSans: [(.regular, "HiraginoSansTC-W3"), (.bold, "HiraginoSansTC-W6")],
+            .songti: [(.light, "STSongti-TC-Light"), (.regular, "STSongti-TC-Regular"),
+                      (.bold, "STSongti-TC-Bold")],
+            .kaiti: [(.regular, "STKaitiTC-Regular"), (.bold, "STKaitiTC-Bold")],
+            .yuanti: [(.light, "STYuanti-TC-Light"), (.regular, "STYuanti-TC-Regular"),
+                      (.bold, "STYuanti-TC-Bold")],
+            .hannotate: [(.regular, "HannotateTC-W5"), (.bold, "HannotateTC-W7")],
+        ]
+        for entry in FontCatalog.entries {
+            XCTAssertLessThanOrEqual(entry.weights.count, 3, "\(entry.fontID)")
+            XCTAssertTrue(entry.weights.contains { $0.weight == entry.defaultWeight }, "\(entry.fontID)")
+            // The default is the face drawn before TASK-89 (85.2).
+            XCTAssertEqual(entry.postScriptName(for: entry.defaultWeight), entry.postScriptName, "\(entry.fontID)")
+            if let weights = expected[entry.fontID] {
+                XCTAssertEqual(entry.weights.map(\.weight), weights.map(\.0), "\(entry.fontID)")
+                XCTAssertEqual(entry.weights.map(\.postScriptName), weights.map(\.1), "\(entry.fontID)")
+                XCTAssertEqual(entry.defaultWeight, .bold, "\(entry.fontID)")
+                XCTAssertTrue(entry.hasWeightChoice)
+            } else {
+                XCTAssertEqual(entry.weights.count, 1, "\(entry.fontID) has one weight")
+                XCTAssertFalse(entry.hasWeightChoice)
+            }
+        }
+        XCTAssertEqual(FontCatalog.entry(for: .chenyuluoyan).weights.map(\.postScriptName), ["ChenYuluoyan-2.0-Thin"])
+    }
+
+    func testWeightNames() {
+        XCTAssertEqual(OverlayFontWeight.allCases.map(\.displayName), ["細", "標準", "粗", "特粗"])
+        XCTAssertEqual(OverlayFontWeight.allCases.map(\.rawValue), ["light", "regular", "bold", "heavy"])
+    }
+
+    /// 85.6: an unoffered or missing weight resolves to the default.
+    func testUnofferedWeightResolvesToDefault() {
+        let kaiti = FontCatalog.entry(for: .kaiti)
+        XCTAssertEqual(kaiti.resolvedWeight(nil), .bold)
+        XCTAssertEqual(kaiti.resolvedWeight(.heavy), .bold, "Kaiti Black is not offered yet")
+        XCTAssertEqual(kaiti.postScriptName(for: .light), "STKaitiTC-Bold")
+        XCTAssertEqual(kaiti.resolvedWeight(.regular), .regular)
+        XCTAssertEqual(OverlayFontID.iansui.postScriptName(for: .heavy), "Iansui-Regular")
+    }
+
+    /// The two v3 files (#362 Lead 4), measured from the uploaded files.
+    func testNotoSerifWeightAssets() throws {
+        let entry = FontCatalog.entry(for: .notoSerifTC)
+        let regular = try XCTUnwrap(entry.option(for: .regular).openSource)
+        XCTAssertEqual(regular.repositoryPath, "noto-serif-tc/NotoSerifTC-Regular.otf")
+        XCTAssertEqual(regular.byteCount, 7_936_104)
+        XCTAssertEqual(regular.sha256, "63515eb0622d589a2f4062e8757c598b3da3bffd053f69abd181c210158ef10c")
+        XCTAssertEqual(regular.primaryURL.absoluteString,
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/noto-serif-tc/NotoSerifTC-Regular.otf")
+        let black = try XCTUnwrap(entry.option(for: .heavy).openSource)
+        XCTAssertEqual(black.repositoryPath, "noto-serif-tc/NotoSerifTC-Black.otf")
+        XCTAssertEqual(black.byteCount, 8_122_092)
+        XCTAssertEqual(black.sha256, "55c68df309e702cdb56b9ffd6b8185468afc0cb070aa9c2f14099de0cae64d12")
+        for asset in [regular, black] {
+            XCTAssertEqual(asset.version, "2.003")
+            XCTAssertEqual(asset.licenseFileNames, ["notoSerifTC-OFL.txt"])
+        }
+        // The default weight's file is unchanged from v2.
+        XCTAssertEqual(entry.option(for: .bold).openSource, FontCatalog.notoSerifTCAsset)
+        XCTAssertEqual(entry.openSource?.sha256, "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d")
+    }
+
+    /// 85.9: one unit per weight; the default keeps the pre-TASK-89 storage
+    /// name so a downloaded file is not fetched again.
+    func testDownloadUnitsArePerWeight() {
+        let units = FontCatalog.entry(for: .notoSerifTC).downloadUnits
+        XCTAssertEqual(units.map(\.weight), [.regular, .bold, .heavy])
+        XCTAssertEqual(units.map(\.storageName), ["notoSerifTC-regular", "notoSerifTC", "notoSerifTC-heavy"])
+        XCTAssertEqual(Set(units).count, 3)
+        XCTAssertEqual(units.map(\.option.postScriptName),
+                       ["NotoSerifTC-Regular", "NotoSerifTC-Bold", "NotoSerifTC-Black"])
+        for entry in FontCatalog.entries {
+            let defaultUnit = FontDownloadUnit(fontID: entry.fontID, weight: entry.defaultWeight)
+            XCTAssertEqual(defaultUnit.storageName, entry.fontID.rawValue, "\(entry.fontID)")
+        }
+        XCTAssertEqual(FontDownloadUnit(fontID: .songti, weight: .light).storageName, "songti-light")
+        XCTAssertNil(FontDownloadUnit(fontID: .songti, weight: .light).option.downloadSizeMegabytes,
+                     "system weights are not measured (#362 Lead 5)")
     }
 }

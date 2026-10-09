@@ -302,3 +302,60 @@ final class OverlayFontResolutionTests: XCTestCase {
         XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: "NoSuchFont-Bold"), .pingFang)
     }
 }
+
+/// Covers TASK-89 (#362) 85.9: resolution by `fontID` + `fontWeight`.
+@MainActor
+final class OverlayFontWeightResolutionTests: XCTestCase {
+    /// Availability per weight, recording every question.
+    @MainActor
+    private final class WeightSpy: FontAvailabilityProviding {
+        var available: Set<FontDownloadUnit> = []
+        private(set) var asked: [FontDownloadUnit] = []
+        func state(for fontID: OverlayFontID) -> FontState {
+            state(for: fontID, weight: FontCatalog.entry(for: fontID).defaultWeight)
+        }
+        func state(for fontID: OverlayFontID, weight: OverlayFontWeight) -> FontState {
+            let unit = FontDownloadUnit(fontID: fontID, weight: weight)
+            asked.append(unit)
+            return available.contains(unit) ? .available : .notDownloaded
+        }
+    }
+
+    /// The weight's own state is asked, with the weight's name.
+    func testResolutionAsksTheChosenWeight() {
+        let spy = WeightSpy()
+        var style = OverlayStyle(fontID: .notoSerifTC)
+        style.fontWeight = .heavy
+        XCTAssertEqual(OverlayMetrics.resolvedFont(for: style, availability: spy), .pingFang,
+                       "an undownloaded weight draws PingFang, not another weight")
+        XCTAssertEqual(spy.asked, [FontDownloadUnit(fontID: .notoSerifTC, weight: .heavy)])
+    }
+
+    /// Unknown weight resolves the default's state and face.
+    func testUnofferedWeightAsksTheDefault() {
+        let spy = WeightSpy()
+        _ = OverlayMetrics.resolvedFont(for: .kaiti, weight: .heavy, availability: spy)
+        XCTAssertEqual(spy.asked, [FontDownloadUnit(fontID: .kaiti, weight: .bold)])
+    }
+
+    /// PingFang's default never asks; its other weights do.
+    func testPingFangWeights() {
+        let spy = WeightSpy()
+        XCTAssertEqual(OverlayMetrics.resolvedFont(for: .pingFang, availability: spy), .pingFang)
+        XCTAssertTrue(spy.asked.isEmpty)
+        spy.available = [FontDownloadUnit(fontID: .pingFang, weight: .regular)]
+        let regular = OverlayMetrics.resolvedFont(for: .pingFang, weight: .regular, availability: spy)
+        XCTAssertEqual(spy.asked, [FontDownloadUnit(fontID: .pingFang, weight: .regular)])
+        // Resolves to PingFangTC-Regular only where iOS has it (B, #362 Lead 3).
+        XCTAssertTrue([FontCatalog.pingFangPostScriptName, "PingFangTC-Regular"].contains(regular.postScriptName))
+    }
+
+    /// A provider that does not track weights reports the default weight's
+    /// state and `.notDownloaded` for others.
+    func testDefaultProviderKnowsOnlyTheDefaultWeight() {
+        let spy = FontAvailabilitySpy([.notoSerifTC: .available])
+        XCTAssertEqual(spy.state(for: .notoSerifTC, weight: .bold), .available)
+        XCTAssertEqual(spy.state(for: .notoSerifTC, weight: .regular), .notDownloaded)
+        XCTAssertEqual(spy.state(for: .pingFang, weight: .light), .available)
+    }
+}

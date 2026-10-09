@@ -162,11 +162,29 @@ enum OverlayMetrics {
     ///
     /// Main actor only: resolve once there, then hand the `Sendable` result
     /// to the viewfinder and to the background baking work.
+    ///
+    /// `weight` picks the face (TASK-89); `nil`, or a weight the font does
+    /// not offer, is the font's default weight, drawn as before TASK-89.
     @MainActor
     static func resolvedFont(for fontID: OverlayFontID,
+                             weight: OverlayFontWeight? = nil,
                              availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
-        guard fontID != .pingFang else { return .pingFang }
-        return resolvedFont(state: availability.state(for: fontID), postScriptName: fontID.postScriptName)
+        let entry = FontCatalog.entry(for: fontID)
+        let resolvedWeight = entry.resolvedWeight(weight)
+        let postScriptName = entry.postScriptName(for: resolvedWeight)
+        // PingFang's default weight ships with iOS and is never asked about;
+        // its other weights go through the same check as any font.
+        if fontID == .pingFang, resolvedWeight == entry.defaultWeight { return .pingFang }
+        return resolvedFont(state: availability.state(for: fontID, weight: resolvedWeight),
+                            postScriptName: postScriptName)
+    }
+
+    /// `style`'s font in its `fontWeight` (TASK-89): the form overlay text
+    /// should be resolved with.
+    @MainActor
+    static func resolvedFont(for style: OverlayStyle,
+                             availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
+        resolvedFont(for: style.fontID, weight: style.fontWeight, availability: availability)
     }
 
     /// The rule behind `resolvedFont(for:availability:)`, with the state and

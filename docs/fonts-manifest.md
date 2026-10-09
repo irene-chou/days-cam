@@ -2,15 +2,17 @@
 
 App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-32），由 TASK-31 產生；換版本時新增 `dayscam-fonts` 的 tag 並同步本表。
 
-- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v2`（TASK-40 起；`v1` 保留不覆寫，`v2` 含 `v1` 的三個原檔加辰宇落雁體）
-- 主要網址：`https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/<路徑>`
-- 備援網址：`https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/<路徑>`
-- 2026-10-06 已對 `v1` 的 6 個網址完整下載驗證，大小與 SHA-256 一致（驗收 31.1，紀錄見 #162）；`v2` 的 8 個網址待 tag 推上後驗證（驗收 40.5，#219）
+- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v3`（TASK-89 起，#362；`v1`、`v2` 保留不覆寫。`v2` 含 `v1` 的三個原檔加辰宇落雁體；`v3` 含 `v2` 全部檔案（內容不變）加思源宋體 Regular／Black）
+- 主要網址：`https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/<路徑>`
+- 備援網址：`https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/<路徑>`
+- 2026-10-06 已對 `v1` 的 6 個網址完整下載驗證，大小與 SHA-256 一致（驗收 31.1，紀錄見 #162）；`v2` 的 8 個網址待 tag 推上後驗證（驗收 40.5，#219）；`v3` 新增的 2 個檔案由上游 `notofonts/noto-cjk` main 分支 `Serif/SubsetOTF/TC` 取得，name table 版本 `Version 2.003`，與現有 Bold 同版；`v3` 網址待 tag 推上後驗證
 
 | fontID | 顯示名稱 | 路徑 | bytes | SHA-256 | PostScript | 字型版本 | App 內授權檔 |
 |---|---|---|---|---|---|---|---|
 | `huninn` | 粉圓 | `huninn/jf-openhuninn-2.1.ttf` | 4911464 | `9d5bf4932d31fe94c18cd8cfddc98bc1b14ce10f4e354c682179db290a99c825` | `jf-openhuninn-2.1` | 2.1 | `huninn-OFL.txt`、`huninn-Apache-2.0.txt` |
-| `notoSerifTC` | 思源宋體 | `noto-serif-tc/NotoSerifTC-Bold.otf` | 8253304 | `3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d` | `NotoSerifTC-Bold` | 2.003 | `notoSerifTC-OFL.txt` |
+| `notoSerifTC` | 思源宋體（★粗，預設） | `noto-serif-tc/NotoSerifTC-Bold.otf` | 8253304 | `3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d` | `NotoSerifTC-Bold` | 2.003 | `notoSerifTC-OFL.txt` |
+| `notoSerifTC` | 思源宋體（標準，`regular`） | `noto-serif-tc/NotoSerifTC-Regular.otf` | 7936104 | `63515eb0622d589a2f4062e8757c598b3da3bffd053f69abd181c210158ef10c` | `NotoSerifTC-Regular` | 2.003 | `notoSerifTC-OFL.txt` |
+| `notoSerifTC` | 思源宋體（特粗，`heavy`） | `noto-serif-tc/NotoSerifTC-Black.otf` | 8122092 | `55c68df309e702cdb56b9ffd6b8185468afc0cb070aa9c2f14099de0cae64d12` | `NotoSerifTC-Black` | 2.003 | `notoSerifTC-OFL.txt` |
 | `iansui` | 芫荽 | `iansui/Iansui-Regular.ttf` | 9447424 | `7f1aa62e9dcbf40d0ce41a5d3f1e5ea602e66c295778ac6fefb6b84d8ed08bd5` | `Iansui-Regular` | 1.012（官方 release tag `v1.020`） | `iansui-OFL.txt` |
 | `chenyuluoyan` | 辰宇落雁體 | `chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf` | 9522140 | `1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db` | `ChenYuluoyan-2.0-Thin` | 2.100（官方 release `v2.0`） | `chenyuluoyan-OFL.txt` |
 
@@ -30,7 +32,7 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
   [jf open huninn]
   Copyright (c) 2020-2024 The jf open huninn font is redistributed by justfont Co., Ltd., with Reserved Font Names 'open huninn' and 'huninn' under SIL Open Font License. The Hanzi part of this project was derived from Kosugi Maru under Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0).
   ```
-- **思源宋體**：`© 2017-2024 Adobe (http://www.adobe.com/).`
+- **思源宋體**：`© 2017-2024 Adobe (http://www.adobe.com/).`（Regular、Bold、Black 三個檔案相同）
 - **芫荽**：`Copyright 2025 The Iansui Project Authors (https://github.com/ButTaiwan/iansui)`
 - **辰宇落雁體**：字型檔有英文與繁中兩筆 copyright 記錄，兩行都列（英文在前）。上游 repo 沒有附授權檔，`chenyuluoyan-OFL.txt` 由 Lead 依字型內嵌聲明與 OFL 1.1 全文整理（與 `dayscam-fonts@v2` 的 `chenyuluoyan/OFL.txt` 逐字相同）。
 
@@ -38,6 +40,22 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
   Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.
   (c) 2022 王立宇、劉韋辰 版權所有。
   ```
+
+## 字重（TASK-89，#362 Lead 定案）
+
+每個字型最多 3 個字重，★ 為預設（TASK-89 前唯一的字重）。`OverlayStyle.fontWeight` 存 `light`／`regular`／`bold`／`heavy`，沒有、不認得或該字型沒有時用預設。系統字型非預設字重的 PostScript 名稱與大小未經實機確認（B 級）。
+
+| 字型 | 細 `light` | 標準 `regular` | 粗 `bold` | 特粗 `heavy` |
+|---|---|---|---|---|
+| 蘋方 | `PingFangTC-Light` | `PingFangTC-Regular` | ★`PingFangTC-Semibold` | — |
+| 思源宋體 | — | `NotoSerifTC-Regular` | ★`NotoSerifTC-Bold` | `NotoSerifTC-Black` |
+| 冬青黑體 | — | `HiraginoSansTC-W3` | ★`HiraginoSansTC-W6` | — |
+| 宋體 | `STSongti-TC-Light` | `STSongti-TC-Regular` | ★`STSongti-TC-Bold` | — |
+| 楷體 | — | `STKaitiTC-Regular` | ★`STKaitiTC-Bold` | —（Black 待實機確認後另開卡） |
+| 圓體 | `STYuanti-TC-Light` | `STYuanti-TC-Regular` | ★`STYuanti-TC-Bold` | — |
+| 手札體 | — | `HannotateTC-W5` | ★`HannotateTC-W7` | — |
+
+其他字型（含辰宇落雁體）只有一個字重。下載以「字型＋字重」為單位（`FontDownloadUnit`）；預設字重沿用原本的儲存名稱 `<fontID>`，其他字重為 `<fontID>-<weight>`，所以已下載的檔案不需重新下載。
 
 ## 預覽圖
 
