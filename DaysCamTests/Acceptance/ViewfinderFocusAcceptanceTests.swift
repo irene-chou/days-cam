@@ -261,6 +261,7 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
         model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
         await settle(150) // locked, onEnded never arrives
         focused.removeAll()
+        model.touchCancelled() // the view's GestureState reset, which fires even when onEnded does not
         tap(model, at: spot)
         XCTAssertEqual(focused.count, 1)
     }

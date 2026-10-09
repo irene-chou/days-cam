@@ -145,27 +145,38 @@ final class ViewfinderFocusModelTests: XCTestCase {
 
     // MARK: lost onEnded
 
-    /// 85.1: onEnded lost after a lock, the same spot tapped again still focuses.
-    func testSamePointRetapAfterLostEndOnLockedTouchFocuses() async {
+    /// 85.1: after a cancel (onEnded lost), the same spot tapped again focuses.
+    func testSamePointRetapAfterCancelOnLockedTouchFocuses() async {
         let model = makeModel()
         let spot = CGPoint(x: 150, y: 200)
         model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
         await settle(120)
         focused.removeAll()
+        model.touchCancelled()
         tap(model, at: spot)
         XCTAssertEqual(focused, [CGPoint(x: 0.5, y: 0.5)])
     }
 
-    /// 85.1: same, when the lost touch had become an exposure drag.
-    func testSamePointRetapAfterLostEndOnAdjustingTouchFocuses() async {
+    /// 85.1: same, when the cancelled touch had become an exposure drag.
+    func testSamePointRetapAfterCancelOnAdjustingTouchFocuses() {
         let model = makeModel()
         let spot = CGPoint(x: 150, y: 200)
         tap(model, at: spot)
         focused.removeAll()
         model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
         model.touchChanged(startLocation: spot, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
-        await settle(100)
+        model.touchCancelled()
         tap(model, at: spot)
+        XCTAssertEqual(focused.count, 1)
+    }
+
+    /// A repeated first value without a cancel is the same touch: one tap, one focus.
+    func testRepeatedFirstValueWithoutCancelIsNotANewTouch() {
+        let model = makeModel()
+        let spot = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        model.touchEnded()
         XCTAssertEqual(focused.count, 1)
     }
 
@@ -492,7 +503,7 @@ final class ViewfinderFocusModelTests: XCTestCase {
         let model = makeModel()
         let start = CGPoint(x: 150, y: 200)
         model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
-        model.discardTouch()
+        model.touchCancelled()
         await settle(150)
         XCTAssertTrue(focused.isEmpty)
         XCTAssertTrue(locked.isEmpty)
