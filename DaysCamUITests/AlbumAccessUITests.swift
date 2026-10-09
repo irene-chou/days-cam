@@ -19,7 +19,19 @@ final class AlbumAccessUITests: XCTestCase {
         let gear = app.buttons["圖庫設定"]
         XCTAssertTrue(gear.waitForExistence(timeout: 10))
         gear.tap()
-        XCTAssertTrue(app.switches["自動加入 DaysCam 相簿"].waitForExistence(timeout: 5))
+        let toggle = app.switches["自動加入 DaysCam 相簿"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        // Let the sheet finish rising; a tap during the animation misses.
+        let settled = NSPredicate(format: "isHittable == true")
+        expectation(for: settled, evaluatedWith: toggle)
+        waitForExpectations(timeout: 5)
+        Thread.sleep(forTimeInterval: 0.8)
+    }
+
+    /// Taps the switch knob at the row's trailing edge; the centre of the row
+    /// is its label, which does not flip it on every device size.
+    private func flip(_ toggle: XCUIElement) {
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {
@@ -37,7 +49,7 @@ final class AlbumAccessUITests: XCTestCase {
         let toggle = app.switches["自動加入 DaysCam 相簿"]
         XCTAssertEqual(toggle.value as? String, "0")
         XCTAssertFalse(app.staticTexts["limitedAccessNote"].exists)
-        toggle.switches.firstMatch.tap()
+        flip(toggle)
         XCTAssertTrue(app.staticTexts["limitedAccessNote"].waitForExistence(timeout: 3))
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertFalse(app.staticTexts["無法自動加入相簿"].exists)
@@ -50,7 +62,7 @@ final class AlbumAccessUITests: XCTestCase {
         let app = launch("full")
         openSettingsSheet(app)
         let toggle = app.switches["自動加入 DaysCam 相簿"]
-        toggle.switches.firstMatch.tap()
+        flip(toggle)
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertFalse(app.staticTexts["limitedAccessNote"].exists)
         XCTAssertFalse(app.staticTexts["無法自動加入相簿"].exists)
@@ -61,7 +73,7 @@ final class AlbumAccessUITests: XCTestCase {
         let app = launch("denied")
         openSettingsSheet(app)
         let toggle = app.switches["自動加入 DaysCam 相簿"]
-        toggle.switches.firstMatch.tap()
+        flip(toggle)
         XCTAssertTrue(app.staticTexts["無法自動加入相簿"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["前往設定"].exists)
         XCTAssertEqual(toggle.value as? String, "0")
