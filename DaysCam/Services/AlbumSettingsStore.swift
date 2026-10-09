@@ -79,6 +79,12 @@ final class AlbumSettingsStore: ObservableObject, AlbumSaveSettings {
         defaults.set(identifier, forKey: Keys.albumIdentifier)
     }
 
+    /// Whether photo access is limited right now. Reads the status without
+    /// prompting (79.2).
+    var isLimitedAccess: Bool {
+        library.authorizationStatus(for: Self.accessLevel) == .limited
+    }
+
     // MARK: Switch
 
     /// The user turned the switch on (64.2, 64.4).

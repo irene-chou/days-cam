@@ -31,7 +31,7 @@ final class GalleryDismissDragTests: XCTestCase {
 final class GalleryAlbumNoticeTests: XCTestCase {
     func testOnlyANonFullResultRaisesTheNeedsFullAccessNotice() {
         XCTAssertNil(GalleryAlbumNotice(result: .full), "64.2")
-        XCTAssertEqual(GalleryAlbumNotice(result: .limited), .needsFullAccess, "64.4")
+        XCTAssertNil(GalleryAlbumNotice(result: .limited), "79.1")
         XCTAssertEqual(GalleryAlbumNotice(result: .denied), .needsFullAccess, "64.4")
     }
 
