@@ -549,6 +549,9 @@ final class CameraScreenModel: ObservableObject {
         cameraService.focusExposureStatePublisher
             .sink { [weak self] in self?.focusModel.receive($0) }
             .store(in: &cancellables)
+        cameraService.focusExposureResetPublisher
+            .sink { [weak self] in self?.focusModel.receiveReset() }
+            .store(in: &cancellables)
         cameraService.focusExposureFailurePublisher
             .sink { [weak self] _ in self?.focusModel.receiveFailure() }
             .store(in: &cancellables)

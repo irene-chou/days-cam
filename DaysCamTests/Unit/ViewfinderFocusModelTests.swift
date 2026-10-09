@@ -311,10 +311,54 @@ final class ViewfinderFocusModelTests: XCTestCase {
         let model = makeModel()
         model.receive(FocusExposureState(isLocked: true, exposureBias: 1))
         tap(model)
-        model.receive(.initial)
+        model.receiveReset()
         XCTAssertNil(model.reticle)
         XCTAssertEqual(model.displayedBias, 0)
         XCTAssertFalse(model.isLocked)
+    }
+
+    /// Codex P2: a scene-change reset while the state was already at rest
+    /// publishes no state, only the reset event, and must still clear the frame.
+    func testResetWhileAlreadyAtRestStillHidesTheReticle() {
+        let model = makeModel()
+        tap(model)
+        XCTAssertNotNil(model.reticle)
+        model.receiveReset()
+        XCTAssertNil(model.reticle)
+    }
+
+    /// Codex P2: a quick drag through 0 and release; the older answers (0.5,
+    /// then 0 = the initial state) arrive after the finger lifted. They must
+    /// neither drop the request nor close the frame.
+    func testOlderAnswersAfterAFastDragThroughZeroKeepTheLastRequest() {
+        let model = makeModel(hold: .seconds(5))
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 190), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 230), viewfinderSize: size)
+        XCTAssertEqual(biases, [0, -0.5])
+        model.touchEnded()
+        model.receive(.initial)
+        XCTAssertNotNil(model.reticle, "an older answer is not a reset")
+        XCTAssertEqual(model.displayedBias, -0.5, accuracy: 0.0001, "the request still shows")
+        model.receive(FocusExposureState(isLocked: false, exposureBias: -0.5))
+        XCTAssertEqual(model.displayedBias, -0.5, accuracy: 0.0001)
+        XCTAssertNotNil(model.reticle)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
+        XCTAssertEqual(model.displayedBias, 1, "settled: the device value shows again")
+    }
+
+    /// The last answer settles the request, so a later device value shows.
+    func testLastAnswerSettlesTheRequest() {
+        let model = makeModel(hold: .seconds(5))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 110), viewfinderSize: size)
+        model.touchEnded()
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
+        model.receiveReset()
+        XCTAssertEqual(model.displayedBias, 0)
     }
 
     /// Dragging the bias back through 0 is not a reset: the reticle stays.

@@ -80,9 +80,6 @@ final class ViewfinderFocusModel: ObservableObject {
     private var serviceState = FocusExposureState.initial
     private var pendingBias: Float?
     private var lastSentBias: Float?
-    /// A tap on a locked camera was sent, so the next state (unlocked) answers
-    /// it rather than meaning the camera was reset.
-    private var expectsUnlockAnswer = false
     private var nextReticleID = 0
     private var touch: Touch?
     private var holdTask: Task<Void, Never>?
@@ -214,7 +211,6 @@ final class ViewfinderFocusModel: ObservableObject {
         guard let devicePoint = convert(layerPoint, viewfinderSize) else { return }
         nextReticleID += 1
         reticle = Reticle(id: nextReticleID, layerPoint: layerPoint)
-        expectsUnlockAnswer = !lock && serviceState.isLocked
         keepReticleBright()
         if lock {
             actions.lock(devicePoint)
@@ -235,20 +231,29 @@ final class ViewfinderFocusModel: ObservableObject {
     // MARK: Service feedback
 
     /// The service's focus/exposure state changed.
+    ///
+    /// While a requested bias is waiting, only the answer carrying that bias
+    /// settles it. A faster drag leaves earlier answers on the way (a bias that
+    /// is passed through, 0 included); those only update what the device has
+    /// and never clear the request.
     func receive(_ state: FocusExposureState) {
-        let wasAtRest = serviceState == .initial
-        let isUnlockAnswer = expectsUnlockAnswer && !state.isLocked && state.exposureBias == serviceState.exposureBias
-        expectsUnlockAnswer = false
-        // Dragging the bias back to 0 also lands on the initial state; that
-        // is the user's own request, not a reset.
-        let isOwnBiasAnswer = touch?.mode == .adjusting || pendingBias == state.exposureBias
         serviceState = state
-        if touch?.mode != .adjusting { pendingBias = nil }
-        if state == .initial {
-            lastSentBias = nil
-            if !wasAtRest, !isUnlockAnswer, !isOwnBiasAnswer { hideReticle() }
+        if let pending = pendingBias, abs(state.exposureBias - pending) < 0.001 {
+            pendingBias = nil
         }
         isLocked = state.isLocked
+        refreshDisplayedBias()
+    }
+
+    /// The camera went back to continuous auto on its own (flip, lens, scene
+    /// change, foreground), which the state alone cannot say when it was
+    /// already at rest: reticle, requests and bias all go.
+    func receiveReset() {
+        serviceState = .initial
+        pendingBias = nil
+        lastSentBias = nil
+        isLocked = false
+        hideReticle()
         refreshDisplayedBias()
     }
 

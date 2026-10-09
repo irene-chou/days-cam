@@ -413,6 +413,14 @@ final class CameraService: ObservableObject {
         focusExposureFailureSubject.eraseToAnyPublisher()
     }
 
+    /// Emits whenever the camera went back to continuous auto (flip, lens
+    /// change, scene change, foreground), even when `focusExposureState` was
+    /// already at rest and so did not change. Delivered on the main queue.
+    var focusExposureResetPublisher: AnyPublisher<Void, Never> {
+        focusExposureResetSubject.eraseToAnyPublisher()
+    }
+
+    private let focusExposureResetSubject = PassthroughSubject<Void, Never>()
     private let focusExposureSubject = CurrentValueSubject<FocusExposureState, Never>(.initial)
     private let focusExposureFailureSubject = PassthroughSubject<FocusExposureFailure, Never>()
     /// The truth the subject is published from. Touched on `sessionQueue` only.
@@ -940,6 +948,7 @@ extension CameraService {
             return reportFocusExposureFailure()
         }
         updateFocusExposure { $0 = .initial }
+        onMain { [weak self] in self?.focusExposureResetSubject.send() }
     }
 
     /// Device-level "scene changed" handler. Runs the reset only for the live
