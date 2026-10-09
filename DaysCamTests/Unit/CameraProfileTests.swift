@@ -36,6 +36,57 @@ final class CameraProfileTests: XCTestCase {
     // MARK: - Defaults
 
     /// PRD FR-1.9 / §4.3: the defaults a new profile starts from.
+    func testWeightMigrationThroughStoreKeepsAllProfilesAndSurvivesRestart() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Task89-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite = "Task89-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var profiles: [CameraProfile] = []
+        var records: [[String: Any]] = []
+        for (index, value) in (["unknown", 42, ["weight": "black"], NSNull(), ["bold"], false] as [Any]).enumerated() {
+            var subject = profile(name: "字重\(index)")
+            subject.style = OverlayStyle(fontID: .notoSerifTC)
+            profiles.append(subject)
+            var record = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(subject)) as? [String: Any])
+            var style = try XCTUnwrap(record["style"] as? [String: Any])
+            style["fontWeight"] = value
+            record["style"] = style
+            records.append(record)
+        }
+        let data = try JSONSerialization.data(withJSONObject: records)
+        let url = folder.appendingPathComponent(ProfileStore.fileName)
+        try data.write(to: url)
+        let store = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults)
+        XCTAssertEqual(store.load(), profiles)
+        XCTAssertEqual(try Data(contentsOf: url), data, "loading does not rewrite old data")
+        var selected = profiles[0]
+        selected.style.fontWeight = "black"
+        try store.update(selected)
+        let reopened = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults)
+        let loaded = reopened.load()
+        XCTAssertEqual(loaded.count, 6)
+        XCTAssertEqual(loaded.first?.style.fontWeight, "black")
+        XCTAssertEqual(loaded.dropFirst().map(\.id), profiles.dropFirst().map(\.id))
+        XCTAssertTrue(loaded.dropFirst().allSatisfy { $0.style.fontWeight == "bold" })
+    }
+
+    func testMalformedWeightDoesNotDropOrAlterProfileData() throws {
+        var original = profile()
+        original.style = OverlayStyle(fontID: .notoSerifTC)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        var style = try XCTUnwrap(json["style"] as? [String: Any])
+        for value in ["unknown", 42, ["weight": "black"], NSNull()] as [Any] {
+            style["fontWeight"] = value
+            json["style"] = style
+            let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertEqual(decoded, original)
+            XCTAssertNoThrow(try decoded.validate(calendar: DateFixture.taipei))
+            XCTAssertEqual(decoded.style.resolvedFontWeight.postScriptName, "NotoSerifTC-Bold")
+        }
+    }
+
     func testDefaultsMatchTheSpecifiedNewProfileValues() {
         let subject = CameraProfile(name: "預設", startDate: DateFixture.components(2026, 1, 10))
         XCTAssertEqual(subject.countingRule, .dayOne)

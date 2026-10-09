@@ -144,6 +144,77 @@ final class FontLibraryTests: XCTestCase {
             version: "2.1", copyright: "test", licenseFileNames: [])
     }
 
+    private var regularAsset: OpenSourceFontAsset {
+        OpenSourceFontAsset(fileName: "NotoSerifTC-Regular.otf", repositoryPath: "noto/NotoSerifTC-Regular.otf",
+                            byteCount: fontData.count, sha256: huninnAsset.sha256,
+                            primaryURL: URL(string: "https://primary.example/noto-regular.otf")!,
+                            fallbackURL: URL(string: "https://fallback.example/noto-regular.otf")!,
+                            version: "2.003", copyright: "test", licenseFileNames: [])
+    }
+
+    func testWeightDownloadsAreIndependentAndDoNotRepeat() async {
+        let library = makeLibrary()
+        fetcher.script(regularAsset.primaryURL, .data(fontData))
+        var completed: [FontDownloadID] = []
+        library.weightDownloadDidFinish.sink { completed.append($0) }.store(in: &cancellables)
+        XCTAssertTrue(library.download(.notoSerifTC, weightID: "regular"))
+        XCTAssertFalse(library.download(.notoSerifTC, weightID: "regular"))
+        XCTAssertEqual(library.state(for: .notoSerifTC), .notDownloaded)
+        await waitUntil("regular available") { library.state(for: .notoSerifTC, weightID: "regular") == .available }
+        XCTAssertFalse(library.download(.notoSerifTC, weightID: "regular"))
+        XCTAssertEqual(fetcher.requestedURLs, [regularAsset.primaryURL])
+        XCTAssertEqual(completed, [FontDownloadID(fontID: .notoSerifTC, weightID: "regular")])
+        XCTAssertEqual(library.storedFileURL(for: .notoSerifTC).lastPathComponent, "notoSerifTC.otf")
+        XCTAssertEqual(library.storedFileURL(for: .notoSerifTC, weightID: "regular").lastPathComponent, "notoSerifTC-regular.otf")
+        XCTAssertTrue(library.download(.notoSerifTC))
+        await waitUntil("bold available") { library.state(for: .notoSerifTC) == .available }
+        let relaunched = makeLibrary()
+        await relaunched.prepareAtLaunch(priority: .notoSerifTC, weightID: "regular")
+        XCTAssertEqual(relaunched.state(for: .notoSerifTC, weightID: "regular"), .available)
+        await relaunched.prepare(.notoSerifTC)
+        XCTAssertEqual(relaunched.state(for: .notoSerifTC), .available)
+        XCTAssertEqual(fetcher.requestedURLs, [regularAsset.primaryURL, notoAsset.primaryURL])
+        XCTAssertTrue(relaunched.delete(.notoSerifTC, weightID: "regular"))
+        XCTAssertEqual(relaunched.state(for: .notoSerifTC), .available)
+        XCTAssertEqual(relaunched.state(for: .notoSerifTC, weightID: "regular"), .notDownloaded)
+    }
+
+    func testFailedWeightDoesNotChangeAvailableDefaultOrEmitCompletion() async {
+        let library = makeLibrary()
+        XCTAssertTrue(library.download(.notoSerifTC))
+        await waitUntil("bold available") { library.state(for: .notoSerifTC) == .available }
+        fetcher.script(regularAsset.primaryURL, .fail(.noNetwork))
+        var completed: [FontDownloadID] = []
+        library.weightDownloadDidFinish.sink { completed.append($0) }.store(in: &cancellables)
+        XCTAssertTrue(library.download(.notoSerifTC, weightID: "regular"))
+        await waitUntil("regular failed") { library.state(for: .notoSerifTC, weightID: "regular") == .failed(.noNetwork) }
+        XCTAssertEqual(library.state(for: .notoSerifTC), .available)
+        XCTAssertTrue(completed.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.storedFileURL(for: .notoSerifTC, weightID: "regular").path))
+    }
+
+    func testSystemWeightsMatchExactNamesAndPersistSeparately() async {
+        let library = makeLibrary()
+        XCTAssertTrue(library.download(.songti, weightID: "light"))
+        XCTAssertTrue(library.download(.songti, weightID: "regular"))
+        XCTAssertEqual(matcher.startedNames, ["STSongti-TC-Light", "STSongti-TC-Regular"])
+        matcher.send(.finished(matched: true, offline: false), to: "STSongti-TC-Light")
+        matcher.send(.finished(matched: false, offline: false), to: "STSongti-TC-Regular")
+        await settle()
+        XCTAssertEqual(library.state(for: .songti, weightID: "light"), .available)
+        XCTAssertEqual(library.state(for: .songti, weightID: "regular"), .failed(.other))
+        XCTAssertEqual(library.state(for: .songti), .notDownloaded)
+        XCTAssertEqual(defaults.stringArray(forKey: "downloadedSystemFontWeights"), ["songti/light"])
+        XCTAssertTrue(library.downloadedSystemFontIDs.isEmpty)
+        let relaunched = makeLibrary()
+        XCTAssertEqual(relaunched.state(for: .songti, weightID: "light"), .preparing)
+        let task = Task { await relaunched.prepareAtLaunch(priority: .songti, weightID: "light") }
+        await waitUntil("light launch match") { matcher.startedNames.count == 3 }
+        matcher.send(.finished(matched: true, offline: false), to: "STSongti-TC-Light")
+        await task.value
+        XCTAssertEqual(relaunched.state(for: .songti, weightID: "light"), .available)
+    }
+
     private var notoAsset: OpenSourceFontAsset {
         OpenSourceFontAsset(
             fileName: "NotoSerifTC-Bold.otf", repositoryPath: "noto/NotoSerifTC-Bold.otf",
@@ -180,6 +251,7 @@ final class FontLibraryTests: XCTestCase {
                              fileManager: FileManager = .default) -> FontLibrary {
         let huninn = huninnAsset
         let noto = notoAsset
+        let regular = regularAsset
         return FontLibrary(directory: directory, fetcher: fetcher, registrar: registrar, matcher: matcher,
                            defaults: defaults, fileManager: fileManager,
                            launchTimeout: launchTimeout) { fontID in
@@ -192,7 +264,9 @@ final class FontLibraryTests: XCTestCase {
             case .notoSerifTC:
                 return FontCatalogEntry(fontID: fontID, displayName: real.displayName, section: real.section,
                                         source: .openSource, postScriptName: real.postScriptName,
-                                        downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: noto)
+                                        downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: noto,
+                                        weights: [FontWeightOption(id: "regular", displayName: "標準", postScriptName: "NotoSerifTC-Regular", downloadSizeMegabytes: 0.1, openSource: regular),
+                                                  FontWeightOption(id: "bold", displayName: "粗", postScriptName: real.postScriptName, downloadSizeMegabytes: 0.1, openSource: noto)])
             default:
                 return real
             }
