@@ -143,6 +143,32 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertTrue(locked.isEmpty)
     }
 
+    // MARK: lost onEnded
+
+    /// 85.1: onEnded lost after a lock, the same spot tapped again still focuses.
+    func testSamePointRetapAfterLostEndOnLockedTouchFocuses() async {
+        let model = makeModel()
+        let spot = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        await settle(120)
+        focused.removeAll()
+        tap(model, at: spot)
+        XCTAssertEqual(focused, [CGPoint(x: 0.5, y: 0.5)])
+    }
+
+    /// 85.1: same, when the lost touch had become an exposure drag.
+    func testSamePointRetapAfterLostEndOnAdjustingTouchFocuses() async {
+        let model = makeModel()
+        let spot = CGPoint(x: 150, y: 200)
+        tap(model, at: spot)
+        focused.removeAll()
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        model.touchChanged(startLocation: spot, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        await settle(100)
+        tap(model, at: spot)
+        XCTAssertEqual(focused.count, 1)
+    }
+
     // MARK: hold
 
     /// 73.3: holding still locks at the pressed point and no tap follows.

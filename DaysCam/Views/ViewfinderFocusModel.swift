@@ -65,6 +65,9 @@ final class ViewfinderFocusModel: ObservableObject {
     static let dragSlop: CGFloat = 10
     /// Vertical points that make one EV.
     static let pointsPerEV: CGFloat = 80
+    /// A first value this long after the last update of the touch we hold
+    /// belongs to a new touch.
+    static let newTouchGap: TimeInterval = 0.05
     /// Smallest bias step sent to the camera.
     static let biasStep: Float = 0.1
 
@@ -95,6 +98,8 @@ final class ViewfinderFocusModel: ObservableObject {
         var mode = Mode.undecided
         var anchorY: CGFloat = 0
         var anchorBias: Float = 0
+        /// When the drag last reported (system uptime).
+        var lastUpdate: TimeInterval = ProcessInfo.processInfo.systemUptime
     }
 
     init(actions: FocusExposureActions,
@@ -141,11 +146,22 @@ final class ViewfinderFocusModel: ObservableObject {
     /// is where it is now. All in the viewfinder's coordinates.
     func touchChanged(startLocation: CGPoint, location: CGPoint, viewfinderSize: CGSize) {
         self.viewfinderSize = viewfinderSize
-        // `onEnded` is skipped when SwiftUI cancels a gesture; a touch that
-        // starts somewhere else than the one we hold is a new one.
-        if let held = touch, held.start != startLocation { discardTouch() }
+        // `onEnded` is skipped when SwiftUI cancels a gesture. A touch that
+        // starts somewhere else than the one we hold is a new one. So is a
+        // first value (location == start, the only value a new gesture opens
+        // with) that comes after a pause on a touch that already had its
+        // first: the same spot tapped again. A touch reports its first value
+        // twice within milliseconds, which is not a new one.
+        let now = ProcessInfo.processInfo.systemUptime
+        if let held = touch,
+           held.start != startLocation
+            || (location == startLocation && now - held.lastUpdate > Self.newTouchGap) {
+            discardTouch()
+        }
         if touch == nil { beginTouch(at: startLocation) }
         guard var current = touch else { return }
+        current.lastUpdate = now
+        touch = current
         if isPinching() {
             invalidateTouch()
             return
