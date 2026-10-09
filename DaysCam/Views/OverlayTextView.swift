@@ -310,7 +310,7 @@ final class OverlayTextRenderCache {
 
 #Preview("Every outline and shadow, bottom trailing") {
     let outlines: [OverlayOutline] = [.none, .stroke, .box]
-    let shadows: [OverlayShadow] = [.none, .soft, .hard, .glow]
+    let shadows: [OverlayShadowPreset] = [.none, .soft, .hard, .glow]
     return ZStack {
         Color(white: 0.5)
         VStack(alignment: .trailing, spacing: 4) {

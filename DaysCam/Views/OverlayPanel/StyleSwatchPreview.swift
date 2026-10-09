@@ -36,7 +36,7 @@ enum StyleSwatchPreview {
     /// color so it reads as light spreading from the glyph.
     static func decorations(for style: OverlayStyle) -> [OverlayDecoration] {
         OverlayTheme(style: style).decorations.map { decoration in
-            if case let .shadow(offset, blur, opacity, _) = decoration, style.shadow != .glow {
+            if case let .shadow(offset, blur, opacity, _) = decoration, style.shadowColorSource != .textColor {
                 return .shadow(offset: offset, blur: blur, opacity: opacity, color: accentGray)
             }
             return decoration

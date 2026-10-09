@@ -249,7 +249,7 @@ final class StyleTabModelTests: XCTestCase {
         model.selectOutline(.none)
         model.selectShadow(.none)
         XCTAssertEqual(model.profile.style.outline, .none, "23.8")
-        XCTAssertEqual(model.profile.style.shadow, .none, "23.8")
+        XCTAssertEqual(model.profile.style.shadowPreset, OverlayShadowPreset.none, "23.8")
         XCTAssertNil(model.lastError, "23.8: 沒有任何警告狀態")
     }
 

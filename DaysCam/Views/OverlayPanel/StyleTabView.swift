@@ -234,7 +234,7 @@ struct StyleTabView: View {
                     let previewStyle: OverlayStyle = {
                         var style = model.profile.style
                         style.outline = outline
-                        style.shadow = .none
+                        style.applyShadowPreset(.none)
                         return style
                     }()
                     let isSelected = model.profile.style.outline == outline
@@ -277,11 +277,11 @@ struct StyleTabView: View {
                 // by clearing shadow) so the two pages behave symmetrically.
                 let previewStyle: OverlayStyle = {
                     var style = model.profile.style
-                    style.shadow = shadow
+                    style.applyShadowPreset(shadow)
                     style.outline = .none
                     return style
                 }()
-                let isSelected = model.profile.style.shadow == shadow
+                let isSelected = model.profile.style.shadowPreset == shadow
                 Button {
                     model.selectShadow(shadow)
                 } label: {
@@ -608,7 +608,7 @@ struct StyleTabView: View {
         }
     }
 
-    private func shadowName(_ shadow: OverlayShadow) -> String {
+    private func shadowName(_ shadow: OverlayShadowPreset) -> String {
         switch shadow {
         case .none: return "無陰影"
         case .soft: return "柔和"

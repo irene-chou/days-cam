@@ -278,7 +278,7 @@ extension StyleTabModel {
     var outlineOptions: [OverlayOutline] { OverlayOutline.allCases }
 
     /// The four shadow options, in display order (FR-10.8).
-    var shadowOptions: [OverlayShadow] { OverlayShadow.allCases }
+    var shadowOptions: [OverlayShadowPreset] { OverlayShadowPreset.allCases }
 
     /// Selects `outline` and persists. Both outline and shadow may be `.none`
     /// at once; nothing here warns about it (FR-10.10, overturning 0.1 FR-4.6).
@@ -288,9 +288,9 @@ extension StyleTabModel {
     }
 
     /// Selects `shadow` and persists, mirroring `selectOutline`.
-    func selectShadow(_ shadow: OverlayShadow) {
-        guard shadow != profile.style.shadow else { return }
-        mutate { $0.shadow = shadow }
+    func selectShadow(_ shadow: OverlayShadowPreset) {
+        guard shadow != profile.style.shadowPreset else { return }
+        mutate { $0.applyShadowPreset(shadow) }
     }
 }
 

@@ -76,7 +76,7 @@ final class ColorOpacityAcceptanceTests: XCTestCase {
             XCTAssertEqual(profile.style.outlineColor, expected.outline.flatMap(OverlayColor.init(hex:)), "69.1: outline color unchanged")
             XCTAssertEqual(profile.style.outline, .stroke)
             XCTAssertEqual(profile.style.strokeWidth, 4)
-            XCTAssertEqual(profile.style.shadow, .soft)
+            XCTAssertEqual(profile.style.shadowPreset, .soft)
             XCTAssertEqual(profile.style.sizeScale, 70 + index * 5)
         }
         XCTAssertEqual(try Data(contentsOf: fileURL), before, "69.1: load must not rewrite an untouched legacy file")

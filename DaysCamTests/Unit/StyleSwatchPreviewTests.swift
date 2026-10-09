@@ -39,14 +39,14 @@ final class StyleSwatchPreviewTests: XCTestCase {
     /// 49.6: glow spreads in the glyph color; the other shadows are gray.
     func testGlowUsesTextColorAndOthersAreGray() {
         var style = OverlayStyle()
-        style.shadow = .glow
+        style.applyShadowPreset(.glow)
         let glow = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
         guard case let .shadow(offset, _, _, color) = glow[0] else { return XCTFail("no shadow") }
         XCTAssertEqual(offset, .zero)
         XCTAssertEqual(color, StyleSwatchPreview.textColor)
-        for shadow in [OverlayShadow.soft, .hard] {
+        for shadow in [OverlayShadowPreset.soft, .hard] {
             var style = OverlayStyle()
-            style.shadow = shadow
+            style.applyShadowPreset(shadow)
             let decorations = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
             let colors = decorations.compactMap { decoration -> OverlayColor? in
                 if case let .shadow(_, _, _, color) = decoration { return color }
