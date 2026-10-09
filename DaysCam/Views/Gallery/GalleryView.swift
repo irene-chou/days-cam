@@ -20,7 +20,7 @@ struct GalleryView: View {
 
     /// The 「自動加入『DaysCam』相簿」 switch (TASK-64, TASK-74). Created here so
     /// it never prompts until the user turns it on.
-    @StateObject private var albumSettings = AlbumSettingsStore()
+    @StateObject private var albumSettings = AlbumSettingsStore.forGallery()
     @State private var albumNotice: GalleryAlbumNotice?
     @State private var isShowingSettings = false
 
@@ -112,7 +112,8 @@ struct GalleryView: View {
     }
 
     private var settingsSheet: some View {
-        GallerySettingsSheet(isOn: albumSwitchBinding, notice: albumNotice, openSettings: openSettings)
+        GallerySettingsSheet(isOn: albumSwitchBinding, notice: albumNotice,
+                             isLimitedAccess: albumSettings.isLimitedAccess, openSettings: openSettings)
     }
 
     private var albumSwitchBinding: Binding<Bool> {
@@ -281,6 +282,8 @@ struct GalleryView: View {
 struct GallerySettingsSheet: View {
     @Binding var isOn: Bool
     var notice: GalleryAlbumNotice?
+    /// Photo access is limited right now (79.2); shows the same-name caveat.
+    var isLimitedAccess = false
     var openSettings: () -> Void = {}
 
     var body: some View {
@@ -291,7 +294,13 @@ struct GallerySettingsSheet: View {
                         .tint(.green)
                         .accessibilityLabel("自動加入 DaysCam 相簿")
                 } footer: {
-                    Text(Self.footerText)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(Self.footerText)
+                        if isLimitedAccess {
+                            Text(Self.limitedAccessText)
+                                .accessibilityIdentifier("limitedAccessNote")
+                        }
+                    }
                 }
                 if let notice {
                     Section {
@@ -309,10 +318,12 @@ struct GallerySettingsSheet: View {
             .navigationTitle("圖庫設定")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.height(notice == nil ? 300 : 440)])
+        .presentationDetents([.height(notice == nil ? (isLimitedAccess ? 360 : 300) : 440)])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.light)
     }
+
+    static let limitedAccessText = "限制取用下，照片 App 中你自建的同名相簿可能看不到，DaysCam 會使用自己的相簿。"
 
     static let footerText = "開啟後，之後拍的照片會同時放進「DaysCam」相簿。照片一律會存在「最近項目」。"
 }
@@ -332,7 +343,8 @@ extension AlbumSettingsStore {
 
 /// The notices the album switch can raise (TASK-64, 64.4／64.5).
 enum GalleryAlbumNotice: Identifiable, Equatable {
-    /// Turning the switch on ended with limited access or a refusal.
+    /// Turning the switch on ended with a refusal. Limited access is fine
+    /// (79.1): the switch goes on without a notice.
     case needsFullAccess
     /// The switch was on but full access has since been withdrawn.
     case accessWithdrawn
@@ -353,8 +365,8 @@ enum GalleryAlbumNotice: Identifiable, Equatable {
     /// full access was granted.
     init?(result: AlbumAccessResult) {
         switch result {
-        case .full: return nil
-        case .limited, .denied: self = .needsFullAccess
+        case .full, .limited: return nil
+        case .denied: self = .needsFullAccess
         }
     }
 
