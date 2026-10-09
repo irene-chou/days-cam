@@ -231,8 +231,8 @@ struct FontToastView: View {
 /// template image, so it takes `foregroundColor`, and it shows the real
 /// glyphs before the font is downloaded.
 ///
-/// The images differ in height, so callers put it in a fixed-height box
-/// rather than rely on the image's own height.
+/// The list keeps the native 17pt glyph size and lets rows grow for wrapped
+/// full names. Tight callers may explicitly cap the height.
 struct FontPreviewImage: View {
     let fontID: OverlayFontID
     let accessibilityName: String

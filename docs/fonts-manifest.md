@@ -43,4 +43,4 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
 
 `swift scripts/render-font-previews.swift <四個開源字型檔所在資料夾>` 產生 `DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`（17pt、@2x／@3x 模板圖）。開源字型直接從檔案建立（先比對 SHA-256），不會畫到 Mac 上安裝的同名字型；系統字型經 CoreText 比對。取得的字型名稱不符 PRD-0.3 §4.1 時以非零狀態結束。
 
-TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`；toast、授權頁與其他簡稱沿用 `displayName`。預覽圖以完整名稱、17pt、210pt 文字寬換行，保留 1pt 透明邊界；列表使用原始點尺寸，不再以 24pt 高度縮小兩行圖。下載版本與 PostScript 名稱不變，完整名稱依系統 CoreText 在地化 fullName／字型 name table ID 4 查證（對照表見 PR #323）。
+TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`；toast、授權頁與其他簡稱沿用 `displayName`。預覽圖以完整名稱、17pt、210pt 文字寬換行，保留 4pt 透明邊界（保留負 side bearing 與下緣字形）；列表使用原始點尺寸，不再以 24pt 高度縮小兩行圖。下載版本與 PostScript 名稱不變，完整名稱依系統 CoreText 在地化 fullName／字型 name table ID 4 查證（對照表見 PR #323）。

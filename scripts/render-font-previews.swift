@@ -105,7 +105,7 @@ func render(_ text: String, font: NSFont, scale: CGFloat) -> Data {
     let bounds = wrapped.boundingRect(with: NSSize(width: 210, height: 1000),
                                       options: [.usesLineFragmentOrigin, .usesFontLeading])
     let size = NSSize(width: ceil(bounds.width), height: ceil(bounds.height))
-    let padding: CGFloat = 1
+    let padding: CGFloat = 4
     let width = Int(ceil((size.width + padding * 2) * scale))
     let height = Int(ceil((size.height + padding * 2) * scale))
     guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
