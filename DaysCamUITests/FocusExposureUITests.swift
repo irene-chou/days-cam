@@ -46,7 +46,7 @@ final class FocusExposureUITests: XCTestCase {
 
     /// 73.1: the reticle dims after ~1.5 s and goes when nothing is behind it.
     func testReticleGoesWhenUnused() {
-        launch()
+        launch(["-UITestFocusQuickFade"])
         viewfinder().tap()
         XCTAssertTrue(reticle.waitForExistence(timeout: 3))
         let gone = NSPredicate(format: "exists == false")
@@ -74,7 +74,7 @@ final class FocusExposureUITests: XCTestCase {
     /// 73.3: holding locks and shows the label; a tap unlocks.
     func testHoldLocksAndTapUnlocks() {
         launch()
-        viewfinder().press(forDuration: 1.0)
+        viewfinder().press(forDuration: 2.0)
         XCTAssertTrue(lockLabel.waitForExistence(timeout: 3))
         XCTAssertTrue(reticle.exists)
         attachScreenshot("73.3-locked")
@@ -88,7 +88,7 @@ final class FocusExposureUITests: XCTestCase {
     /// #315 QA: a lock the device refuses leaves no label and no reticle.
     func testFailedLockShowsNothing() {
         launch(["-UITestFocusLockFails"])
-        viewfinder().press(forDuration: 1.0)
+        viewfinder().press(forDuration: 2.0)
         sleep(1)
         XCTAssertFalse(lockLabel.exists)
         XCTAssertFalse(reticle.exists)

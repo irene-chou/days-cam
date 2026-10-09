@@ -386,6 +386,14 @@ struct CameraScreen: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .contentShape(Rectangle())
+        // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
+        // collapses the panel, only while it is open. `OverlayTextView`
+        // itself claims its own hit-testing area only while draggable
+        // (position tab), so a tap that starts there reaches its drag
+        // gesture instead of this one — never both.
+        .onTapGesture {
+            model.handleViewfinderTap()
+        }
         // Tap to focus, drag up/down for exposure, hold to lock AE/AF (issue
         // #303). One zero-distance drag tracks the finger and the model
         // tells the three apart; it ignores touches while the panel or a
@@ -399,14 +407,6 @@ struct CameraScreen: View {
                 }
                 .onEnded { _ in model.focusModel.touchEnded() }
         )
-        // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
-        // collapses the panel, only while it is open. `OverlayTextView`
-        // itself claims its own hit-testing area only while draggable
-        // (position tab), so a tap that starts there reaches its drag
-        // gesture instead of this one — never both.
-        .onTapGesture {
-            model.handleViewfinderTap()
-        }
         // Pinch to zoom (TASK-61, #274). Simultaneous so the overlay text's
         // own drag keeps working with one finger; once two fingers are down
         // `isPinching` turns that drag off (see the closures above).

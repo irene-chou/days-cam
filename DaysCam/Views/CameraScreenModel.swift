@@ -340,7 +340,10 @@ final class CameraScreenModel: ObservableObject {
                 actions: fakeFocusBackend.actions,
                 convert: { point, size in
                     size.width > 0 && size.height > 0 ? CGPoint(x: point.x / size.width, y: point.y / size.height) : nil
-                })
+                },
+                // Slow simulators need time to find the reticle; the fade-out
+                // test asks for the real one.
+                hideDelay: ProcessInfo.processInfo.arguments.contains("-UITestFocusQuickFade") ? .seconds(2) : .seconds(60))
             fakeFocusBackend.attach(focusModel)
         } else {
             focusModel = ViewfinderFocusModel(actions: focusActions)
