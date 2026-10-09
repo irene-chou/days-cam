@@ -226,9 +226,7 @@ struct StyleTabView: View {
     // MARK: - 外框、外框顏色 (FR-10.5, FR-10.6, FR-10.10)
 
     private var outlineContent: some View {
-        // Spacing 2 (was 12) so the added opacity row still fits the 224pt
-        // content area without scrolling (TASK-69).
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 12) {
             // Five transparent boxes, left-aligned on the swatch's left edge
             // (TASK-49 C); no horizontal scrolling.
             HStack(spacing: 8) {
@@ -251,6 +249,7 @@ struct StyleTabView: View {
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
+            .padding(.top, 4)
             opacitySlider(label: "外框透明度",
                           color: model.profile.style.outlineColor ?? model.profile.style.resolvedOutlineColor,
                           percent: model.outlineOpacityPercent,
