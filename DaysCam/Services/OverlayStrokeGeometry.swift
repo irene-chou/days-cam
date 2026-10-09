@@ -8,8 +8,8 @@ import UIKit
 /// text fill drawing to preserve them, including their colors and shaping.
 struct OverlayStrokeGeometry {
     let fillPath: CGPath
-    let outlinePath: CGPath
-    let exteriorPath: CGPath
+    private let strokePaths: [CGPath]
+    private let bounds: CGRect
 
     /// Builds a round outline with `width` points visible outside the glyphs.
     init(text: String, font: UIFont, width: CGFloat) {
@@ -27,7 +27,7 @@ struct OverlayStrokeGeometry {
         layout.addTextContainer(container)
         let range = layout.glyphRange(for: container)
         var fill: CGPath = CGMutablePath()
-        var expanded: CGPath = CGMutablePath()
+        var strokes: [CGPath] = []
         layout.enumerateLineFragments(forGlyphRange: range) { rect, _, _, glyphRange, _ in
             guard glyphRange.length > 0 else { return }
             let characters = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
@@ -52,7 +52,6 @@ struct OverlayStrokeGeometry {
                     fill = fill.union(glyph, using: .winding)
                     // Stroke each curve separately: a closed stroked contour can
                     // reverse winding when its inner offset crosses itself.
-                    let segments = CGMutablePath()
                     var current = CGPoint.zero
                     var first = CGPoint.zero
                     positioned.applyWithBlock { pointer in
@@ -80,25 +79,46 @@ struct OverlayStrokeGeometry {
                         }
                         let stroke = segment.copy(strokingWithWidth: max(0, width) * 2,
                                                   lineCap: .round, lineJoin: .round, miterLimit: 10)
-                        segments.addPath(stroke)
+                        strokes.append(stroke)
                     }
-                    expanded = expanded.union(segments.normalized(using: .winding).union(glyph, using: .winding), using: .winding)
                 }
             }
         }
         fillPath = fill
-        outlinePath = expanded
-        exteriorPath = expanded.subtracting(fill, using: .winding)
+        strokePaths = strokes
+        guard !strokes.isEmpty else {
+            bounds = .zero
+            return
+        }
+        bounds = strokes.reduce(fill.boundingBoxOfPath) { $0.union($1.boundingBoxOfPath) }.insetBy(dx: -1, dy: -1)
     }
 
-    /// Draws one solid, nonzero-winding outline; callers apply opacity once.
-    /// Exclude the fill for translucent text so its interior stays undarkened.
+    /// Unions opaque segment masks in a bounded layer, applying caller alpha once.
+    /// Subtract the shared glyph fill before drawing translucent text above it.
     func draw(in context: CGContext, at origin: CGPoint, color: UIColor, excludingFill: Bool) {
+        guard !strokePaths.isEmpty else { return }
         context.saveGState()
         context.translateBy(x: origin.x, y: origin.y)
-        context.setFillColor(color.cgColor)
-        context.addPath(excludingFill ? exteriorPath : outlinePath)
-        context.fillPath(using: .winding)
+        context.beginTransparencyLayer(in: bounds, auxiliaryInfo: nil)
+        context.setFillColor(color.withAlphaComponent(1).cgColor)
+        if !excludingFill {
+            context.addPath(fillPath)
+            context.fillPath(using: .winding)
+        }
+        // Drawing simple expanded segments independently is a raster union:
+        // no reversed inner contour can cancel ink from another segment.
+        for path in strokePaths {
+            context.addPath(path)
+            context.fillPath(using: .winding)
+        }
+        if excludingFill {
+            // Apply the subtraction once after unioning masks; clipping each
+            // segment separately would accumulate antialiasing at the fill edge.
+            context.setBlendMode(.destinationOut)
+            context.addPath(fillPath)
+            context.fillPath(using: .winding)
+        }
+        context.endTransparencyLayer()
         context.restoreGState()
     }
 }
