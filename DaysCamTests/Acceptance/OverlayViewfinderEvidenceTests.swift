@@ -9,11 +9,11 @@ final class OverlayViewfinderEvidenceTests: XCTestCase {
         let frame = CGSize(width: 300, height: 400)
         let text = "小寶 第 10 天"
         let cases: [(String, OverlayStyle)] = [
-            ("thick-stroke", OverlayStyle(outline: .thickStroke, shadow: .none)),
-            ("solid-box", OverlayStyle(outline: .solidBox, shadow: .none)),
+            ("thick-stroke", OverlayStyle(outline: .stroke, strokeWidth: 4, shadow: .none)),
+            ("solid-box", OverlayStyle(outline: .box, shadow: .none)),
             ("hard-shadow", OverlayStyle(outline: .none, shadow: .hard)),
-            ("thin-stroke", OverlayStyle(outline: .thinStroke, shadow: .none)),
-            ("translucent-box", OverlayStyle(outline: .translucentBox, shadow: .soft)),
+            ("thin-stroke", OverlayStyle(outline: .stroke, shadow: .none)),
+            ("translucent-box", OverlayStyle(outline: .box, autoOutlineOpacity: 0.5, shadow: .soft)),
             ("glow", OverlayStyle(outline: .none, shadow: .glow))
         ]
         let format = UIGraphicsImageRendererFormat()
@@ -55,7 +55,7 @@ final class OverlayViewfinderEvidenceTests: XCTestCase {
             ForEach([OverlayPosition.topLeading, .bottomTrailing], id: \.self) { anchor in
                 ZStack {
                     Color(white: 0.25)
-                    OverlayTextView(text: "小寶的一百天紀念日 第100天", style: OverlayStyle(outline: .thickStroke, shadow: .hard),
+                    OverlayTextView(text: "小寶的一百天紀念日 第100天", style: OverlayStyle(outline: .stroke, strokeWidth: 4, shadow: .hard),
                         placement: .anchor(anchor), frameSize: frame, onDragChanged: { _, _ in })
                 }.frame(width: frame.width, height: frame.height)
             }

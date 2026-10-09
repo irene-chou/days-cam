@@ -29,9 +29,13 @@ enum CameraProfileValidationError: Error, Equatable {
     /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
     case customPositionOutOfRange(x: Double, y: Double)
     /// `style.textColor` or `style.outlineColor` has an RGB component outside
-    /// 0...1 or an opacity outside `OverlayColor.minimumStorableOpacity`...1
-    /// (PRD 0.2 §4.1 as amended by TASK-69).
+    /// 0...1, or one of them or `style.autoOutlineOpacity` has an opacity
+    /// outside `OverlayColor.minimumStorableOpacity`...1 (PRD 0.2 §4.1 as
+    /// amended by TASK-69 and TASK-70).
     case colorNotStorable
+    /// `style.strokeWidth` or `style.boxPadding` is outside its range
+    /// (TASK-70).
+    case outlineParameterOutOfRange
 }
 
 /// One saved set of overlay settings: what to print, how to count and how it looks.
@@ -128,7 +132,8 @@ extension CameraProfile {
     /// only the date is migrated rather than rejected, so no profile is lost.
     ///
     /// Rounds the style colors to 8 bits per component, alpha included
-    /// (TASK-69), so the saved profile equals the one read back.
+    /// (TASK-69), and `style.autoOutlineOpacity` to the same 8-bit steps
+    /// (TASK-70), so the saved profile equals the one read back.
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -141,6 +146,7 @@ extension CameraProfile {
         // What is validated and written is exactly what reads back (TASK-69).
         copy.style.textColor = style.textColor.quantized
         copy.style.outlineColor = style.outlineColor?.quantized
+        copy.style.autoOutlineOpacity = (style.autoOutlineOpacity * 255).rounded() / 255
         return copy
     }
 
@@ -203,8 +209,13 @@ extension CameraProfile {
             throw CameraProfileValidationError.customPositionOutOfRange(x: x, y: y)
         }
 
-        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true else {
+        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true,
+              (OverlayColor.minimumStorableOpacity...1.0).contains(style.autoOutlineOpacity) else {
             throw CameraProfileValidationError.colorNotStorable
+        }
+
+        guard style.hasValidOutlineParameters else {
+            throw CameraProfileValidationError.outlineParameterOutOfRange
         }
     }
 

@@ -470,7 +470,7 @@ final class OverlayRendererStyleTests: XCTestCase {
 
     /// Bounds of a black solid box baked on a 3024x4032 white photo.
     private func solidBoxBounds(placement: OverlayPlacement) throws -> CGRect {
-        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none)
+        let style = OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, shadow: .none)
         let grid = try bakedGrid(style: style, placement: placement, width: 3024, height: 4032)
         return try XCTUnwrap(grid.bounds(in: PixelRegion(x: 0...3023, y: 0...4031)) { $0.distance(to: .white) > 128 })
     }
@@ -514,9 +514,9 @@ final class OverlayRendererOpacityTests: XCTestCase {
         let fill = OverlayColor.white.withOpacity(0.5)
         let plain = try bakedGrid(style: OverlayStyle(textColor: fill, outline: .none, shadow: .none), background: grey)
         let interiorColor = RGB(red: 191, green: 191, blue: 191)   // 50% white over 128 grey
-        for outline in [OverlayOutline.thinStroke, .thickStroke] {
-            let stroked = try bakedGrid(style: OverlayStyle(textColor: fill, outline: outline, outlineColor: .black,
-                                                            shadow: .none),
+        for width in [2.0, 4] {
+            let stroked = try bakedGrid(style: OverlayStyle(textColor: fill, outline: .stroke, outlineColor: .black,
+                                                            strokeWidth: width, shadow: .none),
                                         background: grey)
             var interior = 0
             var kept = 0
@@ -527,32 +527,33 @@ final class OverlayRendererOpacityTests: XCTestCase {
                 }
             }
             XCTAssertGreaterThan(interior, 1000, "fixture sanity: no glyph interior")
-            XCTAssertGreaterThan(Double(kept) / Double(interior), 0.95, "69.2: \(outline) shows through the text")
+            XCTAssertGreaterThan(Double(kept) / Double(interior), 0.95, "69.2: stroke \(width) shows through the text")
             XCTAssertTrue(stroked.contains(in: everywhere) { $0.distance(to: .black) <= 3 },
-                          "69.2: \(outline) still drawn outside the glyphs")
+                          "69.2: stroke \(width) still drawn outside the glyphs")
         }
     }
 
     /// 69.5: a 50% black stroke on white is 50% grey everywhere — overlapping
     /// strokes of neighbouring glyphs do not get darker.
     func testTranslucentStrokeIsUniform() throws {
-        let style = OverlayStyle(textColor: .white, outline: .thickStroke,
-                                 outlineColor: OverlayColor.black.withOpacity(0.5), shadow: .none)
+        let style = OverlayStyle(textColor: .white, outline: .stroke,
+                                 outlineColor: OverlayColor.black.withOpacity(0.5), strokeWidth: 4, shadow: .none)
         let grid = try bakedGrid(style: style, background: .white)
         XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: RGB(red: 128, green: 128, blue: 128)) <= 3 },
                       "69.5: stroke is 50% black")
         XCTAssertTrue(grid.all(in: everywhere) { $0.red >= 124 }, "69.5: nowhere darker than one 50% stroke")
     }
 
-    /// 69.5: a box in a 40% color is drawn at 40% (solid) or 20% (translucent).
-    func testTranslucentBoxMultipliesTheColorAlpha() throws {
-        for (outline, expected) in [(OverlayOutline.solidBox, 153), (.translucentBox, 204)] {
-            let style = OverlayStyle(textColor: .white, outline: outline,
-                                     outlineColor: OverlayColor.black.withOpacity(0.4), shadow: .none)
+    /// 69.5 / TASK-70: a box is drawn at its color's alpha — 40% or 20%,
+    /// the two boxes 0.5 drew for a 40% color.
+    func testTranslucentBoxIsDrawnAtTheColorAlpha() throws {
+        for (opacity, expected) in [(0.4, 153), (0.2, 204)] {
+            let style = OverlayStyle(textColor: .white, outline: .box,
+                                     outlineColor: OverlayColor.black.withOpacity(opacity), shadow: .none)
             let grid = try bakedGrid(style: style, background: .white)
             let box = RGB(red: expected, green: expected, blue: expected)
-            XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: box) <= 3 }, "69.5: \(outline)")
-            XCTAssertTrue(grid.all(in: everywhere) { $0.red >= expected - 3 }, "69.5: \(outline) too dark")
+            XCTAssertTrue(grid.contains(in: everywhere) { $0.distance(to: box) <= 3 }, "69.5: \(opacity)")
+            XCTAssertTrue(grid.all(in: everywhere) { $0.red >= expected - 3 }, "69.5: \(opacity) too dark")
         }
     }
 
@@ -572,6 +573,153 @@ final class OverlayRendererOpacityTests: XCTestCase {
                                                      placement: .anchor(.middleCenter), font: .pingFang),
                                        "bake returned nil")
             return try XCTUnwrap(PixelGrid(output))
+        }
+    }
+}
+
+// MARK: - TASK-70: outline migration
+
+/// Covers TASK-70 70.2 at the pixel level: a 0.5 profile, migrated, bakes
+/// and previews the same pixels it did before.
+///
+/// "Before" is the style that hands the renderer exactly the numbers 0.5's
+/// theme did — the same stroke widths, insets and radius, and a box color
+/// whose alpha is the 0.5 product of color alpha × box opacity. "After" is
+/// the record decoded and normalized the way `ProfileStore.load` does it.
+final class OverlayRendererOutlineMigrationTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "小寶 第 100 天"
+
+    private struct Case {
+        let legacy: String
+        let textColor: String
+        let outlineColor: String?
+        let shadow: OverlayShadow
+    }
+
+    private var cases: [Case] {
+        var cases: [Case] = []
+        for legacy in ["thinStroke", "thickStroke", "translucentBox", "solidBox"] {
+            // White text casts the soft shadow, dark text none, so both
+            // orders of outline and shadow are covered.
+            for (textColor, shadow) in [("#FFFFFF", OverlayShadow.soft), ("#1C1C1E", .none)] {
+                for outlineColor in [nil, "#0A84FF", "#0A84FF80"] {
+                    cases.append(Case(legacy: legacy, textColor: textColor, outlineColor: outlineColor, shadow: shadow))
+                }
+            }
+        }
+        return cases
+    }
+
+    /// What 0.5 drew for `testCase`, stated in the new model.
+    private func before(_ testCase: Case) throws -> OverlayStyle {
+        let textColor = try XCTUnwrap(OverlayColor(hex: testCase.textColor))
+        let outlineColor = try testCase.outlineColor.map { try XCTUnwrap(OverlayColor(hex: $0)) }
+        var style = OverlayStyle(textColor: textColor, outlineColor: outlineColor, shadow: testCase.shadow)
+        switch testCase.legacy {
+        case "thinStroke": style.outline = .stroke; style.strokeWidth = 2
+        case "thickStroke": style.outline = .stroke; style.strokeWidth = 4
+        case "translucentBox": style.outline = .box; style.outlineOpacity *= 0.5
+        default: style.outline = .box
+        }
+        return style
+    }
+
+    /// `testCase` as a 0.5 file record, loaded the way `ProfileStore` does.
+    private func after(_ testCase: Case) throws -> OverlayStyle {
+        let color = testCase.outlineColor.map { #""outlineColor":"\#($0)","# } ?? ""
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000700","name":"外框","startDate":{"year":2025,"month":1,"day":15},\
+        "countingRule":"dayOne","showDayCount":true,"showDate":false,"showName":false,\
+        "displayUnits":["day"],"useAgeWording":false,"position":"bottomTrailing",\
+        "style":{"fontID":"pingFang","textColor":"\(testCase.textColor)","outline":"\(testCase.legacy)",\(color)\
+        "shadow":"\(testCase.shadow.rawValue)","sizeScale":100},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+        let profile = try JSONDecoder().decode(CameraProfile.self, from: Data(json.utf8))
+        return try profile.validatedForPersistence(calendar: DateFixture.taipei).style
+    }
+
+    /// 70.2: the baked photo is unchanged, byte for byte. The only number
+    /// that moves is a translucent box's alpha, 0.5 → 128/255 (8-bit
+    /// storage); Core Graphics fills an 8-bit bitmap with an 8-bit alpha
+    /// either way.
+    func testMigratedProfilesBakeTheSamePixels() throws {
+        let photo = try gradientPhoto()
+        for testCase in cases {
+            let label = "70.2 \(testCase.legacy) \(testCase.textColor) \(testCase.outlineColor ?? "auto") \(testCase.shadow)"
+            let pair = try [before(testCase), after(testCase)].map { style in
+                try autoreleasepool {
+                    let output = try XCTUnwrap(renderer.bake(image: photo, text: text, style: style,
+                                                             placement: .anchor(.middleCenter), font: .pingFang))
+                    return try XCTUnwrap(PixelGrid(output)).bytes
+                }
+            }
+            let difference = Self.difference(pair[0], pair[1])
+            XCTAssertEqual(difference.bytes, 0, "\(label): \(difference)")
+        }
+    }
+
+    /// 70.2: the viewfinder preview (`renderText`, which the viewfinder and
+    /// the style swatches draw) is unchanged too.
+    func testMigratedProfilesPreviewTheSamePixels() throws {
+        for testCase in cases {
+            let label = "70.2 \(testCase.legacy) \(testCase.textColor) \(testCase.outlineColor ?? "auto") \(testCase.shadow)"
+            let pair = try [before(testCase), after(testCase)].map { style in
+                let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 24, displayScale: 3,
+                                                                 font: .pingFang))
+                return try XCTUnwrap(Self.rgba(rendered.image))
+            }
+            XCTAssertEqual(pair[0].count, pair[1].count, "\(label): image size changed")
+            let difference = Self.difference(pair[0], pair[1])
+            XCTAssertEqual(difference.bytes, 0, "\(label): \(difference)")
+        }
+    }
+
+    private struct Difference: CustomStringConvertible {
+        var maximum = 0
+        var bytes = 0
+        var description: String { "max \(maximum), \(bytes) bytes differ" }
+    }
+
+    private static func difference(_ first: [UInt8], _ second: [UInt8]) -> Difference {
+        var result = Difference()
+        guard first.count == second.count else { return Difference(maximum: 255, bytes: max(first.count, second.count)) }
+        for index in first.indices where first[index] != second[index] {
+            result.bytes += 1
+            result.maximum = max(result.maximum, abs(Int(first[index]) - Int(second[index])))
+        }
+        return result
+    }
+
+    /// Premultiplied 8-bit sRGB RGBA, alpha included.
+    private static func rgba(_ image: UIImage) -> [UInt8]? {
+        guard let cgImage = image.cgImage, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var buffer = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        let drew = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: cgImage.width, height: cgImage.height,
+                                          bitsPerComponent: 8, bytesPerRow: cgImage.width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+            return true
+        }
+        return drew ? buffer : nil
+    }
+
+    /// A 1200×900 photo running through every hue left to right and dark
+    /// to light top to bottom, so a change in any alpha shows somewhere.
+    private func gradientPhoto() throws -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 900), format: format).image { context in
+            for x in stride(from: 0, to: 1200, by: 4) {
+                for y in stride(from: 0, to: 900, by: 4) {
+                    UIColor(hue: CGFloat(x) / 1200, saturation: 0.8, brightness: CGFloat(y) / 900, alpha: 1).setFill()
+                    context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+                }
+            }
         }
     }
 }
@@ -602,16 +750,23 @@ final class OverlayRendererRenderTextTests: XCTestCase {
         XCTAssertEqual(stand.postScriptName, "SnellRoundhand-Bold", "fixture sanity")
         let cases: [(OverlayStyle, ResolvedOverlayFont)] = [
             (OverlayStyle(textColor: blue, outline: .none, shadow: .none), .pingFang),
-            (OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none), .pingFang),
-            (OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .soft), .pingFang),
-            (OverlayStyle(textColor: blue, outline: .thinStroke, shadow: .glow), .pingFang),
-            (OverlayStyle(fontID: .iansui, textColor: blue, outline: .thickStroke, shadow: .hard), stand),
+            (OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 4, shadow: .none), .pingFang),
+            (OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, shadow: .soft), .pingFang),
+            (OverlayStyle(textColor: blue, outline: .stroke, shadow: .glow), .pingFang),
+            (OverlayStyle(fontID: .iansui, textColor: blue, outline: .stroke, strokeWidth: 4, shadow: .hard), stand),
             // TASK-69 69.2 / 69.5: translucent text and outline colors.
             (OverlayStyle(textColor: blue.withOpacity(0.5), outline: .none, shadow: .soft), .pingFang),
-            (OverlayStyle(textColor: blue.withOpacity(0.5), outline: .thickStroke,
-                          outlineColor: OverlayColor.black.withOpacity(0.5), shadow: .glow), .pingFang),
-            (OverlayStyle(textColor: OverlayColor.white.withOpacity(0.3), outline: .solidBox,
-                          outlineColor: OverlayColor.black.withOpacity(0.6), shadow: .hard), .pingFang)
+            (OverlayStyle(textColor: blue.withOpacity(0.5), outline: .stroke,
+                          outlineColor: OverlayColor.black.withOpacity(0.5), strokeWidth: 4, shadow: .glow), .pingFang),
+            (OverlayStyle(textColor: OverlayColor.white.withOpacity(0.3), outline: .box,
+                          outlineColor: OverlayColor.black.withOpacity(0.6), shadow: .hard), .pingFang),
+            // TASK-70 70.3: the parameter extremes.
+            (OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 6, shadow: .soft),
+             .pingFang),
+            (OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 0, shadow: .none),
+             .pingFang),
+            (OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 24, shadow: .hard),
+             .pingFang)
         ]
         let frameSize = CGSize(width: 1200, height: 1600)
         for (style, font) in cases {
@@ -652,17 +807,21 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     /// overhang.
     func test_D2_heavyDecorationsAreNeverClipped() throws {
         var cases: [(OverlayStyle, ResolvedOverlayFont)] = [
-            OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none),
-            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 4, shadow: .none),
+            OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, shadow: .none),
             OverlayStyle(textColor: .white, outline: .none, shadow: .glow),
             OverlayStyle(textColor: .white, outline: .none, shadow: .soft),
             OverlayStyle(textColor: .white, outline: .none, shadow: .hard),
-            OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .glow)
+            OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, shadow: .glow),
+            // TASK-70: the widest stroke and a box with no padding, which
+            // swash ink can reach past.
+            OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 6, shadow: .glow),
+            OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, boxPadding: 0, shadow: .glow)
         ].map { ($0, .pingFang) }
         for name in ["SnellRoundhand-Bold", "Zapfino", "Didot-Bold"] {
             let font = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
             XCTAssertEqual(font.postScriptName, name, "fixture sanity")
-            cases.append((OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .glow),
+            cases.append((OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 4, shadow: .glow),
                           font))
         }
         for (style, font) in cases {
@@ -679,7 +838,7 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     /// D.3: doubling the font size doubles the image and the stroke.
     func test_D3_doublingTheFontSizeDoublesTheImageAndTheStroke() throws {
         let plain = OverlayStyle(textColor: .white, outline: .none, shadow: .none)
-        let stroked = OverlayStyle(textColor: .white, outline: .thickStroke, outlineColor: .black, shadow: .none)
+        let stroked = OverlayStyle(textColor: .white, outline: .stroke, outlineColor: .black, strokeWidth: 4, shadow: .none)
         func render(_ style: OverlayStyle, _ fontSize: CGFloat) throws -> RenderedOverlayText {
             try XCTUnwrap(renderer.renderText(text, style: style, fontSize: fontSize, displayScale: 2, font: .pingFang))
         }
@@ -703,7 +862,7 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     }
 
     func testTextInsetsLocateTheBlockInsideTheImage() throws {
-        let style = OverlayStyle(textColor: .white, outline: .solidBox, outlineColor: .black, shadow: .none)
+        let style = OverlayStyle(textColor: .white, outline: .box, outlineColor: .black, shadow: .none)
         let rendered = try XCTUnwrap(renderer.renderText(text, style: style, fontSize: 40, displayScale: 2, font: .pingFang))
         XCTAssertEqual(rendered.image.scale, 2)
         XCTAssertEqual(rendered.image.size.width,
@@ -775,7 +934,7 @@ final class OverlayRendererRenderTextTests: XCTestCase {
     func test_32_7_oneResolvedFontDrivesFitRenderAndBake() throws {
         let standIn = OverlayMetrics.resolvedFont(state: .available, postScriptName: "Georgia-Bold")
         XCTAssertEqual(standIn.postScriptName, "Georgia-Bold", "fixture sanity")
-        let style = OverlayStyle(fontID: .songti, textColor: blue, outline: .thinStroke, shadow: .none)
+        let style = OverlayStyle(fontID: .songti, textColor: blue, outline: .stroke, shadow: .none)
         let frameSize = CGSize(width: 1200, height: 1600)
         let sample = "Day 12345"
         let wholePixelOrigin = CGPoint(x: 300, y: 700)

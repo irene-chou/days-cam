@@ -74,7 +74,8 @@ final class ColorOpacityAcceptanceTests: XCTestCase {
             XCTAssertEqual(profile.style.textColor, OverlayColor(hex: expected.text), "69.1: text color unchanged")
             XCTAssertEqual(profile.style.outlineColor?.opacity ?? 1.0, 1.0, "69.1: outline alpha 100%")
             XCTAssertEqual(profile.style.outlineColor, expected.outline.flatMap(OverlayColor.init(hex:)), "69.1: outline color unchanged")
-            XCTAssertEqual(profile.style.outline, .thickStroke)
+            XCTAssertEqual(profile.style.outline, .stroke)
+            XCTAssertEqual(profile.style.strokeWidth, 4)
             XCTAssertEqual(profile.style.shadow, .soft)
             XCTAssertEqual(profile.style.sizeScale, 70 + index * 5)
         }

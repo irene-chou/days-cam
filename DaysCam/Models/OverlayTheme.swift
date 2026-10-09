@@ -147,7 +147,9 @@ struct OverlayInsets: Equatable, Hashable {
 enum OverlayDecoration: Equatable, Hashable {
     /// A drop shadow behind the text.
     case shadow(offset: CGSize, blur: Double, opacity: Double, color: OverlayColor)
-    /// A rounded, usually translucent box behind the text.
+    /// A rounded box behind the text. Drawn at `color`'s alpha times
+    /// `opacity`; `OverlayTheme` always passes an `opacity` of 1 since
+    /// TASK-70 and puts the transparency in the color.
     case backgroundBox(color: OverlayColor, opacity: Double, cornerRadius: Double, insets: OverlayInsets)
     /// An outline around the glyphs.
     case stroke(color: OverlayColor, width: Double)
@@ -185,34 +187,30 @@ struct OverlayTheme: Equatable, Hashable {
 
     // MARK: Decoration constants (PRD 0.2 FR-10, at a 17pt font)
 
-    /// Stroke width of `.thinStroke`.
-    static let thinStrokeWidth: Double = 2
-    /// Stroke width of `.thickStroke`.
-    static let thickStrokeWidth: Double = 4
-    /// Box opacity of `.translucentBox`.
-    static let translucentBoxOpacity: Double = 0.5
-    /// Box opacity of `.solidBox`.
-    static let solidBoxOpacity: Double = 1.0
-    /// Corner radius of both boxes.
+    /// Corner radius of the box.
     static let boxCornerRadius: Double = 8
-    /// Padding inside both boxes.
-    static let boxInsets = OverlayInsets(horizontal: 12, vertical: 6)
+    /// The box's vertical padding as a fraction of `OverlayStyle.boxPadding`,
+    /// its horizontal padding: 12×6 before TASK-70.
+    static let boxVerticalPaddingRatio: Double = 0.5
 
+    /// The padding inside the box for a horizontal `padding` (TASK-70).
+    static func boxInsets(padding: Double) -> OverlayInsets {
+        OverlayInsets(horizontal: padding, vertical: padding * boxVerticalPaddingRatio)
+    }
+
+    /// The stroke or box for `style`, in its parameters. A box's
+    /// transparency is the outline color's alpha alone (TASK-70), so its
+    /// `opacity` is always 1.
     private static func outlineDecoration(for style: OverlayStyle) -> OverlayDecoration? {
         let color = style.resolvedOutlineColor
         switch style.outline {
         case .none:
             return nil
-        case .thinStroke:
-            return .stroke(color: color, width: thinStrokeWidth)
-        case .thickStroke:
-            return .stroke(color: color, width: thickStrokeWidth)
-        case .translucentBox:
-            return .backgroundBox(color: color, opacity: translucentBoxOpacity,
-                                  cornerRadius: boxCornerRadius, insets: boxInsets)
-        case .solidBox:
-            return .backgroundBox(color: color, opacity: solidBoxOpacity,
-                                  cornerRadius: boxCornerRadius, insets: boxInsets)
+        case .stroke:
+            return .stroke(color: color, width: style.strokeWidth)
+        case .box:
+            return .backgroundBox(color: color, opacity: 1, cornerRadius: boxCornerRadius,
+                                  insets: boxInsets(padding: style.boxPadding))
         }
     }
 

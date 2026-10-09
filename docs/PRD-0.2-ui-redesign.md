@@ -136,6 +136,7 @@
 - 新增：`style.sizeScale` 介於 70 與 160 之間，且是 5 的倍數
 - 新增：`position` 為 `.custom` 時，x、y 皆介於 0 與 1 之間（含）
 - 新增：`style.textColor` 與 `style.outlineColor` 的 RGB 各分量介於 0 與 1 之間；alpha 介於 0.05 與 1 之間（含），存檔量化為 8 bit（TASK-69 #297 取代「alpha 固定為 1」）。讀檔遇到低於 0.05 的 alpha（只可能是手改檔案）提高到最小可存值 13/255 並採用該筆，不丟棄
+- 新增（TASK-70 #298）：`style.strokeWidth` 介於 1 與 6 之間、`style.boxPadding` 介於 0 與 24 之間（含）；`style.autoOutlineOpacity` 介於 0.05 與 1 之間（含），存檔量化為 8 bit。寫入時超出範圍一律拒絕；讀檔遇到超出範圍的值（只可能是手改檔案）夾回範圍內並採用該筆，不丟棄
 
 讀檔時遇到**未知的 `fontID`**（例如日後移除某字型），改用 `sfRounded` 並採用該筆，不丟棄。
 
@@ -145,8 +146,11 @@
 |---|---|---|---|
 | `fontID` | `OverlayFontID` | `sfRounded` | FR-10.2 的 10 種 |
 | `textColor` | `OverlayColor`（加上 `Codable`；不透明存 `#RRGGBB`，半透明存 `#RRGGBBAA`，讀取兩種都接受，`#RRGGBB` 視為 alpha 100%） | `#FFFFFF` | 任意 sRGB 色，alpha 5%～100%（TASK-69） |
-| `outline` | `OverlayOutline` | `.none` | `none`／`thinStroke`／`thickStroke`／`translucentBox`／`solidBox` |
-| `outlineColor` | `OverlayColor?`（格式同 `textColor`） | `nil` | `nil` ＝ 自動（FR-10.6，不透明）；有值則照該色，alpha 5%～100%（TASK-69） |
+| `outline` | `OverlayOutline` | `.none` | `none`／`stroke`／`box`（TASK-70 #298；舊值轉換見 §4.3） |
+| `outlineColor` | `OverlayColor?`（格式同 `textColor`） | `nil` | `nil` ＝ 自動（FR-10.6）；有值則照該色，alpha 5%～100%（TASK-69）。底框的透明度就是外框色的 alpha（TASK-70） |
+| `autoOutlineOpacity` | `Double` | `1` | 0.05～1；只在 `outlineColor` 為 `nil`（自動）時作為自動外框色的 alpha（TASK-70） |
+| `strokeWidth` | `Double`（pt，17pt 字級基準） | `2` | 1～6；描邊露在字形外的寬度。選其他外框時保留 |
+| `boxPadding` | `Double`（pt，17pt 字級基準） | `12` | 0～24；底框水平內距，垂直內距 ＝ 水平 × 0.5。選其他外框時保留 |
 | `shadow` | `OverlayShadow` | `.soft` | `none`／`soft`／`hard`／`glow` |
 | `sizeScale` | `Int`（百分比） | `100` | 70～160，步進 5 |
 
@@ -165,6 +169,19 @@
 | `filmStrip` | SF Mono | `#FFFFFF` | 半透明底框 | 自動 | 無 | 底框不透明度 45% → 50% |
 | `minimalDark` | SF Pro | `#1C1C1E` | 半透明底框 | 自動 | 無 | 底框不透明度 70% → 50%，字重 semibold → bold |
 | `softPink` | SF Rounded | `#FF6B9D` | 細描邊 | 自動 | 柔和 | 陰影略深 |
+
+TASK-70 起，上表的「半透明底框」存成 `box`＋`autoOutlineOpacity` 50%、「細描邊」存成 `stroke`＋寬 2，畫面與 0.2～0.5 相同。
+
+**外框（0.2～0.5 → TASK-70，#298）**：`outline` 讀到舊值時轉換後採用，下次寫入存成新格式。**畫面與升級前一致，不得丟棄設定檔**。
+
+| 舊 `outline` | `outline` | 參數 | 外框色 alpha |
+|---|---|---|---|
+| `thinStroke` | `stroke` | `strokeWidth` 2 | 不變 |
+| `thickStroke` | `stroke` | `strokeWidth` 4 | 不變 |
+| `translucentBox` | `box` | `boxPadding` 12 | × 50%：有 `outlineColor` 則乘在該色 alpha；自動（`nil`）則存在 `autoOutlineOpacity`，保留「自動」。乘完低於 0.05 時提高到 0.05 |
+| `solidBox` | `box` | `boxPadding` 12 | 不變 |
+
+alpha 存檔量化為 8 bit，50% 存成 128/255；烘焙與預覽的像素實測與升級前完全相同（`OverlayRendererOutlineMigrationTests`）。
 
 **單位**：`(largestUnit, smallestUnit)` 轉成兩者之間（含）的軌道單位，例如 `(year, day)` → `[.year, .month, .day]`、`(week, day)` → `[.week, .day]`。轉換後的輸出文字與 0.1 **完全相同**（§4.5 的規則保證）。
 
@@ -292,21 +309,19 @@
 |---|---|
 | FR-10.3 | 字重固定（上表），不提供字重選擇。中文字（天、歲、個月…）由系統自動用蘋方補字；**不得**為此另外指定 fallback 字型 |
 | FR-10.4 | **顏色**：兩排，**在 375pt 寬的螢幕上不需橫向捲動**。第一排 9 色色票（沿用 Instagram 文字色票）＋系統 `ColorPicker`（彩虹圓，`supportsOpacity: false`）。色票依序：`#FFFFFF` `#000000` `#3897F0` `#70C050` `#FDCB5C` `#FD8D32` `#ED4956` `#D10869` `#A307BA`。第二排開頭是「最近」圖示（`clock.arrow.circlepath`），後面是 `recentCustomColors`；沒有時顯示「用彩虹圓自訂的顏色會出現在這裡」 |
-| FR-10.5 | **外框**：無｜細描邊｜粗描邊｜半透明底框｜實心底框。每個選項為無底色的透明方塊（外框 48pt、陰影 64pt），畫單一個「A」，字型**固定** SF Rounded Semibold（不跟目前字型），**固定配色**（不透明灰字 `#78746F`＋淡灰 `#C9C1B8` 描邊、底框、陰影；發光用字色），描邊用與烘焙相同的真正字形外框；「無」用 `nosign` 圖示；選中為方塊內緣 2pt `active` 圓角框（圓角 12）（TASK-49 取代 #155 的「Aa」與圓角 10／1.5pt）。**不顯示文字名稱**（2026-10-01 人類決定，#155） |
+| FR-10.5 | **外框**：無｜描邊｜底框（TASK-70 #298 取代 無｜細描邊｜粗描邊｜半透明底框｜實心底框；粗細、留白的調整介面見 #298）。每個選項為無底色的透明方塊（外框 48pt、陰影 64pt），畫單一個「A」，字型**固定** SF Rounded Semibold（不跟目前字型），**固定配色**（不透明灰字 `#78746F`＋淡灰 `#C9C1B8` 描邊、底框、陰影；發光用字色），描邊用與烘焙相同的真正字形外框；「無」用 `nosign` 圖示；選中為方塊內緣 2pt `active` 圓角框（圓角 12）（TASK-49 取代 #155 的「Aa」與圓角 10／1.5pt）。**不顯示文字名稱**（2026-10-01 人類決定，#155） |
 | FR-10.6 | **外框顏色**：外框選項下方，同樣兩排、不加標題。第一排：「自動」（`circle.lefthalf.filled`，預設）＋全部 9 色色票＋彩虹圓；第二排同 FR-10.4 的「最近」。自動 ＝ 文字相對亮度 > 0.55 時用 `#1C1C1E`，否則 `#FFFFFF`。外框為「無」時整塊 disabled |
 | FR-10.7 | 用彩虹圓選定顏色後（文字或外框皆然），該色加到 `recentCustomColors` 最前面；已存在則移到最前；超過 7 個丟掉最舊的；和第一排色票相同的顏色不加入 |
 | FR-10.8 | **陰影**：無｜柔和｜硬陰影｜發光，選項樣式同 FR-10.5（固定配色：深色字＋灰色陰影；「無」用 `nosign`；圓角方形選定框）。預設柔和 |
 | FR-10.9 | **字級**：滑桿 70%～160%，步進 5%，右側顯示百分比。100% ＝ 0.1 的基準字級（照片短邊 5.5%） |
 | FR-10.10 | 外框與陰影**可以同時選「無」**，不顯示任何警告（解除 0.1 FR-4.6） |
 
-裝飾常數（以 17pt 字級為基準，渲染時乘 `實際字級 / 17`，沿用 0.1 FR-4.7 的縮放機制）。「外框色」指 `outlineColor`，為 `nil` 時用自動對比色：
+裝飾常數（以 17pt 字級為基準，渲染時乘 `實際字級 / 17`，沿用 0.1 FR-4.7 的縮放機制）。「外框色」指 `outlineColor`，為 `nil` 時用自動對比色、alpha 為 `autoOutlineOpacity`：
 
 | 項目 | 參數 |
 |---|---|
-| 細描邊 | 寬 2，外框色 |
-| 粗描邊 | 寬 4，外框色 |
-| 半透明底框 | 外框色 @50%，圓角 8，內距 12×6 |
-| 實心底框 | 外框色 @100%，圓角 8，內距 12×6 |
+| 描邊 | 寬 `strokeWidth`（1～6，預設 2），外框色 |
+| 底框 | 外框色（透明度即其 alpha），圓角 8，內距 `boxPadding` × `boxPadding`×0.5（0～24，預設 12×6） |
 | 柔和陰影 | 黑色，offset (0, 2)，blur 4，opacity 0.6 |
 | 硬陰影 | 黑色，offset (2, 2)，blur 0，opacity 0.75 |
 | 發光 | 文字色，offset (0, 0)，blur 8，opacity 0.9 |

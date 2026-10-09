@@ -50,8 +50,9 @@ final class FontMigrationAcceptanceTests: XCTestCase {
     private func expectedStyle(index: Int) throws -> OverlayStyle {
         OverlayStyle(fontID: .pingFang,
                      textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
-                     outline: .thickStroke,
+                     outline: .stroke,
                      outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
+                     strokeWidth: 4,
                      shadow: .glow,
                      sizeScale: 70 + index * 5)
     }

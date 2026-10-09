@@ -51,6 +51,8 @@ extension CameraProfileValidationError {
             return "位置超出範圍"
         case .colorNotStorable:
             return "顏色不正確"
+        case .outlineParameterOutOfRange:
+            return "外框粗細或留白超出範圍"
         }
     }
 }
