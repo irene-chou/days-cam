@@ -74,9 +74,7 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["硬陰影"].isSelected)
         scrollToReveal(blur)
         blur.adjust(toNormalizedSliderPosition: 1)
-        // SE's slider may stop a point short of the end.
-        let adjusted = Int((blur.value as? String)?.split(separator: " ").first ?? "") ?? 0
-        XCTAssertGreaterThanOrEqual(adjusted, 15)
+        XCTAssertEqual(blur.value as? String, "16 點")
         XCTAssertFalse(app.buttons["硬陰影"].isSelected)
         for name in ["無陰影", "柔和", "發光"] { XCTAssertFalse(app.buttons[name].isSelected, name) }
         app.buttons["硬陰影"].tap()
