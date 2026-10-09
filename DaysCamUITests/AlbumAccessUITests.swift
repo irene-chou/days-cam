@@ -2,8 +2,11 @@ import XCTest
 
 /// The gallery settings sheet's album switch under each permission outcome
 /// (TASK-79, #329). `-UITestPhotoAccess` fakes the album permission; the
-/// simulator must have Photos pre-granted (`simctl privacy grant photos`) so
-/// opening the gallery shows no system prompt.
+/// simulator must have Photos pre-granted before the run, or opening the
+/// gallery shows a system prompt that blocks every test here:
+/// `xcrun simctl privacy <udid> grant photos com.irenechou.DaysCam`
+/// (the app must already be installed). The "前往設定" checks use the sheet's
+/// own identifier, since the page behind it has a button of the same name.
 final class AlbumAccessUITests: XCTestCase {
     private func launch(_ mode: String) -> XCUIApplication {
         let app = XCUIApplication()
@@ -53,7 +56,7 @@ final class AlbumAccessUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["limitedAccessNote"].waitForExistence(timeout: 3))
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertFalse(app.staticTexts["無法自動加入相簿"].exists)
-        XCTAssertFalse(app.buttons["前往設定"].exists)
+        XCTAssertFalse(app.buttons["settingsSheetGoToSettings"].exists)
         attach(app, "79.1-limited")
     }
 
@@ -75,7 +78,7 @@ final class AlbumAccessUITests: XCTestCase {
         let toggle = app.switches["自動加入 DaysCam 相簿"]
         flip(toggle)
         XCTAssertTrue(app.staticTexts["無法自動加入相簿"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["前往設定"].exists)
+        XCTAssertTrue(app.buttons["settingsSheetGoToSettings"].exists)
         XCTAssertEqual(toggle.value as? String, "0")
         XCTAssertFalse(app.staticTexts["limitedAccessNote"].exists)
         attach(app, "79.4-denied")

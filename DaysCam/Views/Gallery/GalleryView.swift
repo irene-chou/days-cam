@@ -310,6 +310,7 @@ struct GallerySettingsSheet: View {
                             if notice == .needsFullAccess {
                                 Button("前往設定", action: openSettings)
                                     .font(.footnote.weight(.semibold))
+                                    .accessibilityIdentifier("settingsSheetGoToSettings")
                             }
                         }
                     }
@@ -379,7 +380,7 @@ enum GalleryAlbumNotice: Identifiable, Equatable {
 
     var message: String {
         switch self {
-        case .needsFullAccess: return "需要完整照片取用權限才能自動加入相簿，可到設定開啟。"
+        case .needsFullAccess: return "需要照片取用權限（完整或限制取用皆可）才能自動加入相簿，可到設定開啟。"
         case .accessWithdrawn: return "照片取用權限已收回，照片仍會存到「最近項目」。"
         }
     }
