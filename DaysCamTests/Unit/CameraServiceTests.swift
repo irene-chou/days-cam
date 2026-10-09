@@ -903,7 +903,7 @@ final class CameraServiceFocusExposureTests: XCTestCase {
     func testResetIsAnnouncedEvenWhenTheStateDidNotChange() {
         let service = CameraService(isCaptureSupported: false)
         var resets = 0
-        let cancellable = service.focusExposureResetPublisher.sink { resets += 1 }
+        let cancellable = service.focusExposureResetPublisher.sink { _ in resets += 1 }
         service.resetFocusExposure(on: FakeFocusDevice())
         let flushed = expectation(description: "main queue flushed")
         DispatchQueue.main.async { flushed.fulfill() }
@@ -913,10 +913,41 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         cancellable.cancel()
     }
 
+    /// TASK-82: the event says which focus request the device had taken.
+    func testResetEventCarriesTheLastAppliedRequestID() {
+        let service = CameraService(isCaptureSupported: false)
+        var seen: [Int] = []
+        let cancellable = service.focusExposureResetPublisher.sink { seen.append($0) }
+        service.resetFocusExposure(on: FakeFocusDevice())
+        service.lastAppliedFocusRequestID = 7
+        service.resetFocusExposure(on: FakeFocusDevice())
+        let flushed = expectation(description: "main queue flushed")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(seen, [0, 7])
+        cancellable.cancel()
+    }
+
+    /// TASK-82: without a camera nothing is queued and the id is 0.
+    func testRequestsWithoutACameraGetNoID() {
+        let service = CameraService(isCaptureSupported: false)
+        XCTAssertEqual(service.focusAndExpose(at: CGPoint(x: 0.5, y: 0.5)), 0)
+        XCTAssertEqual(service.lockFocusAndExposure(at: CGPoint(x: 0.5, y: 0.5)), 0)
+    }
+
+    /// 82.4: a device range wholly beyond 2 EV collapses to the nearest limit,
+    /// never to a value outside it.
+    func testBiasRangeBeyondTwoEVCollapsesToTheNearestLimit() {
+        XCTAssertEqual(CameraService.exposureBiasRange(minimum: 3, maximum: 5), 2...2)
+        XCTAssertEqual(CameraService.exposureBiasRange(minimum: -5, maximum: -3), -2 ... -2)
+        XCTAssertEqual(CameraService.exposureBiasRange(minimum: -8, maximum: 8), -2...2)
+        XCTAssertEqual(CameraService.exposureBiasRange(minimum: -1.5, maximum: 1), -1.5...1)
+    }
+
     func testFailedResetIsNotAnnounced() {
         let service = CameraService(isCaptureSupported: false)
         var resets = 0
-        let cancellable = service.focusExposureResetPublisher.sink { resets += 1 }
+        let cancellable = service.focusExposureResetPublisher.sink { _ in resets += 1 }
         let device = FakeFocusDevice()
         device.lockFails = true
         service.resetFocusExposure(on: device)

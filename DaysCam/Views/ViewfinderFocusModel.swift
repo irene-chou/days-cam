@@ -21,8 +21,9 @@ final class PreviewLayerBridge {
 /// What the focus model asks of the camera (issue #303). Real ones forward to
 /// `CameraService`; the UI tests pass fakes.
 struct FocusExposureActions {
-    var focusAndExpose: (CGPoint) -> Void
-    var lock: (CGPoint) -> Void
+    /// Both return the request's id, 0 for none.
+    var focusAndExpose: (CGPoint) -> Int
+    var lock: (CGPoint) -> Int
     var setBias: (Float) -> Void
     /// The exposure bias range the live device accepts.
     var deviceBiasRange: () -> ClosedRange<Float>
@@ -81,6 +82,8 @@ final class ViewfinderFocusModel: ObservableObject {
     private var pendingBias: Float?
     private var lastSentBias: Float?
     private var nextReticleID = 0
+    /// The id the camera gave the latest focus or lock request.
+    private var latestFocusRequestID = 0
     private var touch: Touch?
     private var holdTask: Task<Void, Never>?
     private var dimTask: Task<Void, Never>?
@@ -116,10 +119,7 @@ final class ViewfinderFocusModel: ObservableObject {
     /// `deviceRange` narrowed to ±2 EV, the range the UI offers. Always
     /// non-empty and always inside both.
     nonisolated static func effectiveBiasRange(deviceRange: ClosedRange<Float>) -> ClosedRange<Float> {
-        let limit = CameraService.maxExposureBiasMagnitude
-        let low = min(max(deviceRange.lowerBound, -limit), limit)
-        let high = max(min(deviceRange.upperBound, limit), low)
-        return low...high
+        CameraService.exposureBiasRange(minimum: deviceRange.lowerBound, maximum: deviceRange.upperBound)
     }
 
     /// `bias` snapped to `biasStep` and held inside the effective range.
@@ -141,6 +141,9 @@ final class ViewfinderFocusModel: ObservableObject {
     /// is where it is now. All in the viewfinder's coordinates.
     func touchChanged(startLocation: CGPoint, location: CGPoint, viewfinderSize: CGSize) {
         self.viewfinderSize = viewfinderSize
+        // `onEnded` is skipped when SwiftUI cancels a gesture; a touch that
+        // starts somewhere else than the one we hold is a new one.
+        if let held = touch, held.start != startLocation { discardTouch() }
         if touch == nil { beginTouch(at: startLocation) }
         guard var current = touch else { return }
         if isPinching() {
@@ -168,6 +171,15 @@ final class ViewfinderFocusModel: ObservableObject {
         let raw = current.anchorBias - Float((location.y - current.anchorY) / Self.pointsPerEV)
         requestBias(raw)
         keepReticleBright()
+    }
+
+    /// The touch is over without having ended: SwiftUI cancelled the gesture
+    /// (a system gesture, the app going to the background). Does nothing a
+    /// lift would, such as a tap.
+    func discardTouch() {
+        holdTask?.cancel()
+        holdTask = nil
+        touch = nil
     }
 
     /// The finger lifted. A press that never moved and was not held is a tap.
@@ -202,6 +214,12 @@ final class ViewfinderFocusModel: ObservableObject {
 
     private func holdElapsed() {
         guard var current = touch, current.mode == .undecided, !isPinching() else { return }
+        // The panel or a capsule may have opened under the finger.
+        guard canAcceptGesture() else {
+            current.mode = .ignored
+            touch = current
+            return
+        }
         current.mode = .locked
         touch = current
         focus(at: current.start, lock: true)
@@ -212,11 +230,7 @@ final class ViewfinderFocusModel: ObservableObject {
         nextReticleID += 1
         reticle = Reticle(id: nextReticleID, layerPoint: layerPoint)
         keepReticleBright()
-        if lock {
-            actions.lock(devicePoint)
-        } else {
-            actions.focusAndExpose(devicePoint)
-        }
+        latestFocusRequestID = lock ? actions.lock(devicePoint) : actions.focusAndExpose(devicePoint)
     }
 
     private func requestBias(_ raw: Float) {
@@ -248,7 +262,12 @@ final class ViewfinderFocusModel: ObservableObject {
     /// The camera went back to continuous auto on its own (flip, lens, scene
     /// change, foreground), which the state alone cannot say when it was
     /// already at rest: reticle, requests and bias all go.
-    func receiveReset() {
+    ///
+    /// `appliedRequestID` is the latest focus request the device had taken
+    /// when it reset. A newer request made since (the event can arrive after a
+    /// new tap) was taken after the reset, so the frame it drew stays.
+    func receiveReset(appliedRequestID: Int = .max) {
+        guard appliedRequestID >= latestFocusRequestID else { return }
         serviceState = .initial
         pendingBias = nil
         lastSentBias = nil
@@ -314,12 +333,22 @@ final class FakeFocusExposureBackend {
 
     func attach(_ model: ViewfinderFocusModel) { self.model = model }
 
+    private var lastID = 0
+    private func nextID() -> Int {
+        lastID += 1
+        return lastID
+    }
+
     var actions: FocusExposureActions {
         FocusExposureActions(
-            focusAndExpose: { [weak self] _ in self?.reply { $0.isLocked = false } },
+            focusAndExpose: { [weak self] _ in
+                self?.reply { $0.isLocked = false }
+                return self?.nextID() ?? 0
+            },
             lock: { [weak self] _ in
-                guard let self else { return }
+                guard let self else { return 0 }
                 if self.lockFails { self.fail() } else { self.reply { $0.isLocked = true } }
+                return self.nextID()
             },
             setBias: { [weak self] bias in
                 guard let self else { return }

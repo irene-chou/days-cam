@@ -415,12 +415,20 @@ final class CameraService: ObservableObject {
 
     /// Emits whenever the camera went back to continuous auto (flip, lens
     /// change, scene change, foreground), even when `focusExposureState` was
-    /// already at rest and so did not change. Delivered on the main queue.
-    var focusExposureResetPublisher: AnyPublisher<Void, Never> {
+    /// already at rest and so did not change. Delivered on the main queue,
+    /// possibly after a newer tap: the value is the id of the latest focus or
+    /// lock request the device had taken when it reset (0 for none), so the
+    /// receiver can tell a reset that a newer request has already overtaken.
+    var focusExposureResetPublisher: AnyPublisher<Int, Never> {
         focusExposureResetSubject.eraseToAnyPublisher()
     }
 
-    private let focusExposureResetSubject = PassthroughSubject<Void, Never>()
+    private let focusExposureResetSubject = PassthroughSubject<Int, Never>()
+    /// Ids handed out to focus and lock requests. Main queue only.
+    private var focusRequestCounter = 0
+    /// The id of the latest focus or lock request run on the device. Touched
+    /// on `sessionQueue` only.
+    var lastAppliedFocusRequestID = 0
     private let focusExposureSubject = CurrentValueSubject<FocusExposureState, Never>(.initial)
     private let focusExposureFailureSubject = PassthroughSubject<FocusExposureFailure, Never>()
     /// The truth the subject is published from. Touched on `sessionQueue` only.
@@ -782,9 +790,18 @@ extension CameraService {
     /// The range the exposure bias is clamped to for `device`: ±2 EV, further
     /// narrowed to what the device reports.
     static func exposureBiasRange(of device: FocusExposureCaptureDevice) -> ClosedRange<Float> {
-        let low = Swift.max(device.minExposureTargetBias, -maxExposureBiasMagnitude)
-        let high = Swift.min(device.maxExposureTargetBias, maxExposureBiasMagnitude)
-        return low...Swift.max(low, high)
+        exposureBiasRange(minimum: device.minExposureTargetBias, maximum: device.maxExposureTargetBias)
+    }
+
+    /// The device's `minimum...maximum` cut to ±2 EV; never empty and always
+    /// inside ±2, even when the device's whole range lies beyond it (it then
+    /// collapses to the nearest limit). The one place both the service and the
+    /// viewfinder UI take their range from.
+    static func exposureBiasRange(minimum: Float, maximum: Float) -> ClosedRange<Float> {
+        let limit = maxExposureBiasMagnitude
+        let low = Swift.min(Swift.max(minimum, -limit), limit)
+        let high = Swift.max(Swift.min(maximum, limit), low)
+        return low...high
     }
 
     /// `point` pulled into the 0...1 device space, or nil when it is not a number.
@@ -876,8 +893,10 @@ extension CameraService {
     /// unrotated sensor space; get it from
     /// `AVCaptureVideoPreviewLayer.captureDevicePointConverted(fromLayerPoint:)`).
     /// Clears a previous lock; keeps the exposure bias. Call on the main queue.
-    func focusAndExpose(at devicePoint: CGPoint) {
-        applyOnDevice { device in
+    /// Returns the request's id (0 where there is no camera).
+    @discardableResult
+    func focusAndExpose(at devicePoint: CGPoint) -> Int {
+        applyOnDevice(focusRequest: true) { device in
             guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device) else {
                 return self.reportFocusExposureFailure()
             }
@@ -888,9 +907,10 @@ extension CameraService {
 
     /// Like `focusAndExpose(at:)`, then holds focus and exposure fixed. The
     /// state only reads locked when the device took at least one of the two.
-    /// Call on the main queue.
-    func lockFocusAndExposure(at devicePoint: CGPoint) {
-        applyOnDevice { device in
+    /// Call on the main queue. Returns the request's id (0 where there is no camera).
+    @discardableResult
+    func lockFocusAndExposure(at devicePoint: CGPoint) -> Int {
+        applyOnDevice(focusRequest: true) { device in
             guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device) else {
                 return self.reportFocusExposureFailure()
             }
@@ -922,14 +942,24 @@ extension CameraService {
     }
 
     /// Runs `work` with the live device on the session queue; a no-op where
-    /// there is no camera.
-    private func applyOnDevice(_ work: @escaping (AVCaptureDevice) -> Void) {
-        guard isCaptureSupported else { return }
+    /// there is no camera. A `focusRequest` is numbered: returns its id, and
+    /// the id counts as taken once its turn on the queue comes, device or not.
+    @discardableResult
+    private func applyOnDevice(focusRequest: Bool = false, _ work: @escaping (AVCaptureDevice) -> Void) -> Int {
+        guard isCaptureSupported else { return 0 }
+        var id = 0
+        if focusRequest {
+            focusRequestCounter += 1
+            id = focusRequestCounter
+        }
         sessionQueue.async { [weak self] in
-            guard let self, let device = self.videoInput?.device else { return }
+            guard let self else { return }
+            if id > 0 { self.lastAppliedFocusRequestID = id }
+            guard let device = self.videoInput?.device else { return }
             self.publishExposureBiasRange(of: device)
             work(device)
         }
+        return id
     }
 
     /// Publishes `exposureBiasRange(of: device)`. Runs on `sessionQueue`.
@@ -948,7 +978,8 @@ extension CameraService {
             return reportFocusExposureFailure()
         }
         updateFocusExposure { $0 = .initial }
-        onMain { [weak self] in self?.focusExposureResetSubject.send() }
+        let applied = lastAppliedFocusRequestID
+        onMain { [weak self] in self?.focusExposureResetSubject.send(applied) }
     }
 
     /// Device-level "scene changed" handler. Runs the reset only for the live
