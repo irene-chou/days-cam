@@ -5,6 +5,8 @@
 - 上游：[`PRD-0.3-fonts.md`](./PRD-0.3-fonts.md)、[`design/D6-font-picker.html`](./design/D6-font-picker.html)（方案 C）、Issue #162
 - 接續 [`TASKS-0.2-ui-redesign.md`](./TASKS-0.2-ui-redesign.md)（TASK-17～30），編號從 TASK-31 開始
 
+> 後續 TASK-78（[#321](https://github.com/irene-chou/days-cam/issues/321)）：字型頁列表、VoiceOver 與預覽圖改用經 metadata 查證的完整名稱；提示與授權頁維持本表簡稱，SE 375pt 可換行、不可縮字或裁切。
+
 ---
 
 ## 怎麼用這份文件

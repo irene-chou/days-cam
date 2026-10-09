@@ -18,9 +18,6 @@ struct FontListView: View {
     static let rowHorizontalPadding: CGFloat = 12
     /// Font name size in a downloaded row.
     static let rowTextSize: CGFloat = 17
-    /// A preview image is shrunk to this height (the images differ in height;
-    /// `docs/fonts-manifest.md`).
-    static let previewMaxHeight: CGFloat = 24
     static let statusIconSize: CGFloat = 20
     /// The selection bar left of the name.
     static let selectionBarWidth: CGFloat = 3
@@ -150,7 +147,7 @@ struct FontListView: View {
             // Not drawable yet: its preview image keeps the glyphs.
             FontPreviewImage(fontID: cell.fontID,
                              accessibilityName: cell.name,
-                             maxHeight: Self.previewMaxHeight,
+                             maxHeight: nil,
                              tint: cell.isSelected ? CameraTheme.ink : CameraTheme.inkTertiary)
                 .padding(.vertical, 8)
         }
@@ -234,8 +231,8 @@ struct FontToastView: View {
 /// template image, so it takes `foregroundColor`, and it shows the real
 /// glyphs before the font is downloaded.
 ///
-/// The images differ in height, so callers put it in a fixed-height box
-/// rather than rely on the image's own height.
+/// The list keeps the native 17pt glyph size and lets rows grow for wrapped
+/// full names. Tight callers may explicitly cap the height.
 struct FontPreviewImage: View {
     let fontID: OverlayFontID
     let accessibilityName: String

@@ -243,7 +243,7 @@ final class FontLibraryModel: ObservableObject {
     private func cell(for entry: FontCatalogEntry) -> Cell {
         let state = library.state(for: entry.fontID)
         return Cell(fontID: entry.fontID,
-                    name: entry.displayName,
+                    name: entry.fullName,
                     state: state,
                     isSelected: entry.fontID == currentFontID,
                     status: status(of: entry.fontID, state: state),

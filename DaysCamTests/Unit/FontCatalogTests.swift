@@ -9,6 +9,39 @@ import XCTest
 /// wrong catalog value cannot pass itself.
 final class FontCatalogTests: XCTestCase {
 
+
+    /// TASK-78 78.3/78.4: verified full face names, while short names stay unchanged.
+    func testFullNamesMatchVerifiedFontMetadata() {
+        let names: [OverlayFontID: String] = [
+            .pingFang: "蘋方-繁 中粗體",
+            .lantinghei: "蘭亭黑-繁 中黑",
+            .liHei: "儷黑 Pro",
+            .hiraginoSans: "冬青黑體繁體中文 W6",
+            .yuanti: "圓體-繁 粗體",
+            .songti: "宋體-繁 粗體",
+            .liSong: "儷宋 Pro",
+            .kaiti: "楷體-繁 粗體",
+            .biauKai: "標楷體-繁",
+            .hanziPen: "翩翩體-繁 粗體",
+            .hannotate: "手札體-繁 粗體",
+            .lingWai: "凌慧體-繁 中黑體",
+            .xingkai: "行楷-繁 粗體",
+            .weibei: "魏碑-繁 粗體",
+            .libian: "隸變-繁 標準體",
+            .baoli: "報隸-繁 標準體",
+            .wawa: "娃娃體-繁 標準體",
+            .yuppy: "雅痞-繁 標準體",
+            .huninn: "jf open 粉圓 2.1",
+            .notoSerifTC: "Noto Serif TC Bold",
+            .iansui: "芫荽 Regular",
+            .chenyuluoyan: "辰宇落雁體 2.0 細體",
+        ]
+        XCTAssertEqual(names.count, FontCatalog.entries.count)
+        for entry in FontCatalog.entries {
+            XCTAssertEqual(entry.fullName, names[entry.fontID], "\(entry.fontID)")
+        }
+    }
+
     /// PRD 0.3 §4.1, row by row: ID, name, section, source, PostScript, size.
     private let table: [(OverlayFontID, String, FontSection, FontSource, String, String?)] = [
         (.pingFang, "蘋方", .builtIn, .builtIn, "PingFangTC-Semibold", nil),

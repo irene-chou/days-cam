@@ -24,33 +24,33 @@ struct Entry {
 }
 
 let entries: [Entry] = [
-    Entry(fontID: "pingFang", name: "蘋方", postScriptName: "PingFangTC-Semibold", file: nil),
-    Entry(fontID: "huninn", name: "粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
+    Entry(fontID: "pingFang", name: "蘋方-繁 中粗體", postScriptName: "PingFangTC-Semibold", file: nil),
+    Entry(fontID: "huninn", name: "jf open 粉圓 2.1", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
           sha256: "9d5bf4932d31fe94c18cd8cfddc98bc1b14ce10f4e354c682179db290a99c825"),
-    Entry(fontID: "notoSerifTC", name: "思源宋體", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
+    Entry(fontID: "notoSerifTC", name: "Noto Serif TC Bold", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
           sha256: "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d"),
-    Entry(fontID: "iansui", name: "芫荽", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
+    Entry(fontID: "iansui", name: "芫荽 Regular", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
           sha256: "7f1aa62e9dcbf40d0ce41a5d3f1e5ea602e66c295778ac6fefb6b84d8ed08bd5"),
-    Entry(fontID: "chenyuluoyan", name: "辰宇落雁體", postScriptName: "ChenYuluoyan-2.0-Thin",
+    Entry(fontID: "chenyuluoyan", name: "辰宇落雁體 2.0 細體", postScriptName: "ChenYuluoyan-2.0-Thin",
           file: "ChenYuluoyan-2.0-Thin.ttf",
           sha256: "1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db"),
-    Entry(fontID: "lantinghei", name: "蘭亭黑", postScriptName: "FZLTZHB--B51-0", file: nil),
-    Entry(fontID: "liHei", name: "儷黑", postScriptName: "LiHeiPro", file: nil),
-    Entry(fontID: "hiraginoSans", name: "冬青黑體", postScriptName: "HiraginoSansTC-W6", file: nil),
-    Entry(fontID: "yuanti", name: "圓體", postScriptName: "STYuanti-TC-Bold", file: nil),
-    Entry(fontID: "songti", name: "宋體", postScriptName: "STSongti-TC-Bold", file: nil),
-    Entry(fontID: "liSong", name: "儷宋", postScriptName: "LiSongPro", file: nil),
-    Entry(fontID: "kaiti", name: "楷體", postScriptName: "STKaitiTC-Bold", file: nil),
-    Entry(fontID: "biauKai", name: "標楷體", postScriptName: "BiauKaiTC-Regular", file: nil),
-    Entry(fontID: "hanziPen", name: "翩翩體", postScriptName: "HanziPenTC-W5", file: nil),
-    Entry(fontID: "hannotate", name: "手札體", postScriptName: "HannotateTC-W7", file: nil),
-    Entry(fontID: "lingWai", name: "凌慧體", postScriptName: "MLingWaiMedium-TC", file: nil),
-    Entry(fontID: "xingkai", name: "行楷", postScriptName: "STXingkaiTC-Bold", file: nil),
-    Entry(fontID: "weibei", name: "魏碑", postScriptName: "WeibeiTC-Bold", file: nil),
-    Entry(fontID: "libian", name: "隸變", postScriptName: "STLibianTC-Regular", file: nil),
-    Entry(fontID: "baoli", name: "報隸", postScriptName: "STBaoliTC-Regular", file: nil),
-    Entry(fontID: "wawa", name: "娃娃體", postScriptName: "DFWaWaTC-W5", file: nil),
-    Entry(fontID: "yuppy", name: "雅痞", postScriptName: "YuppyTC-Regular", file: nil),
+    Entry(fontID: "lantinghei", name: "蘭亭黑-繁 中黑", postScriptName: "FZLTZHB--B51-0", file: nil),
+    Entry(fontID: "liHei", name: "儷黑 Pro", postScriptName: "LiHeiPro", file: nil),
+    Entry(fontID: "hiraginoSans", name: "冬青黑體繁體中文 W6", postScriptName: "HiraginoSansTC-W6", file: nil),
+    Entry(fontID: "yuanti", name: "圓體-繁 粗體", postScriptName: "STYuanti-TC-Bold", file: nil),
+    Entry(fontID: "songti", name: "宋體-繁 粗體", postScriptName: "STSongti-TC-Bold", file: nil),
+    Entry(fontID: "liSong", name: "儷宋 Pro", postScriptName: "LiSongPro", file: nil),
+    Entry(fontID: "kaiti", name: "楷體-繁 粗體", postScriptName: "STKaitiTC-Bold", file: nil),
+    Entry(fontID: "biauKai", name: "標楷體-繁", postScriptName: "BiauKaiTC-Regular", file: nil),
+    Entry(fontID: "hanziPen", name: "翩翩體-繁 粗體", postScriptName: "HanziPenTC-W5", file: nil),
+    Entry(fontID: "hannotate", name: "手札體-繁 粗體", postScriptName: "HannotateTC-W7", file: nil),
+    Entry(fontID: "lingWai", name: "凌慧體-繁 中黑體", postScriptName: "MLingWaiMedium-TC", file: nil),
+    Entry(fontID: "xingkai", name: "行楷-繁 粗體", postScriptName: "STXingkaiTC-Bold", file: nil),
+    Entry(fontID: "weibei", name: "魏碑-繁 粗體", postScriptName: "WeibeiTC-Bold", file: nil),
+    Entry(fontID: "libian", name: "隸變-繁 標準體", postScriptName: "STLibianTC-Regular", file: nil),
+    Entry(fontID: "baoli", name: "報隸-繁 標準體", postScriptName: "STBaoliTC-Regular", file: nil),
+    Entry(fontID: "wawa", name: "娃娃體-繁 標準體", postScriptName: "DFWaWaTC-W5", file: nil),
+    Entry(fontID: "yuppy", name: "雅痞-繁 標準體", postScriptName: "YuppyTC-Regular", file: nil),
 ]
 
 let pointSize: CGFloat = 17
@@ -97,8 +97,15 @@ func resolve(_ entry: Entry) -> NSFont {
 func render(_ text: String, font: NSFont, scale: CGFloat) -> Data {
     let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
     let string = NSAttributedString(string: text, attributes: attributes)
-    let size = string.size()
-    let padding: CGFloat = 1
+    // Reserve space for size/status at SE width; wrap without reducing 17pt.
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineBreakMode = .byWordWrapping
+    let wrapped = NSMutableAttributedString(attributedString: string)
+    wrapped.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: wrapped.length))
+    let bounds = wrapped.boundingRect(with: NSSize(width: 210, height: 1000),
+                                      options: [.usesLineFragmentOrigin, .usesFontLeading])
+    let size = NSSize(width: ceil(bounds.width), height: ceil(bounds.height))
+    let padding: CGFloat = 4
     let width = Int(ceil((size.width + padding * 2) * scale))
     let height = Int(ceil((size.height + padding * 2) * scale))
     guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
@@ -109,7 +116,8 @@ func render(_ text: String, font: NSFont, scale: CGFloat) -> Data {
     rep.size = NSSize(width: size.width + padding * 2, height: size.height + padding * 2)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    string.draw(at: NSPoint(x: padding, y: padding))
+    wrapped.draw(with: NSRect(x: padding, y: padding, width: size.width, height: size.height),
+                 options: [.usesLineFragmentOrigin, .usesFontLeading])
     NSGraphicsContext.restoreGraphicsState()
     guard let png = rep.representation(using: .png, properties: [:]) else { fail("cannot encode \(text)") }
     return png
