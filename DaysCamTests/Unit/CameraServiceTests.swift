@@ -898,6 +898,35 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         XCTAssertEqual(service.exposureBiasRange, -2...2)
     }
 
+    /// Codex P2: a reset is announced even when the state was already at rest
+    /// and so published nothing.
+    func testResetIsAnnouncedEvenWhenTheStateDidNotChange() {
+        let service = CameraService(isCaptureSupported: false)
+        var resets = 0
+        let cancellable = service.focusExposureResetPublisher.sink { resets += 1 }
+        service.resetFocusExposure(on: FakeFocusDevice())
+        let flushed = expectation(description: "main queue flushed")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(resets, 1)
+        XCTAssertEqual(service.focusExposureState, .initial)
+        cancellable.cancel()
+    }
+
+    func testFailedResetIsNotAnnounced() {
+        let service = CameraService(isCaptureSupported: false)
+        var resets = 0
+        let cancellable = service.focusExposureResetPublisher.sink { resets += 1 }
+        let device = FakeFocusDevice()
+        device.lockFails = true
+        service.resetFocusExposure(on: device)
+        let flushed = expectation(description: "main queue flushed")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(resets, 0)
+        cancellable.cancel()
+    }
+
     // MARK: Service level (no camera, so the calls are no-ops and must not crash)
 
     func testServiceCallsWithoutACameraDoNothing() {
