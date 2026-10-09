@@ -423,6 +423,14 @@ final class CameraService: ObservableObject {
         focusExposureResetSubject.eraseToAnyPublisher()
     }
 
+    /// Confirms a successful tap reset, even when the state was already zero.
+    /// The ID identifies the applied tap; unlike an automatic reset, keep its
+    /// reticle. UI callers should ignore confirmations older than their latest tap.
+    var focusExposureTapResetPublisher: AnyPublisher<Int, Never> {
+        focusExposureTapResetSubject.eraseToAnyPublisher()
+    }
+
+    private let focusExposureTapResetSubject = PassthroughSubject<Int, Never>()
     private let focusExposureResetSubject = PassthroughSubject<Int, Never>()
     /// Ids handed out to focus and lock requests. Main queue only.
     private var focusRequestCounter = 0
@@ -822,9 +830,11 @@ extension CameraService {
     /// subject-area monitoring. Both modes are single-shot `.autoFocus` /
     /// `.autoExpose`: the device settles once and then holds (its mode becomes
     /// `.locked`) until `resetFocusExposure` — which is what an AE/AF lock is.
+    /// Resets bias in the same lock unless this is a long-press lock request.
     /// Returns nil when the lock could not be taken and nothing changed.
     static func applyFocusAndExpose(at point: CGPoint,
-                                    to device: FocusExposureCaptureDevice) -> FocusExposureOutcome? {
+                                    to device: FocusExposureCaptureDevice,
+                                    resetBias: Bool = true) -> FocusExposureOutcome? {
         guard let point = clampedDevicePoint(point) else { return FocusExposureOutcome() }
         do {
             try device.lockForConfiguration()
@@ -832,6 +842,7 @@ extension CameraService {
             return nil
         }
         defer { device.unlockForConfiguration() }
+        if resetBias { device.setExposureTargetBias(0, completionHandler: nil) }
         var outcome = FocusExposureOutcome()
         if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
             device.focusPointOfInterest = point
@@ -892,16 +903,14 @@ extension CameraService {
     /// Focuses and meters at `devicePoint` (0...1, top-left origin in the
     /// unrotated sensor space; get it from
     /// `AVCaptureVideoPreviewLayer.captureDevicePointConverted(fromLayerPoint:)`).
-    /// Clears a previous lock; keeps the exposure bias. Call on the main queue.
+    /// Clears a previous lock and resets bias to zero. Call on the main queue.
+    /// The state publisher confirms the reset; the UI must clear pending bias
+    /// and display zero immediately when submitting a new tap.
     /// Returns the request's id (0 where there is no camera).
     @discardableResult
     func focusAndExpose(at devicePoint: CGPoint) -> Int {
         applyOnDevice(focusRequest: true) { device in
-            guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device) else {
-                return self.reportFocusExposureFailure()
-            }
-            guard outcome.tookEffect else { return }
-            self.updateFocusExposure { $0.isLocked = false }
+            self.applyTap(at: devicePoint, to: device)
         }
     }
 
@@ -911,22 +920,43 @@ extension CameraService {
     @discardableResult
     func lockFocusAndExposure(at devicePoint: CGPoint) -> Int {
         applyOnDevice(focusRequest: true) { device in
-            guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device) else {
+            guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device, resetBias: false) else {
                 return self.reportFocusExposureFailure()
             }
             self.updateFocusExposure { $0.isLocked = outcome.tookEffect }
         }
     }
 
-    /// Sets the exposure compensation in EV, clamped to ±2 and the device's
-    /// own range. Call on the main queue.
-    func setExposureBias(_ ev: Float) {
-        applyOnDevice { device in
-            guard let applied = CameraService.applyExposureBias(ev, to: device) else {
-                return self.reportFocusExposureFailure()
-            }
-            self.updateFocusExposure { $0.exposureBias = applied }
+    /// Applies a tap and publishes the zero bias/unlocked state together.
+    /// Runs on the session queue; invalid points and failed locks change nothing.
+    func applyTap(at point: CGPoint, to device: FocusExposureCaptureDevice) {
+        guard CameraService.clampedDevicePoint(point) != nil else { return }
+        guard CameraService.applyFocusAndExpose(at: point, to: device) != nil else {
+            return reportFocusExposureFailure()
         }
+        updateFocusExposure { $0 = .initial }
+        let applied = lastAppliedFocusRequestID
+        onMain { [weak self] in self?.focusExposureTapResetSubject.send(applied) }
+    }
+
+    /// Sets compensation for the originating focus request, clamped to the
+    /// device range. Call on main. Omit the ID for a synchronous current-touch
+    /// update; delayed callers must retain and pass the originating request ID.
+    func setExposureBias(_ ev: Float, forFocusRequestID requestID: Int? = nil) {
+        let origin = requestID ?? focusRequestCounter
+        applyOnDevice { device in
+            self.applyBias(ev, forFocusRequestID: origin, to: device)
+        }
+    }
+
+    /// Rejects stale compensation before touching the device or publishing.
+    /// Runs on the session queue, ordered with tap and lock requests.
+    func applyBias(_ ev: Float, forFocusRequestID requestID: Int, to device: FocusExposureCaptureDevice) {
+        guard requestID == lastAppliedFocusRequestID else { return }
+        guard let applied = CameraService.applyExposureBias(ev, to: device) else {
+            return reportFocusExposureFailure()
+        }
+        updateFocusExposure { $0.exposureBias = applied }
     }
 
     /// Back to continuous auto focus/exposure with bias 0 and no lock.
