@@ -23,6 +23,13 @@ final class CameraScreenModel: ObservableObject {
     /// the rest changes every frame of a pinch and is observed by the capsule
     /// alone (issue #280).
     let zoomModel: ViewfinderZoomModel
+    /// Tap-to-focus, exposure drag and AE/AF lock on the viewfinder (issue
+    /// #303). Observed by `FocusExposureOverlay` alone, so a drag redraws
+    /// only that.
+    let focusModel: ViewfinderFocusModel
+    #if DEBUG
+    private let fakeFocusBackend: FakeFocusExposureBackend?
+    #endif
     /// Whether the quick-zoom capsule is open (issue #302).
     let zoomExpansion = ZoomPresetExpansion()
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
@@ -315,12 +322,44 @@ final class CameraScreenModel: ObservableObject {
         self.makeGalleryModel = makeGalleryModel
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
+        #if DEBUG
+        let fakeFocusBackend = FakeFocusExposureBackend.isEnabled ? FakeFocusExposureBackend() : nil
+        self.fakeFocusBackend = fakeFocusBackend
+        #endif
+        let focusActions = FocusExposureActions(
+            focusAndExpose: { [cameraService] in cameraService.focusAndExpose(at: $0) },
+            lock: { [cameraService] in cameraService.lockFocusAndExposure(at: $0) },
+            setBias: { [cameraService] in cameraService.setExposureBias($0) },
+            deviceBiasRange: { [cameraService] in cameraService.exposureBiasRange })
+        let focusModel: ViewfinderFocusModel
+        #if DEBUG
+        if let fakeFocusBackend {
+            // No camera to convert with: the fake takes the point as a share
+            // of the viewfinder.
+            focusModel = ViewfinderFocusModel(
+                actions: fakeFocusBackend.actions,
+                convert: { point, size in
+                    size.width > 0 && size.height > 0 ? CGPoint(x: point.x / size.width, y: point.y / size.height) : nil
+                },
+                // Slow simulators need time to find the reticle; the fade-out
+                // test asks for the real one.
+                hideDelay: ProcessInfo.processInfo.arguments.contains("-UITestFocusQuickFade") ? .seconds(2) : .seconds(60))
+            fakeFocusBackend.attach(focusModel)
+        } else {
+            focusModel = ViewfinderFocusModel(actions: focusActions)
+        }
+        #else
+        focusModel = ViewfinderFocusModel(actions: focusActions)
+        #endif
+        self.focusModel = focusModel
         self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
                                              zoomRange: { [cameraService] in
                                                  Self.usesUITestZoomPlan ? ZoomRange(minimum: 0.5, maximum: 10) : cameraService.zoomRange
                                              },
                                              applyFactor: { [cameraService] in cameraService.setZoomFactor($0) },
-                                             applyPreset: { [cameraService] in
+                                             applyPreset: { [cameraService, focusModel] in
+                                                 // A new lens starts at continuous auto (issue #303).
+                                                 focusModel.hideReticle()
                                                  cameraService.setZoom(displayFactor: $0, animated: true)
                                              })
         self.captureSettingsStore = captureSettingsStore
@@ -344,6 +383,7 @@ final class CameraScreenModel: ObservableObject {
         bindToProfileStore()
         bindToCameraService()
         bindToZoomModel()
+        bindToFocusModel()
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
@@ -491,6 +531,31 @@ final class CameraScreenModel: ObservableObject {
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] _ in self?.zoomModel.resetRequestedFactor() }
+            .store(in: &cancellables)
+    }
+
+    /// Feeds the service's focus/exposure answers to `focusModel`, and tells it
+    /// when a gesture may start and when the camera changes under it.
+    private func bindToFocusModel() {
+        focusModel.canAcceptGesture = { [weak self] in
+            guard let self else { return false }
+            guard !panelModel.isOpen, !isCameraToolsExpanded, !zoomExpansion.isExpanded else { return false }
+            #if DEBUG
+            if fakeFocusBackend != nil { return true }
+            #endif
+            return !isCaptureUnsupported && !needsPermissionGuidance && !isSessionNotRunning
+        }
+        focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
+        cameraService.focusExposureStatePublisher
+            .sink { [weak self] in self?.focusModel.receive($0) }
+            .store(in: &cancellables)
+        cameraService.focusExposureFailurePublisher
+            .sink { [weak self] _ in self?.focusModel.receiveFailure() }
+            .store(in: &cancellables)
+        cameraService.$facing
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.focusModel.hideReticle() }
             .store(in: &cancellables)
     }
 

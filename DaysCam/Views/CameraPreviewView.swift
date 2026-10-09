@@ -9,10 +9,13 @@ import SwiftUI
 /// place that builds one.
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession
+    /// Gets the preview layer, for converting touch points (issue #303).
+    var bridge: PreviewLayerBridge?
 
     func makeUIView(context: Context) -> CameraPreviewContainerView {
         let view = CameraPreviewContainerView()
         view.videoPreviewLayer.session = session
+        bridge?.layer = view.videoPreviewLayer
         // `.resizeAspectFill` (changed from `.resizeAspect` in TASK-21):
         // `CameraScreen` now sizes this view's container to the *selected*
         // `CaptureAspectRatio` (3:4, 1:1 or 9:16), not always the sensor's
