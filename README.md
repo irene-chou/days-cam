@@ -42,4 +42,4 @@ xcodebuild -project DaysCam.xcodeproj -scheme DaysCam \
   -destination 'platform=iOS Simulator,name=iPhone 16' test
 ```
 
-並行開發（各自 worktree、DerivedData、模擬器，以及到 rinclaw 執行）見 [WORKFLOW 開發](docs/WORKFLOW.md#開發)。
+並行開發（各自 worktree、DerivedData、模擬器）見 [WORKFLOW 開發](docs/WORKFLOW.md#開發)。
