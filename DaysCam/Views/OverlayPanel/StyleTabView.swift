@@ -598,20 +598,14 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    /// Fixed "transparent to opaque" legend: checkerboard on the left half,
-    /// solid `ink` on the right (TASK-83).
+    /// Fixed opacity icon of the three opacity rows (TASK-83): monochrome like
+    /// the other slider icons, so it never follows the selected color.
     private var opacityLegend: some View {
-        ZStack {
-            CheckerboardView()
-            HStack(spacing: 0) {
-                Color.clear
-                CameraTheme.ink
-            }
-        }
-        .frame(width: 24, height: 24)
-        .clipShape(Circle())
-        .overlay(swatchEdge)
-        .accessibilityHidden(true)
+        Image(systemName: "circle.lefthalf.striped.horizontal")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(CameraTheme.ink)
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
     }
 
     /// Option box sides (TASK-49 C): outline 48, shadow 64.
