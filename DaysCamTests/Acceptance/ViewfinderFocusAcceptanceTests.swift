@@ -34,13 +34,14 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     private var biases: [Float] = []
     private var deviceRange: ClosedRange<Float> = -8...8
     private var accepts = true
+    private var requestID = 0
     private let size = CGSize(width: 300, height: 400)
 
     private func makeModel(mirrored: Bool = false) -> ViewfinderFocusModel {
         let model = ViewfinderFocusModel(
             actions: FocusExposureActions(
-                focusAndExpose: { [unowned self] in focused.append($0) },
-                lock: { [unowned self] in locked.append($0) },
+                focusAndExpose: { [unowned self] in focused.append($0); requestID += 1; return requestID },
+                lock: { [unowned self] in locked.append($0); requestID += 1; return requestID },
                 setBias: { [unowned self] in biases.append($0) },
                 deviceBiasRange: { [unowned self] in deviceRange }),
             convert: { point, size in
@@ -124,7 +125,6 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
 
     /// 73.6: a panel that opens while the finger is down must not be followed by a lock.
     func testPanelOpeningDuringTheHoldDoesNotLock() async {
-        XCTExpectFailure("QA #337, remove when a fix PR lands (not covered by Codex P2s): holdElapsed does not re-check canAcceptGesture (low: a panel cannot open under a single finger)")
         let model = makeModel()
         let start = CGPoint(x: 150, y: 200)
         model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
@@ -151,7 +151,6 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     /// must still be handled as its own touch, not swallowed or aimed at the
     /// old start.
     func testNextTapIsHandledAfterATouchThatNeverEnded() async {
-        XCTExpectFailure("QA #337, remove when a fix PR lands (not covered by Codex P2s): a touch whose onEnded never arrives leaves state behind and the next touch is swallowed")
         let model = makeModel()
         let first = CGPoint(x: 40, y: 40)
         model.touchChanged(startLocation: first, location: first, viewfinderSize: size)
@@ -159,7 +158,7 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
         locked.removeAll()
         let second = CGPoint(x: 200, y: 300)
         tap(model, at: second)
-        XCTAssertEqual(focused, [CGPoint(x: 200 / 300, y: 300 / 400)])
+        XCTAssertEqual(focused, [CGPoint(x: 200.0 / 300.0, y: 300.0 / 400.0)])
     }
 
     // MARK: 73.2 bias
@@ -217,7 +216,7 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     func testResetPublisherFiresEvenWhenTheStateWasAlreadyAtRest() {
         let service = CameraService(isCaptureSupported: false)
         var resets = 0
-        let cancel = service.focusExposureResetPublisher.sink { resets += 1 }
+        let cancel = service.focusExposureResetPublisher.sink { _ in resets += 1 }
         service.resetFocusExposure(on: BiasRangeDevice()); pump()
         XCTAssertEqual(resets, 1)
         cancel.cancel()
@@ -228,6 +227,43 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
         tap(model, at: CGPoint(x: 150, y: 200))
         model.receiveReset()
         XCTAssertNil(model.reticle)
+    }
+
+    // MARK: 82.1 late reset
+
+    /// A reset that ran before the latest tap was executed must not close its frame.
+    func testResetFromBeforeTheLatestTapKeepsTheFrame() {
+        let model = makeModel()
+        tap(model, at: CGPoint(x: 100, y: 100))
+        tap(model, at: CGPoint(x: 200, y: 200)) // request id 2
+        model.receiveReset(appliedRequestID: 1)
+        XCTAssertEqual(model.reticle?.layerPoint, CGPoint(x: 200, y: 200))
+        model.receiveReset(appliedRequestID: 2)
+        XCTAssertNil(model.reticle, "a reset after the tap closes it")
+    }
+
+    /// A late reset leaves a lock and a bias the user set after it alone.
+    func testLateResetKeepsTheLockLabel() {
+        let model = makeModel()
+        tap(model, at: CGPoint(x: 100, y: 100)) // id 1
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 0))
+        model.receiveReset(appliedRequestID: 0)
+        XCTAssertTrue(model.isLocked)
+        XCTAssertNotNil(model.reticle)
+    }
+
+    // MARK: 82.3 stale touch at the same point
+
+    /// onEnded lost, then the user taps the very same spot: the tap must still count.
+    func testNextTapAtTheSamePointAfterALostEndStillFocuses() async {
+        XCTExpectFailure("QA #348: model drops a stale touch only when the start differs; same-point retap is swallowed unless the GestureState cancel path (device) resets it. Remove when fixed")
+        let model = makeModel()
+        let spot = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        await settle(150) // locked, onEnded never arrives
+        focused.removeAll()
+        tap(model, at: spot)
+        XCTAssertEqual(focused.count, 1)
     }
 
     // MARK: cross ownership: CameraService.exposureBiasRange: CameraService.exposureBiasRange
@@ -263,8 +299,8 @@ final class ViewfinderFocusAcceptanceTests: XCTestCase {
     /// The UI range and the service range agree for every combination.
     func testUIRangeEqualsServiceRangeForManyDeviceRanges() {
         let device = BiasRangeDevice()
-        for low in stride(from: Float(-9), through: 0, by: 1.5) {
-            for high in stride(from: Float(0), through: 9, by: 1.5) {
+        for low in stride(from: Float(-9), through: 3, by: 1.5) {
+            for high in stride(from: low, through: 9, by: 1.5) {
                 device.minExposureTargetBias = low
                 device.maxExposureTargetBias = high
                 XCTAssertEqual(ViewfinderFocusModel.effectiveBiasRange(deviceRange: low...high),
