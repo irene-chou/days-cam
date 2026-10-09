@@ -340,10 +340,15 @@ final class FontLibraryModel: ObservableObject {
                     state: state,
                     isSelected: isSelected,
                     status: status(of: entry.fontID, state: state),
-                    canDelete: state.isAvailable && entry.source == .openSource,
+                    canDelete: entry.source == .openSource && hasDownloadedFace(entry),
                     weights: isSelected && entry.weights.count > 1 ? weightCells(of: entry, selected: selectedWeight) : [],
                     weightCount: entry.weights.count,
                     nameWeightID: selectedWeight.id)
+    }
+
+    /// Whether any face of the font is on the device: deleting removes them all.
+    private func hasDownloadedFace(_ entry: FontCatalogEntry) -> Bool {
+        entry.weights.contains { library.state(for: entry.fontID, weightID: $0.id).isAvailable }
     }
 
     private func weightCells(of entry: FontCatalogEntry, selected: FontWeightOption) -> [WeightCell] {
@@ -462,11 +467,12 @@ final class FontLibraryModel: ObservableObject {
     /// longer waits for a download.
     private func dropStalePendingWeight() {
         guard let unit = pendingWeight else { return }
+        knownWeightStates = [:]
         switch library.state(for: unit.fontID, weightID: unit.weightID) {
         case .downloading, .preparing: break
-        case .available, .notDownloaded, .failed: pendingWeight = nil
+        case .available: weightDownloadDidFinish(unit)
+        case .notDownloaded, .failed: pendingWeight = nil
         }
-        knownWeightStates = [:]
     }
 
     /// Reports a failed download of the pending face, reading only that
@@ -474,7 +480,11 @@ final class FontLibraryModel: ObservableObject {
     private func noteWeightStates() {
         let entry = FontCatalog.entry(for: currentFontID)
         guard entry.weights.count > 1 else { return }
-        for weight in entry.weights where weight.id != entry.defaultWeight.id {
+        // A face that settled by preparing (no download event) still applies.
+        if let unit = pendingWeight, library.state(for: unit.fontID, weightID: unit.weightID).isAvailable {
+            weightDownloadDidFinish(unit)
+        }
+        for weight in entry.weights {
             let unit = FontDownloadID(fontID: entry.fontID, weightID: weight.id)
             let old = knownWeightStates[unit]
             let new = library.state(for: entry.fontID, weightID: weight.id)
@@ -493,7 +503,7 @@ final class FontLibraryModel: ObservableObject {
     /// open-source font has one.
     func requestDeletion(of fontID: OverlayFontID) {
         let entry = FontCatalog.entry(for: fontID)
-        guard entry.source == .openSource, library.state(for: fontID).isAvailable else { return }
+        guard entry.source == .openSource, hasDownloadedFace(entry) else { return }
         deletePrompt = DeletePrompt(fontID: fontID,
                                     title: "\(entry.displayName)　\(entry.downloadSizeText ?? "")",
                                     usage: usageText(of: fontID))

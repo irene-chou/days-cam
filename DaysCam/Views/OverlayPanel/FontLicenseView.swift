@@ -139,7 +139,7 @@ struct FontLicenseView: View {
 
     private func entryView(_ entry: FontLicenseModel.Entry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if entry.files.count > 1 {
+            if !entry.files.isEmpty {
                 Text(entry.name)
                     .font(CameraTheme.toolFont(.subheadline))
                     .foregroundColor(CameraTheme.ink)

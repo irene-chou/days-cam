@@ -590,6 +590,58 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertTrue(library.weightDownloads.isEmpty)
     }
 
+    func testFamilyIsDeletableWhenOnlyANonDefaultWeightIsDownloaded() throws {
+        // The default face is gone, a sibling is on the device.
+        let library = FakeFontLibrary([.notoSerifTC: .notDownloaded])
+        library.weightStates[noto("regular")] = .available
+        let model = makeModel(library: library, current: .pingFang)
+        XCTAssertTrue(try cell(.notoSerifTC, in: model).canDelete, "任一字重可用即可刪整套")
+        model.requestDeletion(of: .notoSerifTC)
+        XCTAssertNotNil(model.deletePrompt)
+        let none = makeModel(library: FakeFontLibrary(), current: .pingFang)
+        XCTAssertFalse(try cell(.notoSerifTC, in: none).canDelete)
+        XCTAssertFalse(try cell(.pingFang, in: none).canDelete, "內建字型不能刪")
+    }
+
+    func testAPendingWeightThatSettlesWithoutADownloadEventIsApplied() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[noto("black")] = .preparing
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+        library.weightStates[noto("black")] = .available
+        model.libraryDidChange()
+        XCTAssertEqual(calls.weights, ["black"], ".preparing 完成後也要套用")
+        XCTAssertNil(model.pendingWeight)
+    }
+
+    func testPendingWeightFinishedWhileListWasOffScreenIsAppliedOnReturn() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[noto("black")] = .preparing
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        model.listDidDisappear()
+        library.weightStates[noto("black")] = .available
+        model.listDidAppear()
+        XCTAssertEqual(calls.weights, ["black"])
+    }
+
+    func testFailureOfThePendingDefaultWeightDropsThePending() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        // The default face (bold) was deleted; the user picks it again.
+        library.states[.notoSerifTC] = .notDownloaded
+        let model = makeModel(library: library, current: .notoSerifTC, weight: "black", calls: calls)
+        model.didTapWeight("bold")
+        XCTAssertEqual(model.pendingWeight, noto("bold"))
+        library.states[.notoSerifTC] = .failed(.other)
+        model.libraryDidChange()
+        XCTAssertNil(model.pendingWeight, "預設字重失敗也要清除 pending")
+        XCTAssertTrue(calls.weights.isEmpty)
+    }
+
     func testAccessibilityLabelsNameTheWeightState() throws {
         let library = FakeFontLibrary([.notoSerifTC: .available])
         let model = makeModel(library: library)
@@ -641,7 +693,9 @@ final class FontLicenseViewTests: XCTestCase {
         XCTAssertTrue(noto.files.allSatisfy { !$0.copyright.isEmpty && !$0.version.isEmpty }, "每個檔案都有 copyright")
         XCTAssertEqual(noto.licenses.map(\.title), ["SIL Open Font License 1.1"], "共用授權全文只列一次")
         let huninn = try XCTUnwrap(model.entries.first { $0.fontID == .huninn })
-        XCTAssertEqual(huninn.files.map(\.fileName).count, 1)
+        XCTAssertEqual(huninn.files.map(\.fileName), [FontCatalog.entry(for: .huninn).openSource?.fileName ?? ""],
+                       "單一檔案的字型也列檔名")
+        XCTAssertFalse(try XCTUnwrap(huninn.files.first).weightName.isEmpty)
     }
 
     func testSystemFontsAreCreditedToApple() {
