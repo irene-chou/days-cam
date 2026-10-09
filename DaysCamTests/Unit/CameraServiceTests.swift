@@ -870,6 +870,34 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         XCTAssertEqual(device.exposureMode, .continuousAutoExposure)
     }
 
+    // MARK: Published bias range (#315 QA, read by the viewfinder UI)
+
+    func testExposureBiasRangeStartsAtTwoEV() {
+        XCTAssertEqual(CameraService(isCaptureSupported: false).exposureBiasRange, -2...2)
+    }
+
+    /// The range follows the device that was reset (a flip or lens change),
+    /// narrowed to ±2 EV and to the device's own limits.
+    func testExposureBiasRangeFollowsTheDeviceAfterAReset() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeFocusDevice()
+        device.minExposureTargetBias = -1.5
+        device.maxExposureTargetBias = 1
+        service.resetFocusExposure(on: device)
+        let published = expectation(description: "range published")
+        DispatchQueue.main.async { published.fulfill() }
+        wait(for: [published], timeout: 2)
+        XCTAssertEqual(service.exposureBiasRange, -1.5...1)
+
+        device.minExposureTargetBias = -8
+        device.maxExposureTargetBias = 8
+        service.resetFocusExposure(on: device)
+        let republished = expectation(description: "range republished")
+        DispatchQueue.main.async { republished.fulfill() }
+        wait(for: [republished], timeout: 2)
+        XCTAssertEqual(service.exposureBiasRange, -2...2)
+    }
+
     // MARK: Service level (no camera, so the calls are no-ops and must not crash)
 
     func testServiceCallsWithoutACameraDoNothing() {
