@@ -44,12 +44,25 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: "YES"
+  DaysCamUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DaysCamUITests
+    dependencies:
+      - target: DaysCam
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: "YES"
 schemes:
   DaysCam:
     build:
       targets:
         DaysCam: all
         DaysCamTests: [test]
+        DaysCamUITests: [test]
     test:
       targets:
         - DaysCamTests
+        - DaysCamUITests

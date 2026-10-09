@@ -62,6 +62,14 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         XCTAssertFalse(model.panelModel.isOpen)
     }
 
+    /// TASK-72, 72.3: a viewfinder tap also closes the zoom capsule.
+    func testViewfinderTapCollapsesZoomCapsule() {
+        let model = makeModel()
+        model.zoomExpansion.expand()
+        model.handleViewfinderTap()
+        XCTAssertFalse(model.zoomExpansion.isExpanded)
+    }
+
     func testOpeningPanelCollapsesCapsule() {
         let model = makeModel()
         model.toggleCameraTools()

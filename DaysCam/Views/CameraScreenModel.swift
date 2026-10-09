@@ -23,6 +23,8 @@ final class CameraScreenModel: ObservableObject {
     /// the rest changes every frame of a pinch and is observed by the capsule
     /// alone (issue #280).
     let zoomModel: ViewfinderZoomModel
+    /// Whether the quick-zoom capsule is open (issue #302).
+    let zoomExpansion = ZoomPresetExpansion()
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
     /// grid. Exposed (not `private`) the same way `cameraService` is, so
     /// `CameraToolbar` can read it directly; this model forwards its change
@@ -314,7 +316,9 @@ final class CameraScreenModel: ObservableObject {
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
         self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
-                                             zoomRange: { [cameraService] in cameraService.zoomRange },
+                                             zoomRange: { [cameraService] in
+                                                 Self.usesUITestZoomPlan ? ZoomRange(minimum: 0.5, maximum: 10) : cameraService.zoomRange
+                                             },
                                              applyFactor: { [cameraService] in cameraService.setZoomFactor($0) },
                                              applyPreset: { [cameraService] in
                                                  cameraService.setZoom(displayFactor: $0, animated: true)
@@ -458,7 +462,22 @@ final class CameraScreenModel: ObservableObject {
 
     /// The quick-zoom buttons the current camera offers (issue #279); empty
     /// until a camera is configured.
-    var zoomPresets: [ZoomPreset] { cameraService.availableZoomPresets }
+    var zoomPresets: [ZoomPreset] {
+        Self.usesUITestZoomPlan ? Self.uiTestZoomPresets : cameraService.availableZoomPresets
+    }
+
+    /// The simulator has no camera and so no zoom plan; the UI tests pass
+    /// `-UITestZoomPresets` to get a fixed one (issue #302). Debug builds only.
+    private static let uiTestZoomPresets = [ZoomPreset(displayFactor: 0.5),
+                                            ZoomPreset(displayFactor: 1),
+                                            ZoomPreset(displayFactor: 2)]
+    private static var usesUITestZoomPlan: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestZoomPresets")
+        #else
+        false
+        #endif
+    }
 
     /// Forwards only `isPinching` (issue #280), and starts the next pinch at
     /// 1× after a camera switch, which resets the zoom.
@@ -844,6 +863,7 @@ extension CameraScreenModel {
     /// only closes the capsule — the tap is consumed, so an open panel stays
     /// open; otherwise it closes the panel (PRD 0.2 FR-8.7).
     func handleViewfinderTap() {
+        zoomExpansion.collapse()
         if isCameraToolsExpanded {
             collapseCameraTools()
         } else if panelModel.isOpen {
