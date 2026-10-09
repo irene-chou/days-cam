@@ -39,6 +39,13 @@ struct StyleTabView: View {
         return (0..<colorColumnCount).map { swatchDiameter / 2 + CGFloat($0) * pitch }
     }
 
+    /// Left/right inset of a page's scroll content (TASK-84): 14 puts sliders
+    /// and swatches 16pt from the panel edge. The font list keeps 10 because
+    /// its rows carry their own inset (#309).
+    static func contentHorizontalInset(for subTab: StyleTabModel.SubTab) -> CGFloat {
+        subTab == .font ? 10 : 14
+    }
+
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
     /// Height of the pinned sub-tab row: 6 + 36 + 4.
@@ -91,7 +98,7 @@ struct StyleTabView: View {
                         content
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, Self.contentHorizontalInset(for: model.selectedSubTab))
                 .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
             }
             // Fades at the scroll edges and one indicator flash per sub-tab
