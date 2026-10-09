@@ -274,7 +274,7 @@ extension StyleTabModel {
 // MARK: - 外框、陰影 (FR-10.5, FR-10.8, FR-10.10)
 
 extension StyleTabModel {
-    /// The five outline options, in display order (FR-10.5).
+    /// The three outline options, in display order (FR-10.5, TASK-70).
     var outlineOptions: [OverlayOutline] { OverlayOutline.allCases }
 
     /// The four shadow options, in display order (FR-10.8).
@@ -285,6 +285,32 @@ extension StyleTabModel {
     func selectOutline(_ outline: OverlayOutline) {
         guard outline != profile.style.outline else { return }
         mutate { $0.outline = outline }
+    }
+
+    /// Slider step of the stroke width, in points at a 17pt font.
+    static let strokeWidthStep = 0.5
+    /// Slider step of the box padding, in points at a 17pt font.
+    static let boxPaddingStep = 1.0
+
+    /// Sets `strokeWidth` from a raw slider value, snapped to
+    /// `strokeWidthStep` and clamped to `OverlayStyle.strokeWidthRange`
+    /// (TASK-70); writes through at once.
+    func setStrokeWidth(_ rawValue: Double) {
+        let snapped = (rawValue / Self.strokeWidthStep).rounded() * Self.strokeWidthStep
+        let range = OverlayStyle.strokeWidthRange
+        let clamped = min(max(snapped, range.lowerBound), range.upperBound)
+        guard clamped != profile.style.strokeWidth else { return }
+        mutate { $0.strokeWidth = clamped }
+    }
+
+    /// Sets `boxPadding` from a raw slider value, snapped to `boxPaddingStep`
+    /// and clamped to `OverlayStyle.boxPaddingRange` (TASK-70).
+    func setBoxPadding(_ rawValue: Double) {
+        let snapped = (rawValue / Self.boxPaddingStep).rounded() * Self.boxPaddingStep
+        let range = OverlayStyle.boxPaddingRange
+        let clamped = min(max(snapped, range.lowerBound), range.upperBound)
+        guard clamped != profile.style.boxPadding else { return }
+        mutate { $0.boxPadding = clamped }
     }
 
     /// Selects `shadow` and persists, mirroring `selectOutline`.

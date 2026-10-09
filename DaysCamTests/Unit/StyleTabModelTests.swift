@@ -415,4 +415,45 @@ final class StyleTabModelTests: XCTestCase {
         let decoded = try JSONDecoder().decode(CameraProfile.self, from: encoded)
         XCTAssertEqual(StyleTabModel.opacityPercent(of: decoded.style.textColor), 50, "69.3")
     }
+
+    // MARK: - TASK-70 外框粗細／留白
+
+    func testStrokeWidthWritesThroughSnapsAndClamps() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.setStrokeWidth(3.7)
+        XCTAssertEqual(model.profile.style.strokeWidth, 3.5, "70.3")
+        XCTAssertEqual(spy.updated.last?.style.strokeWidth, 3.5, "70.3: 即時寫入")
+        model.setStrokeWidth(0)
+        XCTAssertEqual(model.profile.style.strokeWidth, 1, "70.4")
+        model.setStrokeWidth(99)
+        XCTAssertEqual(model.profile.style.strokeWidth, 6, "70.4")
+        XCTAssertTrue(model.profile.style.hasValidOutlineParameters)
+    }
+
+    func testBoxPaddingWritesThroughSnapsAndClamps() {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.setBoxPadding(8.4)
+        XCTAssertEqual(model.profile.style.boxPadding, 8, "70.3")
+        XCTAssertEqual(spy.updated.last?.style.boxPadding, 8, "70.3: 即時寫入")
+        model.setBoxPadding(-5)
+        XCTAssertEqual(model.profile.style.boxPadding, 0, "70.4")
+        model.setBoxPadding(99)
+        XCTAssertEqual(model.profile.style.boxPadding, 24, "70.4")
+        XCTAssertTrue(model.profile.style.hasValidOutlineParameters)
+    }
+
+    func testOutlineParametersSurviveSwitchingOutlineAndRoundTrip() throws {
+        let model = makeModel()
+        model.setStrokeWidth(5)
+        model.setBoxPadding(20)
+        model.selectOutline(.box)
+        model.selectOutline(.stroke)
+        XCTAssertEqual(model.profile.style.strokeWidth, 5)
+        XCTAssertEqual(model.profile.style.boxPadding, 20)
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(model.profile))
+        XCTAssertEqual(decoded.style.strokeWidth, 5, "70.4")
+        XCTAssertEqual(decoded.style.boxPadding, 20, "70.4")
+    }
 }

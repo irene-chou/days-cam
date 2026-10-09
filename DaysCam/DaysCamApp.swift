@@ -25,10 +25,22 @@ struct DaysCamApp: App {
     /// longer exists). The app always lands directly on the camera screen —
     /// there is no first-launch form to route to instead (PRD §2.2, TASK-12).
     private static func makeCameraScreenModel() -> CameraScreenModel {
-        let profileStore = ProfileStore()
+        let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: profileStore,
                                  fontLibrary: FontLibrary())
+    }
+
+    /// UI tests pass `-UITestFreshProfiles` to start from an empty profile
+    /// directory instead of the app's saved one (TASK-70). Debug builds only.
+    private static var uiTestProfileDirectory: URL? {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-UITestFreshProfiles") else { return nil }
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("DaysCamUITest-\(UUID().uuidString)", isDirectory: true)
+        #else
+        return nil
+        #endif
     }
 }

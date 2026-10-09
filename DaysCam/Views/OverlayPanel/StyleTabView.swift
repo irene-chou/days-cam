@@ -235,6 +235,10 @@ struct StyleTabView: View {
                         var style = model.profile.style
                         style.outline = outline
                         style.applyShadowPreset(.none)
+                        // The option icons keep a fixed look whatever the
+                        // sliders are set to (TASK-70).
+                        style.strokeWidth = OverlayStyle.defaultStrokeWidth
+                        style.boxPadding = OverlayStyle.defaultBoxPadding
                         return style
                     }()
                     let isSelected = model.profile.style.outline == outline
@@ -250,6 +254,7 @@ struct StyleTabView: View {
                 }
             }
             .padding(.top, 4)
+            outlineParameterSlider
             opacitySlider(label: "外框透明度",
                           color: model.profile.style.outlineColor ?? model.profile.style.resolvedOutlineColor,
                           percent: model.outlineOpacityPercent,
@@ -263,6 +268,56 @@ struct StyleTabView: View {
                         onSelectAuto: { model.selectOutlineColor(nil) },
                         onApplyCustom: { model.applyCustomOutlineColor($0) },
                         onCommitCustom: { model.commitCustomColor($0) })
+        }
+    }
+
+    /// The slider of the chosen outline (TASK-70): 粗細 for 描邊, 留白 for
+    /// 底框, nothing for 無. Same row layout and spacing as `opacitySlider`.
+    @ViewBuilder
+    private var outlineParameterSlider: some View {
+        switch model.profile.style.outline {
+        case .none:
+            EmptyView()
+        case .stroke:
+            parameterSlider(label: "粗細", identifier: "outlineStrokeWidthSlider",
+                            value: model.profile.style.strokeWidth,
+                            range: OverlayStyle.strokeWidthRange,
+                            step: StyleTabModel.strokeWidthStep,
+                            onChange: { model.setStrokeWidth($0) })
+        case .box:
+            parameterSlider(label: "留白", identifier: "outlineBoxPaddingSlider",
+                            value: model.profile.style.boxPadding,
+                            range: OverlayStyle.boxPaddingRange,
+                            step: StyleTabModel.boxPaddingStep,
+                            onChange: { model.setBoxPadding($0) })
+        }
+    }
+
+    private func parameterSlider(label: String, identifier: String, value: Double,
+                                 range: ClosedRange<Double>, step: Double,
+                                 onChange: @escaping (Double) -> Void) -> some View {
+        let valueText = value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        return HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(CameraTheme.ink)
+                // As wide as the opacity row's 24pt chip, so both sliders start
+                // at the same x; the two characters just spill into the gap.
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 24, alignment: .leading)
+                .accessibilityHidden(true)
+            Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
+                .tint(CameraTheme.accentControl)
+                .accessibilityLabel(label)
+                .accessibilityValue("\(valueText) 點")
+                .accessibilityIdentifier(identifier)
+            Text(valueText)
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, alignment: .trailing)
+                .accessibilityHidden(true)
         }
     }
 
@@ -423,7 +478,12 @@ struct StyleTabView: View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
-                .background(CheckerboardView().clipShape(Circle()))
+                // Only a translucent color needs the checkerboard; under an
+                // opaque swatch it showed through the disabled (dimmed)
+                // palette of outline 無 (#310 QA, TASK-70).
+                .background {
+                    if color.opacity < 1 { CheckerboardView().clipShape(Circle()) }
+                }
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
                 .overlay(swatchEdge)
                 .overlay(swatchSelectionRing(isSelected))
@@ -471,9 +531,13 @@ struct StyleTabView: View {
                                isDisabled: Bool, onChange: @escaping (Int) -> Void) -> some View {
         let range = StyleTabModel.opacityPercentRange
         return HStack(spacing: 10) {
+            // A disabled row shows a plain gray chip: the dimmed color over
+            // the checkerboard read as a broken, see-through swatch (#310 QA).
             Circle()
-                .fill(swiftUIColor(color))
-                .background(CheckerboardView().clipShape(Circle()))
+                .fill(isDisabled ? CameraTheme.ink.opacity(0.12) : swiftUIColor(color))
+                .background {
+                    if !isDisabled { CheckerboardView().clipShape(Circle()) }
+                }
                 .frame(width: 24, height: 24)
                 .overlay(swatchEdge)
                 .accessibilityHidden(true)
