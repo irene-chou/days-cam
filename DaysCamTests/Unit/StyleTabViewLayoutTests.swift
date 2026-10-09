@@ -107,7 +107,8 @@ final class StyleTabViewLayoutTests: XCTestCase {
 
     /// 49.5 / 49.6: option boxes fit one row at SE content width (355pt).
     func testOptionRowsFitSEContentWidth() {
-        XCTAssertLessThanOrEqual(5 * StyleTabView.outlineOptionSide + 4 * 8, 355)
+        // Four outline options (TASK-81), also inside the 4pt side inset of #327.
+        XCTAssertLessThanOrEqual(4 * StyleTabView.outlineOptionSide + 3 * 8, 355 - 8)
         XCTAssertLessThanOrEqual(4 * StyleTabView.shadowOptionSide + 3 * 18, 355)
     }
 

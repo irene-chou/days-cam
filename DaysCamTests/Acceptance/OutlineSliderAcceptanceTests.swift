@@ -40,10 +40,10 @@ final class OutlineSliderAcceptanceTests: XCTestCase {
                              updateProfile: { try? store.update($0) })
     }
 
-    /// 70.1: exactly 無／描邊／底框, in that order.
-    func testOnlyThreeOutlineOptions() throws {
+    /// 70.1 / 81.1: 無／描邊／底框／直角底框, in that order (#334 adds the fourth).
+    func testOutlineOptionsInOrder() throws {
         let model = try makeModel(store: makeStore())
-        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box])
+        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box, .squareBox])
     }
 
     /// Slider range and default equal core #312 (stroke 1...6 default 2, box 0...24 default 12),
