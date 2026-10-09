@@ -147,7 +147,7 @@ struct OverlayInsets: Equatable, Hashable {
 enum OverlayDecoration: Equatable, Hashable {
     /// A drop shadow behind the text.
     case shadow(offset: CGSize, blur: Double, opacity: Double, color: OverlayColor)
-    /// A rounded box behind the text. Drawn at `color`'s alpha times
+    /// A box behind the text; radius zero gives square corners. Drawn at `color`'s alpha times
     /// `opacity`; `OverlayTheme` always passes an `opacity` of 1 since
     /// TASK-70 and puts the transparency in the color.
     case backgroundBox(color: OverlayColor, opacity: Double, cornerRadius: Double, insets: OverlayInsets)
@@ -203,14 +203,18 @@ struct OverlayTheme: Equatable, Hashable {
     /// `opacity` is always 1.
     private static func outlineDecoration(for style: OverlayStyle) -> OverlayDecoration? {
         let color = style.resolvedOutlineColor
+        if style.outline.isBox {
+            let radius = style.outline == .squareBox ? 0 : boxCornerRadius
+            return .backgroundBox(color: color, opacity: 1, cornerRadius: radius,
+                                  insets: boxInsets(padding: style.boxPadding))
+        }
         switch style.outline {
         case .none:
             return nil
         case .stroke:
             return .stroke(color: color, width: style.strokeWidth)
-        case .box:
-            return .backgroundBox(color: color, opacity: 1, cornerRadius: boxCornerRadius,
-                                  insets: boxInsets(padding: style.boxPadding))
+        case .box, .squareBox:
+            return nil // Handled by the shared box path above.
         }
     }
 

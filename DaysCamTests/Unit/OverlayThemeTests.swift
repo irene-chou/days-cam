@@ -98,6 +98,21 @@ final class OverlayThemeStyleTests: XCTestCase {
     private let blue = OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF)
     private let insets = OverlayInsets(horizontal: 12, vertical: 6)
 
+    /// TASK-81: both box shapes share geometry and alpha, except radius.
+    func testSquareBoxSharesPaddingColorOpacityWithRoundedBox() {
+        for padding in [0.0, 7, 12, 24] {
+            for color in [Optional<OverlayColor>.none, blue.withOpacity(0.5)] {
+                var style = OverlayStyle(outline: .box, outlineColor: color,
+                                         autoOutlineOpacity: 0.5, boxPadding: padding, shadow: .none)
+                style.outline = .squareBox
+                let square = OverlayTheme(style: style)
+                XCTAssertEqual(square.decorations, [.backgroundBox(
+                    color: style.resolvedOutlineColor, opacity: 1, cornerRadius: 0,
+                    insets: OverlayInsets(horizontal: padding, vertical: padding / 2))], "81.5")
+            }
+        }
+    }
+
     func testDefaultStyleHasExactlyTheSoftShadow() {
         XCTAssertEqual(OverlayTheme(style: OverlayStyle()).decorations, [softShadow], "18.1")
     }
@@ -121,7 +136,8 @@ final class OverlayThemeStyleTests: XCTestCase {
     func testEveryOutlineMatchesTheConstantTable() {
         let expected: [OverlayOutline: OverlayDecoration] = [
             .stroke: .stroke(color: blue, width: 2),
-            .box: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets)
+            .box: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets),
+            .squareBox: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 0, insets: insets)
         ]
         for outline in OverlayOutline.allCases {
             let theme = OverlayTheme(style: OverlayStyle(outline: outline, outlineColor: blue, shadow: .none))

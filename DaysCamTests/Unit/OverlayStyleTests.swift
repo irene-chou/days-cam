@@ -11,6 +11,57 @@ final class OverlayStyleTests: XCTestCase {
         try XCTUnwrap(OverlayColor(hex: string), "bad fixture \(string)", file: file, line: line)
     }
 
+    /// TASK-81 81.3–81.5: changing box shape keeps all stored parameters.
+    func testBoxShapesPreserveParametersAndRoundTrip() throws {
+        for outline in [OverlayOutline.none, .stroke, .box, .squareBox] {
+            var style = OverlayStyle(outline: .box,
+                                     outlineColor: .black.withOpacity(128.0 / 255),
+                                     boxPadding: 20, shadow: .none)
+            style.outline = outline
+            XCTAssertEqual(style.boxPadding, 20)
+            XCTAssertEqual(style.outlineOpacity, 128.0 / 255)
+            XCTAssertEqual(style.resolvedOutlineColor, .black.withOpacity(128.0 / 255))
+            XCTAssertTrue(style.hasValidOutlineParameters)
+            let data = try JSONEncoder().encode(style)
+            XCTAssertEqual(try JSONDecoder().decode(OverlayStyle.self, from: data), style, "81.4")
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(object["outline"] as? String, outline.rawValue)
+        }
+        XCTAssertTrue(OverlayOutline.box.isBox)
+        XCTAssertTrue(OverlayOutline.squareBox.isBox)
+        XCTAssertFalse(OverlayOutline.none.isBox)
+        XCTAssertFalse(OverlayOutline.stroke.isBox)
+    }
+
+    func testSquareBoxProfileRoundTripsAndValidates() throws {
+        var profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1),
+                                    style: OverlayStyle(outline: .squareBox, boxPadding: 24))
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: data)
+        XCTAssertEqual(decoded, profile, "81.4 reload preserves the profile")
+        XCTAssertNoThrow(try decoded.validate())
+        profile.style.boxPadding = 25
+        XCTAssertThrowsError(try profile.validate())
+    }
+
+    func testUnknownOutlineRawValueStillThrowsDataCorrupted() throws {
+        XCTAssertThrowsError(try JSONDecoder().decode(OverlayOutline.self, from: Data(#""futureBox""#.utf8))) {
+            guard case DecodingError.dataCorrupted = $0 else {
+                return XCTFail("Expected dataCorrupted, got \($0)")
+            }
+        }
+        let data = try JSONEncoder().encode(OverlayStyle())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["outline"] = "futureBox"
+        let unknown = try JSONSerialization.data(withJSONObject: object)
+        XCTAssertThrowsError(try JSONDecoder().decode(OverlayStyle.self, from: unknown)) {
+            guard case DecodingError.dataCorrupted(let context) = $0 else {
+                return XCTFail("Expected dataCorrupted, got \($0)")
+            }
+            XCTAssertEqual(context.codingPath.last?.stringValue, "outline")
+        }
+    }
+
     // MARK: - Fonts
 
     // 0.2's 17.1 (ten Latin names) and 17.12 (every 0.2 font ships with iOS)
