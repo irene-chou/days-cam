@@ -530,6 +530,16 @@ final class CameraService: ObservableObject {
 // MARK: - Lifecycle
 
 extension CameraService {
+    /// Enables multitasking access only when the session supports the setting.
+    static func enableMultitaskingCameraAccessIfSupported(
+        isSupported: Bool,
+        setEnabled: (Bool) -> Void
+    ) {
+        guard isSupported else { return }
+        setEnabled(true)
+    }
+
+
 
     /// Entry point for the camera screen: resolves permission, prompting the
     /// first time, and starts the session when it is granted.
@@ -1126,10 +1136,8 @@ private extension CameraService {
         }
     }
 
-    /// Builds the session. Runs on `sessionQueue`.
-    ///
-    /// Publishes the reason and returns false on any failure, so the caller can
-    /// simply stop.
+    /// Builds the session on `sessionQueue`.
+    /// Publishes the reason and returns false on any configuration failure.
     func configureSession() -> Bool {
         guard let device = deviceProvider.device(for: sessionFacing) else {
             publish(status: .unavailable(.noCaptureDevice))
@@ -1160,6 +1168,9 @@ private extension CameraService {
         }
         session.addOutput(photoOutput)
         adoptNativeResolution(of: device)
+        CameraService.enableMultitaskingCameraAccessIfSupported(
+            isSupported: session.isMultitaskingCameraAccessSupported
+        ) { session.isMultitaskingCameraAccessEnabled = $0 }
         session.commitConfiguration()
         applyPhotoMirroring()
         resetZoom(on: device)

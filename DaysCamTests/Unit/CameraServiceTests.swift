@@ -297,6 +297,33 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(provider.requestedFacings, [.back])
     }
 
+    func testSupportedMultitaskingCameraAccessIsEnabled() {
+        var enabled = false
+        CameraService.enableMultitaskingCameraAccessIfSupported(isSupported: true) {
+            enabled = $0
+        }
+        XCTAssertTrue(enabled)
+    }
+
+    func testUnsupportedMultitaskingCameraAccessDoesNotCallSetter() {
+        CameraService.enableMultitaskingCameraAccessIfSupported(isSupported: false) { _ in
+            XCTFail("Unsupported sessions must not receive a multitasking access setting")
+        }
+    }
+
+    func testOtherInterruptionReasonsRemainInterrupted() {
+        let (service, _, _) = makeService(status: .authorized)
+        for reason in [AVCaptureSession.InterruptionReason.videoDeviceNotAvailableInBackground,
+                       .videoDeviceInUseByAnotherClient] {
+            NotificationCenter.default.post(
+                name: AVCaptureSession.wasInterruptedNotification,
+                object: service.session,
+                userInfo: [AVCaptureSessionInterruptionReasonKey: reason.rawValue]
+            )
+            expect(service, status: .interrupted)
+        }
+    }
+
     func testInterruptionIsPublishedAndClearedAgain() {
         let (service, _, _) = makeService(status: .authorized)
         service.start()
