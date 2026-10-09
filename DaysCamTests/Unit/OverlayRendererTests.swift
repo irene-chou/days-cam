@@ -16,6 +16,42 @@ final class OverlayRendererTests: XCTestCase {
     private let height = 1600
     private let renderer = OverlayRenderer()
 
+    /// TASK-81: square boxes share layout/overflow but actually fill corners.
+    func testSquareBoxFillsCornersAndSharesRoundedBoxLayout() throws {
+        for padding in [0.0, 12, 24] {
+            var style = OverlayStyle(outline: .box, outlineColor: .black,
+                                     boxPadding: padding, shadow: .none)
+            let rounded = try XCTUnwrap(renderer.renderText("第 10 天", style: style,
+                fontSize: 34, displayScale: 1, font: .pingFang))
+            style.outline = .squareBox
+            let square = try XCTUnwrap(renderer.renderText("第 10 天", style: style,
+                fontSize: 34, displayScale: 1, font: .pingFang))
+            XCTAssertEqual(square.blockSize, rounded.blockSize)
+            XCTAssertEqual(square.textInsets, rounded.textInsets)
+            XCTAssertEqual(square.image.size, rounded.image.size)
+            let origin = CGPoint(x: square.textInsets.left + 1, y: square.textInsets.top + 1)
+            func onWhite(_ image: UIImage) -> UIImage {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                format.opaque = true
+                return UIGraphicsImageRenderer(size: image.size, format: format).image { context in
+                    UIColor.white.setFill()
+                    context.fill(CGRect(origin: .zero, size: image.size))
+                    image.draw(at: .zero)
+                }
+            }
+            let squareGrid = try pixels(of: onWhite(square.image))
+            let roundedGrid = try pixels(of: onWhite(rounded.image))
+            XCTAssertEqual(squareGrid.color(x: Int(origin.x), y: Int(origin.y)), .black,
+                           "81.2 square corner is filled")
+            XCTAssertEqual(roundedGrid.color(x: Int(origin.x), y: Int(origin.y)), .white,
+                           "rounded corner remains transparent")
+            let baked = try XCTUnwrap(renderer.bake(image: makeImage(), text: "第 10 天",
+                style: style, placement: .anchor(.bottomTrailing), font: .pingFang))
+            XCTAssertEqual(baked.size, CGSize(width: width, height: height))
+        }
+    }
+
     // MARK: - 9.1 ... 9.3
 
     func test_9_1_outputKeepsTheInputPixelSize() throws {

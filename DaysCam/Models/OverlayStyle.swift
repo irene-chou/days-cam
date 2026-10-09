@@ -62,6 +62,16 @@ enum OverlayOutline: String, Codable, CaseIterable {
     case stroke
     /// A rounded box behind the text, padded by `OverlayStyle.boxPadding`.
     case box
+    /// A square-cornered box with the same padding and color as `.box`.
+    case squareBox
+
+    /// Whether this outline draws a background box behind the text.
+    var isBox: Bool {
+        switch self {
+        case .box, .squareBox: return true
+        case .none, .stroke: return false
+        }
+    }
 }
 
 /// A quick preset for the shadow (TASK-71, replacing PRD 0.2 FR-10.8's four
@@ -174,7 +184,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Visible stroke width of `.stroke` outside the glyphs, in points at a
     /// 17pt font; `strokeWidthRange`. Kept while another outline is chosen.
     var strokeWidth: Double
-    /// Horizontal padding inside `.box`, in points at a 17pt font;
+    /// Horizontal padding inside `.box` or `.squareBox`, in points at a 17pt font;
     /// `boxPaddingRange`. The vertical padding follows at
     /// `OverlayTheme.boxVerticalPaddingRatio`. Kept while another outline
     /// is chosen.

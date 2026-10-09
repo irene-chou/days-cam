@@ -293,7 +293,7 @@ struct StyleTabView: View {
                             range: OverlayStyle.strokeWidthRange,
                             step: StyleTabModel.strokeWidthStep,
                             onChange: { model.setStrokeWidth($0) })
-        case .box:
+        case .box, .squareBox:
             parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "底框留白",
                             identifier: "outlineBoxPaddingSlider",
                             value: model.profile.style.boxPadding,
@@ -725,7 +725,7 @@ struct StyleTabView: View {
         switch outline {
         case .none: return "無外框"
         case .stroke: return "描邊"
-        case .box: return "底框"
+        case .box, .squareBox: return "底框"
         }
     }
 

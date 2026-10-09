@@ -275,7 +275,8 @@ extension StyleTabModel {
 
 extension StyleTabModel {
     /// The three outline options, in display order (FR-10.5, TASK-70).
-    var outlineOptions: [OverlayOutline] { OverlayOutline.allCases }
+    // 直角底框選項 UI 由 ui-panel 後續加入（#334）
+    var outlineOptions: [OverlayOutline] { [.none, .stroke, .box] }
 
     /// The four shadow options, in display order (FR-10.8).
     var shadowOptions: [OverlayShadowPreset] { OverlayShadowPreset.allCases }
