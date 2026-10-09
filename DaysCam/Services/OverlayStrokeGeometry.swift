@@ -8,11 +8,15 @@ import UIKit
 /// text fill drawing to preserve them, including their colors and shaping.
 struct OverlayStrokeGeometry {
     let fillPath: CGPath
+    private let text: String
+    private let font: UIFont
     private let strokePaths: [CGPath]
     private let bounds: CGRect
 
     /// Builds a round outline with `width` points visible outside the glyphs.
     init(text: String, font: UIFont, width: CGFloat) {
+        self.text = text
+        self.font = font
         let attributed = NSAttributedString(string: text, attributes: [.font: font])
         let size = (text as NSString).size(withAttributes: [.font: font])
         // NSString drawing uses TextKit's fallback metrics and baselines.
@@ -94,7 +98,7 @@ struct OverlayStrokeGeometry {
     }
 
     /// Unions opaque segment masks in a bounded layer, applying caller alpha once.
-    /// Subtract the shared glyph fill before drawing translucent text above it.
+    /// Subtract with the same NSString rasterization as the text fill.
     func draw(in context: CGContext, at origin: CGPoint, color: UIColor, excludingFill: Bool) {
         guard !strokePaths.isEmpty else { return }
         context.saveGState()
@@ -115,8 +119,12 @@ struct OverlayStrokeGeometry {
             // Apply the subtraction once after unioning masks; clipping each
             // segment separately would accumulate antialiasing at the fill edge.
             context.setBlendMode(.destinationOut)
-            context.addPath(fillPath)
-            context.fillPath(using: .winding)
+            // Path filling and NSString differ in hinting and edge coverage.
+            // Use the text fill's source so fully covered glyph pixels erase
+            // the inner stroke completely, including the antialiased rim.
+            (text as NSString).draw(at: .zero, withAttributes: [
+                .font: font, .foregroundColor: UIColor.black
+            ])
         }
         context.endTransparencyLayer()
         context.restoreGState()

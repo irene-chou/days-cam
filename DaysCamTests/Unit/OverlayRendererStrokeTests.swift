@@ -110,6 +110,31 @@ final class OverlayRendererStrokeTests: XCTestCase {
         }
     }
 
+    /// Fully covered glyph pixels, including the rim, retain only text alpha.
+    func test80_3KnockoutMatchesTextRasterizationAtGlyphEdges() throws {
+        let text = "88 00 回 田 @"
+        for font in try fonts() {
+            let plain = try alpha(image { _ in
+                (text as NSString).draw(at: origin, withAttributes: [
+                    .font: font, .foregroundColor: UIColor.black
+                ])
+            })
+            let style = OverlayStyle(textColor: OverlayColor.black.withOpacity(0.5),
+                                     outline: .stroke, outlineColor: OverlayColor.white.withOpacity(0.6),
+                                     strokeWidth: 6, shadow: .none)
+            let resolved = OverlayMetrics.resolvedFont(state: .available, postScriptName: font.fontName)
+            let overlay = try XCTUnwrap(OverlayRenderer().renderText(text, style: style,
+                fontSize: fontSize, displayScale: 1, font: resolved))
+            let actual = try alpha(image { _ in
+                overlay.image.draw(in: overlay.imageFrame(forBlockOrigin: origin))
+            })
+            let covered = plain.indices.filter { plain[$0] == 255 }
+            XCTAssertGreaterThan(covered.count, 100, font.fontName)
+            XCTAssertEqual(covered.filter { abs(Int(actual[$0]) - 128) > 4 }.count, 0,
+                           "inner stroke remains at glyph edge: \(font.fontName)")
+        }
+    }
+
     func test80_5TwelveMegapixelBakeTiming() throws {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
