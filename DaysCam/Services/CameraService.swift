@@ -931,8 +931,16 @@ extension CameraService {
     /// Runs on the session queue; invalid points and failed locks change nothing.
     func applyTap(at point: CGPoint, to device: FocusExposureCaptureDevice) {
         guard CameraService.clampedDevicePoint(point) != nil else { return }
-        guard CameraService.applyFocusAndExpose(at: point, to: device) != nil else {
+        guard let outcome = CameraService.applyFocusAndExpose(at: point, to: device) else {
             return reportFocusExposureFailure()
+        }
+        guard outcome.tookEffect else {
+            // Bias was reset under the lock, but unsupported modes remain unchanged.
+            updateFocusExposure {
+                $0.exposureBias = 0
+                $0.isLocked = device.focusMode == .locked || device.exposureMode == .locked
+            }
+            return
         }
         updateFocusExposure { $0 = .initial }
         let applied = lastAppliedFocusRequestID

@@ -862,6 +862,33 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         subscription.cancel()
     }
 
+    func testUnsupportedTapPublishesActualStateWithoutSuccessConfirmation() {
+        for unsupportedPoints in [true, false] {
+            let service = CameraService(isCaptureSupported: false)
+            let device = FakeFocusDevice()
+            device.focusMode = .locked
+            device.exposureMode = .locked
+            if unsupportedPoints {
+                device.isFocusPointOfInterestSupported = false
+                device.isExposurePointOfInterestSupported = false
+            } else {
+                device.supportedFocusModes = [.locked]
+                device.supportedExposureModes = [.locked]
+            }
+            service.applyBias(1, forFocusRequestID: 0, to: device)
+            var confirmations = 0
+            let subscription = service.focusExposureTapResetPublisher.sink { _ in confirmations += 1 }
+            service.applyTap(at: CGPoint(x: 0.2, y: 0.7), to: device)
+            let flushed = expectation(description: "unsupported tap state delivered")
+            DispatchQueue.main.async { flushed.fulfill() }
+            wait(for: [flushed], timeout: 2)
+            XCTAssertEqual(service.focusExposureState.exposureBias, 0)
+            XCTAssertTrue(service.focusExposureState.isLocked)
+            XCTAssertEqual(confirmations, 0)
+            subscription.cancel()
+        }
+    }
+
     func testTapSetsPointsModesAndMonitoring() {
         let device = FakeFocusDevice()
         let outcome = CameraService.applyFocusAndExpose(at: CGPoint(x: 0.2, y: 0.7), to: device)
