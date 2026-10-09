@@ -395,10 +395,11 @@ struct CameraScreen: View {
 
     // MARK: - Zoom presets (issue #279)
 
-    /// The quick-zoom bar on the picture's right edge; hidden while the panel
+    /// The quick-zoom round button in the picture's bottom-right corner; hidden while the panel
     /// is open, and while the camera offers no preset.
     private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
         ZoomPresetBar(zoom: model.zoomModel,
+                      expansion: model.zoomExpansion,
                       presets: model.zoomPresets,
                       isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
                       pictureFrame: viewfinderContentFrame(metrics: metrics))

@@ -23,6 +23,8 @@ final class CameraScreenModel: ObservableObject {
     /// the rest changes every frame of a pinch and is observed by the capsule
     /// alone (issue #280).
     let zoomModel: ViewfinderZoomModel
+    /// Whether the quick-zoom capsule is open (issue #302).
+    let zoomExpansion = ZoomPresetExpansion()
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
     /// grid. Exposed (not `private`) the same way `cameraService` is, so
     /// `CameraToolbar` can read it directly; this model forwards its change
@@ -844,6 +846,7 @@ extension CameraScreenModel {
     /// only closes the capsule — the tap is consumed, so an open panel stays
     /// open; otherwise it closes the panel (PRD 0.2 FR-8.7).
     func handleViewfinderTap() {
+        zoomExpansion.collapse()
         if isCameraToolsExpanded {
             collapseCameraTools()
         } else if panelModel.isOpen {
