@@ -131,11 +131,12 @@ final class AlbumLimitedAccessAcceptanceTests: XCTestCase {
         XCTAssertFalse(refused.savesToAlbum)
     }
 
-    /// Reconcile matrix with the switch on: only denied / restricted withdraw
-    /// (once); limited, authorized and the transient notDetermined do not.
-    func testReconcileWithdrawsOnlyForDeniedOrRestricted() {
+    /// Reconcile matrix with the switch on: denied / restricted / notDetermined
+    /// withdraw (once); limited and authorized do not.
+    func testReconcileWithdrawsUnlessFullOrLimited() {
         let cases: [(PHAuthorizationStatus, Bool)] = [
-            (.authorized, false), (.limited, false), (.denied, true), (.restricted, true)
+            (.authorized, false), (.limited, false), (.denied, true), (.restricted, true),
+            (.notDetermined, true)
         ]
         for (status, withdraws) in cases {
             defaults.removePersistentDomain(forName: suiteName)
