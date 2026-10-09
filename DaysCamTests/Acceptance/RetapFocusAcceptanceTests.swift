@@ -120,6 +120,20 @@ final class RetapFocusAcceptanceTests: XCTestCase {
         XCTAssertTrue(model.isLocked)
     }
 
+    /// A long press lock keeps the device's bias (CameraService resetBias:
+    /// false): the sun keeps showing it, and waits for no zero.
+    func testLongPressLockKeepsTheDevicesBias() async {
+        let model = makeModel()
+        tap(model, CGPoint(x: 100, y: 100))
+        model.receive(.initial)
+        model.receive(.init(isLocked: false, exposureBias: 0.8))
+        await longPress(model, CGPoint(x: 220, y: 300))
+        XCTAssertEqual(model.displayedBias, 0.8, accuracy: 0.001)
+        model.receive(.init(isLocked: true, exposureBias: 0.8))
+        XCTAssertEqual(model.displayedBias, 0.8, accuracy: 0.001)
+        XCTAssertTrue(model.isLocked)
+    }
+
     /// Lock tap confirmation: an older tap's confirmation is ignored, the
     /// newest one ends the wait even when no state was published.
     func testTapResetConfirmationOnlyCountsForTheNewestTap() {
