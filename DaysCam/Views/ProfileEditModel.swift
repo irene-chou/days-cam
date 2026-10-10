@@ -75,12 +75,6 @@ final class ProfileEditModel: ObservableObject {
         profile.startDate = calendar.dateComponents([.year, .month, .day], from: date)
     }
 
-    /// Latest selectable start date: today, never the future (PRD §7.2's
-    /// UI-layer guard). Fake-today aware in debug builds, like `calculator`.
-    var startDateUpperBound: Date {
-        calculator.now()
-    }
-
     /// Whether the start-date and counting-rule fields should be shown.
     ///
     /// They only affect the day-count output, so they are hidden once that

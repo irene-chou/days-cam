@@ -106,13 +106,34 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 25.3 起始日上限
+    // MARK: - TASK-94 (#393) a future start date is allowed (replaces 25.3)
 
-    func testStartDateUpperBoundIsToday() throws {
+    /// 94.1／94.2／94.4: tomorrow and a year out are stored like any other
+    /// date, and the preview reads 還有 N 天 (#250) under either rule.
+    func testFutureStartDateIsStoredAndPreviewsAsNotStarted() throws {
+        for rule in [CountingRule.dayOne, .dayZero] {
+            let spy = Spy()
+            let model = makeModel(profile: baselineProfile(countingRule: rule), now: try fixedNow(), spy: spy)
+
+            model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 13)))
+            XCTAssertEqual(model.profile.startDate, DateFixture.components(2026, 1, 11), "94.1 tomorrow")
+            XCTAssertEqual(spy.updated.last?.startDate, DateFixture.components(2026, 1, 11), "94.2 saved")
+            XCTAssertEqual(model.dayCountPreviewText, "還有 1 天", "94.4 \(rule)")
+
+            model.setStartDate(try XCTUnwrap(DateFixture.date(2027, 1, 10, hour: 9)))
+            XCTAssertEqual(spy.updated.last?.startDate, DateFixture.components(2027, 1, 10), "94.2 a year out")
+            XCTAssertEqual(model.dayCountPreviewText, "還有 365 天", "94.4 \(rule)")
+        }
+    }
+
+    /// 94.5: back to today or the past, the preview is the ordinal again.
+    func testStartDateBackToTodayPreviewsTheOrdinalAgain() throws {
         let spy = Spy()
-        let now = try fixedNow()
-        let model = makeModel(profile: baselineProfile(), now: now, spy: spy)
-        XCTAssertEqual(model.startDateUpperBound, now, "25.3")
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 2, 1)))
+        XCTAssertEqual(model.dayCountPreviewText, "還有 22 天")
+        model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 10)))
+        XCTAssertEqual(model.dayCountPreviewText, "第 1 天", "94.5")
     }
 
     func testSetStartDateKeepsOnlyYearMonthDay() throws {
