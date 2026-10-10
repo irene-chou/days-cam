@@ -66,8 +66,13 @@ final class OverlayRendererStrokeTests: XCTestCase {
         for pointSize: CGFloat in [17, 68, 166] {
             fontSize = pointSize
             let radius = max(1, Int(6 * fontSize / 17) - 2) // Exclude raster hinting and the antialiased outside boundary (up to 2px).
-            let offsets = (-radius...radius).flatMap { y in
-                (-radius...radius).compactMap { x in x*x + y*y <= radius*radius ? (x, y) : nil }
+            // Explicit types: the untyped closure pair times out the type
+            // checker on Xcode 26.3 (rinclaw).
+            let radiusSquared: Int = radius * radius
+            let offsets: [(Int, Int)] = (-radius...radius).flatMap { (y: Int) -> [(Int, Int)] in
+                (-radius...radius).compactMap { (x: Int) -> (Int, Int)? in
+                    (x * x + y * y <= radiusSquared) ? (x, y) : nil
+                }
             }
             for font in try fonts() {
                 for text in ["0", "8", "日", "囍", "&", "fi &"] {
