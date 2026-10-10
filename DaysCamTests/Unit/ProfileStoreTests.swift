@@ -339,6 +339,41 @@ final class ProfileStoreTests: XCTestCase {
 
     // MARK: - A-6 (3.28 ... 3.31) corruption and restored state
 
+    // MARK: - TASK-96 (#400) 96.18 fresh-install detection
+
+    /// 96.18: only a missing file counts as a fresh install.
+    func testFreshInstallIsDetectedOnlyWhenTheFileIsMissing() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        let first = makeStore(at: instant)
+        XCTAssertFalse(first.didSeedFreshInstall, "nothing before load()")
+        first.load()
+        XCTAssertTrue(first.didSeedFreshInstall, "96.18 no file → fresh install")
+        XCTAssertFalse(first.didRecoverFromCorruption)
+
+        let second = makeStore(at: instant)
+        second.load()
+        XCTAssertFalse(second.didSeedFreshInstall, "96.18 the file exists now")
+
+        try XCTUnwrap("這不是 JSON".data(using: .utf8)).write(to: fileURL, options: [.atomic])
+        let corrupt = makeStore(at: instant)
+        corrupt.load()
+        XCTAssertFalse(corrupt.didSeedFreshInstall, "96.18 a corrupt file is an existing install")
+        XCTAssertTrue(corrupt.didRecoverFromCorruption)
+    }
+
+    /// 96.18: a file whose every record is invalid is corruption, not a
+    /// fresh install, and a later healthy load clears the flag.
+    func testFreshInstallFlagIsFalseForInvalidRecordsAndClearsOnReload() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        try writeRawProfiles([CameraProfile(name: "", startDate: DateFixture.components(2025, 1, 15))])
+        let store = makeStore(at: instant)
+        store.load()
+        XCTAssertFalse(store.didSeedFreshInstall, "96.18 invalid records → corruption path")
+        XCTAssertTrue(store.didRecoverFromCorruption)
+        store.load()
+        XCTAssertFalse(store.didSeedFreshInstall, "a reload with the re-seeded file present is not fresh")
+    }
+
     func testUnreadableFileIsSetAsideAndReseeded() throws {
         let garbage = "這不是 JSON"
         try XCTUnwrap(garbage.data(using: .utf8)).write(to: fileURL, options: [.atomic])

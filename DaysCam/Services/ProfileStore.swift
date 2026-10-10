@@ -42,6 +42,13 @@ final class ProfileStore: ObservableObject {
     ///
     /// The camera screen shows a one-off alert for this (PRD §7.3).
     @Published private(set) var didRecoverFromCorruption = false
+    /// True only when this launch's `load()` found no profile file at all and
+    /// seeded the default profile — a fresh install (TASK-96, #400). An
+    /// unreadable file, or one holding no usable record, is re-seeded too,
+    /// but that is an existing install (`didRecoverFromCorruption`), so this
+    /// stays `false` there. Read-only; it changes nothing about how profiles
+    /// are read or written.
+    private(set) var didSeedFreshInstall = false
 
     private let directory: URL
     private let calendar: Calendar
@@ -89,8 +96,10 @@ extension ProfileStore {
     @discardableResult
     func load() -> [CameraProfile] {
         didRecoverFromCorruption = false
+        didSeedFreshInstall = false
 
         guard fileManager.fileExists(atPath: fileURL.path) else {
+            didSeedFreshInstall = true
             seedDefaultProfile()
             return profiles
         }
