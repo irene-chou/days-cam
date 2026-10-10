@@ -122,6 +122,10 @@ struct RulesTabView: View {
 
     // MARK: - 起始日 (FR-13.3)
 
+    /// Any date, past or future (TASK-94 #393, human 2026-10-10): a future
+    /// start date reads 還有 N 天 (#250) until the day arrives. The old
+    /// upper bound of today (0.1 §7.2 UI layer) is gone.
+
     private var startDateRow: some View {
         HStack {
             Text("起始日").foregroundColor(CameraTheme.inkSecondary)
@@ -129,8 +133,9 @@ struct RulesTabView: View {
             DatePicker("起始日", selection: Binding(
                 get: { model.startDateAsDate },
                 set: { model.setStartDate($0) }
-            ), in: ...model.startDateUpperBound, displayedComponents: .date)
+            ), displayedComponents: .date)
             .labelsHidden()
+            .accessibilityIdentifier("startDatePicker")
             .datePickerStyle(.compact)
         }
         .padding(.horizontal, Self.rowHorizontalPadding)

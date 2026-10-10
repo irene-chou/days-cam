@@ -87,10 +87,12 @@ final class ProfileEditModelTests: XCTestCase {
         XCTAssertNil(model.profile.startDate.hour)
     }
 
-    func testStartDateUpperBoundIsTheInjectedNow() throws {
-        let now = try fixedNow()
-        let model = makeModel(profile: profile(), now: now)
-        XCTAssertEqual(model.startDateUpperBound, now)
+    /// TASK-94 (#393): there is no upper bound any more — a future date is
+    /// kept as picked.
+    func testFutureStartDateIsKept() throws {
+        let model = makeModel(profile: profile(), now: try fixedNow())
+        model.setStartDate(try XCTUnwrap(DateFixture.date(2027, 3, 1, hour: 9, in: DateFixture.taipei)))
+        XCTAssertEqual(model.profile.startDate, DateFixture.components(2027, 3, 1), "94.1")
     }
 
     // MARK: - Live preview (FR-3.6)

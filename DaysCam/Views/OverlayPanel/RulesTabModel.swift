@@ -42,8 +42,8 @@ final class RulesTabModel: ObservableObject {
     /// Creates a rules tab model for `profile`.
     ///
     /// - Parameters:
-    ///   - calculator: Supplies the start-date picker's upper bound and the
-    ///     capture moment `dayCountPreviewText` is rendered as of. Defaults to
+    ///   - calculator: Supplies the capture moment `dayCountPreviewText` is
+    ///     rendered as of (the picker has no upper bound, TASK-94). Defaults to
     ///     `DayCountCalculator()`, whose default clock honours
     ///     `DAYSCAM_FAKE_TODAY` in debug builds.
     ///   - updateProfile: Forwarded to the real persistence layer by the
@@ -113,13 +113,6 @@ extension RulesTabModel {
     /// `profile.startDate` as a `Date`, for binding to a `DatePicker`.
     var startDateAsDate: Date {
         calendar.date(from: profile.startDate) ?? calculator.now()
-    }
-
-    /// Latest selectable start date: today, never the future (0.1 §7.2's
-    /// UI-layer guard). Fake-today aware in debug builds, like `calculator`
-    /// (25.3).
-    var startDateUpperBound: Date {
-        calculator.now()
     }
 
     /// Sets `profile.startDate` from a `DatePicker`'s selection, keeping only
