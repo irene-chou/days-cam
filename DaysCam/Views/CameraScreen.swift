@@ -413,7 +413,7 @@ struct CameraScreen: View {
                 .onEnded { _ in model.focusModel.touchEnded() }
         )
         .onChange(of: isViewfinderTouched) { _, touched in
-            if !touched { model.focusModel.discardTouch() }
+            if !touched { model.focusModel.touchCancelled() }
         }
         // Pinch to zoom (TASK-61, #274). Simultaneous so the overlay text's
         // own drag keeps working with one finger; once two fingers are down
