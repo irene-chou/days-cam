@@ -1,6 +1,8 @@
 name: DaysCam
 options:
   bundleIdPrefix: com.irenechou
+  # TASK-95（#394）：App 只宣告繁體中文，讓日期選擇器、系統按鈕等在繁中手機上顯示中文。
+  developmentLanguage: zh-Hant
   deploymentTarget:
     iOS: "18.0"
 settings:
@@ -15,6 +17,10 @@ targets:
       path: DaysCam/Info.plist
       properties:
         UILaunchScreen: {}
+        # TASK-95（#394）：開發語系與支援語系都只有繁體中文；不做多語系、不加 .xcstrings。
+        CFBundleDevelopmentRegion: zh-Hant
+        CFBundleLocalizations:
+          - zh-Hant
         NSCameraUsageDescription: DaysCam 需要使用相機來拍照，並把天數印在照片上。
         NSPhotoLibraryAddUsageDescription: DaysCam 需要權限才能把拍好的照片存進你的相簿。
         NSPhotoLibraryUsageDescription: DaysCam 需要讀取權限，才能在 App 裡瀏覽你用 DaysCam 拍的照片。
