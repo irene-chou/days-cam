@@ -1,65 +1,36 @@
-# DaysCam 上架手冊（App Store）
+# DaysCam 上架（App Store）
 
-> 擁有者：Lead。2026-10-10 依人類「協助我將 app 上架」整理。此處的「人類」指 Apple 開發者帳號持有人；agent 在雲端無法建置 iOS、簽名或登入 App Store Connect，第 2 步起的操作都要在有 Xcode 的 Mac 上由人類執行。
+> 擁有者：Lead。這頁只放 DaysCam 專屬的決策、檢查表與要填的資料；Apple 端的通用操作看官方文件，一次性問題在 chat 處理。agent 在雲端無法建置 iOS、簽名或登入 App Store Connect，標「人類」的項目要在有 Xcode 的 Mac 上執行。
 
-## 現況速覽（2026-10-10，main `6306a67`）
+## 決策紀錄
 
-| 項目 | 狀態 | 說明 |
+| 日期 | 決定 | 影響 |
 |---|---|---|
-| Bundle ID／Team | ✅ | `com.irenechou.DaysCam`、Team `W5937V2WUF`，自動簽名（`project.yml`） |
-| 權限用途說明 | ✅ | 相機、相簿新增、相簿讀取三段繁中說明都在 `project.yml` |
-| 隱私清單 `PrivacyInfo.xcprivacy` | ✅ 本次補上 | 不追蹤、不收集；申報 UserDefaults（CA92.1）。缺少會被 App Store Connect 退回 |
-| 出口管制 `ITSAppUsesNonExemptEncryption` | ✅ 本次補上 | 設 `false`（只用 HTTPS 下載字型），上傳後不必每次回答加密問卷 |
-| Release 不含除錯時鐘 | ✅ | `DAYSCAM_FAKE_TODAY` 與 `-UITest*` 旗標都在 `#if DEBUG` 內（TASKS 0.1 §10.4） |
-| 字型授權 | ✅ | OFL／Apache 全文隨 App 內建並可在字型頁查看；下載來源為公開 repo（允許 2.5.2：下載的是字型檔不是程式碼） |
-| App 圖示 | ✅ | `AppIcon.png` 1024×1024、RGB 無 alpha、未預切圓角（#383 合併） |
-| **版本號** | ⏳ 待升 | 目前 `0.5.0`；正式上架才改 `1.0.0`（AGENTS 硬規則），走升版 PR `chore/bump-1.0.0` 讓 CI 跑全套測試 |
-| iPad 支援 | ✅ 已決定只上 iPhone | 2026-10-10 人類裁定；`TARGETED_DEVICE_FAMILY` 改 `"1"`、移除 iPad 方向設定。日後要上 iPad 再升次版並補 13 吋截圖 |
-| 隱私權政策網址 | ✅ | <https://irene-chou.github.io/dayscam-privacy/privacy/>（2026-10-10 人類發布；原始碼 repo `irene-chou/dayscam-privacy`）。repo 內 [PRIVACY-POLICY.md](PRIVACY-POLICY.md) 只是底稿，以公開頁為準 |
-| 螢幕截圖、商店文案 | ⏳ | 第 5 步 |
-| 實機驗收（B 級） | ⏳ | 第 4 步，透過 TestFlight |
+| 2026-10-10 | 第一版只上 iPhone | `TARGETED_DEVICE_FAMILY: "1"`、移除 iPad 方向設定；日後上 iPad 要升次版並補 13 吋截圖 |
+| 2026-10-10 | 裝置顯示名稱維持「DaysCam」；商店名稱用「DaysCam 天數相機」 | 不加 `CFBundleDisplayName` |
+| 2026-10-10 | 免費、全地區 | MVP 排除 IAP（PRD 排除項） |
+| 2026-10-10 | 隱私權政策與支援頁放 GitHub Pages | 網址見下表 |
+| 2026-10-10 | 出口管制申報 `ITSAppUsesNonExemptEncryption = false` | 只用 HTTPS 下載字型，屬豁免 |
 
-## 第 0 步：人類先決定
+## 送審前檢查表
 
-| # | 問題 | 建議 |
+| 項目 | 狀態 | 依據 |
 |---|---|---|
-| D1 | 要不要支援 iPad？ | ✅ 已決定只上 iPhone（2026-10-10），`project.yml` 已改 |
-| D2 | 商店顯示名稱 | App 在裝置上目前顯示「DaysCam」。若想顯示「天數相機」，在 `project.yml` `info.properties` 加 `CFBundleDisplayName`。商店名稱（最長 30 字）可寫「DaysCam 天數相機」 |
-| D4 | 價格與地區 | 建議免費、全地區；MVP 排除 IAP（PRD §排除項） |
-| D5 | 隱私權政策放哪 | ✅ 已發布：<https://irene-chou.github.io/dayscam-privacy/privacy/> |
-| D6 | 支援信箱／網址 | ✅ 支援 URL 用同一站首頁 <https://irene-chou.github.io/dayscam-privacy/>（列有聯絡信箱）；App Store Connect 聯絡信箱填 `irene.chou0710@gmail.com` |
+| 隱私清單 `DaysCam/PrivacyInfo.xcprivacy` | ✅ | 不追蹤、不收集；只申報 UserDefaults（CA92.1）。Archive 後用 Organizer 的 Generate Privacy Report 核對，多出別的類別就交 Lead 改程式 |
+| 出口管制、權限用途說明 | ✅ | `project.yml` `info.properties` |
+| Release 不含除錯時鐘與 UI 測試旗標 | ✅ | `DAYSCAM_FAKE_TODAY`、`-UITest*` 都在 `#if DEBUG`（TASKS 0.1 §10.4） |
+| App 圖示 | ✅ | `AppIcon.png` 1024×1024、無 alpha、未預切圓角（#383） |
+| 字型授權 | ✅ | OFL／Apache 全文內建於字型頁；下載的是字型檔不是程式碼 |
+| 版本號 `1.0.0` | ⏳ | 由 Lead 開 `chore/bump-1.0.0`（觸發 `swift.yml` 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
+| Apple Developer Program 會員 | ⏳ 人類 | 若付費團隊的 Team ID 與 `W5937V2WUF` 不同，Lead 同步改 `project.yml` 的 `DEVELOPMENT_TEAM` 與 `scripts/ExportOptions.plist` 的 `teamID` |
+| TestFlight 實機驗收 | ⏳ 人類 | 下方「實機驗收」 |
+| 截圖、商店資料 | ⏳ 人類 | 下方「要填的資料」 |
 
-決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D2 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
+## 建置與上傳
 
-## 第 1 步：程式與專案準備（Lead／agent 可做）
+GUI：Xcode 選「Any iOS Device (arm64)」→ Product → Archive → Organizer → Distribute App → App Store Connect，自動簽名。
 
-1. 合併本次的隱私清單與出口管制設定。
-2. 依 D2 修改 `project.yml`（D1 已改）。
-3. 開 `chore/bump-1.0.0`：`MARKETING_VERSION` 改 `"1.0.0"`、`CURRENT_PROJECT_VERSION` 保持 `"1"`（每次重新上傳同版本就加 1）；README 路線圖把 0.4 改為已完成並加一列「1.0 上架」。這條分支會觸發 `swift.yml` 跑完整測試，全綠才合併。
-4. 建議在合併升版 PR 後打 tag：`git tag v1.0.0 && git push origin v1.0.0`。
-
-## 第 2 步：Apple Developer 與 App Store Connect 建檔（人類）
-
-1. 確認 [Apple Developer Program](https://developer.apple.com/account) 會員有效，且 Team `W5937V2WUF` 是這個帳號。
-   - 進 App Store Connect 若出現「Apple 帳號未啟用 iTunes Connect」（2026-10-10 遇到），表示登入的 Apple ID 不是付費 Program 成員：免費帳號（Xcode Accounts 顯示「Personal Team」）只能裝到自己的裝置，不能建檔上架。
-   - 處理：到 developer.apple.com/account 看有無「Enroll」按鈕；沒加入就以個人身分[加入](https://developer.apple.com/programs/enroll/)（年費 99 美元，需雙重認證，可用 iPhone 的 Apple Developer App 付款），審核 24–48 小時。剛加入要先到 Agreements 接受 Program License Agreement。
-   - 若付費團隊的 Team ID 與 `W5937V2WUF` 不同，由 Lead 改 `project.yml` 的 `DEVELOPMENT_TEAM` 與 `scripts/ExportOptions.plist` 的 `teamID`。
-2. Certificates, Identifiers & Profiles → Identifiers：確認 `com.irenechou.DaysCam` 已註冊（Xcode 自動簽名第一次 Archive 時也會自動建立，可先跳過）。Capability 不需要額外勾選。
-3. [App Store Connect](https://appstoreconnect.apple.com) → My Apps → ＋ → New App：
-   - 平台 iOS、名稱（D2）、主要語言「繁體中文」、Bundle ID 選 `com.irenechou.DaysCam`、SKU 填 `dayscam-ios`。
-4. 「App 資訊」：類別選「攝影與錄影」，內容版權填你的名字。
-5. 「價格與供應情況」：依 D4。
-
-## 第 3 步：Archive 與上傳（人類，在 Mac）
-
-GUI 走法（第一次建議用這個）：
-
-1. `git checkout main && git pull && xcodegen generate`，用 Xcode 開 `DaysCam.xcodeproj`。
-2. 目標選「Any iOS Device (arm64)」，Product → Archive。
-3. Organizer 對該 Archive 右鍵 → Generate Privacy Report：required-reason API 應只有 UserDefaults（CA92.1）。若多出 File timestamp 等類別，記下是哪個符號，交 Lead 改程式或在 `PrivacyInfo.xcprivacy` 補理由碼後重新 Archive（2026-10-11 review 已把 `FontFileVerifier` 的 `attributesOfItem` 換成 `fileSizeKey`）。
-4. Organizer → Distribute App → App Store Connect → Upload，簽名選 Automatically manage signing，其餘預設。
-
-指令走法（之後重複上傳用）：
+指令：
 
 ```bash
 xcodegen generate
@@ -71,69 +42,56 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
   -allowProvisioningUpdates
 ```
 
-上傳後 10–30 分鐘 App Store Connect 的 TestFlight 頁會出現該 build；若收到「Missing Privacy Manifest」或「ITMS-9xxxx」信件，對照速覽表檢查。
+## 實機驗收（B 級，TestFlight）
 
-## 第 4 步：TestFlight 實機驗收（人類；B 級）
-
-在 TestFlight 加自己為內部測試員，裝到實機後至少跑一遍下列情境，結果記到升版 PR：
+結果記到升版 PR。
 
 | # | 情境 | 期望 |
 |---|---|---|
-| R-1 | 全新安裝首次開啟 | 出現相機權限提示，文案為 `project.yml` 的 `NSCameraUsageDescription` |
-| R-2 | 拒絕相機權限 | 看到引導到「設定」的畫面，不閃退 |
-| R-3 | 拍一張、存檔 | 只彈「新增照片」權限（addOnly）；相簿裡的照片疊字與觀景窗一致 |
-| R-4 | 拒絕相簿新增權限後再拍 | 明確顯示儲存失敗，不報成功（AGENTS Code Review Rules） |
+| R-1 | 全新安裝首次開啟 | 相機權限提示文案為 `NSCameraUsageDescription` |
+| R-2 | 拒絕相機權限 | 引導到「設定」的畫面，不閃退 |
+| R-3 | 拍一張、存檔 | 只彈「新增照片」權限（addOnly）；相簿裡的疊字與觀景窗一致 |
+| R-4 | 拒絕相簿新增權限後再拍 | 明確顯示儲存失敗，不報成功 |
 | R-5 | 圖庫頁開啟「存到 DaysCam 相簿」 | 此時才要求讀寫權限（#281） |
-| R-6 | 飛航模式下到字型頁下載字型 | 顯示失敗可重試；已內建字型照常可用 |
-| R-7 | 跨午夜或改裝置日期後回到 App | 觀景窗天數即時更新 |
+| R-6 | 飛航模式下載字型 | 顯示失敗可重試；內建字型照常可用 |
+| R-7 | 跨午夜或改裝置日期後回到 App | 觀景窗天數即時更新（Release 沒有假時鐘，要真的改日期） |
 | R-8 | 來電／切到背景再回來 | 預覽恢復，可繼續拍 |
 | R-9 | 兩個設定檔快速切換後拍照 | 照片印的是切換後的設定檔 |
 
-Release build 沒有 `DAYSCAM_FAKE_TODAY`，R-7 要真的改系統日期或等到跨日。
+## 要填的資料（App Store Connect）
 
-## 第 5 步：商店資料與審查備註（人類）
+| 欄位 | 值 |
+|---|---|
+| Bundle ID | `com.irenechou.DaysCam` |
+| SKU | `dayscam-ios` |
+| 名稱 | DaysCam 天數相機 |
+| 主要語言 | 繁體中文 |
+| 類別 | 攝影與錄影 |
+| 副標 | 把日子印在照片上 |
+| 宣傳文字 | 拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。 |
+| 關鍵字 | 天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera |
+| 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/> |
+| 支援 URL | <https://irene-chou.github.io/dayscam-privacy/> |
+| 聯絡信箱 | irene.chou0710@gmail.com |
+| App 隱私 | 不收集資料（與隱私清單一致） |
+| 年齡分級 | 全部「無」→ 4+ |
+| 截圖 | iPhone 6.9 吋 1320×2868 必填，不需 iPad；建議觀景窗＋天數、樣式面板、位置拖曳、設定檔頁、成品照片五張，模擬器 `⌘S` 直出 |
 
-**截圖**（App Store Connect → 該版本 → App 預覽與截圖）：
+描述：
 
-- iPhone 6.9 吋（iPhone 16 Pro Max／17 Pro Max，1320×2868）必填，最多 10 張；其他 iPhone 尺寸會自動沿用。
-- 只上 iPhone，不需 iPad 截圖。
-- 建議 5 張：觀景窗＋天數、疊字面板（樣式）、位置拖曳、設定檔頁、成品照片。用模擬器 `⌘S` 截圖即可，不能是裝置外框合成以外的加工畫面。
+> DaysCam 是一台專門記錄日子的相機。設定一個起始日——寶寶出生、開始健身、搬進新家——之後每一張照片都會自動印上今天是第幾天，或是當天的日期。
+>
+> ・天數或日期直接烘焙進照片像素，到任何地方都看得見
+> ・多組設定檔，同時記錄不同的日子
+> ・自選字型、顏色、大小與位置；內建繁體中文開源字型
+> ・完全離線、沒有帳號，照片只存在你的相簿
 
-**文案草稿**（可直接改）：
-
-- 副標（30 字內）：把日子印在照片上
-- 宣傳文字：拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。
-- 描述：
-  > DaysCam 是一台專門記錄日子的相機。設定一個起始日——寶寶出生、開始健身、搬進新家——之後每一張照片都會自動印上今天是第幾天，或是當天的日期。
-  >
-  > ・天數或日期直接烘焙進照片像素，到任何地方都看得見
-  > ・多組設定檔，同時記錄不同的日子
-  > ・自選字型、顏色、大小與位置；內建繁體中文開源字型
-  > ・完全離線、沒有帳號，照片只存在你的相簿
-- 關鍵字（100 字元內）：天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera
-- 隱私權政策 URL：`https://irene-chou.github.io/dayscam-privacy/privacy/`；支援 URL：`https://irene-chou.github.io/dayscam-privacy/`。
-
-**App 隱私（Privacy Nutrition Label）**：選「不收集資料」。與 `PrivacyInfo.xcprivacy` 一致。
-
-**年齡分級**：全部選「無」→ 4+。
-
-**審查備註（App Review Information → Notes）**：
+審查備註：
 
 > 這是一款相機 App，需要在實機測試。無需帳號登入。拍照後照片會存進系統相簿，請允許相機與相簿權限。字型頁的「下載」會從公開的 GitHub／jsDelivr 下載開源字型檔（非可執行程式碼）；其餘功能完全離線。
 
-**出口管制**：因為 Info.plist 已含 `ITSAppUsesNonExemptEncryption = false`，上傳後不會再問。
+## 上架後
 
-## 第 6 步：送審與退件處理
-
-1. 選定 build、填完所有欄位、按「加入審查」。首次審查通常 24–48 小時。
-2. 常見退件與對策：
-   - Guideline 2.1（閃退／無法使用）：多半是審查員拒絕權限後的流程；R-2、R-4 要先在實機過。
-   - Guideline 5.1.1（權限文案不夠具體）：三段 `project.yml` 文案已寫明用途，若仍被退，在審查備註補流程說明。
-   - Guideline 2.3（截圖與實際不符）：截圖要來自這個 build。
-3. 退件在「解決方案中心」回覆；需要改程式就走 `fix/` 分支 → 升修訂版 `1.0.1`、`CURRENT_PROJECT_VERSION` +1 → 重新 Archive。
-
-## 第 7 步：上架後
-
-- 上架當天在 README 路線圖加「1.0 已上架（日期）」，`v1.0.0` tag 指向合併的升版 commit。
-- 之後版本依 AGENTS：功能升次版、修正升修訂版；每次上傳 build 號 +1。
-- 開啟 App Store Connect 的「當機」與「TestFlight 回饋」，由 Lead 轉成 Issue。
+- README 路線圖加「1.0 已上架（日期）」。
+- 退件或當機需要改程式時走 `fix/` 分支，升修訂版，build 號 +1，重新 Archive。
+- App Store Connect 的「當機」與「TestFlight 回饋」由 Lead 轉成 Issue。
