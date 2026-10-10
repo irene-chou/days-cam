@@ -19,6 +19,8 @@ targets:
         NSPhotoLibraryAddUsageDescription: DaysCam 需要權限才能把拍好的照片存進你的相簿。
         NSPhotoLibraryUsageDescription: DaysCam 需要讀取權限，才能在 App 裡瀏覽你用 DaysCam 拍的照片。
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
+        # 上架用：只用 HTTPS 下載字型，屬於出口管制豁免，免每次上傳都回答加密問卷（docs/RELEASE.md）。
+        ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:
