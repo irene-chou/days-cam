@@ -19,7 +19,10 @@ final class PanelOutsideTapUITests: XCTestCase {
 
     private var panelButton: XCUIElement { app.buttons["疊字設定"] }
     private var styleTab: XCUIElement { app.buttons["樣式"] }
-    private var grabber: XCUIElement { app.descendants(matching: .any)["panelGrabber"] }
+    /// The panel's collapse button (TASK-99 replaced the pull strip with it).
+    private var collapseButton: XCUIElement { app.buttons["panelCollapseButton"] }
+    /// The panel's top edge: the tab bar starts right at it.
+    private var panelTop: CGFloat { styleTab.frame.minY }
     private var profileChip: XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
     }
@@ -31,18 +34,18 @@ final class PanelOutsideTapUITests: XCTestCase {
         XCTAssertTrue(panelButton.waitForExistence(timeout: 10))
         panelButton.tap()
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5), "the panel opened")
-        XCTAssertTrue(grabber.waitForExistence(timeout: 5))
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5))
     }
 
     private func assertPanelOpen(_ note: String) {
         XCTAssertTrue(styleTab.waitForExistence(timeout: 2), note)
-        XCTAssertTrue(grabber.exists, note)
+        XCTAssertTrue(collapseButton.exists, note)
     }
 
     private func assertPanelClosed(_ note: String) {
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 3), note)
         XCTAssertFalse(styleTab.exists, note)
-        XCTAssertFalse(grabber.exists, note)
+        XCTAssertFalse(collapseButton.exists, note)
     }
 
     private func tap(x: CGFloat, y: CGFloat) {
@@ -69,7 +72,6 @@ final class PanelOutsideTapUITests: XCTestCase {
         openPanel()
         attach("97.2_panel-open")
         let headerBottom = profileChip.frame.maxY
-        let panelTop = grabber.frame.minY
         tap(x: 3, y: (headerBottom + panelTop) / 2)
         assertPanelClosed("97.2 a tap beside the viewfinder collapses the panel")
     }
@@ -77,7 +79,7 @@ final class PanelOutsideTapUITests: XCTestCase {
     /// 97.3: the gap between the viewfinder's bottom and the panel's top.
     func testTapInTheGapAboveThePanelCollapses() {
         openPanel()
-        tap(x: app.windows.firstMatch.frame.midX, y: grabber.frame.minY - 3)
+        tap(x: app.windows.firstMatch.frame.midX, y: panelTop - 3)
         assertPanelClosed("97.3 a tap in the gap collapses the panel")
     }
 
@@ -109,18 +111,17 @@ final class PanelOutsideTapUITests: XCTestCase {
         assertPanelOpen("97.5 the tools toggle leaves the panel open")
         attach("97.5_capsule-over-open-panel")
         // 97.6: with the capsule up, a tap outside closes only the capsule.
-        tap(x: 3, y: (profileChip.frame.maxY + grabber.frame.minY) / 2)
+        tap(x: 3, y: (profileChip.frame.maxY + panelTop) / 2)
         XCTAssertFalse(app.buttons["閃光燈"].waitForExistence(timeout: 1), "97.6 the capsule closed")
         assertPanelOpen("97.6 the panel is still open after the first tap")
-        tap(x: 3, y: (profileChip.frame.maxY + grabber.frame.minY) / 2)
+        tap(x: 3, y: (profileChip.frame.maxY + panelTop) / 2)
         assertPanelClosed("97.6 the second tap closes the panel")
         profileChip.tap()
         XCTAssertTrue(app.navigationBars["設定檔"].waitForExistence(timeout: 5), "97.5 the profile chip still opens the sheet")
     }
 
-    /// 97.8: taps inside the panel never collapse it; the grabber strip does
-    /// (TASK-92 — the whole 24pt strip at the top is the handle, so "beside
-    /// the bar" within that strip is the grabber, not blank panel space).
+    /// 97.8: taps inside the panel never collapse it; the collapse button
+    /// does (TASK-99).
     func testTapsInsideThePanelKeepItOpen() {
         openPanel()
         let tabs = styleTab.frame
@@ -132,8 +133,8 @@ final class PanelOutsideTapUITests: XCTestCase {
         tap(x: width - 12, y: app.windows.firstMatch.frame.maxY - 4)
         assertPanelOpen("97.8 the panel's home-indicator band")
         attach("97.8_panel-still-open")
-        grabber.tap()
-        assertPanelClosed("97.8 the grabber still collapses")
+        collapseButton.tap()
+        assertPanelClosed("97.8 the collapse button collapses")
     }
 
     /// 97.9: with the panel closed there is no tap layer — the blank space
