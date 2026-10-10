@@ -5,7 +5,7 @@
 | 情境 | 接著讀 |
 |---|---|
 | Claude Lead／Spec | [WORKFLOW 的分工與交接](WORKFLOW.md#分工與交接)、[README 路線圖](../README.md#路線圖與規格)、需求涉及的 PRD 段落；改卡前讀任務表依賴與所有權 |
-| 開發（Codex 邏輯／Claude UI） | `docs/agents/<角色>.md`、[開發操作](WORKFLOW.md#開發)、下方「0.2 共用入口」、該張卡的目標／範圍／全部驗收／依賴 |
+| 開發（Claude subagent：邏輯與 UI） | `docs/agents/<角色>.md`、[開發操作](WORKFLOW.md#開發)、下方「0.2 共用入口」、該張卡的目標／範圍／全部驗收／依賴 |
 | 高風險獨立 QA | [qa](agents/qa.md)、[QA 與截圖](WORKFLOW.md#qa)、下方「0.2 共用入口」、PR 對應的完整卡片及沿用驗收 |
 | 一般／高風險 review | PR diff／描述、AGENTS 的 Code Review Rules、[review 操作](WORKFLOW.md#review)、變更涉及的驗收與 PRD 段落；高風險另讀 [risk-reviewer](../.claude/agents/risk-reviewer.md) |
 | 首次環境設定 | [README](../README.md)、[角色啟動與 connector 設定](WORKFLOW.md#啟動與設定) |
