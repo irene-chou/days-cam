@@ -108,10 +108,20 @@ final class PanelCollapseButtonUITests: XCTestCase {
         let rows = list.buttons.allElementsBoundByIndex
         XCTAssertFalse(rows.isEmpty, "99.6 the font list has rows")
         guard let last = rows.last else { return }
-        // XCUITest swipes are short, and an unrendered lazy row reports a
-        // stale frame, so swipe a fixed, generous number of times.
-        for _ in 0..<14 { list.swipeUp() }
-        Thread.sleep(forTimeInterval: 0.5)
+        // Drag the list up by coordinates (a `swipeUp` on the scroll view
+        // element did not scroll the font list on the larger phones), from
+        // just above the collapse button to just below the sub-tab row,
+        // enough times to reach the end.
+        let window = app.windows.firstMatch
+        let x = window.frame.midX
+        for _ in 0..<10 {
+            let from = window.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: x, dy: collapseButton.frame.minY - 20))
+            let to = window.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: x, dy: styleTab.frame.maxY + 70))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .fast, thenHoldForDuration: 0.1)
+        }
+        Thread.sleep(forTimeInterval: 0.8)
         attach("99.12_font-list-last-row-above-button")
         let button = collapseButton.frame
         let visible = list.buttons.allElementsBoundByIndex.filter { $0.isHittable }
