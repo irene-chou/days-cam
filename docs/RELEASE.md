@@ -53,7 +53,8 @@ GUI 走法（第一次建議用這個）：
 
 1. `git checkout main && git pull && xcodegen generate`，用 Xcode 開 `DaysCam.xcodeproj`。
 2. 目標選「Any iOS Device (arm64)」，Product → Archive。
-3. Organizer → Distribute App → App Store Connect → Upload，簽名選 Automatically manage signing，其餘預設。
+3. Organizer 對該 Archive 右鍵 → Generate Privacy Report：required-reason API 應只有 UserDefaults（CA92.1）。若多出 File timestamp 等類別，記下是哪個符號，交 Lead 改程式或在 `PrivacyInfo.xcprivacy` 補理由碼後重新 Archive（2026-10-11 review 已把 `FontFileVerifier` 的 `attributesOfItem` 換成 `fileSizeKey`）。
+4. Organizer → Distribute App → App Store Connect → Upload，簽名選 Automatically manage signing，其餘預設。
 
 指令走法（之後重複上傳用）：
 
