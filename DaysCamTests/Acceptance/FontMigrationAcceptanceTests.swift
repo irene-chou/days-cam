@@ -48,13 +48,17 @@ final class FontMigrationAcceptanceTests: XCTestCase {
     }
 
     private func expectedStyle(index: Int) throws -> OverlayStyle {
-        OverlayStyle(fontID: .pingFang,
-                     textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
-                     outline: .stroke,
-                     outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
-                     strokeWidth: 4,
-                     shadow: .glow,
-                     sizeScale: 70 + index * 5)
+        var style = OverlayStyle(fontID: .pingFang,
+                                 textColor: try XCTUnwrap(OverlayColor(hex: "#12345\(index % 10)")),
+                                 outline: .stroke,
+                                 outlineColor: try XCTUnwrap(OverlayColor(hex: "#0A84FF")),
+                                 strokeWidth: 4,
+                                 shadow: .glow,
+                                 sizeScale: 70 + index * 5)
+        // #355: presets are geometry only; a 0.2 "glow" keeps its text-color source and 230/255 alpha.
+        style.shadowColorSource = .textColor
+        style.shadowOpacity = 230.0 / 255
+        return style
     }
 
     /// 32.2 + 32.3 end to end, through the real file: read, save, read again.
