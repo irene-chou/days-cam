@@ -25,6 +25,10 @@ struct FocusExposureActions {
     var focusAndExpose: (CGPoint) -> Int
     var lock: (CGPoint) -> Int
     var setBias: (Float) -> Void
+    /// Like `setBias`, but tagged with the focus request the drag belongs to,
+    /// so the camera can refuse a bias that arrives after a newer tap
+    /// (TASK-88). Preferred over `setBias` when set.
+    var setBiasForRequest: ((Float, Int) -> Void)?
     /// The exposure bias range the live device accepts.
     var deviceBiasRange: () -> ClosedRange<Float>
 }
@@ -80,6 +84,9 @@ final class ViewfinderFocusModel: ObservableObject {
 
     private var serviceState = FocusExposureState.initial
     private var pendingBias: Float?
+    /// A new tap asked the camera to unlock; the lock label stays off until
+    /// the camera answers.
+    private var isLockClearPending = false
     private var lastSentBias: Float?
     private var nextReticleID = 0
     /// The id the camera gave the latest focus or lock request.
@@ -228,6 +235,17 @@ final class ViewfinderFocusModel: ObservableObject {
 
     private func focus(at layerPoint: CGPoint, lock: Bool) {
         guard let devicePoint = convert(layerPoint, viewfinderSize) else { return }
+        // A new point starts from the default exposure and no lock (TASK-88,
+        // as the system camera does). Until the camera answers, 0 and no lock
+        // show, and a bias request still waiting is void. If the request
+        // fails, `receiveFailure` shows what the device really has. A long
+        // press lock keeps the bias (the camera does not reset it), so it
+        // waits for no zero and shows the device's own value.
+        pendingBias = lock ? nil : 0
+        lastSentBias = nil
+        isLockClearPending = !lock
+        if !lock { isLocked = false }
+        refreshDisplayedBias()
         nextReticleID += 1
         reticle = Reticle(id: nextReticleID, layerPoint: layerPoint)
         keepReticleBright()
@@ -240,7 +258,11 @@ final class ViewfinderFocusModel: ObservableObject {
         lastSentBias = value
         pendingBias = value
         refreshDisplayedBias()
-        actions.setBias(value)
+        if let setBiasForRequest = actions.setBiasForRequest, latestFocusRequestID > 0 {
+            setBiasForRequest(value, latestFocusRequestID)
+        } else {
+            actions.setBias(value)
+        }
     }
 
     // MARK: Service feedback
@@ -256,7 +278,21 @@ final class ViewfinderFocusModel: ObservableObject {
         if let pending = pendingBias, abs(state.exposureBias - pending) < 0.001 {
             pendingBias = nil
         }
-        isLocked = state.isLocked
+        // Until a state without the lock comes, an old lock answer is stale.
+        if !state.isLocked { isLockClearPending = false }
+        isLocked = state.isLocked && !isLockClearPending
+        refreshDisplayedBias()
+    }
+
+    /// The camera applied a tap's reset (bias 0, unlocked), even when its
+    /// state was already at rest and so published nothing. Ends the wait for
+    /// the default exposure that `focus(at:)` started; the reticle stays.
+    /// A confirmation for an older tap says nothing about the newest one.
+    func receiveTapReset(appliedRequestID: Int) {
+        guard appliedRequestID >= latestFocusRequestID else { return }
+        if pendingBias == 0 { pendingBias = nil }
+        isLockClearPending = false
+        isLocked = serviceState.isLocked
         refreshDisplayedBias()
     }
 
@@ -272,6 +308,7 @@ final class ViewfinderFocusModel: ObservableObject {
         serviceState = .initial
         pendingBias = nil
         lastSentBias = nil
+        isLockClearPending = false
         isLocked = false
         hideReticle()
         refreshDisplayedBias()
@@ -281,6 +318,8 @@ final class ViewfinderFocusModel: ObservableObject {
     /// so the sun and the label show what the device really has, and removes
     /// a reticle that has nothing behind it.
     func receiveFailure() {
+        isLockClearPending = false
+        isLocked = serviceState.isLocked
         pendingBias = nil
         lastSentBias = nil
         refreshDisplayedBias()
@@ -343,12 +382,12 @@ final class FakeFocusExposureBackend {
     var actions: FocusExposureActions {
         FocusExposureActions(
             focusAndExpose: { [weak self] _ in
-                self?.reply { $0.isLocked = false }
+                self?.reply { $0.isLocked = false; $0.exposureBias = 0 }
                 return self?.nextID() ?? 0
             },
             lock: { [weak self] _ in
                 guard let self else { return 0 }
-                if self.lockFails { self.fail() } else { self.reply { $0.isLocked = true } }
+                if self.lockFails { self.fail() } else { self.reply { $0.isLocked = true; $0.exposureBias = 0 } }
                 return self.nextID()
             },
             setBias: { [weak self] bias in

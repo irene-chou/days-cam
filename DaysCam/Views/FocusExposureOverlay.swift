@@ -15,8 +15,14 @@ struct FocusExposureOverlay: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let reticle = focus.reticle {
-                reticleView(reticle)
-                    .transition(.opacity)
+                // One whole group per tap, position included: a new id is a
+                // new view that appears where the tap is, never one that
+                // slides there, and replaces the old one at once.
+                ZStack {
+                    reticleView(reticle)
+                }
+                .id(reticle.id)
+                .transition(.opacity)
             }
             if focus.isLocked {
                 Text("AE/AF 鎖定")
@@ -32,7 +38,8 @@ struct FocusExposureOverlay: View {
         }
         .frame(width: frameSize.width, height: frameSize.height, alignment: .top)
         .allowsHitTesting(false)
-        .animation(.easeOut(duration: 0.2), value: focus.reticle?.id)
+        // Only showing and hiding fade; changing the reticle's id must not animate.
+        .animation(.easeOut(duration: 0.2), value: focus.reticle != nil)
         .animation(.easeOut(duration: 0.2), value: focus.isLocked)
     }
 
@@ -46,7 +53,6 @@ struct FocusExposureOverlay: View {
             .stroke(Self.yellow, lineWidth: 1.5)
             .frame(width: Self.squareSize, height: Self.squareSize)
             .modifier(ReticleEntrance())
-            .id(reticle.id)
             .accessibilityElement()
             .accessibilityLabel("對焦點")
             .accessibilityIdentifier("focusReticle")

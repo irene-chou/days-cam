@@ -107,6 +107,42 @@ final class FocusExposureUITests: XCTestCase {
         attachScreenshot("73.7-bias-failed")
     }
 
+    /// 88.1 / 88.3 / 88.4: each tap puts one reticle at the new point, at once.
+    func testRetapPutsOneReticleAtTheNewPoint() {
+        launch()
+        viewfinder(0.2, 0.3).tap()
+        XCTAssertTrue(reticle.waitForExistence(timeout: 3))
+        let far = viewfinder(0.8, 0.6)
+        far.tap()
+        // Sampled right after the tap: it is already at the new point, not sliding.
+        let target = far.screenPoint
+        let deadline = Date().addingTimeInterval(0.4)
+        var worst: CGFloat = 0
+        repeat {
+            let frame = reticle.frame
+            worst = max(worst, hypot(frame.midX - target.x, frame.midY - target.y))
+        } while Date() < deadline && reticle.exists
+        XCTAssertLessThan(worst, 40, "the reticle slid from the old point")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "focusReticle").count, 1)
+        // Same point again: still one reticle.
+        far.tap()
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "focusReticle").count, 1)
+        attachScreenshot("88.1-retap")
+    }
+
+    /// 88.5a: a tap elsewhere shows the sun at 0 again.
+    func testRetapResetsTheBias() {
+        launch()
+        viewfinder(0.5, 0.5).tap()
+        XCTAssertTrue(reticle.waitForExistence(timeout: 3))
+        viewfinder(0.5, 0.5).press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.3))
+        XCTAssertNotEqual(sun.value as? String, "0")
+        viewfinder(0.2, 0.7).tap()
+        let zero = NSPredicate(format: "value == '0'")
+        expectation(for: zero, evaluatedWith: sun)
+        waitForExpectations(timeout: 3)
+    }
+
     /// 73.6: the round zoom button still takes its own taps and starts no focus.
     func testZoomButtonTapDoesNotFocus() {
         launch()

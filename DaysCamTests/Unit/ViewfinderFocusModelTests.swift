@@ -251,11 +251,131 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertNotNil(model.reticle)
     }
 
+    // MARK: new tap resets exposure (TASK-88)
+
+    /// 88.5a: a tap elsewhere shows 0 at once, before the camera answers.
+    func testNewTapZeroesTheDisplayedBiasImmediately() {
+        let model = makeModel(hold: .seconds(5))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 120), viewfinderSize: size)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
+        model.touchEnded()
+        XCTAssertEqual(model.displayedBias, 1, accuracy: 0.0001)
+        tap(model, at: CGPoint(x: 40, y: 60))
+        XCTAssertEqual(model.displayedBias, 0)
+    }
+
+    /// 88.5a: the same spot again resets too.
+    func testSamePointTapZeroesTheBias() {
+        let model = makeModel()
+        let spot = CGPoint(x: 150, y: 200)
+        tap(model, at: spot)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.7))
+        tap(model, at: spot)
+        XCTAssertEqual(model.displayedBias, 0)
+    }
+
+    /// 88.5b: a tap clears the lock shown until the camera reports.
+    func testNewTapClearsTheLock() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 0))
+        XCTAssertTrue(model.isLocked)
+        tap(model, at: CGPoint(x: 40, y: 60))
+        XCTAssertFalse(model.isLocked)
+    }
+
+    /// 88.5c: an answer to the old drag's request never writes back after a tap.
+    func testStaleBiasRequestDoesNotComeBackAfterANewTap() {
+        let model = makeModel(hold: .seconds(5))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 120), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 90), viewfinderSize: size)
+        XCTAssertGreaterThan(model.displayedBias, 0, "request pending")
+        tap(model, at: CGPoint(x: 40, y: 60))
+        XCTAssertEqual(model.displayedBias, 0)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0))
+        XCTAssertEqual(model.displayedBias, 0)
+    }
+
+    /// QA on #363: a tap whose device lock failed changed nothing; the display
+    /// shows the device's own bias and lock, not 0 and not a fake success.
+    func testFailedTapShowsTheDevicesOwnBiasAndLock() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 1))
+        tap(model, at: CGPoint(x: 40, y: 60))
+        XCTAssertEqual(model.displayedBias, 0, "until the camera answers")
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 1)
+        XCTAssertTrue(model.isLocked)
+    }
+
+    /// The tap's confirmation ends the wait even when the camera published no state.
+    func testTapResetConfirmationEndsTheWaitAndKeepsTheReticle() {
+        let model = makeModel()
+        tap(model)
+        model.receiveTapReset(appliedRequestID: requestCounter)
+        XCTAssertEqual(model.displayedBias, 0)
+        XCTAssertNotNil(model.reticle)
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 0)
+    }
+
+    /// A confirmation for an older tap leaves the newest tap waiting.
+    func testOlderTapConfirmationDoesNotEndTheNewestWait() {
+        let model = makeModel()
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
+        tap(model, at: CGPoint(x: 40, y: 60))
+        let first = requestCounter
+        tap(model, at: CGPoint(x: 200, y: 60))
+        model.receiveTapReset(appliedRequestID: first)
+        model.receiveFailure()
+        XCTAssertEqual(model.displayedBias, 1)
+    }
+
+    /// 88.5c: the drag's bias carries the tap it belongs to.
+    func testBiasRequestCarriesItsFocusRequestID() {
+        var tagged: [(Float, Int)] = []
+        let model = ViewfinderFocusModel(
+            actions: FocusExposureActions(
+                focusAndExpose: { _ in 7 }, lock: { _ in 8 }, setBias: { _ in XCTFail("untagged") },
+                setBiasForRequest: { tagged.append(($0, $1)) }, deviceBiasRange: { -2...2 }),
+            convert: { p, s in CGPoint(x: p.x / s.width, y: p.y / s.height) },
+            holdDuration: .seconds(5))
+        let start = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        model.touchEnded()
+        model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 100), viewfinderSize: size)
+        XCTAssertFalse(tagged.isEmpty)
+        XCTAssertTrue(tagged.allSatisfy { $0.1 == 7 })
+    }
+
+    /// Codex P1 on #370: a long-press lock keeps the bias, so the display must too.
+    func testLongPressLockKeepsTheDisplayedBias() async {
+        let model = makeModel(hold: .milliseconds(40))
+        let start = startAdjusting(model)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
+        model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 110), viewfinderSize: size)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
+        model.touchEnded()
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001)
+        let spot = CGPoint(x: 60, y: 80)
+        model.touchChanged(startLocation: spot, location: spot, viewfinderSize: size)
+        await settle(150)
+        XCTAssertEqual(locked.count, 1)
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001, "no zero is waited for")
+        model.receive(FocusExposureState(isLocked: true, exposureBias: 0.5))
+        XCTAssertEqual(model.displayedBias, 0.5, accuracy: 0.0001)
+        XCTAssertTrue(model.isLocked)
+    }
+
     // MARK: exposure drag
 
     private func startAdjusting(_ model: ViewfinderFocusModel) -> CGPoint {
         let start = CGPoint(x: 150, y: 200)
         tap(model, at: start)
+        model.receive(.initial) // the camera answers the tap with the default exposure
         model.touchChanged(startLocation: start, location: start, viewfinderSize: size)
         return start
     }
@@ -338,8 +458,8 @@ final class ViewfinderFocusModelTests: XCTestCase {
     /// #315 QA: a failed bias request reverts to what the device has.
     func testFailedBiasRevertsToTheDeviceValue() {
         let model = makeModel(hold: .seconds(5))
-        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         let start = startAdjusting(model)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 110), viewfinderSize: size)
         XCTAssertEqual(model.displayedBias, 1, accuracy: 0.0001)
@@ -375,8 +495,8 @@ final class ViewfinderFocusModelTests: XCTestCase {
     /// neither drop the request nor close the frame.
     func testOlderAnswersAfterAFastDragThroughZeroKeepTheLastRequest() {
         let model = makeModel(hold: .seconds(5))
-        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         let start = startAdjusting(model)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 190), viewfinderSize: size)
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 230), viewfinderSize: size)
@@ -407,8 +527,8 @@ final class ViewfinderFocusModelTests: XCTestCase {
     /// Dragging the bias back through 0 is not a reset: the reticle stays.
     func testDraggingTheBiasBackToZeroKeepsTheReticle() {
         let model = makeModel(hold: .seconds(5))
-        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         let start = startAdjusting(model)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 0.5))
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 190), viewfinderSize: size)
         XCTAssertEqual(biases.last, 0)
@@ -456,6 +576,7 @@ final class ViewfinderFocusModelTests: XCTestCase {
         model.receive(FocusExposureState(isLocked: true, exposureBias: 1))
         tap(model)
         model.receiveReset(appliedRequestID: 0)
+        model.receiveFailure() // the tap's reset-to-default shows until then; the device value is untouched
         XCTAssertTrue(model.isLocked)
         XCTAssertEqual(model.displayedBias, 1)
     }
@@ -540,8 +661,9 @@ final class ViewfinderFocusModelTests: XCTestCase {
 
     func testReticleWithABiasDimsButStays() async {
         let model = makeModel()
-        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
         tap(model)
+        model.receive(.initial)
+        model.receive(FocusExposureState(isLocked: false, exposureBias: 1))
         await settle(250)
         XCTAssertTrue(model.isReticleDimmed)
         XCTAssertNotNil(model.reticle)
