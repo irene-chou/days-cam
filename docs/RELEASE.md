@@ -2,7 +2,7 @@
 
 > 擁有者：Lead。2026-10-10 依人類「協助我將 app 上架」整理。此處的「人類」指 Apple 開發者帳號持有人；agent 在雲端無法建置 iOS、簽名或登入 App Store Connect，第 2 步起的操作都要在有 Xcode 的 Mac 上由人類執行。
 
-## 現況速覽（2026-10-10，main `d289101`）
+## 現況速覽（2026-10-10，main `6306a67`）
 
 | 項目 | 狀態 | 說明 |
 |---|---|---|
@@ -12,7 +12,7 @@
 | 出口管制 `ITSAppUsesNonExemptEncryption` | ✅ 本次補上 | 設 `false`（只用 HTTPS 下載字型），上傳後不必每次回答加密問卷 |
 | Release 不含除錯時鐘 | ✅ | `DAYSCAM_FAKE_TODAY` 與 `-UITest*` 旗標都在 `#if DEBUG` 內（TASKS 0.1 §10.4） |
 | 字型授權 | ✅ | OFL／Apache 全文隨 App 內建並可在字型頁查看；下載來源為公開 repo（允許 2.5.2：下載的是字型檔不是程式碼） |
-| **App 圖示** | ❌ 阻擋 | `Assets.xcassets/AppIcon.appiconset` 只有空的 `Contents.json`，沒有 1024×1024 圖檔。沒有圖示無法上傳 |
+| App 圖示 | ✅ | `AppIcon.png` 1024×1024、RGB 無 alpha、未預切圓角（#383 合併） |
 | **版本號** | ⏳ 待升 | 目前 `0.5.0`；正式上架才改 `1.0.0`（AGENTS 硬規則），走升版 PR `chore/bump-1.0.0` 讓 CI 跑全套測試 |
 | **iPad 支援** | ⚠️ 待決定 | `TARGETED_DEVICE_FAMILY: "1,2"` 等於宣告支援 iPad：審查會在 iPad 測、必須附 13 吋 iPad 截圖，而所有設計稿都只照 iPhone 16 |
 | 隱私權政策網址 | ⏳ | App Store Connect 必填。草稿在 [PRIVACY-POLICY.md](PRIVACY-POLICY.md)，需放到公開網址 |
@@ -25,20 +25,18 @@
 |---|---|---|
 | D1 | 要不要支援 iPad？ | **建議只上 iPhone**：把 `TARGETED_DEVICE_FAMILY` 改 `"1"`，刪掉 `UISupportedInterfaceOrientations~ipad`。少一組截圖與審查面，之後想加再升版。保留 iPad 就要補 13 吋截圖並在 iPad 實機跑一遍 B 級 |
 | D2 | 商店顯示名稱 | App 在裝置上目前顯示「DaysCam」。若想顯示「天數相機」，在 `project.yml` `info.properties` 加 `CFBundleDisplayName`。商店名稱（最長 30 字）可寫「DaysCam 天數相機」 |
-| D3 | App 圖示 | 需要一張 1024×1024、不透明、無圓角的 PNG。人類提供設計或指定 agent 出草稿 |
 | D4 | 價格與地區 | 建議免費、全地區；MVP 排除 IAP（PRD §排除項） |
 | D5 | 隱私權政策放哪 | GitHub Pages、Notion 公開頁或任何固定網址皆可；內容用 [PRIVACY-POLICY.md](PRIVACY-POLICY.md) 改 |
 | D6 | 支援信箱／網址 | App Store Connect 必填支援 URL；可用 repo Issues 頁或 Notion 頁 |
 
-決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D1–D3 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
+決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D1–D2 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
 
 ## 第 1 步：程式與專案準備（Lead／agent 可做）
 
 1. 合併本次的隱私清單與出口管制設定。
-2. 放入 App 圖示：把 1024 PNG 放進 `DaysCam/Assets.xcassets/AppIcon.appiconset/`，`Contents.json` 的那筆加上 `"filename"`。
-3. 依 D1、D2 修改 `project.yml`。
-4. 開 `chore/bump-1.0.0`：`MARKETING_VERSION` 改 `"1.0.0"`、`CURRENT_PROJECT_VERSION` 保持 `"1"`（每次重新上傳同版本就加 1）；README 路線圖把 0.4 改為已完成並加一列「1.0 上架」。這條分支會觸發 `swift.yml` 跑完整測試，全綠才合併。
-5. 建議在合併升版 PR 後打 tag：`git tag v1.0.0 && git push origin v1.0.0`。
+2. 依 D1、D2 修改 `project.yml`。
+3. 開 `chore/bump-1.0.0`：`MARKETING_VERSION` 改 `"1.0.0"`、`CURRENT_PROJECT_VERSION` 保持 `"1"`（每次重新上傳同版本就加 1）；README 路線圖把 0.4 改為已完成並加一列「1.0 上架」。這條分支會觸發 `swift.yml` 跑完整測試，全綠才合併。
+4. 建議在合併升版 PR 後打 tag：`git tag v1.0.0 && git push origin v1.0.0`。
 
 ## 第 2 步：Apple Developer 與 App Store Connect 建檔（人類）
 
