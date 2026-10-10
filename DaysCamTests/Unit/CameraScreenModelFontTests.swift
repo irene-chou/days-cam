@@ -9,8 +9,12 @@ import XCTest
 @MainActor
 final class FakeShellFontLibrary: FontShellControlling {
     let objectWillChange = ObservableObjectPublisher()
-    let downloadDidFinish = PassthroughSubject<OverlayFontID, Never>()
+    let weightDownloadDidFinish = PassthroughSubject<FontDownloadID, Never>()
     private var states: [OverlayFontID: FontState]
+    /// States of faces other than the default one.
+    private var weightStates: [FontDownloadID: FontState] = [:]
+    private(set) var preparedWeights: [FontDownloadID] = []
+    private(set) var launchPriorityWeights: [String?] = []
     private(set) var downloads: [OverlayFontID] = []
     private(set) var prepared: [OverlayFontID] = []
     private(set) var launchPriorities: [OverlayFontID?] = []
@@ -27,6 +31,18 @@ final class FakeShellFontLibrary: FontShellControlling {
         return fontID == .pingFang ? .available : (states[fontID] ?? .notDownloaded)
     }
 
+    func state(for fontID: OverlayFontID, weightID: String?) -> FontState {
+        let unit = FontDownloadID(fontID: fontID, weightID: FontCatalog.entry(for: fontID).weight(for: weightID).id)
+        if let state = weightStates[unit] { return state }
+        return FontCatalog.entry(for: fontID).defaultWeight.id == unit.weightID ? state(for: fontID) : .notDownloaded
+    }
+
+    /// Moves one non-default face to `state`.
+    func set(_ state: FontState, for fontID: OverlayFontID, weightID: String) {
+        objectWillChange.send()
+        weightStates[FontDownloadID(fontID: fontID, weightID: weightID)] = state
+    }
+
     /// Moves `fontID` to `state` the way `FontLibrary` does (announce, then change).
     func set(_ state: FontState, for fontID: OverlayFontID) {
         objectWillChange.send()
@@ -36,7 +52,13 @@ final class FakeShellFontLibrary: FontShellControlling {
     /// A download completing: `.available`, then `downloadDidFinish`.
     func finishDownload(_ fontID: OverlayFontID) {
         set(.available, for: fontID)
-        downloadDidFinish.send(fontID)
+        weightDownloadDidFinish.send(FontDownloadID(fontID: fontID, weightID: FontCatalog.entry(for: fontID).defaultWeight.id))
+    }
+
+    /// A non-default face finishing: `.available`, then the event for that exact unit.
+    func finishDownload(_ fontID: OverlayFontID, weightID: String) {
+        set(.available, for: fontID, weightID: weightID)
+        weightDownloadDidFinish.send(FontDownloadID(fontID: fontID, weightID: weightID))
     }
 
     func cancel(_ fontID: OverlayFontID) { set(.notDownloaded, for: fontID) }
@@ -54,9 +76,19 @@ final class FakeShellFontLibrary: FontShellControlling {
         try? await Task.sleep(nanoseconds: 30_000_000_000)
     }
 
+    func prepare(_ fontID: OverlayFontID, weightID: String?) async {
+        preparedWeights.append(FontDownloadID(fontID: fontID, weightID: FontCatalog.entry(for: fontID).weight(for: weightID).id))
+        await prepare(fontID)
+    }
+
     func prepareAtLaunch(priority: OverlayFontID?) async {
         launchPriorities.append(priority)
         try? await Task.sleep(nanoseconds: 30_000_000_000)
+    }
+
+    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async {
+        launchPriorityWeights.append(weightID)
+        await prepareAtLaunch(priority: priority)
     }
 
     func cancelAllDownloads() {
@@ -186,11 +218,12 @@ final class CameraScreenModelFontTests: XCTestCase {
         return font
     }
 
-    private var resolveWithStandIn: @MainActor (OverlayFontID, any FontAvailabilityProviding) -> ResolvedOverlayFont {
+    private var resolveWithStandIn: @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont {
         let face = standInFace
-        return { fontID, availability in
-            guard fontID != .pingFang else { return .pingFang }
-            return OverlayMetrics.resolvedFont(state: availability.state(for: fontID), postScriptName: face)
+        return { style, availability in
+            guard style.fontID != .pingFang else { return .pingFang }
+            return OverlayMetrics.resolvedFont(
+                state: availability.state(for: style.fontID, weightID: style.fontWeight), postScriptName: face)
         }
     }
 
@@ -274,6 +307,56 @@ final class CameraScreenModelFontTests: XCTestCase {
             harness.model.openOverlayPanel()
             XCTAssertNil(harness.model.toastState, "\(state)")
         }
+    }
+
+    // MARK: - TASK-89 the chosen weight reaches preview, shutter and preparation
+
+    private func harnessWithBlackNoto(states: [OverlayFontID: FontState] = [.notoSerifTC: .available]) async throws -> Harness {
+        let harness = try makeHarness(fontA: .notoSerifTC, states: states)
+        var profile = harness.profileA
+        profile.style.fontWeight = "black"
+        try harness.store.update(profile)
+        try await Task.sleep(nanoseconds: 50_000_000) // the model follows the store on the main queue
+        return harness
+    }
+
+    /// 89.3 bake: the shutter resolves the profile's weight, not the default
+    /// face's state, and carries the weight in the style it bakes.
+    func testShutterResolvesTheChosenWeightAndBakesItsStyle() async throws {
+        let harness = try await harnessWithBlackNoto()
+        let id = harness.profileA.id
+        let profile = try XCTUnwrap(harness.store.profiles.first { $0.id == id })
+        let unavailable = harness.model.captureContext(for: profile)
+        XCTAssertEqual(unavailable.style.fontWeight, "black")
+        XCTAssertEqual(unavailable.font, .pingFang, "the default face being available says nothing about black")
+        harness.library.set(.available, for: .notoSerifTC, weightID: "black")
+        let available = harness.model.captureContext(for: profile)
+        XCTAssertEqual(available.style.fontWeight, "black")
+        XCTAssertNotEqual(available.font, .pingFang)
+    }
+
+    /// 89.3 preview: the viewfinder follows the chosen weight's own state.
+    func testViewfinderFollowsTheChosenWeightsDownload() async throws {
+        let harness = try await harnessWithBlackNoto()
+        XCTAssertEqual(harness.model.overlayFont, .pingFang)
+        harness.library.finishDownload(.notoSerifTC, weightID: "black")
+        XCTAssertNotEqual(harness.model.overlayFont, .pingFang)
+    }
+
+    func testLaunchPreparationNamesTheProfilesWeight() async throws {
+        let harness = try await harnessWithBlackNoto()
+        let task = Task { await harness.model.prepareFontsAtLaunch() }
+        for _ in 0..<50 where harness.library.launchPriorityWeights.isEmpty { try await Task.sleep(nanoseconds: 20_000_000) }
+        task.cancel()
+        XCTAssertEqual(harness.library.launchPriorityWeights, ["black"])
+    }
+
+    func testPreparingChosenWeightKeepsTheShutterWaiting() async throws {
+        let harness = try await harnessWithBlackNoto()
+        harness.library.set(.preparing, for: .notoSerifTC, weightID: "black")
+        XCTAssertTrue(harness.model.isWaitingForFont)
+        harness.library.set(.available, for: .notoSerifTC, weightID: "black")
+        XCTAssertFalse(harness.model.isWaitingForFont)
     }
 
     // MARK: - 35.4 the shutter fixes the font
