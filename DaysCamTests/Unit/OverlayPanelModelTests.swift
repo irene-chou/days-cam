@@ -53,21 +53,6 @@ final class OverlayPanelModelTests: XCTestCase {
         XCTAssertFalse(model.isOpen)
     }
 
-    // MARK: - Bottom bar (22.5)
-
-    func testBottomBarActionsWhenClosed() {
-        let model = OverlayPanelModel()
-        XCTAssertEqual(model.leftBottomBarAction, .latestPhoto)
-        XCTAssertEqual(model.rightBottomBarAction, .openOverlayPanel)
-    }
-
-    func testBottomBarActionsWhenOpen() {
-        let model = OverlayPanelModel()
-        model.open()
-        XCTAssertEqual(model.leftBottomBarAction, .empty)
-        XCTAssertEqual(model.rightBottomBarAction, .collapse)
-    }
-
     // MARK: - Overlay drag interface (TASK-24 hand-off)
 
     func testOverlayIsOnlyDraggableWhenOpenOnThePositionTab() {

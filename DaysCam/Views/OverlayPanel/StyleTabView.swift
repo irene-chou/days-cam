@@ -15,9 +15,14 @@ import UIKit
 struct StyleTabView: View {
     @ObservedObject var model: StyleTabModel
     /// Content-area height the panel gives this tab (`OverlayPanelView`'s
-    /// `contentHeight`, 212pt in the regular layout). Pages that are shorter
+    /// `contentHeight`, 244pt in the regular layout). Pages that are shorter
     /// than this are centered vertically (TASK-49 A).
-    var availableHeight: CGFloat = 212
+    var availableHeight: CGFloat = 244
+    /// Extra room kept under every page's scroll content (TASK-92): the
+    /// panel's scroll views run on under the home indicator, so this is that
+    /// band's height, letting the last row scroll up above it. Not part of
+    /// `availableHeight`, so centered pages still center in the usable area.
+    var bottomContentInset: CGFloat = 0
     /// Swatch diameter for the color rows, every device (TASK-49 B; was 34).
     static let swatchDiameter: CGFloat = 30
     /// Both color rows share this many columns (TASK-39 B).
@@ -99,7 +104,7 @@ struct StyleTabView: View {
                     }
                 }
                 .padding(.horizontal, Self.contentHorizontalInset(for: model.selectedSubTab))
-                .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
+                .padding(.bottom, (model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6) + bottomContentInset)
             }
             // Fades at the scroll edges and one indicator flash per sub-tab
             // (TASK-58b); the row is outside the scroll view, so no top inset.
