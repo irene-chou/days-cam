@@ -112,12 +112,15 @@ final class PanelCollapseButtonUITests: XCTestCase {
         // stale frame, so swipe a fixed, generous number of times.
         for _ in 0..<14 { list.swipeUp() }
         Thread.sleep(forTimeInterval: 0.5)
-        let button = collapseButton.frame
-        XCTAssertLessThanOrEqual(last.frame.maxY, button.minY + 1,
-                                 "99.6 the last row (\(last.label)) ends above the button's tap target")
-        XCTAssertLessThanOrEqual(last.frame.maxY, list.frame.maxY + 1, "99.6 and is inside the scroll view")
-        XCTAssertFalse(last.frame.intersects(button), "99.6 not under the button")
         attach("99.12_font-list-last-row-above-button")
+        let button = collapseButton.frame
+        let visible = list.buttons.allElementsBoundByIndex.filter { $0.isHittable }
+        let lowest = visible.max { $0.frame.maxY < $1.frame.maxY }
+        let detail = "list \(list.frame) button \(button) last '\(last.label)' \(last.frame) lowest hittable '\(lowest?.label ?? "-")' \(lowest?.frame ?? .zero)"
+        XCTAssertLessThanOrEqual(last.frame.maxY, button.minY + 1,
+                                 "99.6 the last row ends above the button's tap target — \(detail)")
+        XCTAssertLessThanOrEqual(last.frame.maxY, list.frame.maxY + 1, "99.6 and is inside the scroll view — \(detail)")
+        XCTAssertFalse(last.frame.intersects(button), "99.6 not under the button")
     }
 
     /// 99.9: a tap on the viewfinder still collapses the panel (FR-8.7).
