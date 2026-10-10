@@ -81,11 +81,10 @@ final class FontWeightAcceptanceTests: XCTestCase {
             XCTAssertEqual(asset.byteCount, bytes, id)
             XCTAssertEqual(asset.sha256, sha, id)
             XCTAssertEqual(asset.fileName, "NotoSerifTC-\(id.prefix(1).uppercased() + id.dropFirst()).otf")
-            // New faces pin the upstream commit; the existing Bold keeps its dayscam-fonts v2 URLs.
-            let pinned = id != "bold"
+            // Every face downloads from dayscam-fonts@v3 (TASK-91); no upstream commit URL remains.
             for url in [asset.primaryURL, asset.fallbackURL] {
-                XCTAssertEqual(url.absoluteString.contains("f8d157532fbfaeda587e826d4cd5b21a49186f7c"), pinned, id)
-                XCTAssertTrue(url.absoluteString.hasSuffix(asset.repositoryPath) || pinned, id)
+                XCTAssertFalse(url.absoluteString.contains("f8d157532fbfaeda587e826d4cd5b21a49186f7c"), id)
+                XCTAssertTrue(url.absoluteString.hasSuffix(asset.repositoryPath), id)
             }
             XCTAssertFalse(asset.copyright.isEmpty)
             XCTAssertFalse(asset.licenseFileNames.isEmpty)

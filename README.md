@@ -19,7 +19,7 @@ Agent 開工：[`AGENTS.md`](AGENTS.md) → [`閱讀矩陣`](docs/AGENT-READING-
 
 - Xcode 16.2 以上
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
-- 最低支援 iOS 18.0
+- 最低支援 iOS 18.0；只支援 iPhone（2026-10-10 使用者裁定暫不支援 iPad，iPad 收起面板的 3:4 布局底部裁切問題不處理）
 
 ## Clone 後必須先產生專案檔
 
