@@ -141,10 +141,11 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.overlayPreviewText, "9 天")
     }
 
-    func testYearOnlyWithAllZeroFallsBackToZeroDays() throws {
+    /// 93.15 (TASK-93): all zero reads as the smallest checked unit — the year.
+    func testYearOnlyWithAllZeroShowsZeroYears() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(displayUnits: [.year]), now: try fixedNow(), spy: spy)
-        XCTAssertEqual(model.overlayPreviewText, "0 天")
+        XCTAssertEqual(model.overlayPreviewText, "0 年", "93.15")
     }
 
     // MARK: - toggleUnit (0.2 FR-11.3, TASK-27; replaces 0.1 11.21–11.27)
