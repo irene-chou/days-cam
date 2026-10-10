@@ -108,14 +108,10 @@ final class PanelCollapseButtonUITests: XCTestCase {
         let rows = list.buttons.allElementsBoundByIndex
         XCTAssertFalse(rows.isEmpty, "99.6 the font list has rows")
         guard let last = rows.last else { return }
-        // Swipe until the list stops moving (XCUITest swipes are short).
-        var previous = CGFloat.greatestFiniteMagnitude
-        for _ in 0..<15 {
-            list.swipeUp()
-            let y = last.frame.maxY
-            if abs(y - previous) < 1 { break }
-            previous = y
-        }
+        // XCUITest swipes are short, and an unrendered lazy row reports a
+        // stale frame, so swipe a fixed, generous number of times.
+        for _ in 0..<14 { list.swipeUp() }
+        Thread.sleep(forTimeInterval: 0.5)
         let button = collapseButton.frame
         XCTAssertLessThanOrEqual(last.frame.maxY, button.minY + 1,
                                  "99.6 the last row (\(last.label)) ends above the button's tap target")
