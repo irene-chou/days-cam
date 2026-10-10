@@ -46,7 +46,8 @@ private struct ProfileEditorContent: View {
         .background(Color.white.opacity(0.97))
         .navigationTitle(profile.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { CloseButton(action: onClose) } }
+        // No close key (TASK-101, #410); the system back button returns to
+        // the list and the sheet itself is swiped down or tapped away.
     }
 
     private var actions: some View {
