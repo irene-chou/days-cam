@@ -142,6 +142,8 @@ struct CameraScreen: View {
             let metrics = CameraScreenLayoutMetrics(screenSize: screenSize, safeAreaInsets: insets,
                                                   panelTabBarHeight: panelTabBarHeight)
             ZStack(alignment: .topLeading) {
+                tapOutsidePanelLayer(metrics: metrics)
+
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
 
@@ -157,6 +159,27 @@ struct CameraScreen: View {
             }
             .ignoresSafeArea()
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
+        }
+    }
+
+    // MARK: - Tap outside the panel (TASK-97, #401)
+
+    /// The bottom-most layer while the panel is open: a full-screen, invisible
+    /// tap target, so a tap on any blank space — beside the viewfinder, in
+    /// the gap above the panel, between the toolbar's buttons — collapses
+    /// the panel the way a tap on the viewfinder does (PRD 0.2 FR-8.7).
+    /// Everything with its own hit area (the viewfinder and its overlay
+    /// text, the toolbar's buttons, the panel) sits above it and wins, so
+    /// those keep their own behavior; nothing is here while the panel is
+    /// closed (97.9). Hidden from VoiceOver (97.10).
+    @ViewBuilder
+    private func tapOutsidePanelLayer(metrics: CameraScreenLayoutMetrics) -> some View {
+        if model.panelModel.isOpen {
+            Color.clear
+                .frame(width: metrics.screenSize.width, height: metrics.screenSize.height)
+                .contentShape(Rectangle())
+                .onTapGesture { model.handleTapOutsidePanel() }
+                .accessibilityHidden(true)
         }
     }
 

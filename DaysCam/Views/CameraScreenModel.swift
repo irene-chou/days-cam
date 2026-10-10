@@ -934,10 +934,20 @@ extension CameraScreenModel {
         panelModel.close()
     }
 
-    /// A tap on the viewfinder (issue #135): while the tools capsule is up it
-    /// only closes the capsule — the tap is consumed, so an open panel stays
-    /// open; otherwise it closes the panel (PRD 0.2 FR-8.7).
+    /// A tap on the viewfinder outside the overlay text: the same thing as
+    /// any other tap outside the panel (`handleTapOutsidePanel`).
     func handleViewfinderTap() {
+        handleTapOutsidePanel()
+    }
+
+    /// A tap anywhere outside the panel — the viewfinder, the blank space
+    /// beside and below it, the gaps between the toolbar's buttons (TASK-97,
+    /// #401; PRD 0.2 FR-8.7). While the tools capsule is up it only closes
+    /// the capsule — the tap is consumed, so an open panel stays open (issue
+    /// #135); otherwise it closes the panel. The toolbar's buttons never
+    /// reach here: they do their own thing and leave the panel open (human
+    /// decision 2026-10-10).
+    func handleTapOutsidePanel() {
         zoomExpansion.collapse()
         if isCameraToolsExpanded {
             collapseCameraTools()
