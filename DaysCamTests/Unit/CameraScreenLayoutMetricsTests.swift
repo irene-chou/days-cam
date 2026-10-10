@@ -230,15 +230,15 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         XCTAssertFalse(regular.isSmallScreen)
         // TASK-92: 224 + the 44pt open footer row and gaps − the 24pt grabber.
-        XCTAssertEqual(regular.panelContentHeight, 244, "92.2")
-        XCTAssertEqual(regular.panelHeight, 24 + 32 + 244)
+        XCTAssertEqual(regular.panelContentHeight, 268, "92.2／99.7: the grabber's 24pt came back to the content")
+        XCTAssertEqual(regular.panelHeight, 32 + 268)
         XCTAssertEqual(regular.panelVisibleHeight, regular.panelHeight + 34, "92.1: on through the home-indicator band")
         XCTAssertEqual(regular.panelGapAboveBox, 6)
 
         let small = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
         XCTAssertTrue(small.isSmallScreen)
-        XCTAssertEqual(small.panelContentHeight, 152, "92.2")
-        XCTAssertEqual(small.panelHeight, 24 + 32 + 152)
+        XCTAssertEqual(small.panelContentHeight, 176, "92.2／99.7")
+        XCTAssertEqual(small.panelHeight, 32 + 176)
         XCTAssertEqual(small.panelVisibleHeight, small.panelHeight, "92.12: no band on 4.7-inch")
         XCTAssertEqual(small.panelGapAboveBox, 4)
 
@@ -271,7 +271,7 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let large = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 38)
         XCTAssertEqual(normal.panelHeight, 300, accuracy: accuracy)
         XCTAssertEqual(large.panelHeight, 306, accuracy: accuracy)
-        XCTAssertEqual(large.panelContentHeight, 244)
+        XCTAssertEqual(large.panelContentHeight, 268)
         XCTAssertEqual(large.panelBottom, normal.panelBottom, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderAreaHeight, normal.panelOpenViewfinderAreaHeight - 6, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderFrame(for: .threeByFour).minY, large.headerBottom, accuracy: accuracy)
@@ -314,17 +314,14 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         }
     }
 
-    /// 92.14: the open panel is full width (no 6pt side inset), with the
-    /// design's 18pt top corners and an upward-only shadow.
-    func testPanelIsFullWidthWithTopRoundedCornersAndUpwardShadow() {
+    /// 92.14／99.2: the open panel is full width (no 6pt side inset); TASK-99
+    /// removed its corners and shadow, so there are no such constants left.
+    func testPanelIsFullWidth() {
         for device in [(w: 393.0, h: 852.0, t: 59.0, b: 34.0), (w: 375.0, h: 667.0, t: 20.0, b: 0.0),
                        (w: 430.0, h: 932.0, t: 59.0, b: 34.0)] {
             let metrics = makeMetrics(width: device.w, height: device.h, top: device.t, bottom: device.b)
             XCTAssertEqual(metrics.panelWidth, device.w, "92.14 \(device.w)")
         }
-        XCTAssertEqual(CameraScreenLayoutMetrics.panelTopCornerRadius, 18, "92.14")
-        XCTAssertEqual(CameraScreenLayoutMetrics.panelShadowRadius, 18, "92.14")
-        XCTAssertLessThan(CameraScreenLayoutMetrics.panelShadowYOffset, 0, "92.14: the shadow rises")
     }
 
     func testFooterSideButtonCenterInset() {

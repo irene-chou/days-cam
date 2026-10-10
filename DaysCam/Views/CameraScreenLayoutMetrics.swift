@@ -89,22 +89,6 @@ struct CameraScreenLayoutMetrics {
     /// The segmented control's height at the default Dynamic Type size.
     static let defaultPanelTabBarHeight: CGFloat = 32
 
-    /// Height of the grabber strip at the panel's top edge (TASK-92): the
-    /// 36×5 bar is centered in it, and the whole strip, full width, is the
-    /// drag/tap target that collapses the panel. Added to the panel's total
-    /// height, taken out of `panelContentHeight`, so `panelTop` stays put.
-    static let panelGrabberHeight: CGFloat = 24
-
-    /// Top corner radius of the open panel's shape (PRD FR-8.8, TASK-92,
-    /// design option 2 "同色底加陰影"); the bottom corners are square since
-    /// the panel runs off the screen's bottom edge.
-    static let panelTopCornerRadius: CGFloat = 18
-
-    /// Blur radius and vertical offset of the upward shadow along the
-    /// panel's top edge (`CameraTheme.popoverShadow`); negative y = up.
-    static let panelShadowRadius: CGFloat = 18
-    static let panelShadowYOffset: CGFloat = -6
-
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
 
@@ -133,17 +117,18 @@ struct CameraScreenLayoutMetrics {
     /// but is not tappable (TASK-92, 92.7).
     ///
     /// TASK-92: the open-panel footer row (32pt) and its two gaps (4 + 8)
-    /// went away and their 44pt came here, minus the 24pt grabber strip —
-    /// 224 → 244 regular, 132 → 152 small — so `panelTop` is unchanged.
+    /// went away and their 44pt came here, minus a 24pt grabber strip;
+    /// TASK-99 (#404) removed the grabber and gave its 24pt back — 268
+    /// regular, 176 small — so `panelTop` is unchanged throughout.
     var panelContentHeight: CGFloat {
-        isSmallScreen ? 152 : 244
+        isSmallScreen ? 176 : 268
     }
 
-    /// Grabber strip, tab bar and usable content area — `panelTop` to
-    /// `panelBottom` (`footerBase`). Not the panel's visible height, which
-    /// continues to the screen's bottom edge (`panelVisibleHeight`).
+    /// Tab bar and usable content area — `panelTop` to `panelBottom`
+    /// (`footerBase`). Not the panel's visible height, which continues to
+    /// the screen's bottom edge (`panelVisibleHeight`).
     var panelHeight: CGFloat {
-        Self.panelGrabberHeight + panelTabBarHeight + panelContentHeight
+        panelTabBarHeight + panelContentHeight
     }
 
     /// `panelTop` to the screen's physical bottom edge: the panel ignores
@@ -154,7 +139,7 @@ struct CameraScreenLayoutMetrics {
     }
 
     /// The open panel spans the full screen width (TASK-92 / 92.14): no side
-    /// inset, so the upward shadow along its top edge is one unbroken line.
+    /// inset (TASK-99 removed the shadow; the width stays).
     var panelWidth: CGFloat {
         screenSize.width
     }

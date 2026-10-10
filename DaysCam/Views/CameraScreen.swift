@@ -33,12 +33,6 @@ struct CameraScreen: View {
     /// ~0.15s, softer under Reduce Motion.
     @State private var flashOpacity: Double = 0
 
-    /// How far the overlay panel has been pulled down by its grabber
-    /// (TASK-92): the panel is offset by it while open. A collapse started
-    /// from the grabber slides the panel the rest of the way off the bottom
-    /// as it fades; the value is reset the next time the panel appears.
-    @State private var panelDragOffset: CGFloat = 0
-
     /// True while a finger is down on the viewfinder; SwiftUI resets it when a
     /// gesture is cancelled too, which `onEnded` does not report (issue #303).
     @GestureState private var isViewfinderTouched = false
@@ -375,7 +369,8 @@ struct CameraScreen: View {
     /// (TASK-92), it runs on to the screen's physical bottom edge: the
     /// panel's usable area ends at `footerBase`, its scroll view continues
     /// under the home indicator (seen, faded, not tappable), and there is no
-    /// footer row beneath it — the grabber at its top edge collapses it.
+    /// footer row beneath it — the floating button in its bottom-right
+    /// corner collapses it (TASK-99).
     ///
     /// Always a transparent background (issue #121): the bottom bar's icons
     /// switch to a light color over a photo instead, via
@@ -404,37 +399,19 @@ struct CameraScreen: View {
         .animation(CameraTheme.spring, value: isOnPhoto)
     }
 
-    /// The open panel (TASK-92): `metrics.panelVisibleHeight` tall — grabber,
+    /// The open panel (TASK-92／TASK-99): `metrics.panelVisibleHeight` tall —
     /// tab bar, usable content down to `footerBase`, then the home-indicator
-    /// band — full width (`panelWidth`, no side inset), and pulled down by
-    /// `panelDragOffset` while the grabber is being dragged. Its background,
-    /// rounded top and upward shadow live in `OverlayPanelView`, so they
-    /// move with the offset.
+    /// band — full width (`panelWidth`, no side inset), straight on the
+    /// camera background with no surface of its own. Its collapse button
+    /// (bottom-right, #404) closes it with the same fade every other
+    /// collapse uses.
     private func overlayPanel(metrics: CameraScreenLayoutMetrics) -> some View {
         OverlayPanelView(model: model,
                          contentHeight: metrics.panelContentHeight,
                          tabBarHeight: metrics.panelTabBarHeight,
                          bottomSafeAreaInset: metrics.bottomInset,
-                         dragOffset: $panelDragOffset,
-                         onCollapse: { collapsePanelFromGrabber(slideDistance: metrics.panelVisibleHeight) })
+                         onCollapse: { model.closeOverlayPanel() })
             .frame(width: metrics.panelWidth, height: metrics.panelVisibleHeight)
-            .offset(y: panelDragOffset)
-            // A pull that collapsed the panel leaves the offset where the
-            // slide ended; the panel is invisible by then, so this snaps it
-            // back for the next open before anything is seen.
-            .onAppear { panelDragOffset = 0 }
-    }
-
-    /// Collapse asked for by the grabber (tap, pull past the threshold, or
-    /// VoiceOver, TASK-92): the panel slides the rest of the way down off
-    /// the screen while it fades, with the same spring the viewfinder uses
-    /// to grow back. The viewfinder-tap collapse (FR-8.7) is unchanged and
-    /// still just fades (`CameraScreenModel.handleViewfinderTap`).
-    private func collapsePanelFromGrabber(slideDistance: CGFloat) {
-        withAnimation(CameraTheme.spring) {
-            panelDragOffset = slideDistance
-            model.closeOverlayPanel()
-        }
     }
 
     // MARK: - Viewfinder contents
