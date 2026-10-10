@@ -99,21 +99,28 @@ final class PanelCollapseButtonUITests: XCTestCase {
         XCTAssertEqual(collapseButton.frame, resting, "99.5 same place on a sub-tab")
     }
 
-    /// 99.6: the font list's last row scrolls up above the button and can be
-    /// tapped — it is not stuck under the disc.
+    /// 99.6: scrolled all the way down, the font list's last row sits fully
+    /// inside the scroll view and above the button — not under it.
     func testLastRowScrollsAboveTheButton() {
         app.buttons["字型"].tap()
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
-        for _ in 0..<4 { list.swipeUp() }
-        // The list's last row, in list order, once scrolled all the way down.
         let rows = list.buttons.allElementsBoundByIndex
         XCTAssertFalse(rows.isEmpty, "99.6 the font list has rows")
-        if let last = rows.last {
-            XCTAssertLessThanOrEqual(last.frame.maxY, collapseButton.frame.minY + 1,
-                                     "99.6 the last row (\(last.label)) scrolls up above the button")
-            XCTAssertTrue(last.isHittable, "99.6 and can be operated")
+        guard let last = rows.last else { return }
+        // Swipe until the list stops moving (XCUITest swipes are short).
+        var previous = CGFloat.greatestFiniteMagnitude
+        for _ in 0..<15 {
+            list.swipeUp()
+            let y = last.frame.maxY
+            if abs(y - previous) < 1 { break }
+            previous = y
         }
+        let button = collapseButton.frame
+        XCTAssertLessThanOrEqual(last.frame.maxY, button.minY + 1,
+                                 "99.6 the last row (\(last.label)) ends above the button's tap target")
+        XCTAssertLessThanOrEqual(last.frame.maxY, list.frame.maxY + 1, "99.6 and is inside the scroll view")
+        XCTAssertFalse(last.frame.intersects(button), "99.6 not under the button")
         attach("99.12_font-list-last-row-above-button")
     }
 
