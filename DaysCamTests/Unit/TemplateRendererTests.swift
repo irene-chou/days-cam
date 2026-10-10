@@ -157,7 +157,8 @@ final class TemplateRendererTests: XCTestCase {
             ("4.21", DateFixture.components(2025, 1, 1), (2026, 3, 1), .year, .day, false, "1 年 2 個月"),
             ("4.22", DateFixture.components(2026, 1, 1), (2026, 9, 4), .year, .day, false, "8 個月 3 天"),
             ("4.23", DateFixture.components(2026, 1, 1), (2026, 9, 4), .year, .month, true, "8 個月"),
-            ("4.24", DateFixture.components(2026, 1, 1), (2026, 1, 6), .year, .month, true, "0 天"),
+            // TASK-93 (93.11): all zero reads as the smallest checked unit, 個月, not 0 天.
+            ("4.24", DateFixture.components(2026, 1, 1), (2026, 1, 6), .year, .month, true, "0 個月"),
             ("4.25", DateFixture.components(2025, 1, 1), (2026, 1, 1), .month, .day, false, "12 個月"),
             ("4.26", DateFixture.components(2026, 1, 1), (2026, 1, 10), .month, .day, false, "9 天")
         ]
@@ -168,13 +169,50 @@ final class TemplateRendererTests: XCTestCase {
         }
     }
 
-    /// 4.24 is the one place the all-zero fallback and age wording meet: the
-    /// fallback is always `0 天`, never `0 歲`.
-    func testAllZeroFallbackIsUnaffectedByAgeWording() throws {
+    /// TASK-93 (#392): the all-zero fallback uses the smallest checked unit,
+    /// so age wording reaches it only when the year is that unit — 4.24
+    /// (year + month) says `0 個月`; year alone says `0 歲` (93.2).
+    func testAllZeroFallbackUsesTheSmallestCheckedUnitWithAgeWording() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 1, 6, hour: 10))
-        let subject = profile(start: DateFixture.components(2026, 1, 1),
-                              largest: .year, smallest: .month, useAgeWording: true)
-        XCTAssertEqual(render(subject, at: capturedAt), "0 天")
+        let yearAndMonth = profile(start: DateFixture.components(2026, 1, 1),
+                                   largest: .year, smallest: .month, useAgeWording: true)
+        XCTAssertEqual(render(yearAndMonth, at: capturedAt), "0 個月", "4.24 / 93.11")
+        let yearOnly = profile(start: DateFixture.components(2026, 1, 1),
+                               largest: .year, smallest: .year, useAgeWording: true)
+        XCTAssertEqual(render(yearOnly, at: capturedAt), "0 歲", "93.2")
+    }
+
+    // MARK: - TASK-93 (#392) all zero reads as the smallest checked unit
+
+    /// 93.1–93.10: when every checked unit is zero the output is `0` plus the
+    /// smallest checked unit's label (天 < 週 < 月 < 年); day-only (U-2) and
+    /// non-zero outputs are unchanged. Human decision 2026-10-10.
+    func testAllZeroUsesTheSmallestCheckedUnit() throws {
+        let cases: [(String, DateComponents, (Int, Int, Int), Set<DisplayUnit>, CountingRule, Bool, String)] = [
+            ("93.1", DateFixture.components(2026, 1, 15), (2026, 6, 20), [.year], .dayOne, false, "0 年"),
+            ("93.2", DateFixture.components(2026, 1, 15), (2026, 6, 20), [.year], .dayOne, true, "0 歲"),
+            ("93.3", DateFixture.components(2026, 10, 1), (2026, 10, 11), [.year, .month], .dayOne, false, "0 個月"),
+            ("93.4", DateFixture.components(2026, 10, 1), (2026, 10, 21), [.month], .dayOne, false, "0 個月"),
+            ("93.5", DateFixture.components(2026, 10, 1), (2026, 10, 4), [.week], .dayOne, false, "0 週"),
+            ("93.6", DateFixture.components(2026, 10, 1), (2026, 10, 6), [.year, .week], .dayOne, false, "0 週"),
+            ("93.7", DateFixture.components(2026, 10, 1), (2026, 10, 1), [.week], .dayZero, false, "0 週"),
+            ("93.8", DateFixture.components(2026, 10, 1), (2026, 10, 1), [.year, .month, .day], .dayOne, false, "0 天"),
+            ("93.9", DateFixture.components(2026, 10, 1), (2026, 10, 11), [.year, .month, .day], .dayOne, false, "10 天"),
+            ("93.10", DateFixture.components(2026, 10, 1), (2026, 11, 1), [.year, .month], .dayOne, false, "1 個月")
+        ]
+        for (label, start, capture, units, rule, ageWording, expected) in cases {
+            XCTAssertEqual(try render(start: start, capturedAt: capture, units: units, rule: rule,
+                                      useAgeWording: ageWording), expected, label)
+        }
+    }
+
+    /// 93.12: the two paths beside the all-zero fallback are untouched — the
+    /// ordinal day-only form (even 第 0 天) and the not-started text.
+    func testDayOnlyAndNotStartedAreUnchangedByTheSmallestUnitRule() throws {
+        let start = DateFixture.components(2026, 10, 1)
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 10, 1), units: [.day]), "第 1 天", "93.12")
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 10, 1), units: [.day], rule: .dayZero), "第 0 天", "93.12")
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 9, 21), units: [.year]), "還有 10 天", "93.12")
     }
 
     // MARK: - A-5 (4.27 ... 4.34) the week track
@@ -242,6 +280,7 @@ final class TemplateRendererTests: XCTestCase {
 
     /// On the start date itself the day track says 第 1 天 while the year track
     /// says 0 天. That is intended, not an inconsistency to be smoothed over.
+    /// (Still 0 天 after TASK-93: the smallest checked unit here is the day.)
     func testCountingRuleAppliesOnlyToTheDayAndWeekTracks() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 1, 1, hour: 10))
         let start = DateFixture.components(2026, 1, 1)
@@ -523,8 +562,9 @@ final class TemplateRendererUnitSetTests: XCTestCase {
         XCTAssertEqual(try render(start: reference, capturedAt: referenceCapture, units: [.year, .day],
                                   useAgeWording: true), "1 歲 64 天", "U-9")
         let start = DateFixture.components(2026, 1, 1)
-        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 1), units: [.year, .month]), "0 天", "U-7")
-        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 3), units: [.week]), "0 天", "U-7")
+        // U-7 as changed by TASK-93: the smallest checked unit, not 天.
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 1), units: [.year, .month]), "0 個月", "U-7 / 93.3")
+        XCTAssertEqual(try render(start: start, capturedAt: (2026, 1, 3), units: [.week]), "0 週", "U-7 / 93.5")
     }
 
     func testFutureStartIsNotStartedForAnySet() throws {

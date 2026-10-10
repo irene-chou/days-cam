@@ -13,8 +13,6 @@ struct TemplateRenderer {
     static func notStartedText(daysUntilStart: Int) -> String {
         "還有 \(daysUntilStart) 天"
     }
-    /// Shown when every checked unit is zero (PRD FR-2.12, 0.2 U-7).
-    static let allZeroText = "0 天"
     /// Separates every part of the overlay: a half-width space U+0020
     /// (#249, replacing PRD FR-2.5's ideographic space).
     static let partSeparator = " "
@@ -100,8 +98,23 @@ private extension TemplateRenderer {
             guard value != 0 else { return nil }
             return "\(value) \(label(for: unit, useAgeWording: profile.useAgeWording))"
         }
-        guard !segments.isEmpty else { return Self.allZeroText }
+        guard !segments.isEmpty else {
+            return allZeroText(units: units, useAgeWording: profile.useAgeWording)
+        }
         return segments.joined(separator: separator(for: units))
+    }
+
+    /// Shown when every checked unit is zero (PRD 0.2 U-7, TASK-93 #392): `0`
+    /// with the label of the *smallest* checked unit (天 < 週 < 月 < 年), so
+    /// a profile that never shows days reads `0 個月`／`0 週`／`0 歲` rather
+    /// than a `0 天` it never asked for. Human decision 2026-10-10,
+    /// replacing 0.1 FR-2.12's fixed `0 天` (4.24 and the year-only case
+    /// changed on purpose). `DisplayUnit.allCases` runs largest to
+    /// smallest, so the last checked case is the smallest; `displayUnits`
+    /// is never empty, but a day fallback keeps this total.
+    func allZeroText(units: Set<DisplayUnit>, useAgeWording: Bool) -> String {
+        let smallest = DisplayUnit.allCases.last { units.contains($0) } ?? .day
+        return "0 \(label(for: smallest, useAgeWording: useAgeWording))"
     }
 
     /// The unit's printed label; years read as ages when asked (U-9).
