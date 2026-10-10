@@ -106,14 +106,15 @@ final class PanelCollapseButtonUITests: XCTestCase {
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         for _ in 0..<4 { list.swipeUp() }
-        let rows = list.buttons.allElementsBoundByIndex.filter { $0.isHittable }
-        let last = rows.max { $0.frame.maxY < $1.frame.maxY }
-        XCTAssertNotNil(last, "99.6 a last row is visible")
-        if let last {
+        // The list's last row, in list order, once scrolled all the way down.
+        let rows = list.buttons.allElementsBoundByIndex
+        XCTAssertFalse(rows.isEmpty, "99.6 the font list has rows")
+        if let last = rows.last {
             XCTAssertLessThanOrEqual(last.frame.maxY, collapseButton.frame.minY + 1,
-                                     "99.6 the last row scrolls up above the button")
+                                     "99.6 the last row (\(last.label)) scrolls up above the button")
             XCTAssertTrue(last.isHittable, "99.6 and can be operated")
         }
+        attach("99.12_font-list-last-row-above-button")
     }
 
     /// 99.9: a tap on the viewfinder still collapses the panel (FR-8.7).
