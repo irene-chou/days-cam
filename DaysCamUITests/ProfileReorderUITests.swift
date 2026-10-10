@@ -19,7 +19,7 @@ final class ProfileReorderUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
     }
     private var sheetBar: XCUIElement { app.navigationBars["設定檔"] }
-    private var rows: XCUIElementQuery { app.buttons.matching(NSPredicate(format: "label CONTAINS '，'")) }
+    private var rows: XCUIElementQuery { app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '，' AND NOT (label BEGINSWITH '編輯')")) }
 
     private func openSheet() {
         XCTAssertTrue(profileChip.waitForExistence(timeout: 10))

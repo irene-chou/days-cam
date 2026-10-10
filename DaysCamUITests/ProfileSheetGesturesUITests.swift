@@ -24,7 +24,7 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '刪除「'")).firstMatch
     }
     private var rows: XCUIElementQuery {
-        app.buttons.matching(NSPredicate(format: "label CONTAINS '，'"))
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '，' AND NOT (label BEGINSWITH '編輯')"))
     }
 
     private func openSheet() {
