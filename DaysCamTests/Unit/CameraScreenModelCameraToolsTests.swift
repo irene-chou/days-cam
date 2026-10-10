@@ -62,6 +62,37 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         XCTAssertFalse(model.panelModel.isOpen)
     }
 
+    /// TASK-97 (#401), 97.11／97.6: a tap on any blank space outside the
+    /// panel goes through `handleTapOutsidePanel` — capsule up: only the
+    /// capsule closes; capsule down: the panel closes.
+    func testTapOutsidePanelOnlyCollapsesCapsuleFirstThenClosesPanel() {
+        let model = makeModel()
+        model.panelModel.open()
+        model.toggleCameraTools()
+        model.handleTapOutsidePanel()
+        XCTAssertFalse(model.isCameraToolsExpanded, "97.6 first tap: capsule only")
+        XCTAssertTrue(model.panelModel.isOpen, "97.6 the panel stays open")
+        model.handleTapOutsidePanel()
+        XCTAssertFalse(model.panelModel.isOpen, "97.6 second tap closes the panel")
+    }
+
+    /// 97.11: with the capsule collapsed a tap outside closes the panel at once.
+    func testTapOutsidePanelClosesPanelWhenCapsuleIsCollapsed() {
+        let model = makeModel()
+        model.panelModel.open()
+        XCTAssertFalse(model.isCameraToolsExpanded)
+        model.handleTapOutsidePanel()
+        XCTAssertFalse(model.panelModel.isOpen, "97.2–97.4")
+    }
+
+    /// 97.9: with the panel closed a tap outside changes nothing.
+    func testTapOutsidePanelWhileClosedIsHarmless() {
+        let model = makeModel()
+        model.handleTapOutsidePanel()
+        XCTAssertFalse(model.panelModel.isOpen)
+        XCTAssertFalse(model.isCameraToolsExpanded)
+    }
+
     /// TASK-72, 72.3: a viewfinder tap also closes the zoom capsule.
     func testViewfinderTapCollapsesZoomCapsule() {
         let model = makeModel()
