@@ -30,7 +30,9 @@ struct ProfileManagerView: View {
             .background(Color.white.opacity(0.97))
             .navigationTitle("設定檔")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { CloseButton(action: onClose) } }
+            // No close key (TASK-101, #410): the sheet is dismissed by
+            // swiping it down or tapping outside it; `onClose` still runs
+            // from the sheet's `onDismiss` in `CameraScreen`.
             .navigationDestination(for: UUID.self) { id in
                 ProfileEditorView(manager: model, profileID: id, onClose: onClose)
             }
@@ -287,19 +289,4 @@ private func previewStore(count: Int = 4) -> ProfileStore {
     }
     if let first = store.profiles.first { store.select(id: first.id) }
     return store
-}
-
-/// The checkmark key that closes the whole sheet (list and edit page alike).
-struct CloseButton: View {
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(CameraTheme.active)
-                .frame(width: 44, height: 44)
-        }
-        .accessibilityLabel("完成")
-    }
 }
