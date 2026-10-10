@@ -114,12 +114,41 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertEqual(blur.value as? String, "0 點")
     }
 
-    /// 71.4: glow follows the text color, which the palette shows as selected.
-    func testGlowFollowsTheTextColor() {
+    private var red: XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'ED4956'")).firstMatch
+    }
+
+    /// 86.1 and 86.2: picking a type keeps the chosen color and opacity, and
+    /// picking a color keeps the chosen type.
+    func testTypeAndColorAreIndependent() {
+        XCTAssertTrue(red.waitForExistence(timeout: 3))
+        red.tap()
+        XCTAssertTrue(red.isSelected)
+        let opacity = app.sliders["陰影透明度"].value as? String
+        attach("shadow-red-soft")
+        for name in ["硬陰影", "發光", "柔和"] {
+            app.buttons[name].tap()
+            XCTAssertTrue(app.buttons[name].isSelected, name)
+            XCTAssertTrue(red.isSelected, "86.1 \(name) 顏色維持")
+            XCTAssertEqual(app.sliders["陰影透明度"].value as? String, opacity, "86.1 \(name) 不透明度維持")
+            attach("shadow-red-\(name)")
+        }
         app.buttons["發光"].tap()
-        XCTAssertTrue(app.buttons["跟隨文字顏色"].isSelected)
-        app.buttons["柔和"].tap()
-        XCTAssertFalse(app.buttons["跟隨文字顏色"].isSelected)
+        app.buttons["跟隨文字顏色"].tap()
+        XCTAssertTrue(app.buttons["發光"].isSelected, "86.2 跟隨文字色")
+        red.tap()
+        XCTAssertTrue(app.buttons["發光"].isSelected, "86.2 色票")
+        attach("shadow-glow-after-color")
+    }
+
+    /// 86.4: 無 keeps the color; the next type reuses it.
+    func testNoneKeepsTheColor() {
+        red.tap()
+        app.buttons["無陰影"].tap()
+        XCTAssertTrue(app.buttons["無陰影"].isSelected)
+        XCTAssertTrue(red.isSelected, "86.4")
+        app.buttons["硬陰影"].tap()
+        XCTAssertTrue(red.isSelected, "86.4 再選類型沿用顏色")
     }
 
     /// 無 disables the parameter rows, which stay visible.

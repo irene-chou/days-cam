@@ -36,23 +36,23 @@ final class StyleSwatchPreviewTests: XCTestCase {
         XCTAssertEqual(Set(fixed).count, 1, "Y.4")
     }
 
-    /// 49.6: glow spreads in the glyph color; the other shadows are gray.
-    func testGlowUsesTextColorAndOthersAreGray() {
-        var style = OverlayStyle()
-        style.applyShadowPreset(.glow)
-        let glow = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
-        guard case let .shadow(offset, _, _, color) = glow[0] else { return XCTFail("no shadow") }
-        XCTAssertEqual(offset, .zero)
-        XCTAssertEqual(color, StyleSwatchPreview.textColor)
-        for shadow in [OverlayShadowPreset.soft, .hard] {
+    /// 49.6 / 86.1: the preview color follows the color source, not the type.
+    /// A text-color shadow spreads in the glyph color; every preset otherwise
+    /// previews gray.
+    func testPreviewColorFollowsTheColorSourceNotThePreset() {
+        for shadow in [OverlayShadowPreset.soft, .hard, .glow] {
             var style = OverlayStyle()
             style.applyShadowPreset(shadow)
-            let decorations = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
-            let colors = decorations.compactMap { decoration -> OverlayColor? in
-                if case let .shadow(_, _, _, color) = decoration { return color }
-                return nil
-            }
+            let colors = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
+                .compactMap { decoration -> OverlayColor? in
+                    if case let .shadow(_, _, _, color) = decoration { return color }
+                    return nil
+                }
             XCTAssertEqual(colors, [StyleSwatchPreview.accentGray], "\(shadow)")
+            style.shadowColorSource = .textColor
+            let followed = StyleSwatchPreview.decorations(for: StyleSwatchPreview.fixedStyle(from: style))
+            guard case let .shadow(_, _, _, color) = followed[0] else { return XCTFail("no shadow") }
+            XCTAssertEqual(color, StyleSwatchPreview.textColor, "\(shadow)")
         }
     }
 
