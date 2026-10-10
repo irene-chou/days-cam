@@ -188,6 +188,8 @@ struct OnboardingSpotlightView: View {
         }
         .frame(width: screenSize.width, height: screenSize.height, alignment: .topLeading)
         .accessibilityElement(children: .contain)
+        // Modal: VoiceOver ignores every sibling under the mask (96.10).
+        .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("onboardingSpotlight")
         .accessibilityAction(.escape) { onEscape() }
         .onAppear { isBubbleFocused = true }

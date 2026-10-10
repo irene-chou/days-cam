@@ -159,10 +159,11 @@ struct CameraScreen: View {
             }
             .ignoresSafeArea()
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
-            // TASK-96: while the tour is up nothing under its mask is
-            // reachable by VoiceOver either (96.10); the overlay itself is
-            // added after this, so it stays reachable.
-            .accessibilityHidden(model.onboarding.isActive)
+            // TASK-96: the tour overlay below declares itself modal, so while
+            // it is up VoiceOver skips everything under its mask (96.10).
+            // (An `.accessibilityHidden(isActive)` here instead — even while
+            // false — made the viewfinder's focus/exposure accessibility
+            // values stop updating, breaking FocusExposureUITests.)
             .overlayPreferenceValue(OnboardingTargetKey.self) { anchors in
                 onboardingOverlay(anchors: anchors, metrics: metrics)
             }
