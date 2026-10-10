@@ -1,6 +1,6 @@
 # DaysCam 隱私權政策（草稿）
 
-> 狀態：草稿，送審前由人類確認文字並放到公開網址（見 [RELEASE 第 5 步](RELEASE.md#第-5-步商店資料與審查備註)）。生效日期於公開時填入。
+> 狀態：底稿。正式版已由人類發布在 <https://irene-chou.github.io/dayscam-privacy/privacy/>（App Store Connect 填這個網址），文字以公開頁為準；本檔只留作日後改版時的對照。
 
 DaysCam（天數相機）是一款在拍照時把日期或天數疊印進照片的 iOS App。我們以「資料留在你的裝置上」為原則設計。
 
@@ -35,4 +35,4 @@ DaysCam 不針對兒童設計，也不收集任何年齡層使用者的資料。
 
 ## 聯絡
 
-有任何疑問請寄信至：（人類填入支援信箱）
+有任何疑問請寄信至：irene.chou0710@gmail.com

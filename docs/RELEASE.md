@@ -15,7 +15,7 @@
 | App 圖示 | ✅ | `AppIcon.png` 1024×1024、RGB 無 alpha、未預切圓角（#383 合併） |
 | **版本號** | ⏳ 待升 | 目前 `0.5.0`；正式上架才改 `1.0.0`（AGENTS 硬規則），走升版 PR `chore/bump-1.0.0` 讓 CI 跑全套測試 |
 | iPad 支援 | ✅ 已決定只上 iPhone | 2026-10-10 人類裁定；`TARGETED_DEVICE_FAMILY` 改 `"1"`、移除 iPad 方向設定。日後要上 iPad 再升次版並補 13 吋截圖 |
-| 隱私權政策網址 | ⏳ | App Store Connect 必填。草稿在 [PRIVACY-POLICY.md](PRIVACY-POLICY.md)，需放到公開網址 |
+| 隱私權政策網址 | ✅ | <https://irene-chou.github.io/dayscam-privacy/privacy/>（2026-10-10 人類發布；原始碼 repo `irene-chou/dayscam-privacy`）。repo 內 [PRIVACY-POLICY.md](PRIVACY-POLICY.md) 只是底稿，以公開頁為準 |
 | 螢幕截圖、商店文案 | ⏳ | 第 5 步 |
 | 實機驗收（B 級） | ⏳ | 第 4 步，透過 TestFlight |
 
@@ -26,8 +26,8 @@
 | D1 | 要不要支援 iPad？ | ✅ 已決定只上 iPhone（2026-10-10），`project.yml` 已改 |
 | D2 | 商店顯示名稱 | App 在裝置上目前顯示「DaysCam」。若想顯示「天數相機」，在 `project.yml` `info.properties` 加 `CFBundleDisplayName`。商店名稱（最長 30 字）可寫「DaysCam 天數相機」 |
 | D4 | 價格與地區 | 建議免費、全地區；MVP 排除 IAP（PRD §排除項） |
-| D5 | 隱私權政策放哪 | GitHub Pages、Notion 公開頁或任何固定網址皆可；內容用 [PRIVACY-POLICY.md](PRIVACY-POLICY.md) 改 |
-| D6 | 支援信箱／網址 | App Store Connect 必填支援 URL；可用 repo Issues 頁或 Notion 頁 |
+| D5 | 隱私權政策放哪 | ✅ 已發布：<https://irene-chou.github.io/dayscam-privacy/privacy/> |
+| D6 | 支援信箱／網址 | ✅ 支援 URL 用同一站首頁 <https://irene-chou.github.io/dayscam-privacy/>（列有聯絡信箱）；App Store Connect 聯絡信箱填 `irene.chou0710@gmail.com` |
 
 決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D2 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
 
@@ -107,7 +107,7 @@ Release build 沒有 `DAYSCAM_FAKE_TODAY`，R-7 要真的改系統日期或等�
   > ・自選字型、顏色、大小與位置；內建繁體中文開源字型
   > ・完全離線、沒有帳號，照片只存在你的相簿
 - 關鍵字（100 字元內）：天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera
-- 支援 URL／隱私權政策 URL：依 D5、D6。
+- 隱私權政策 URL：`https://irene-chou.github.io/dayscam-privacy/privacy/`；支援 URL：`https://irene-chou.github.io/dayscam-privacy/`。
 
 **App 隱私（Privacy Nutrition Label）**：選「不收集資料」。與 `PrivacyInfo.xcprivacy` 一致。
 
