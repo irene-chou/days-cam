@@ -7,6 +7,11 @@ final class OverlayPanelModelTests: XCTestCase {
 
     // MARK: - Tab selection (22.1–22.3)
 
+    func testFirstLayerIsThreeTabsStyleContentPosition() {
+        // 37.1
+        XCTAssertEqual(OverlayPanelModel.Tab.allCases.map(\.title), ["樣式", "內容", "位置"])
+    }
+
     func testInitialSelectedTabIsStyle() {
         // 22.1
         let model = OverlayPanelModel()
@@ -27,7 +32,7 @@ final class OverlayPanelModelTests: XCTestCase {
         // persists it to disk, so a new instance (simulating a relaunch)
         // never sees an earlier one's tab.
         let earlier = OverlayPanelModel()
-        earlier.selectedTab = .rules
+        earlier.selectedTab = .content
         earlier.open()
 
         let rebuilt = OverlayPanelModel()
@@ -59,7 +64,7 @@ final class OverlayPanelModelTests: XCTestCase {
     func testBottomBarActionsWhenOpen() {
         let model = OverlayPanelModel()
         model.open()
-        XCTAssertEqual(model.leftBottomBarAction, .manageProfiles)
+        XCTAssertEqual(model.leftBottomBarAction, .empty)
         XCTAssertEqual(model.rightBottomBarAction, .collapse)
     }
 

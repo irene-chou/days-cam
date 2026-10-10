@@ -23,6 +23,7 @@ struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// What the thumbnail button currently shows; follows
     /// `model.latestThumbnailImage` (see `showThumbnail`).
@@ -31,6 +32,10 @@ struct CameraScreen: View {
     /// The viewfinder's white shutter flash (issue #148): 0 → 90% → 0 over
     /// ~0.15s, softer under Reduce Motion.
     @State private var flashOpacity: Double = 0
+
+    /// True while a finger is down on the viewfinder; SwiftUI resets it when a
+    /// gesture is cancelled too, which `onEnded` does not report (issue #303).
+    @GestureState private var isViewfinderTouched = false
 
     /// The panel's segmented control height, scaled with Dynamic Type
     /// (issue #139); fed to the layout metrics so the viewfinder yields the
@@ -48,6 +53,18 @@ struct CameraScreen: View {
             .onAppear { model.onAppear() }
             // FR-15.2 second branch: only reads when access is already granted.
             .task { await model.loadLaunchThumbnail() }
+            // PRD 0.3 FR-5.15: settle the fonts on the device, the current
+            // profile's first; the shutter waits for it (at most 3 seconds).
+            .task { await model.prepareFontsAtLaunch() }
+            // FR-16.11: downloads do not continue in the background.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { model.sceneDidEnterBackground() }
+                // The camera is back to continuous auto (issue #303).
+                if phase == .active { model.focusModel.hideReticle() }
+            }
+            .onChange(of: model.panelModel.isOpen) { _, isOpen in
+                if isOpen { model.focusModel.hideReticle() }
+            }
             .onDisappear { model.onDisappear() }
             .sheet(isPresented: $model.isProfileManagerPresented) {
                 ProfileManagerView(model: model.profileManagerModel) {
@@ -121,6 +138,8 @@ struct CameraScreen: View {
             ZStack(alignment: .topLeading) {
                 viewfinderBox(metrics: metrics)
                     .animation(CameraTheme.spring, value: model.panelModel.isOpen)
+
+                zoomPresetBar(metrics: metrics)
 
                 headerBar(metrics: metrics)
 
@@ -311,12 +330,16 @@ struct CameraScreen: View {
                 // overlay would sit against a boundary the picture doesn't
                 // actually end at (code review finding carried over from
                 // 0.1, PRD FR-6.1/6.3).
-                CameraPreviewView(session: model.cameraService.session)
+                CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
             }
 
             if model.captureSettingsStore.showsGrid {
                 GridLinesView()
             }
+
+            // Tap-to-focus reticle, exposure sun and AE/AF lock label
+            // (issue #303); below the overlay text, never takes touches.
+            FocusExposureOverlay(focus: model.focusModel, frameSize: frameSize)
 
             // Overlay text tracks the viewfinder's own size (not the
             // screen's), matching FR-6.1's requirement that the preview and
@@ -329,10 +352,11 @@ struct CameraScreen: View {
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
                             frameSize: frameSize,
-                            onDragChanged: model.panelModel.isOverlayDraggable ? { center, size in
+                            font: model.overlayFont,
+                            onDragChanged: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
                                 model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
                             } : nil,
-                            onDragEnded: model.panelModel.isOverlayDraggable ? { center, size in
+                            onDragEnded: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
                                 model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
                             } : nil)
 
@@ -364,6 +388,8 @@ struct CameraScreen: View {
                 PermissionGuidanceView()
             }
         }
+        .frame(width: frameSize.width, height: frameSize.height)
+        .contentShape(Rectangle())
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
         // collapses the panel, only while it is open. `OverlayTextView`
         // itself claims its own hit-testing area only while draggable
@@ -372,6 +398,43 @@ struct CameraScreen: View {
         .onTapGesture {
             model.handleViewfinderTap()
         }
+        // Tap to focus, drag up/down for exposure, hold to lock AE/AF (issue
+        // #303). One zero-distance drag tracks the finger and the model
+        // tells the three apart; it ignores touches while the panel or a
+        // capsule is open and while two fingers pinch. Simultaneous, so the
+        // pinch and the tap above keep working.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .updating($isViewfinderTouched) { _, state, _ in state = true }
+                .onChanged {
+                    model.focusModel.touchChanged(startLocation: $0.startLocation, location: $0.location,
+                                                  viewfinderSize: frameSize)
+                }
+                .onEnded { _ in model.focusModel.touchEnded() }
+        )
+        .onChange(of: isViewfinderTouched) { _, touched in
+            if !touched { model.focusModel.touchCancelled() }
+        }
+        // Pinch to zoom (TASK-61, #274). Simultaneous so the overlay text's
+        // own drag keeps working with one finger; once two fingers are down
+        // `isPinching` turns that drag off (see the closures above).
+        .simultaneousGesture(
+            MagnifyGesture()
+                .onChanged { model.zoomModel.pinchChanged(magnification: $0.magnification) }
+                .onEnded { _ in model.zoomModel.pinchEnded() }
+        )
+    }
+
+    // MARK: - Zoom presets (issue #279)
+
+    /// The quick-zoom round button in the picture's bottom-right corner; hidden while the panel
+    /// is open, and while the camera offers no preset.
+    private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
+        ZoomPresetBar(zoom: model.zoomModel,
+                      expansion: model.zoomExpansion,
+                      presets: model.zoomPresets,
+                      isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
+                      pictureFrame: viewfinderContentFrame(metrics: metrics))
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
@@ -397,11 +460,11 @@ struct CameraScreen: View {
     /// photo. No text labels, no background — every button is just an icon
     /// (FR-14.2).
     ///
-    /// The side buttons' centers sit midway between the screen edge and the
-    /// shutter's edge (`footerSideButtonCenterInset`), open or closed, so
-    /// they never shift when the panel toggles. Closed, the row sits 16pt
+    /// The side buttons' centers sit `footerSideButtonCenterInset` from the
+    /// screen edge (midway to the shutter's edge, minus 8pt), open or
+    /// closed, so they never shift when the panel toggles. Closed, the row sits 16pt
     /// above the bottom of the footer region; open, `footerColumn` supplies
-    /// the 8pt gap itself and the row is exactly 44pt tall.
+    /// the 8pt gap itself and the row is exactly 32pt tall (TASK-55).
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let isOpen = model.panelModel.isOpen
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
@@ -420,18 +483,25 @@ struct CameraScreen: View {
         .padding(.bottom, isOpen ? 0 : CameraScreenLayoutMetrics.closedFooterBottomPadding)
     }
 
-    /// Tap target of every footer side button (issue #128).
+    /// Tap target of every footer side button, and the thumbnail's size
+    /// (issue #128).
     private static let footerButtonSize: CGFloat = 44
+
+    /// Icon point size of the footer side buttons (TASK-50 made it 28; human
+    /// decision 2026-10-08 settled on 24, issue #239).
+    private static let footerIconSize: CGFloat = 24
+
+    /// Icon size of the collapse key while the panel is open (TASK-55); its
+    /// tap target is 44 wide × the 32pt open footer row.
+    private static let panelOpenFooterIconSize: CGFloat = 20
 
     @ViewBuilder
     private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.leftBottomBarAction {
         case .latestPhoto:
             thumbnailButton(isOnPhoto: isOnPhoto)
-        case .manageProfiles:
-            iconButton(systemName: "list.bullet", accessibilityLabel: "管理設定檔", isOnPhoto: isOnPhoto) {
-                model.presentProfileManagement()
-            }
+        case .empty:
+            Color.clear.frame(width: Self.footerButtonSize, height: CameraScreenLayoutMetrics.panelOpenFooterRowHeight)
         }
     }
 
@@ -439,36 +509,40 @@ struct CameraScreen: View {
     private func rightBottomBarButton(isOnPhoto: Bool) -> some View {
         switch model.panelModel.rightBottomBarAction {
         case .openOverlayPanel:
-            // `pencil.tip.crop.circle`, not `textformat`: the style tab's
-            // own 字型 sub-tab already uses `textformat` (PRD FR-10.1), and
-            // having both on screen at once while the panel is open reads
-            // as the same button twice (human decision, 2026-09-27, #84).
-            iconButton(systemName: "pencil.tip.crop.circle", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
+            // `character.textbox` (human decision, 2026-10-07, #221; it
+            // replaced `pencil.tip.crop.circle` from #84). Not `textformat`
+            // or other T-style icons: the style tab's font icon `t.square`
+            // (#215) and the outline icon `character.square.fill` would
+            // read as the same button twice while the panel is open.
+            iconButton(systemName: "character.textbox", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
                 model.openOverlayPanel()
             }
         case .collapse:
-            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto) {
+            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto,
+                       iconSize: Self.panelOpenFooterIconSize,
+                       buttonHeight: CameraScreenLayoutMetrics.panelOpenFooterRowHeight) {
                 model.closeOverlayPanel()
             }
         }
     }
 
-    /// 44×44 tap target (issue #128; was 50×50, D-1/D-2's `.bubble`) — every bottom
-    /// bar icon button except `thumbnailButton`, which is its own smaller
-    /// `.thumb` (44×44, a photo thumbnail rather than a plain icon).
+    /// 44×44 tap target by default (`footerButtonSize`; issue #128; the collapse key is 44×32, TASK-55) — every
+    /// bottom bar icon button except `thumbnailButton`, which shows a photo
+    /// thumbnail of the same 44×44 size rather than a plain icon.
     /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
     /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
-    /// only ever appears while the panel is open (`.manageProfiles`/
-    /// `.collapse`, PRD 0.2 FR-8.3), where the viewfinder is never behind
-    /// the footer (issue #120), so callers always pass `false` today; still
+    /// only ever appears while the panel is open (`.collapse`, PRD 0.2 FR-8.3),
+    /// where the viewfinder is never behind the footer (issue #120), so callers always pass `false` today; still
     /// threaded through properly rather than assumed, so it stays correct
     /// if that ever changes.
-    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool, action: @escaping () -> Void) -> some View {
+    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool,
+                            iconSize: CGFloat = footerIconSize, buttonHeight: CGFloat = footerButtonSize,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: iconSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
+                .frame(width: Self.footerButtonSize, height: buttonHeight)
                 .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel(accessibilityLabel)
@@ -491,12 +565,12 @@ struct CameraScreen: View {
                         .transition(.opacity)
                 } else {
                     Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: Self.footerIconSize, weight: .medium))
                         .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                         .legibleOverPhoto(isOnPhoto)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
             // via an explicit `withAnimation` in `showThumbnail`; otherwise
@@ -628,12 +702,12 @@ private struct GridLinesView: View {
     return CameraScreen(model: model)
 }
 
-#Preview("疊字面板打開・天數規則分頁") {
+#Preview("疊字面板打開・內容分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
     model.panelModel.open()
-    model.panelModel.selectedTab = .rules
+    model.panelModel.selectedTab = .content
     return CameraScreen(model: model)
 }
 

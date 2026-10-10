@@ -79,61 +79,29 @@ final class DisplaySettingsModelTests: XCTestCase {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setShowDate(true)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 第 10 天")
     }
 
-    func testTurningOffShowDayCountLeavesOnlyTheDate() throws {
+    /// 48.2: 日期 and 名稱 may both be off; the day count remains.
+    func testShowDateAndNameCanBothBeTurnedOffLeavingOnlyTheDayCount() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDate: true), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(false)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10")
-    }
-
-    func testShowDateToggleDisabledWhenItIsTheOnlySwitchOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isShowDateToggleDisabled)
-        XCTAssertFalse(model.isShowDayCountToggleDisabled)
-    }
-
-    func testShowDayCountToggleDisabledWhenItIsTheOnlySwitchOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isShowDayCountToggleDisabled)
-        XCTAssertFalse(model.isShowDateToggleDisabled)
-    }
-
-    func testDayCountFormatSectionDisabledWhenShowDayCountOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isDayCountFormatSectionDisabled)
-    }
-
-    func testReenablingShowDayCountRestoresDateToggleAndFormatSection() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(true)
-        XCTAssertFalse(model.isShowDateToggleDisabled)
-        XCTAssertFalse(model.isDayCountFormatSectionDisabled)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10\u{3000}第 10 天")
-    }
-
-    // MARK: - Defensive backstop for FR-2.4 (mirrors disabled UI state)
-
-    func testSetShowDayCountOffNoOpsWhenDateIsAlsoOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true, showDate: false), now: try fixedNow(), spy: spy)
-        model.setShowDayCount(false)
-        XCTAssertTrue(model.profile.showDayCount)
-        XCTAssertTrue(spy.updated.isEmpty)
-    }
-
-    func testSetShowDateOffNoOpsWhenDayCountIsAlsoOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        let model = makeModel(profile: baselineProfile(showDate: true, showName: true), now: try fixedNow(), spy: spy)
         model.setShowDate(false)
-        XCTAssertTrue(model.profile.showDate)
-        XCTAssertTrue(spy.updated.isEmpty)
+        model.setShowName(false)
+        XCTAssertFalse(model.profile.showDate, "48.2")
+        XCTAssertFalse(model.profile.showName, "48.2")
+        XCTAssertTrue(model.profile.showDayCount, "48.2")
+        XCTAssertEqual(spy.updated.count, 2, "48.2 each change persists")
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天", "48.2")
+    }
+
+    /// 48.2: turning 日期 off never no-ops, even with 名稱 already off.
+    func testSetShowDateOffAppliesEvenWhenNameIsOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDate: true, showName: false), now: try fixedNow(), spy: spy)
+        model.setShowDate(false)
+        XCTAssertFalse(model.profile.showDate, "48.2")
+        XCTAssertEqual(spy.updated.count, 1, "48.2")
     }
 
     // MARK: - A-3 單位區間 (11.15–11.20), inputs as 0.2 unit sets; texts unchanged
@@ -263,34 +231,18 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 位置與主題 (FR-4.1, FR-4.9)
-
-    func testSetPositionUpdatesProfile() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setPosition(.topLeading)
-        XCTAssertEqual(model.profile.position, .anchor(.topLeading))
-    }
-
-    func testSetThemeIDUpdatesProfile() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.setThemeID(.retroOrange)
-        XCTAssertEqual(model.profile.style, OverlayStyle(legacyTheme: .retroOrange))
-    }
-
     // MARK: - A-6 持久化 (11.32–11.33)
 
     func testEveryMutationForwardsTheUpdatedProfileToUpdateProfile() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setShowName(true)
-        model.setPosition(.topLeading)
-        model.setThemeID(.softPink)
+        model.setShowDate(!model.profile.showDate)
+        model.toggleUnit(.week)
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.showName, true)
-        XCTAssertEqual(spy.updated.last?.position, .anchor(.topLeading))
-        XCTAssertEqual(spy.updated.last?.style, OverlayStyle(legacyTheme: .softPink))
+        XCTAssertEqual(spy.updated.last?.showDate, model.profile.showDate)
+        XCTAssertEqual(spy.updated.last?.displayUnits, model.profile.displayUnits)
     }
 
     func testDistinctModelsForDifferentProfilesDoNotShareState() throws {
@@ -298,9 +250,8 @@ final class DisplaySettingsModelTests: XCTestCase {
         let spyB = Spy()
         let modelA = makeModel(profile: baselineProfile(name: "A"), now: try fixedNow(), spy: spyA)
         let modelB = makeModel(profile: baselineProfile(name: "B"), now: try fixedNow(), spy: spyB)
-        modelA.setPosition(.topLeading)
-        XCTAssertEqual(modelA.profile.position, .anchor(.topLeading))
-        XCTAssertEqual(modelB.profile.position, .anchor(.bottomTrailing))
+        modelA.setShowName(!modelA.profile.showName)
+        XCTAssertNotEqual(modelA.profile.showName, modelB.profile.showName)
     }
 
     // MARK: - Failure surfaces as lastError

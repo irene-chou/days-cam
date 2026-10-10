@@ -106,14 +106,27 @@ struct SystemCameraAuthorizer: CameraAuthorizing {
     }
 }
 
-/// Production device lookup: the built-in wide angle camera on each side.
+/// Production device lookup. The back side prefers a virtual device that
+/// switches between lenses seamlessly (triple, then dual wide, then dual), and
+/// falls back to the plain wide angle camera; the front side is the wide angle
+/// camera (issue #279).
 struct SystemCaptureDeviceProvider: CaptureDeviceProviding {
     func device(for facing: CameraFacing) -> AVCaptureDevice? {
-        AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera],
-                                         mediaType: .video,
-                                         position: facing.captureDevicePosition)
-            .devices
-            .first
+        let types: [AVCaptureDevice.DeviceType]
+        switch facing {
+        case .back:
+            types = [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera]
+        case .front:
+            types = [.builtInWideAngleCamera]
+        }
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types,
+                                                       mediaType: .video,
+                                                       position: facing.captureDevicePosition).devices
+        // First by preference order, whatever order the session lists them in.
+        for type in types {
+            if let device = devices.first(where: { $0.deviceType == type }) { return device }
+        }
+        return nil
     }
 }
 
@@ -139,6 +152,169 @@ struct SystemFlashCapabilityProvider: FlashCapabilityProviding {
 }
 
 // MARK: - Countdown ticker
+
+/// The slice of `AVCaptureConnection` that photo mirroring touches.
+///
+/// Injected so the mirroring decision can be tested without a real capture
+/// connection, which only exists with a camera attached.
+protocol VideoMirroringConfigurable: AnyObject {
+    var isVideoMirroringSupported: Bool { get }
+    var automaticallyAdjustsVideoMirroring: Bool { get set }
+    var isVideoMirrored: Bool { get set }
+}
+
+extension AVCaptureConnection: VideoMirroringConfigurable {}
+
+/// The slice of `AVCaptureDevice` that zooming touches.
+///
+/// Injected so the clamping and the lock/unlock pairing can be tested without
+/// a real camera, which the simulator does not have.
+protocol ZoomableCaptureDevice: AnyObject {
+    var minAvailableVideoZoomFactor: CGFloat { get }
+    var maxAvailableVideoZoomFactor: CGFloat { get }
+    var videoZoomFactor: CGFloat { get set }
+    func lockForConfiguration() throws
+    func unlockForConfiguration()
+    /// Which lenses make up the device; decides what 1× means (issue #279).
+    var zoomLens: ZoomLens { get }
+    var isRampingVideoZoom: Bool { get }
+    func cancelVideoZoomRamp()
+    func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float)
+}
+
+/// Defaults for a device with a single lens that never ramps: how a test
+/// double behaves unless it says otherwise.
+extension ZoomableCaptureDevice {
+    var zoomLens: ZoomLens { ZoomLens() }
+    var isRampingVideoZoom: Bool { false }
+    func cancelVideoZoomRamp() {}
+    func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float) { videoZoomFactor = factor }
+}
+
+extension AVCaptureDevice: ZoomableCaptureDevice {
+    var zoomLens: ZoomLens {
+        ZoomLens(hasUltraWide: constituentDevices.first?.deviceType == .builtInUltraWideCamera,
+                 switchOverFactors: virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) })
+    }
+}
+
+/// The slice of `AVCaptureDevice` that tap-to-focus, exposure bias and AE/AF
+/// lock touch (issue #303).
+///
+/// Injected for the same reason as `ZoomableCaptureDevice`: the mode switches,
+/// the bias clamp and the lock/unlock pairing are testable without a camera.
+protocol FocusExposureCaptureDevice: AnyObject {
+    var isFocusPointOfInterestSupported: Bool { get }
+    var isExposurePointOfInterestSupported: Bool { get }
+    func isFocusModeSupported(_ focusMode: AVCaptureDevice.FocusMode) -> Bool
+    func isExposureModeSupported(_ exposureMode: AVCaptureDevice.ExposureMode) -> Bool
+    var focusPointOfInterest: CGPoint { get set }
+    var exposurePointOfInterest: CGPoint { get set }
+    var focusMode: AVCaptureDevice.FocusMode { get set }
+    var exposureMode: AVCaptureDevice.ExposureMode { get set }
+    var minExposureTargetBias: Float { get }
+    var maxExposureTargetBias: Float { get }
+    func setExposureTargetBias(_ bias: Float, completionHandler handler: ((CMTime) -> Void)?)
+    var isSubjectAreaChangeMonitoringEnabled: Bool { get set }
+    func lockForConfiguration() throws
+    func unlockForConfiguration()
+}
+
+extension AVCaptureDevice: FocusExposureCaptureDevice {}
+
+/// What triggered a possible focus/exposure reset.
+enum FocusExposureTrigger: Equatable {
+    /// The scene changed enough that the old focus/exposure no longer fits.
+    case subjectAreaChanged
+    /// The other camera went into the session.
+    case cameraFlipped
+    /// A quick-zoom preset was chosen, possibly changing the physical lens.
+    case zoomPresetSelected
+    /// The app came back to the foreground.
+    case enteredForeground
+    /// A pinch changed the zoom factor. Never resets.
+    case pinchZoomed
+}
+
+/// Decides whether a trigger resets focus and exposure to continuous auto
+/// (issue #303). Pure, so the rules are testable without a device.
+enum FocusExposurePolicy {
+    /// True when `trigger` must reset to continuous auto with bias 0.
+    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool) -> Bool {
+        switch trigger {
+        case .subjectAreaChanged: return !isLocked
+        case .cameraFlipped, .zoomPresetSelected, .enteredForeground: return true
+        case .pinchZoomed: return false
+        }
+    }
+}
+
+/// What the viewfinder's focus/exposure UI needs to know. Published through
+/// `CameraService.focusExposureStatePublisher`.
+struct FocusExposureState: Equatable {
+    /// True after `lockFocusAndExposure(at:)` took effect on at least one of
+    /// focus and exposure, until the next tap, reset or flip.
+    var isLocked = false
+    /// The exposure compensation in EV the device was last given; 0 after
+    /// every reset. Never persisted.
+    var exposureBias: Float = 0
+
+    static let initial = FocusExposureState()
+}
+
+/// Why a focus/exposure request did nothing.
+enum FocusExposureFailure: Error, Equatable {
+    /// `lockForConfiguration` threw; the device was left as it was.
+    case lockFailed
+}
+
+/// The zoom factors the current camera accepts, as `setZoomFactor(_:)` clamps
+/// them: the device's available range, capped at `CameraService.maxZoomFactor`.
+struct ZoomRange: Equatable {
+    let minimum: CGFloat
+    let maximum: CGFloat
+
+    /// No zoom at all: what is published before a camera is configured.
+    static let fixed = ZoomRange(minimum: 1, maximum: 1)
+
+    /// `factor` pulled into this range.
+    func clamp(_ factor: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(factor, minimum), maximum)
+    }
+}
+
+/// Coalesces zoom requests (issue #280): a pinch asks for a new factor every
+/// frame, far faster than the camera takes them. Only the newest request is
+/// kept and at most one job is ever scheduled; in-between factors are dropped.
+final class ZoomRequestCoalescer {
+    private let lock = NSLock()
+    private var pending: CGFloat?
+    private var isScheduled = false
+
+    init() {}
+
+    /// Records `factor` as the newest request. When no job is scheduled yet,
+    /// `schedule` is asked to run one; that job applies whatever request is
+    /// newest by the time it runs.
+    func submit(_ factor: CGFloat,
+                schedule: (@escaping () -> Void) -> Void,
+                apply: @escaping (CGFloat) -> Void) {
+        lock.lock()
+        pending = factor
+        let needsJob = !isScheduled
+        isScheduled = true
+        lock.unlock()
+        guard needsJob else { return }
+        schedule { [self] in
+            lock.lock()
+            let newest = pending
+            pending = nil
+            isScheduled = false
+            lock.unlock()
+            if let newest { apply(newest) }
+        }
+    }
+}
 
 /// A tick source for the timer countdown (PRD 0.2 FR-7.6).
 ///
@@ -202,6 +378,88 @@ final class CameraService: ObservableObject {
 
     /// The side currently in use. Only changes once a switch has succeeded.
     @Published private(set) var facing: CameraFacing = .back
+
+    /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
+    /// every camera switch (issue #274).
+    ///
+    /// Deliberately not `@Published`: a pinch changes it every frame, and a
+    /// `@Published` property would make every view that observes this service
+    /// (through `CameraScreenModel`) re-render each time (issue #280). Read
+    /// `zoomFactorPublisher` to follow it.
+    var zoomFactor: CGFloat { zoomFactorSubject.value }
+
+    /// Emits `zoomFactor` whenever it changes; the current value on subscribe.
+    var zoomFactorPublisher: AnyPublisher<CGFloat, Never> { zoomFactorSubject.eraseToAnyPublisher() }
+
+    private let zoomFactorSubject = CurrentValueSubject<CGFloat, Never>(1)
+
+    /// Folds the stream of pinch updates into at most one queued job on
+    /// `sessionQueue`, always applying the newest factor (issue #280).
+    private let zoomCoalescer = ZoomRequestCoalescer()
+
+    /// Lock and bias of the current camera's focus/exposure. Not `@Published`
+    /// for the same reason as `zoomFactor`: dragging the bias changes it every
+    /// frame. Read `focusExposureStatePublisher` to follow it (issue #303).
+    var focusExposureState: FocusExposureState { focusExposureSubject.value }
+
+    /// Emits `focusExposureState` whenever it changes; current value on subscribe.
+    var focusExposureStatePublisher: AnyPublisher<FocusExposureState, Never> {
+        focusExposureSubject.eraseToAnyPublisher()
+    }
+
+    /// Emits when a focus/exposure request could not be applied, so the UI
+    /// never shows a success the device did not take. Delivered on the main queue.
+    var focusExposureFailurePublisher: AnyPublisher<FocusExposureFailure, Never> {
+        focusExposureFailureSubject.eraseToAnyPublisher()
+    }
+
+    /// Emits whenever the camera went back to continuous auto (flip, lens
+    /// change, scene change, foreground), even when `focusExposureState` was
+    /// already at rest and so did not change. Delivered on the main queue,
+    /// possibly after a newer tap: the value is the id of the latest focus or
+    /// lock request the device had taken when it reset (0 for none), so the
+    /// receiver can tell a reset that a newer request has already overtaken.
+    var focusExposureResetPublisher: AnyPublisher<Int, Never> {
+        focusExposureResetSubject.eraseToAnyPublisher()
+    }
+
+    /// Confirms a successful tap reset, even when the state was already zero.
+    /// The ID identifies the applied tap; unlike an automatic reset, keep its
+    /// reticle. UI callers should ignore confirmations older than their latest tap.
+    var focusExposureTapResetPublisher: AnyPublisher<Int, Never> {
+        focusExposureTapResetSubject.eraseToAnyPublisher()
+    }
+
+    private let focusExposureTapResetSubject = PassthroughSubject<Int, Never>()
+    private let focusExposureResetSubject = PassthroughSubject<Int, Never>()
+    /// Ids handed out to focus and lock requests. Main queue only.
+    private var focusRequestCounter = 0
+    /// The id of the latest focus or lock request run on the device. Touched
+    /// on `sessionQueue` only.
+    var lastAppliedFocusRequestID = 0
+    private let focusExposureSubject = CurrentValueSubject<FocusExposureState, Never>(.initial)
+    private let focusExposureFailureSubject = PassthroughSubject<FocusExposureFailure, Never>()
+    /// The truth the subject is published from. Touched on `sessionQueue` only.
+    private var focusExposureShadow = FocusExposureState.initial
+
+    /// The most the exposure compensation moves either way, in EV.
+    static let maxExposureBiasMagnitude: Float = 2
+
+    /// The exposure compensation range the live camera accepts: ±2 EV narrowed
+    /// to the device's own limits (`exposureBiasRange(of:)`). Refreshed on every
+    /// focus/exposure request and camera flip; ±2 until then.
+    @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
+
+    /// The display factors `setZoomFactor(_:)` accepts on the current camera.
+    @Published private(set) var zoomRange: ZoomRange = .fixed
+
+    /// The quick-zoom buttons the current camera offers, ascending display
+    /// factors (issue #279). Empty until a camera is configured.
+    @Published private(set) var availableZoomPresets: [ZoomPreset] = []
+
+    /// The most the viewfinder zooms in, whatever the device allows
+    /// (issue #274).
+    static let maxZoomFactor: CGFloat = 10
 
     /// False where capture is impossible, i.e. the simulator. The view uses it
     /// for the placeholder background and the disabled shutter (PRD §2.4).
@@ -409,6 +667,15 @@ extension CameraService {
                 // going to the front camera.
                 self.adoptNativeResolution(of: device)
                 self.session.commitConfiguration()
+                // The input swap rebuilds the output's connection, so its
+                // mirroring is set again for the new side (issue #272).
+                self.applyPhotoMirroring()
+                // A device keeps its zoom across input swaps, so going back to
+                // a side would otherwise resume at its old factor.
+                self.resetZoom(on: device)
+                if FocusExposurePolicy.shouldReset(on: .cameraFlipped, isLocked: self.focusExposureShadow.isLocked) {
+                    self.resetFocusExposure(on: device)
+                }
                 self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
                                                                                previewLayer: nil)
                 self.publish(facing: target)
@@ -417,6 +684,9 @@ extension CameraService {
                 self.session.addInput(previous)
                 self.adoptNativeResolution(of: previous.device)
                 self.session.commitConfiguration()
+                self.applyPhotoMirroring()
+                // Still the same side, so it keeps its zoom.
+                self.publishZoom(of: previous.device)
             } else {
                 // Neither side went in: the session now has no video input at
                 // all. Say so, or the user gets a black viewfinder with a live
@@ -426,6 +696,352 @@ extension CameraService {
                 self.publish(status: .unavailable(.sessionFailure))
             }
         }
+    }
+}
+
+// MARK: - Zoom
+
+extension CameraService {
+
+    /// Zooms the current camera to the display factor `factor`, clamped to
+    /// `zoomRange`.
+    ///
+    /// Optical/sensor zoom through `AVCaptureDevice.videoZoomFactor`, never a
+    /// crop after capture, so the photo matches the viewfinder and keeps the
+    /// resolution the system picks (issue #274). The device is locked and set
+    /// on the session queue; `zoomFactor` follows on the main queue once the
+    /// device has taken it. A no-op until a camera is configured. Requests are
+    /// coalesced (issue #280): this is for a pinch's stream of updates.
+    ///
+    /// Call on the main queue.
+    func setZoomFactor(_ factor: CGFloat) {
+        guard isCaptureSupported else { return }
+        zoomCoalescer.submit(factor,
+                             schedule: { [sessionQueue] work in sessionQueue.async(execute: work) },
+                             apply: { [weak self] factor in
+            guard let self, let device = self.videoInput?.device else { return }
+            guard CameraService.applyZoom(factor, to: device) != nil else { return }
+            self.publishZoom(of: device)
+        })
+    }
+
+    /// Takes the camera to the display factor `displayFactor` with a smooth
+    /// ramp, for a quick-zoom button (issue #279). Only changes
+    /// `videoZoomFactor`; the session and its input stay as they are.
+    ///
+    /// Not coalesced and not for a pinch: a ramp lags the fingers.
+    ///
+    /// Call on the main queue.
+    func setZoom(displayFactor: CGFloat, animated: Bool) {
+        guard isCaptureSupported else { return }
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            let rate: Float? = animated ? CameraService.presetRampRate : nil
+            guard CameraService.applyZoom(displayFactor, to: device, rampRate: rate) != nil else { return }
+            // A preset can change the physical lens, whose focus and exposure
+            // the old tap no longer describes (issue #303).
+            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: self.focusExposureShadow.isLocked) {
+                self.resetFocusExposure(on: device)
+            }
+            self.publishZoom(of: device)
+        }
+    }
+
+    /// How fast a quick-zoom ramp runs, in doublings of the factor per second.
+    static let presetRampRate: Float = 4
+
+    /// The display range a device with these available factors accepts, where
+    /// display 1× is device factor `base`: its own range, with the top capped
+    /// at `maxZoomFactor`.
+    static func zoomRange(minAvailable: CGFloat, maxAvailable: CGFloat, base: CGFloat = 1) -> ZoomRange {
+        let maximum = Swift.min(maxAvailable / base, maxZoomFactor)
+        return ZoomRange(minimum: Swift.min(minAvailable / base, maximum), maximum: maximum)
+    }
+
+    /// The display range `device` accepts.
+    static func zoomRange(of device: ZoomableCaptureDevice) -> ZoomRange {
+        zoomRange(minAvailable: device.minAvailableVideoZoomFactor,
+                  maxAvailable: device.maxAvailableVideoZoomFactor,
+                  base: device.zoomLens.baseDeviceFactor)
+    }
+
+    /// Clamps the display factor `factor` to `device`'s range and sets the
+    /// matching device factor under the configuration lock, ramping when
+    /// `rampRate` is given. Returns the display factor set, or nil when the
+    /// lock could not be taken and nothing changed.
+    @discardableResult
+    static func applyZoom(_ factor: CGFloat, to device: ZoomableCaptureDevice, rampRate: Float? = nil) -> CGFloat? {
+        let lens = device.zoomLens
+        let clamped = zoomRange(of: device).clamp(factor)
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return nil
+        }
+        // A pinch cuts a running ramp short rather than fighting it.
+        if device.isRampingVideoZoom { device.cancelVideoZoomRamp() }
+        let target = lens.deviceFactor(forDisplay: clamped)
+        if let rampRate {
+            device.ramp(toVideoZoomFactor: target, withRate: rampRate)
+        } else {
+            device.videoZoomFactor = target
+        }
+        device.unlockForConfiguration()
+        return clamped
+    }
+}
+
+// MARK: - Focus and exposure
+
+extension CameraService {
+
+    /// The range the exposure bias is clamped to for `device`: ±2 EV, further
+    /// narrowed to what the device reports.
+    static func exposureBiasRange(of device: FocusExposureCaptureDevice) -> ClosedRange<Float> {
+        exposureBiasRange(minimum: device.minExposureTargetBias, maximum: device.maxExposureTargetBias)
+    }
+
+    /// The device's `minimum...maximum` cut to ±2 EV; never empty and always
+    /// inside ±2, even when the device's whole range lies beyond it (it then
+    /// collapses to the nearest limit). The one place both the service and the
+    /// viewfinder UI take their range from.
+    static func exposureBiasRange(minimum: Float, maximum: Float) -> ClosedRange<Float> {
+        let limit = maxExposureBiasMagnitude
+        let low = Swift.min(Swift.max(minimum, -limit), limit)
+        let high = Swift.max(Swift.min(maximum, limit), low)
+        return low...high
+    }
+
+    /// `point` pulled into the 0...1 device space, or nil when it is not a number.
+    static func clampedDevicePoint(_ point: CGPoint) -> CGPoint? {
+        guard point.x.isFinite, point.y.isFinite else { return nil }
+        return CGPoint(x: Swift.min(Swift.max(point.x, 0), 1), y: Swift.min(Swift.max(point.y, 0), 1))
+    }
+
+    /// Which of focus and exposure a request took effect on.
+    struct FocusExposureOutcome: Equatable {
+        var focus = false
+        var exposure = false
+        var tookEffect: Bool { focus || exposure }
+    }
+
+    /// Points focus and metering at `point` (0...1 device space) under the
+    /// configuration lock, each only if the device supports it, and turns on
+    /// subject-area monitoring. Both modes are single-shot `.autoFocus` /
+    /// `.autoExpose`: the device settles once and then holds (its mode becomes
+    /// `.locked`) until `resetFocusExposure` — which is what an AE/AF lock is.
+    /// Resets bias in the same lock unless this is a long-press lock request.
+    /// Returns nil when the lock could not be taken and nothing changed.
+    static func applyFocusAndExpose(at point: CGPoint,
+                                    to device: FocusExposureCaptureDevice,
+                                    resetBias: Bool = true) -> FocusExposureOutcome? {
+        guard let point = clampedDevicePoint(point) else { return FocusExposureOutcome() }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return nil
+        }
+        defer { device.unlockForConfiguration() }
+        if resetBias { device.setExposureTargetBias(0, completionHandler: nil) }
+        var outcome = FocusExposureOutcome()
+        if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
+            device.focusPointOfInterest = point
+            device.focusMode = .autoFocus
+            outcome.focus = true
+        }
+        if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
+            device.exposurePointOfInterest = point
+            device.exposureMode = .autoExpose
+            outcome.exposure = true
+        }
+        if outcome.tookEffect { device.isSubjectAreaChangeMonitoringEnabled = true }
+        return outcome
+    }
+
+    /// Sets the exposure bias to `ev` clamped to `exposureBiasRange(of:)` under
+    /// the configuration lock. Returns the bias set, or nil when the lock could
+    /// not be taken and nothing changed.
+    static func applyExposureBias(_ ev: Float, to device: FocusExposureCaptureDevice) -> Float? {
+        guard ev.isFinite else { return nil }
+        let range = exposureBiasRange(of: device)
+        let clamped = Swift.min(Swift.max(ev, range.lowerBound), range.upperBound)
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return nil
+        }
+        device.setExposureTargetBias(clamped, completionHandler: nil)
+        device.unlockForConfiguration()
+        return clamped
+    }
+
+    /// Back to continuous auto focus and exposure, metering at the centre,
+    /// bias 0, monitoring off. Unsupported modes are left alone. Returns false
+    /// when the lock could not be taken and nothing changed.
+    @discardableResult
+    static func applyContinuousAuto(to device: FocusExposureCaptureDevice) -> Bool {
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return false
+        }
+        let centre = CGPoint(x: 0.5, y: 0.5)
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = centre }
+            device.focusMode = .continuousAutoFocus
+        }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = centre }
+            device.exposureMode = .continuousAutoExposure
+        }
+        device.setExposureTargetBias(0, completionHandler: nil)
+        device.isSubjectAreaChangeMonitoringEnabled = false
+        device.unlockForConfiguration()
+        return true
+    }
+
+    /// Focuses and meters at `devicePoint` (0...1, top-left origin in the
+    /// unrotated sensor space; get it from
+    /// `AVCaptureVideoPreviewLayer.captureDevicePointConverted(fromLayerPoint:)`).
+    /// Clears a previous lock and resets bias to zero. Call on the main queue.
+    /// The state publisher confirms the reset; the UI must clear pending bias
+    /// and display zero immediately when submitting a new tap.
+    /// Returns the request's id (0 where there is no camera).
+    @discardableResult
+    func focusAndExpose(at devicePoint: CGPoint) -> Int {
+        applyOnDevice(focusRequest: true) { device in
+            self.applyTap(at: devicePoint, to: device)
+        }
+    }
+
+    /// Like `focusAndExpose(at:)`, then holds focus and exposure fixed. The
+    /// state only reads locked when the device took at least one of the two.
+    /// Call on the main queue. Returns the request's id (0 where there is no camera).
+    @discardableResult
+    func lockFocusAndExposure(at devicePoint: CGPoint) -> Int {
+        applyOnDevice(focusRequest: true) { device in
+            guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device, resetBias: false) else {
+                return self.reportFocusExposureFailure()
+            }
+            self.updateFocusExposure { $0.isLocked = outcome.tookEffect }
+        }
+    }
+
+    /// Applies a tap and publishes the zero bias/unlocked state together.
+    /// Runs on the session queue; invalid points and failed locks change nothing.
+    func applyTap(at point: CGPoint, to device: FocusExposureCaptureDevice) {
+        guard CameraService.clampedDevicePoint(point) != nil else { return }
+        guard let outcome = CameraService.applyFocusAndExpose(at: point, to: device) else {
+            return reportFocusExposureFailure()
+        }
+        guard outcome.tookEffect else {
+            // Bias was reset under the lock, but unsupported modes remain unchanged.
+            updateFocusExposure {
+                $0.exposureBias = 0
+                $0.isLocked = device.focusMode == .locked || device.exposureMode == .locked
+            }
+            return
+        }
+        updateFocusExposure { $0 = .initial }
+        let applied = lastAppliedFocusRequestID
+        onMain { [weak self] in self?.focusExposureTapResetSubject.send(applied) }
+    }
+
+    /// Sets compensation for the originating focus request, clamped to the
+    /// device range. Call on main. Omit the ID for a synchronous current-touch
+    /// update; delayed callers must retain and pass the originating request ID.
+    func setExposureBias(_ ev: Float, forFocusRequestID requestID: Int? = nil) {
+        let origin = requestID ?? focusRequestCounter
+        applyOnDevice { device in
+            self.applyBias(ev, forFocusRequestID: origin, to: device)
+        }
+    }
+
+    /// Rejects stale compensation before touching the device or publishing.
+    /// Runs on the session queue, ordered with tap and lock requests.
+    func applyBias(_ ev: Float, forFocusRequestID requestID: Int, to device: FocusExposureCaptureDevice) {
+        guard requestID == lastAppliedFocusRequestID else { return }
+        guard let applied = CameraService.applyExposureBias(ev, to: device) else {
+            return reportFocusExposureFailure()
+        }
+        updateFocusExposure { $0.exposureBias = applied }
+    }
+
+    /// Back to continuous auto focus/exposure with bias 0 and no lock.
+    /// Call on the main queue.
+    func resetToContinuousAuto() {
+        applyOnDevice { self.resetFocusExposure(on: $0) }
+    }
+
+    /// Foreground return: resets as the policy says. Call on the main queue.
+    func resetForForeground() {
+        guard FocusExposurePolicy.shouldReset(on: .enteredForeground, isLocked: false) else { return }
+        resetToContinuousAuto()
+    }
+
+    /// Runs `work` with the live device on the session queue; a no-op where
+    /// there is no camera. A `focusRequest` is numbered: returns its id, and
+    /// the id counts as taken once its turn on the queue comes, device or not.
+    @discardableResult
+    private func applyOnDevice(focusRequest: Bool = false, _ work: @escaping (AVCaptureDevice) -> Void) -> Int {
+        guard isCaptureSupported else { return 0 }
+        var id = 0
+        if focusRequest {
+            focusRequestCounter += 1
+            id = focusRequestCounter
+        }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if id > 0 { self.lastAppliedFocusRequestID = id }
+            guard let device = self.videoInput?.device else { return }
+            self.publishExposureBiasRange(of: device)
+            work(device)
+        }
+        return id
+    }
+
+    /// Publishes `exposureBiasRange(of: device)`. Runs on `sessionQueue`.
+    private func publishExposureBiasRange(of device: FocusExposureCaptureDevice) {
+        let range = CameraService.exposureBiasRange(of: device)
+        onMain { [weak self] in
+            guard let self, self.exposureBiasRange != range else { return }
+            self.exposureBiasRange = range
+        }
+    }
+
+    /// Resets `device` and the published state. Runs on `sessionQueue`.
+    func resetFocusExposure(on device: FocusExposureCaptureDevice) {
+        publishExposureBiasRange(of: device)
+        guard CameraService.applyContinuousAuto(to: device) else {
+            return reportFocusExposureFailure()
+        }
+        updateFocusExposure { $0 = .initial }
+        let applied = lastAppliedFocusRequestID
+        onMain { [weak self] in self?.focusExposureResetSubject.send(applied) }
+    }
+
+    /// Device-level "scene changed" handler. Runs the reset only for the live
+    /// device and only while not locked (issue #303).
+    private func subjectAreaDidChange(from source: AnyObject?) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device, source === device else { return }
+            guard FocusExposurePolicy.shouldReset(on: .subjectAreaChanged,
+                                                  isLocked: self.focusExposureShadow.isLocked) else { return }
+            self.resetFocusExposure(on: device)
+        }
+    }
+
+    private func updateFocusExposure(_ change: (inout FocusExposureState) -> Void) {
+        change(&focusExposureShadow)
+        let value = focusExposureShadow
+        onMain { [weak self] in
+            guard let self, self.focusExposureSubject.value != value else { return }
+            self.focusExposureSubject.send(value)
+        }
+    }
+
+    private func reportFocusExposureFailure() {
+        onMain { [weak self] in self?.focusExposureFailureSubject.send(.lockFailed) }
     }
 }
 
@@ -583,6 +1199,9 @@ private extension CameraService {
         session.addOutput(photoOutput)
         adoptNativeResolution(of: device)
         session.commitConfiguration()
+        applyPhotoMirroring()
+        resetZoom(on: device)
+        resetFocusExposure(on: device)
 
         rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         return true
@@ -600,6 +1219,44 @@ private extension CameraService {
             from: device.activeFormat.supportedMaxPhotoDimensions
         ) else { return }
         photoOutput.maxPhotoDimensions = largest
+    }
+
+    /// Mirrors the photo output for the side now in the session, so a front
+    /// camera photo matches its (mirrored) preview (issue #272).
+    ///
+    /// Must be redone after every input change, once the new input is in:
+    /// the output's connection is rebuilt with it. Mirroring happens in the
+    /// capture pipeline, before the overlay is baked onto the delivered
+    /// image, so the overlay text itself is never mirrored.
+    func applyPhotoMirroring() {
+        guard let connection = photoOutput.connection(with: .video) else { return }
+        CameraService.configureMirroring(of: connection, for: sessionFacing)
+    }
+
+    /// Puts `device` back to 1× (the main camera, or the nearest allowed
+    /// factor) and publishes its range and presets, for a camera that has just
+    /// gone into the session.
+    func resetZoom(on device: ZoomableCaptureDevice) {
+        CameraService.applyZoom(1, to: device)
+        publishZoom(of: device)
+    }
+
+    /// Publishes `device`'s current display factor, range and presets. Runs on
+    /// `sessionQueue`.
+    func publishZoom(of device: ZoomableCaptureDevice) {
+        let lens = device.zoomLens
+        let plan = ZoomPlan.make(lens: lens,
+                                 minAvailable: device.minAvailableVideoZoomFactor,
+                                 maxAvailable: device.maxAvailableVideoZoomFactor,
+                                 offersCropPresets: sessionFacing == .back)
+        let range = plan.range
+        let factor = lens.displayFactor(forDevice: device.videoZoomFactor)
+        onMain { [weak self] in
+            guard let self else { return }
+            if self.availableZoomPresets != plan.presets { self.availableZoomPresets = plan.presets }
+            if self.zoomRange != range { self.zoomRange = range }
+            if self.zoomFactorSubject.value != factor { self.zoomFactorSubject.send(factor) }
+        }
     }
 }
 
@@ -634,6 +1291,15 @@ private extension CameraService {
                                             object: nil,
                                             queue: .main) { [weak self] _ in
             self?.refreshPermission()
+            self?.resetForForeground()
+        })
+
+        // Posted by the device itself; the current device changes on a flip,
+        // so listen to all and let the handler check it is the live one.
+        observers.append(center.addObserver(forName: AVCaptureDevice.subjectAreaDidChangeNotification,
+                                            object: nil,
+                                            queue: nil) { [weak self] notification in
+            self?.subjectAreaDidChange(from: notification.object as AnyObject?)
         })
     }
 }
@@ -803,6 +1469,25 @@ extension CameraService {
     /// front-camera and no-flash-device branches by calling this directly.
     static func isFlashAvailable(facing: CameraFacing, hasFlash: Bool) -> Bool {
         facing == .back && hasFlash
+    }
+
+    /// Whether a photo taken on `facing` is mirrored: the front camera's is,
+    /// like its preview and like the system Camera with 鏡像前置相機 on; the
+    /// back camera's never is (issue #272). Fixed, not a setting, in 0.5.
+    static func isPhotoMirrored(facing: CameraFacing) -> Bool {
+        facing == .front
+    }
+
+    /// Sets `connection`'s mirroring for `facing`.
+    ///
+    /// Automatic adjustment is turned off first: assigning `isVideoMirrored`
+    /// while it is on raises an exception, as does assigning it on a
+    /// connection that does not support mirroring, which is left alone.
+    /// Internal so the decision is testable against a fake connection.
+    static func configureMirroring(of connection: VideoMirroringConfigurable, for facing: CameraFacing) {
+        guard connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = isPhotoMirrored(facing: facing)
     }
 }
 

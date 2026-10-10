@@ -7,46 +7,45 @@ import Foundation
 /// elsewhere without this type changing. Never read the system clock in here:
 /// `capturedAt` is the only time source (PRD FR-2.18, §6.5.3).
 struct TemplateRenderer {
-    /// Shown instead of a count when the start date has not arrived yet
-    /// (PRD §7.2).
-    static let notStartedText = "尚未開始"
+    /// Shown instead of a count when the start date has not arrived yet:
+    /// `還有 N 天`, `daysUntilStart` calendar days away (#250, replacing
+    /// PRD §7.2's 尚未開始). Always in days, whatever the units or wording.
+    static func notStartedText(daysUntilStart: Int) -> String {
+        "還有 \(daysUntilStart) 天"
+    }
     /// Shown when every checked unit is zero (PRD FR-2.12, 0.2 U-7).
     static let allZeroText = "0 天"
-    /// Separates the date from the elapsed amount: ideographic space U+3000
-    /// (PRD FR-2.5).
-    static let dateSeparator = "\u{3000}"
+    /// Separates every part of the overlay: a half-width space U+0020
+    /// (#249, replacing PRD FR-2.5's ideographic space).
+    static let partSeparator = " "
 
     init() {}
 
     /// Renders the overlay text for `profile` as of `capturedAt`.
     ///
-    /// Assembly order is name, then date, then elapsed amount (PRD FR-2.5).
-    /// The name is followed by a half-width space; the date and the elapsed
-    /// amount are separated by an ideographic space.
+    /// With the elapsed amount shown, the order is date, then name, then
+    /// elapsed amount (#249); without it, name then date. Parts are joined
+    /// by a single half-width space.
     func render(profile: CameraProfile,
                 capturedAt: Date,
                 calendar: Calendar = .autoupdatingCurrent) -> String {
         // One clock for the whole render, and it is the caller's.
         let calculator = DayCountCalculator(calendar: calendar, now: { capturedAt })
 
-        var trailing: [String] = []
-        if profile.showDate {
-            trailing.append(dateText(calculator: calculator))
-        }
-        if profile.showDayCount {
-            trailing.append(elapsedText(profile: profile, calculator: calculator))
-        }
-
-        var result = trailing.joined(separator: Self.dateSeparator)
-
-        // An empty name would otherwise leave the overlay with a leading space.
+        // An empty name would otherwise leave the overlay with a stray space.
         // The persistence layer rejects those, but a half-typed profile in the
         // editor has not been through it yet.
-        let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if profile.showName && !name.isEmpty {
-            result = result.isEmpty ? name : "\(name) \(result)"
+        let trimmedName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name: String? = profile.showName && !trimmedName.isEmpty ? trimmedName : nil
+        let date: String? = profile.showDate ? dateText(calculator: calculator) : nil
+
+        let parts: [String?]
+        if profile.showDayCount {
+            parts = [date, name, elapsedText(profile: profile, calculator: calculator)]
+        } else {
+            parts = [name, date]
         }
-        return result
+        return parts.compactMap { $0 }.joined(separator: Self.partSeparator)
     }
 }
 
@@ -75,8 +74,11 @@ private extension TemplateRenderer {
     func elapsedText(profile: CameraProfile, calculator: DayCountCalculator) -> String {
         // Checked on the raw difference, not the day count: under `.dayOne` a
         // start date one day out still counts to 0, and 0 is not "day zero".
-        guard calculator.rawDayDifference(from: profile.startDate) >= 0 else {
-            return Self.notStartedText
+        // The counting rule plays no part in how far away the start is, so a
+        // start date tomorrow reads 還有 1 天 under either rule.
+        let rawDifference = calculator.rawDayDifference(from: profile.startDate)
+        guard rawDifference >= 0 else {
+            return Self.notStartedText(daysUntilStart: -rawDifference)
         }
 
         let units = profile.displayUnits

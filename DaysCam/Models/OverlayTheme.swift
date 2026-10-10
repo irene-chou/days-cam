@@ -34,32 +34,66 @@ struct OverlayColor: Equatable, Hashable {
     static let autoContrastDark = OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E)
 }
 
-// MARK: - Hex strings and contrast (PRD 0.2 §4.2, FR-10.6)
+// MARK: - Opacity (TASK-69, #297)
 
-extension OverlayColor: Codable {
-    /// Parses an opaque `#RRGGBB` string (the `#` is required, case-insensitive).
-    /// Returns `nil` for anything else.
-    init?(hex: String) {
-        guard hex.count == 7, hex.hasPrefix("#") else { return nil }
-        let digits = hex.dropFirst()
-        guard digits.allSatisfy(\.isHexDigit), let value = Int(digits, radix: 16) else { return nil }
-        self.init(red8: (value >> 16) & 0xFF, green8: (value >> 8) & 0xFF, blue8: value & 0xFF)
+extension OverlayColor {
+    /// The lowest `opacity` a profile may store (TASK-69). Fainter text would
+    /// look like a missing overlay rather than a style.
+    static let minimumStorableOpacity = 0.05
+
+    /// This color with `opacity` replaced; the RGB components are kept.
+    func withOpacity(_ opacity: Double) -> OverlayColor {
+        OverlayColor(red: red, green: green, blue: blue, opacity: opacity)
     }
 
-    /// The color as an uppercase `#RRGGBB` string, rounding each component to
-    /// 8 bits and ignoring `opacity`.
+    /// This color with every component, `opacity` included, rounded to the
+    /// nearest 8-bit step — exactly what `hexString` stores and reads back.
+    /// Out-of-range components are rounded but not clamped, so validation
+    /// still sees them.
+    var quantized: OverlayColor {
+        func step(_ component: Double) -> Double { (component * 255).rounded() / 255 }
+        return OverlayColor(red: step(red), green: step(green), blue: step(blue), opacity: step(opacity))
+    }
+}
+
+// MARK: - Hex strings and contrast (PRD 0.2 §4.2, FR-10.6; TASK-69)
+
+extension OverlayColor: Codable {
+    /// Parses `#RRGGBB` (opaque) or `#RRGGBBAA` (the `#` is required,
+    /// case-insensitive). Returns `nil` for anything else.
+    ///
+    /// An alpha below `minimumStorableOpacity` is raised to it, so every
+    /// parsed color is storable and a hand-edited file loses no profile.
+    init?(hex: String) {
+        guard hex.count == 7 || hex.count == 9, hex.hasPrefix("#") else { return nil }
+        let digits = hex.dropFirst()
+        guard digits.allSatisfy(\.isHexDigit), let value = UInt32(digits, radix: 16) else { return nil }
+        let rgb = digits.count == 8 ? value >> 8 : value
+        let alpha8 = digits.count == 8 ? Int(value & 0xFF) : 0xFF
+        let minimumAlpha8 = Int((Self.minimumStorableOpacity * 255).rounded(.up))
+        self.init(red8: Int((rgb >> 16) & 0xFF), green8: Int((rgb >> 8) & 0xFF), blue8: Int(rgb & 0xFF),
+                  opacity: Double(max(alpha8, minimumAlpha8)) / 255.0)
+    }
+
+    /// The color as an uppercase hex string, rounding each component to 8
+    /// bits: `#RRGGBB` when it rounds to fully opaque — so opaque colors are
+    /// stored exactly as before TASK-69 — and `#RRGGBBAA` otherwise.
     var hexString: String {
         func byte(_ component: Double) -> Int {
             Int((min(max(component, 0), 1) * 255).rounded())
         }
-        return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+        let rgb = String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+        let alpha = byte(opacity)
+        return alpha == 0xFF ? rgb : rgb + String(format: "%02X", alpha)
     }
 
-    /// Whether every RGB component is in 0...1 and the color is fully opaque —
-    /// the only colors a profile may store (PRD 0.2 §4.1).
+    /// Whether every RGB component is in 0...1 and `opacity` is in
+    /// `minimumStorableOpacity`...1 — the colors a profile may store
+    /// (PRD 0.2 §4.1 as amended by TASK-69).
     var isStorable: Bool {
         let unit = 0.0...1.0
-        return unit.contains(red) && unit.contains(green) && unit.contains(blue) && opacity == 1.0
+        return unit.contains(red) && unit.contains(green) && unit.contains(blue)
+            && (Self.minimumStorableOpacity...1.0).contains(opacity)
     }
 
     /// WCAG relative luminance of the sRGB color, 0 (black) ... 1 (white).
@@ -76,18 +110,18 @@ extension OverlayColor: Codable {
         relativeLuminance > 0.55 ? .autoContrastDark : .white
     }
 
-    /// Decodes a `#RRGGBB` string.
+    /// Decodes a `#RRGGBB` or `#RRGGBBAA` string; see `init?(hex:)`.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let string = try container.decode(String.self)
         guard let color = OverlayColor(hex: string) else {
             throw DecodingError.dataCorruptedError(in: container,
-                                                   debugDescription: "Expected #RRGGBB, got \(string)")
+                                                   debugDescription: "Expected #RRGGBB or #RRGGBBAA, got \(string)")
         }
         self = color
     }
 
-    /// Encodes as a `#RRGGBB` string.
+    /// Encodes as `hexString`.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(hexString)
@@ -113,7 +147,9 @@ struct OverlayInsets: Equatable, Hashable {
 enum OverlayDecoration: Equatable, Hashable {
     /// A drop shadow behind the text.
     case shadow(offset: CGSize, blur: Double, opacity: Double, color: OverlayColor)
-    /// A rounded, usually translucent box behind the text.
+    /// A box behind the text; radius zero gives square corners. Drawn at `color`'s alpha times
+    /// `opacity`; `OverlayTheme` always passes an `opacity` of 1 since
+    /// TASK-70 and puts the transparency in the color.
     case backgroundBox(color: OverlayColor, opacity: Double, cornerRadius: Double, insets: OverlayInsets)
     /// An outline around the glyphs.
     case stroke(color: OverlayColor, width: Double)
@@ -151,47 +187,45 @@ struct OverlayTheme: Equatable, Hashable {
 
     // MARK: Decoration constants (PRD 0.2 FR-10, at a 17pt font)
 
-    /// Stroke width of `.thinStroke`.
-    static let thinStrokeWidth: Double = 2
-    /// Stroke width of `.thickStroke`.
-    static let thickStrokeWidth: Double = 4
-    /// Box opacity of `.translucentBox`.
-    static let translucentBoxOpacity: Double = 0.5
-    /// Box opacity of `.solidBox`.
-    static let solidBoxOpacity: Double = 1.0
-    /// Corner radius of both boxes.
+    /// Corner radius of the box.
     static let boxCornerRadius: Double = 8
-    /// Padding inside both boxes.
-    static let boxInsets = OverlayInsets(horizontal: 12, vertical: 6)
+    /// The box's vertical padding as a fraction of `OverlayStyle.boxPadding`,
+    /// its horizontal padding: 12×6 before TASK-70.
+    static let boxVerticalPaddingRatio: Double = 0.5
 
+    /// The padding inside the box for a horizontal `padding` (TASK-70).
+    static func boxInsets(padding: Double) -> OverlayInsets {
+        OverlayInsets(horizontal: padding, vertical: padding * boxVerticalPaddingRatio)
+    }
+
+    /// The stroke or box for `style`, in its parameters. A box's
+    /// transparency is the outline color's alpha alone (TASK-70), so its
+    /// `opacity` is always 1.
     private static func outlineDecoration(for style: OverlayStyle) -> OverlayDecoration? {
         let color = style.resolvedOutlineColor
+        if style.outline.isBox {
+            let radius = style.outline == .squareBox ? 0 : boxCornerRadius
+            return .backgroundBox(color: color, opacity: 1, cornerRadius: radius,
+                                  insets: boxInsets(padding: style.boxPadding))
+        }
         switch style.outline {
         case .none:
             return nil
-        case .thinStroke:
-            return .stroke(color: color, width: thinStrokeWidth)
-        case .thickStroke:
-            return .stroke(color: color, width: thickStrokeWidth)
-        case .translucentBox:
-            return .backgroundBox(color: color, opacity: translucentBoxOpacity,
-                                  cornerRadius: boxCornerRadius, insets: boxInsets)
-        case .solidBox:
-            return .backgroundBox(color: color, opacity: solidBoxOpacity,
-                                  cornerRadius: boxCornerRadius, insets: boxInsets)
+        case .stroke:
+            return .stroke(color: color, width: style.strokeWidth)
+        case .box, .squareBox:
+            return nil // Handled by the shared box path above.
         }
     }
 
+    /// The shadow for `style`, in its parameters (TASK-71). The color goes
+    /// in opaque and its alpha in `opacity`, so the shadow's alpha is applied
+    /// once, as 0.5's fixed shadows did; the text's own alpha reaches the
+    /// shadow through the ink casting it (#305).
     private static func shadowDecoration(for style: OverlayStyle) -> OverlayDecoration? {
-        switch style.shadow {
-        case .none:
-            return nil
-        case .soft:
-            return .shadow(offset: CGSize(width: 0, height: 2), blur: 4, opacity: 0.6, color: .black)
-        case .hard:
-            return .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 0.75, color: .black)
-        case .glow:
-            return .shadow(offset: .zero, blur: 8, opacity: 0.9, color: style.textColor)
-        }
+        guard style.showsShadow else { return nil }
+        let color = style.resolvedShadowColor
+        return .shadow(offset: CGSize(width: style.shadowOffsetX, height: style.shadowOffsetY),
+                       blur: style.shadowBlur, opacity: color.opacity, color: color.withOpacity(1))
     }
 }

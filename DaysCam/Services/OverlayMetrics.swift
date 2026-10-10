@@ -8,7 +8,8 @@ import UIKit
 /// (`OverlayRenderer`) must produce the same layout at very different pixel
 /// sizes — a ~400pt preview and a 3024x4032 photo — so both call these
 /// functions instead of each carrying its own copy of the percentages
-/// (PRD FR-4.7, FR-4.8, FR-4.3; 0.2 FR-5.10, FR-10.2, FR-12).
+/// (PRD FR-4.7, FR-4.8, FR-4.3; 0.2 FR-5.10, FR-12). It is also where a
+/// style's font is resolved to the face actually drawn (0.3 FR-5.14).
 enum OverlayMetrics {
     /// Base font size as a fraction of the frame's short edge (PRD FR-4.7).
     static let baseFontRatio: CGFloat = 0.055
@@ -130,58 +131,107 @@ enum OverlayMetrics {
     }
 
     /// Shrinks `baseFontSize` so `text` fits `availableWidth` when drawn in
-    /// `theme`'s font.
+    /// `font`.
     ///
     /// The convenience both the viewfinder and the baking path call; it
-    /// measures with the same font the text will actually be drawn in.
+    /// measures with the very font the text will be drawn in (PRD 0.3 FR-5.14).
     static func fittedFontSize(for text: String,
-                               theme: OverlayTheme,
+                               font: ResolvedOverlayFont,
                                baseFontSize: CGFloat,
                                availableWidth: CGFloat) -> CGFloat {
         fittedFontSize(for: text, baseFontSize: baseFontSize, availableWidth: availableWidth) { candidate, size in
-            textWidth(of: candidate, theme: theme, fontSize: size)
+            textWidth(of: candidate, font: font, fontSize: size)
         }
     }
 
-    /// Width `text` occupies when drawn in `theme`'s font at `fontSize`.
-    static func textWidth(of text: String, theme: OverlayTheme, fontSize: CGFloat) -> CGFloat {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font(for: theme, size: fontSize)]
+    /// Width `text` occupies when drawn in `font` at `fontSize`.
+    static func textWidth(of text: String, font: ResolvedOverlayFont, fontSize: CGFloat) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font.font(ofSize: fontSize)]
         return (text as NSString).size(withAttributes: attributes).width
     }
 
-    /// The font `theme` draws with.
-    static func font(for theme: OverlayTheme, size: CGFloat) -> UIFont {
-        font(for: theme.fontID, size: size)
-    }
+    // MARK: - Font resolution (PRD 0.3 FR-5.14)
 
-    /// One of the ten overlay fonts at `size`, at its fixed weight
-    /// (PRD 0.2 FR-10.2, FR-10.3). All ship with iOS; no font file is bundled.
+    /// The one function that turns a style's `fontID` into the face actually
+    /// drawn, for the viewfinder and the photo alike (PRD 0.3 FR-5.14).
     ///
-    /// Chinese glyphs fall back to the system's PingFang on their own; no
-    /// fallback font is specified here on purpose (FR-10.3).
-    static func font(for fontID: OverlayFontID, size: CGFloat) -> UIFont {
-        switch fontID {
-        case .sfRounded:
-            return systemFont(size: size, design: .rounded)
-        case .sfPro:
-            return UIFont.systemFont(ofSize: size, weight: .bold)
-        case .sfMono:
-            return UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
-        case .newYork:
-            return systemFont(size: size, design: .serif)
-        case .avenirNext, .futura, .georgia, .americanTypewriter, .didot, .snellRoundhand:
-            // Every name is checked to exist by TASK-17 17.12. The system font
-            // is only a guard against a crash, never a chosen substitute.
-            guard let name = fontID.postScriptName, let named = UIFont(name: name, size: size) else {
-                return UIFont.systemFont(ofSize: size, weight: .bold)
-            }
-            return named
-        }
+    /// The font itself when `availability` says `.available` and it loads;
+    /// PingFang otherwise (FR-16.14). PingFang never asks `availability`.
+    /// No fallback list is given for missing glyphs: the system fills them in
+    /// on its own (FR-10.3′).
+    ///
+    /// Main actor only: resolve once there, then hand the `Sendable` result
+    /// to the viewfinder and to the background baking work.
+    @MainActor
+    static func resolvedFont(for fontID: OverlayFontID,
+                             weightID: String? = nil,
+                             availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
+        let entry = FontCatalog.entry(for: fontID)
+        let weight = entry.weight(for: weightID)
+        return resolvedFont(state: entry.source == .builtIn ? .available : availability.state(for: fontID, weightID: weight.id),
+                            postScriptName: weight.postScriptName)
     }
 
-    private static func systemFont(size: CGFloat, design: UIFontDescriptor.SystemDesign) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: .bold)
-        guard let descriptor = base.fontDescriptor.withDesign(design) else { return base }
-        return UIFont(descriptor: descriptor, size: size)
+    /// Resolves a profile's font and weight together before measuring or baking.
+    @MainActor
+    static func resolvedFont(for style: OverlayStyle,
+                             availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
+        resolvedFont(for: style.fontID, weightID: style.fontWeight, availability: availability)
+    }
+
+    /// The rule behind `resolvedFont(for:availability:)`, with the state and
+    /// name passed in so tests can stand in a font that ships with iOS.
+    ///
+    /// A font that is not `.available` resolves to PingFang even if iOS could
+    /// load it — a match that finished after its timeout must not change the
+    /// photo (TASK-32 32.7a). A font reported `.available` that still fails to
+    /// load also resolves to PingFang, never to some other face.
+    static func resolvedFont(state: FontState, postScriptName: String) -> ResolvedOverlayFont {
+        guard state.isAvailable,
+              postScriptName != FontCatalog.pingFangPostScriptName,
+              UIFont(name: postScriptName, size: referenceFontSize) != nil else {
+            return .pingFang
+        }
+        return ResolvedOverlayFont(postScriptName: postScriptName)
+    }
+
+    /// `fontID` at `size` and its fixed weight, resolved against
+    /// `availability` (PRD 0.3 §4.1, FR-5.14). For UI that draws a font by
+    /// itself, such as the style grid; overlay text goes through
+    /// `resolvedFont(for:availability:)` and the renderer's `font:` forms.
+    @MainActor
+    static func font(for fontID: OverlayFontID, weightID: String? = nil, size: CGFloat, availability: any FontAvailabilityProviding) -> UIFont {
+        resolvedFont(for: fontID, weightID: weightID, availability: availability).font(ofSize: size)
+    }
+}
+
+/// The face overlay text is actually drawn in, after
+/// `OverlayMetrics.resolvedFont(for:availability:)` (PRD 0.3 FR-5.14).
+///
+/// A value, so it can be captured on the main actor at shutter time and
+/// carried to the background baking work, and used in a viewfinder cache key:
+/// two equal values draw identical glyphs. Only `OverlayMetrics` creates one,
+/// so every instance has been through resolution.
+struct ResolvedOverlayFont: Hashable, Sendable {
+    /// PingFang, which always ships with iOS (PRD 0.3 A-6, 32.8).
+    static let pingFang = ResolvedOverlayFont(postScriptName: FontCatalog.pingFangPostScriptName)
+
+    /// The PostScript name of the face drawn.
+    let postScriptName: String
+
+    fileprivate init(postScriptName: String) {
+        self.postScriptName = postScriptName
+    }
+
+    /// The face at `size` points.
+    ///
+    /// Resolution has already checked the name loads. Should iOS drop the
+    /// font in between, PingFang is drawn, as for any unavailable font; the
+    /// system font only guards against a crash. Measuring and drawing both
+    /// call this, so they still agree.
+    func font(ofSize size: CGFloat) -> UIFont {
+        UIFont(name: postScriptName, size: size)
+            ?? UIFont(name: FontCatalog.pingFangPostScriptName, size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: .semibold)
     }
 }

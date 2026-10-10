@@ -23,9 +23,18 @@ final class PhotoSaverTests: XCTestCase {
         /// The identifier a successful write reports back (TASK-28, FR-15.1).
         var identifierToReturn = "stub-asset-identifier"
 
+        /// `.readWrite`'s status, separate from the `.addOnly` one in `status`
+        /// (issue #281).
+        var readWriteStatus: PHAuthorizationStatus = .notDetermined
+        /// Non-nil makes `saveToAlbum` fail with this error.
+        var albumWriteError: Error?
+        /// The album id a successful `saveToAlbum` reports back.
+        var albumIdentifierToReturn = "album-1"
+
         private(set) var requestedLevels: [PHAccessLevel] = []
         private(set) var checkedLevels: [PHAccessLevel] = []
         private(set) var writeCount = 0
+        private(set) var albumWrites: [(albumIdentifier: String?, albumTitle: String)] = []
 
         init(status: PHAuthorizationStatus, grants: PHAuthorizationStatus = .authorized) {
             self.status = status
@@ -34,7 +43,7 @@ final class PhotoSaverTests: XCTestCase {
 
         func authorizationStatus(for level: PHAccessLevel) -> PHAuthorizationStatus {
             checkedLevels.append(level)
-            return status
+            return level == .readWrite ? readWriteStatus : status
         }
 
         func requestAuthorization(for level: PHAccessLevel, handler: @escaping (PHAuthorizationStatus) -> Void) {
@@ -56,6 +65,37 @@ final class PhotoSaverTests: XCTestCase {
                 completion(true, identifierToReturn, nil)
             }
         }
+
+        func saveToAlbum(_ image: UIImage,
+                         albumIdentifier: String?,
+                         albumTitle: String,
+                         completion: @escaping (AlbumWriteResult) -> Void) {
+            albumWrites.append((albumIdentifier, albumTitle))
+            if let albumWriteError {
+                completion(AlbumWriteResult(succeeded: false, assetIdentifier: nil,
+                                            albumIdentifier: nil, error: albumWriteError))
+            } else {
+                completion(AlbumWriteResult(succeeded: true, assetIdentifier: identifierToReturn,
+                                            albumIdentifier: albumIdentifierToReturn, error: nil))
+            }
+        }
+    }
+
+    /// The album switch, in memory.
+    private final class FakeAlbumSettings: AlbumSaveSettings {
+        var isAlbumSavingEnabled: Bool
+        private(set) var albumIdentifier: String?
+        private(set) var rememberCount = 0
+
+        init(enabled: Bool = false, albumIdentifier: String? = nil) {
+            isAlbumSavingEnabled = enabled
+            self.albumIdentifier = albumIdentifier
+        }
+
+        func rememberAlbum(identifier: String) {
+            albumIdentifier = identifier
+            rememberCount += 1
+        }
     }
 
     // MARK: - Helpers
@@ -69,7 +109,7 @@ final class PhotoSaverTests: XCTestCase {
     private func save(with library: StubLibrary,
                       file: StaticString = #filePath,
                       line: UInt = #line) throws -> Result<Void, PhotoSaveError> {
-        let saver = PhotoSaver(library: library)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
         let done = expectation(description: "save completes")
         var result: Result<Void, PhotoSaveError>?
         saver.save(image) {
@@ -219,6 +259,10 @@ final class PhotoSaverTests: XCTestCase {
                            completion: @escaping (Bool, String?, Error?) -> Void) {
             completion(false, nil, nil)
         }
+        func saveToAlbum(_ image: UIImage, albumIdentifier: String?, albumTitle: String,
+                         completion: @escaping (AlbumWriteResult) -> Void) {
+            completion(AlbumWriteResult(succeeded: false, assetIdentifier: nil, albumIdentifier: nil, error: nil))
+        }
     }
 
     // MARK: - Identifier (TASK-28, PRD 0.2 FR-15.1)
@@ -229,7 +273,7 @@ final class PhotoSaverTests: XCTestCase {
     func testSaveReturningIdentifierReportsTheNewAssetsLocalIdentifier() throws {
         let library = StubLibrary(status: .authorized)
         library.identifierToReturn = "asset-42"
-        let saver = PhotoSaver(library: library)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
         let done = expectation(description: "save completes")
         var result: Result<String, PhotoSaveError>?
 
@@ -248,7 +292,7 @@ final class PhotoSaverTests: XCTestCase {
     /// refusal fails the same way.
     func testSaveReturningIdentifierStillFailsOnPermissionDenial() throws {
         let library = StubLibrary(status: .denied)
-        let saver = PhotoSaver(library: library)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
         let done = expectation(description: "save completes")
         var result: Result<String, PhotoSaveError>?
 
@@ -267,7 +311,7 @@ final class PhotoSaverTests: XCTestCase {
 
     func testCompletionRunsOnTheMainQueueEvenWhenCalledOffIt() throws {
         let library = StubLibrary(status: .authorized)
-        let saver = PhotoSaver(library: library)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
         let done = expectation(description: "save completes")
         var wasOnMain = false
 
@@ -286,7 +330,7 @@ final class PhotoSaverTests: XCTestCase {
     /// second toast; one that never ran would disable it forever.
     func testCompletionRunsExactlyOncePerSave() throws {
         let library = StubLibrary(status: .notDetermined, grants: .authorized)
-        let saver = PhotoSaver(library: library)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
         let done = expectation(description: "save completes")
         done.expectedFulfillmentCount = 1
         done.assertForOverFulfill = true
@@ -357,6 +401,196 @@ final class PhotoSaverTests: XCTestCase {
 
     func testLargestPhotoDimensionsOfNothingIsNil() {
         XCTAssertNil(CameraService.largestPhotoDimensions(from: []))
+    }
+}
+
+// MARK: - DaysCam album (issue #281, TASK-64 acceptance 64.1, 64.2, 64.5, 64.7)
+
+extension PhotoSaverTests {
+
+    private func saveReturningIdentifier(with library: StubLibrary,
+                                         settings: FakeAlbumSettings,
+                                         file: StaticString = #filePath,
+                                         line: UInt = #line) throws -> Result<String, PhotoSaveError> {
+        let saver = PhotoSaver(library: library, albumSettings: settings)
+        let done = expectation(description: "save completes")
+        var result: Result<String, PhotoSaveError>?
+        saver.saveReturningIdentifier(image) {
+            result = $0
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        return try XCTUnwrap(result, "completion never ran", file: file, line: line)
+    }
+
+    // MARK: Route decision (64.7)
+
+    func testSwitchOffAlwaysRoutesToRecentsWithoutReadingReadWrite() {
+        let statuses: [PHAuthorizationStatus] = [.notDetermined, .restricted, .denied, .authorized, .limited]
+        for status in statuses {
+            var asked = false
+            let route = PhotoSaver.route(albumEnabled: false) { asked = true; return status }
+            XCTAssertEqual(route, .recentsOnly, "\(status.rawValue)")
+            XCTAssertFalse(asked, "switch off must not even read .readWrite")
+        }
+    }
+
+    func testSwitchOnRoutesToTheAlbumWithFullOrLimitedAccess() {
+        let cases: [(PHAuthorizationStatus, PhotoSaveRoute)] = [
+            (.authorized, .recentsAndAlbum),
+            (.limited, .recentsAndAlbum),
+            (.denied, .recentsOnly),
+            (.restricted, .recentsOnly),
+            (.notDetermined, .recentsOnly)
+        ]
+        for (status, expected) in cases {
+            XCTAssertEqual(PhotoSaver.route(albumEnabled: true) { status }, expected, "\(status.rawValue)")
+        }
+    }
+
+    // MARK: Saving
+
+    /// 64.1: off behaves exactly like 0.4 — add-only only, no album.
+    func testSwitchOffSavesLikeBeforeWithAddOnlyOnly() throws {
+        let library = StubLibrary(status: .notDetermined, grants: .authorized)
+        library.readWriteStatus = .authorized
+        let result = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: false))
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertTrue(library.albumWrites.isEmpty)
+        XCTAssertEqual(library.writeCount, 1)
+        XCTAssertEqual(library.checkedLevels.map(\.description), [PHAccessLevel.addOnly.description])
+        XCTAssertEqual(library.requestedLevels.map(\.description), [PHAccessLevel.addOnly.description])
+    }
+
+    /// 64.2: on with full access, one album write and nothing else.
+    func testSwitchOnWithFullAccessSavesIntoTheAlbumInOneChange() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .authorized
+        library.identifierToReturn = "asset-7"
+        let settings = FakeAlbumSettings(enabled: true, albumIdentifier: "album-1")
+
+        let result = try saveReturningIdentifier(with: library, settings: settings)
+
+        XCTAssertEqual(try result.get(), "asset-7")
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.albumWrites.first?.albumIdentifier, "album-1")
+        XCTAssertEqual(library.albumWrites.first?.albumTitle, "DaysCam")
+        XCTAssertEqual(library.writeCount, 0, "the asset is created inside the album change")
+        XCTAssertEqual(settings.rememberCount, 0, "same album, nothing new to remember")
+    }
+
+    /// 64.3: the first save, or one after the album was deleted, reports a
+    /// new album id — it is remembered for the next save.
+    func testANewAlbumIdentifierIsRemembered() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .authorized
+        library.albumIdentifierToReturn = "album-recreated"
+        let settings = FakeAlbumSettings(enabled: true, albumIdentifier: "album-deleted")
+
+        _ = try saveReturningIdentifier(with: library, settings: settings).get()
+
+        XCTAssertEqual(settings.albumIdentifier, "album-recreated")
+    }
+
+    /// 79.5 replaces 64.5: limited access keeps writing to the album without prompting.
+    func testSwitchOnWithLimitedAccessSavesIntoTheAlbumSilently() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .limited
+
+        let result = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: true))
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.writeCount, 0)
+        XCTAssertTrue(library.requestedLevels.isEmpty)
+    }
+
+    func testSwitchOnWithAccessWithdrawnFallsBackToRecents() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .denied
+
+        let result = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: true))
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertTrue(library.albumWrites.isEmpty)
+    }
+
+    /// Saving never asks for `.readWrite` — only the gallery switch does.
+    func testSavingNeverRequestsReadWrite() throws {
+        for readWrite: PHAuthorizationStatus in [.notDetermined, .limited, .denied, .authorized] {
+            let library = StubLibrary(status: .notDetermined, grants: .authorized)
+            library.readWriteStatus = readWrite
+            _ = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: true))
+            XCTAssertFalse(library.requestedLevels.contains(.readWrite), "\(readWrite.rawValue)")
+        }
+    }
+
+    /// The album change failed, so nothing was written; the photo is saved
+    /// to 「最近項目」 instead and that counts as success.
+    func testAlbumFailureStillSavesThePhotoAndSucceeds() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .authorized
+        library.albumWriteError = NSError(domain: "test", code: 1)
+        let settings = FakeAlbumSettings(enabled: true)
+
+        let result = try saveReturningIdentifier(with: library, settings: settings)
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.writeCount, 1, "saved once more, without the album")
+        XCTAssertNil(settings.albumIdentifier)
+    }
+
+    /// A rejected album transaction must preserve the photo via add-only fallback.
+    func testLimitedAlbumError3311PreservesPhotoAndRememberedAlbum() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .limited
+        library.albumWriteError = NSError(domain: "PHPhotosErrorDomain", code: 3311)
+        let settings = FakeAlbumSettings(enabled: true, albumIdentifier: "remembered-album")
+
+        let result = try saveReturningIdentifier(with: library, settings: settings)
+
+        XCTAssertEqual(try result.get(), "stub-asset-identifier")
+        XCTAssertEqual(library.albumWrites.count, 1)
+        XCTAssertEqual(library.writeCount, 1)
+        XCTAssertEqual(settings.albumIdentifier, "remembered-album")
+        XCTAssertEqual(settings.rememberCount, 0)
+        XCTAssertTrue(library.requestedLevels.isEmpty)
+    }
+
+    /// If the fallback also fails, the photo must not be reported as saved.
+    func testAlbumFailureFollowedByAFailedFallbackFails() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .authorized
+        library.albumWriteError = NSError(domain: "test", code: 1)
+        library.writeError = NSError(domain: "test", code: 2,
+                                     userInfo: [NSLocalizedDescriptionKey: "磁碟已滿"])
+
+        let result = try saveReturningIdentifier(with: library, settings: FakeAlbumSettings(enabled: true))
+
+        switch result {
+        case .failure(let error): XCTAssertEqual(error, .saveFailed("磁碟已滿"))
+        case .success: XCTFail("expected a failure")
+        }
+    }
+
+    func testAlbumSaveCompletesOnTheMainQueue() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .authorized
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings(enabled: true))
+        let done = expectation(description: "save completes")
+        var wasOnMain = false
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            saver.save(self.image) { _ in
+                wasOnMain = Thread.isMainThread
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 2)
+
+        XCTAssertTrue(wasOnMain)
     }
 }
 

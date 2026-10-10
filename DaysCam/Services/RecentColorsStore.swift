@@ -4,8 +4,9 @@ import Foundation
 /// The app-wide list of recently picked custom colors (PRD 0.2 FR-10.7, A-8).
 ///
 /// Shared by text and outline colors and across profiles. Stored in
-/// `UserDefaults` as `#RRGGBB` strings, newest first. Colors are compared by
-/// their 8-bit hex value, so two picker results that round to the same hex
+/// `UserDefaults` as `hexString` strings (`#RRGGBB`, or `#RRGGBBAA` for a
+/// translucent color), newest first. Colors are compared by their 8-bit hex
+/// value, alpha included, so two picker results that round to the same hex
 /// count as the same color.
 final class RecentColorsStore: ObservableObject {
     /// Maximum number of colors kept (FR-10.7).

@@ -70,7 +70,7 @@
 | 擁有者 | 檔案 |
 |---|---|
 | core-style | `Models/`（`CaptureSettings.swift` 除外）、`Services/OverlayMetrics.swift`、`OverlayRenderer.swift`、`TemplateRenderer.swift`、`DayCountCalculator.swift`、`RecentColorsStore.swift` |
-| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift` |
+| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift`、`AlbumSettingsStore.swift`（0.5 #281） |
 | ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets` |
 | ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
 | qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
@@ -260,7 +260,7 @@ PRD FR-7、FR-14：淺色主題、滿版觀景窗、頂部工具列、新底部�
 - `CameraScreen`：滿版觀景窗；比例切換時的三種版面（FR-7.8）；格線；倒數大數字
 - `Views/CameraToolbar/`：頂部工具列（閃光燈、計時器、名稱選單、比例切換鍵（點一下循環，FR-7.7）、格線、翻轉），狀態來自 TASK-19
 - 名稱選單只列名稱＋打勾（FR-7.11），移除 0.1 的「管理設定檔」入口
-- 底部列：左最新照片縮圖（來源依 PRD FR-15.2，資料來自 TASK-28；點擊先留空，TASK-29 接上）、快門（`accent` 實心＋外圈）、疊字鍵（`pencil.tip.crop.circle`）。無文字、無底色
+- 底部列：左最新照片縮圖（來源依 PRD FR-15.2，資料來自 TASK-28；點擊先留空，TASK-29 接上）、快門（`accent` 實心＋外圈）、疊字鍵（`pencil.tip.crop.circle`；0.3 由 #221 改為 `character.textbox`）。無文字、無底色
 - 疊字鍵此時先打開 0.1 的顯示設定 sheet 當過渡（TASK-22 換掉），**PR 描述要寫明**
 - **接下 TASK-19、28 的 ui 半邊**：`CameraScreenModel` 的計時器倒數（用 TASK-19 的 ticker）與存檔後寫入 `CapturedPhotoStore`；並跑驗收 19.8～19.10
 
@@ -349,7 +349,7 @@ PRD FR-10。
 
 | # | 步驟 | 預期結果 |
 |---|---|---|
-| 23.1 | 第二層項目的無障礙標籤 | 恰好 `["字型","顏色","外框","陰影","字級"]`，且都沒有可見文字 |
+| 23.1 | 第二層項目的無障礙標籤 | 恰好 `["顏色","字級","外框","陰影","字型"]`，且都沒有可見文字（0.5.1 TASK-68 #296 改順序） |
 | 23.2 | 字型選項數與順序 | 同 17.1 |
 | 23.3 | 選 Futura | 設定檔 `style.fontID == .futura` 並已持久化（重新 load 仍是） |
 | 23.4 | 文字顏色第一排 | 9 色（順序同 PRD FR-10.4）＋ 1 個自訂入口，共 10 項 |
@@ -397,7 +397,7 @@ PRD FR-11、FR-12。
 | 24.2 | 天數格式初始（只勾天） | 天為勾選且 disabled（只剩一個），年月週未勾 |
 | 24.3 | 勾年 → 勾週 | `displayUnits == [.year, .week, .day]`，**沒有**任何格子被自動取消 |
 | 24.4 | 承 24.3，打開「年改成歲」→ 取消勾年 | 「年改成歲」自動關閉且 disabled |
-| 24.5 | 關閉天數 | 天數格式 disabled，說明文字「天數未顯示，格式設定暫不作用」 |
+| 24.5 | ~~關閉天數~~ **0.4 作廢（#226 R-13、TASK-48）**：天數恆常顯示 | ~~天數格式 disabled，說明文字「天數未顯示，格式設定暫不作用」~~ 天數單位永遠可操作 |
 | 24.6 | 在「樣式」分頁時的疊字 | 不接受拖曳 |
 | 24.7 | 面板收起時的疊字 | 不接受拖曳（0.1 FR-6.4 仍成立） |
 | 24.8 | 在「位置」分頁拖曳換算：觀景窗 288×384，把中心拖到 (144, 192) | 存成 `.custom(x: 0.5, y: 0.5)` |

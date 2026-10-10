@@ -10,17 +10,17 @@ import Foundation
 /// (acceptance 22.2) — not across relaunches, so a freshly constructed
 /// instance always starts at `.style` (acceptance 22.3).
 final class OverlayPanelModel: ObservableObject {
-    /// The panel's first-level tabs (PRD 0.2 FR-8.4), in display order.
+    /// The panel's first-level tabs (0.3 TASK-37: 樣式｜內容｜位置), in display order.
+    /// 內容 shows the day-count format and display switches (0.4 TASK-45).
     enum Tab: CaseIterable, Equatable, Hashable {
-        case style, format, position, rules
+        case style, content, position
 
         /// The segmented control's label (PRD 0.2 FR-8.4).
         var title: String {
             switch self {
             case .style: return "樣式"
-            case .format: return "格式"
+            case .content: return "內容"
             case .position: return "位置"
-            case .rules: return "天數規則"
             }
         }
     }
@@ -58,8 +58,8 @@ final class OverlayPanelModel: ObservableObject {
 extension OverlayPanelModel {
     /// What the bottom bar's left key does right now.
     enum LeftBottomBarAction: Equatable {
-        /// Panel open: opens PRD S-6, the management panel (TASK-26).
-        case manageProfiles
+        /// Panel open: nothing, the slot stays reserved (#226 R-12).
+        case empty
         /// Panel closed: TASK-21's photo thumbnail / gallery entry (FR-15.2).
         case latestPhoto
     }
@@ -73,7 +73,7 @@ extension OverlayPanelModel {
     }
 
     var leftBottomBarAction: LeftBottomBarAction {
-        isOpen ? .manageProfiles : .latestPhoto
+        isOpen ? .empty : .latestPhoto
     }
 
     var rightBottomBarAction: RightBottomBarAction {

@@ -8,9 +8,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
 
     func testRepeatedLayoutAndPlacementChangesReusePixels() throws {
         var calls = 0
-        let cache = OverlayTextRenderCache { text, style, size, scale in
+        let cache = OverlayTextRenderCache { text, style, size, scale, font in
             calls += 1
-            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale)
+            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale, font: font)
         }
         let first = try XCTUnwrap(cache.image(text: "第 10 天", style: OverlayStyle(), frameSize: frame, displayScale: 3))
         for position in OverlayPosition.allCases {
@@ -23,11 +23,11 @@ final class OverlayTextRenderCacheTests: XCTestCase {
 
     func testEachPixelInputInvalidatesTheCache() {
         var calls = 0
-        let cache = OverlayTextRenderCache { text, style, size, scale in
+        let cache = OverlayTextRenderCache { text, style, size, scale, font in
             calls += 1
-            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale)
+            return OverlayRenderer().renderText(text, style: style, fontSize: size, displayScale: scale, font: font)
         }
-        let style = OverlayStyle(outline: .thickStroke, shadow: .hard)
+        let style = OverlayStyle(outline: .stroke, strokeWidth: 4, shadow: .hard)
         _ = cache.image(text: "A", style: style, frameSize: frame, displayScale: 2)
         _ = cache.image(text: "B", style: style, frameSize: frame, displayScale: 2)
         _ = cache.image(text: "B", style: OverlayStyle(), frameSize: frame, displayScale: 2)
@@ -48,8 +48,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
 
     func testDecorationOverflowDoesNotChangeAnchorOrDragBounds() throws {
         let cache = OverlayTextRenderCache()
-        for outline in [OverlayOutline.thickStroke, .solidBox, .translucentBox] {
-            let style = OverlayStyle(outline: outline, shadow: .hard)
+        for style in [OverlayStyle(outline: .stroke, strokeWidth: 4, shadow: .hard),
+                      OverlayStyle(outline: .box, shadow: .hard),
+                      OverlayStyle(outline: .box, autoOutlineOpacity: 0.5, shadow: .hard)] {
             let rendered = try XCTUnwrap(cache.image(text: "第 10 天", style: style, frameSize: frame, displayScale: 3))
             for anchor in [OverlayPosition.topLeading, .bottomTrailing] {
                 let origin = OverlayTextView.origin(forBlockSize: rendered.blockSize, frameSize: frame, placement: .anchor(anchor))
@@ -57,7 +58,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
                 XCTAssertEqual(imageFrame.minX + rendered.textInsets.left, origin.x, accuracy: 0.001)
                 XCTAssertEqual(imageFrame.minY + rendered.textInsets.top, origin.y, accuracy: 0.001)
                 let center = CGPoint(x: origin.x + rendered.blockSize.width / 2, y: origin.y + rendered.blockSize.height / 2)
-                XCTAssertEqual(OverlayTextView.clampedDragCenter(start: center, translation: .zero, frameSize: frame, blockSize: rendered.blockSize), center)
+                let dragCenter = OverlayTextView.clampedDragCenter(start: center, translation: .zero, frameSize: frame, blockSize: rendered.blockSize)
+                XCTAssertEqual(dragCenter.x, center.x, accuracy: 0.001)
+                XCTAssertEqual(dragCenter.y, center.y, accuracy: 0.001)
             }
         }
     }
@@ -65,8 +68,9 @@ final class OverlayTextRenderCacheTests: XCTestCase {
     /// Exercises the real SwiftUI composition, not just the layout helper.
     func testViewfinderPixelsMatchSharedRendererAtAnAnchor() throws {
         let text = "第 10 天"
-        for outline in [OverlayOutline.thickStroke, .solidBox, .none] {
-            let style = OverlayStyle(outline: outline, shadow: .hard)
+        for style in [OverlayStyle(outline: .stroke, strokeWidth: 4, shadow: .hard),
+                      OverlayStyle(outline: .box, shadow: .hard),
+                      OverlayStyle(outline: .none, shadow: .hard)] {
             let preview = ImageRenderer(content: OverlayTextView(text: text, style: style,
                 placement: .anchor(.bottomTrailing), frameSize: frame)
                 .frame(width: frame.width, height: frame.height)
@@ -84,7 +88,7 @@ final class OverlayTextRenderCacheTests: XCTestCase {
             let a = try pixels(actual)
             let b = try pixels(XCTUnwrap(expected.cgImage))
             let totalError = zip(a, b).reduce(0.0) { $0 + Double(abs(Int($1.0) - Int($1.1))) }
-            XCTAssertLessThan(totalError / Double(a.count) / 255, 0.005, "\(outline)")
+            XCTAssertLessThan(totalError / Double(a.count) / 255, 0.005, "\(style.outline)")
             XCTAssertGreaterThan(a.filter { $0 > 0 }.count, 100)
         }
     }

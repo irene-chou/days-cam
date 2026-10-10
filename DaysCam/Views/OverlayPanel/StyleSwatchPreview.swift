@@ -2,20 +2,28 @@ import SwiftUI
 import UIKit
 
 /// The fixed look of the outline/shadow option previews in the style tab
-/// (#155): dark text, gray outline/box/shadow, whatever the current text
-/// color is, so every option stays distinguishable (a white text color used
-/// to make them all look alike). Only the font follows the current style.
+/// (#155, TASK-49): a gray "A" with gray outline/box/shadow, whatever the
+/// current text color or font is, so every option stays distinguishable.
 ///
 /// These are the *sample overlay text's* own colors (FR-14.4's exemption for
 /// overlay text colors and their conversions), not interface chrome, so they
 /// are `OverlayColor` values rather than `CameraTheme` tokens.
 enum StyleSwatchPreview {
-    /// Sample text color, the `ink` token's value (`#2A2622`).
-    static let textColor = OverlayColor(red8: 0x2A, green8: 0x26, blue8: 0x22)
-    /// Outline, box and shadow color (`#A39A90`, #155's initial value).
-    static let accentGray = OverlayColor(red8: 0xA3, green8: 0x9A, blue8: 0x90)
+    /// Sample text color (`#78746F`): opaque, the `inkSecondary` token as seen
+    /// on the panel background. Opaque on purpose, so the glow drawn beneath
+    /// the glyph does not darken it compared with the other options.
+    static let textColor = OverlayColor(red8: 0x78, green8: 0x74, blue8: 0x6F)
+    /// Outline, box and shadow color (`#C9C1B8`).
+    static let accentGray = OverlayColor(red8: 0xC9, green8: 0xC1, blue8: 0xB8)
 
-    /// `style` with the fixed preview colors applied; the font is kept.
+    /// The preview glyph's font: SF Rounded Semibold, never the current font.
+    static func previewFont(ofSize size: CGFloat) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: .semibold)
+        guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// `style` with the fixed preview colors applied.
     static func fixedStyle(from style: OverlayStyle) -> OverlayStyle {
         var fixed = style
         fixed.textColor = textColor
@@ -24,21 +32,18 @@ enum StyleSwatchPreview {
     }
 
     /// The decorations of `style`'s theme with every shadow recolored gray
-    /// (the theme's own shadows are black, and glow follows the text color).
+    /// (the theme's own shadows are black), except glow, which keeps the text
+    /// color so it reads as light spreading from the glyph.
     static func decorations(for style: OverlayStyle) -> [OverlayDecoration] {
         OverlayTheme(style: style).decorations.map { decoration in
-            if case let .shadow(offset, blur, opacity, _) = decoration {
+            if case let .shadow(offset, blur, opacity, _) = decoration, style.shadowColorSource != .textColor {
                 return .shadow(offset: offset, blur: blur, opacity: opacity, color: accentGray)
             }
             return decoration
         }
     }
 
-    /// "Aa" drawn as one clean outline hugging the glyphs, with the fill on
-    /// top. Core Graphics strokes the real glyph outline (same method as
-    /// `OverlayRenderer.stroked`: `.strokeWidth` positive = outline only,
-    /// round joins) instead of stacking offset copies of the text, which
-    /// looked like several overlapping texts at this small size.
+    /// The sample text uses the renderer's shared solid glyph outline.
     ///
     /// `strokeWidth` is the visible width outside the glyph in points. The
     /// returned image's layout size is the text's own size, so it drops in
@@ -53,15 +58,11 @@ enum StyleSwatchPreview {
         let canvas = CGSize(width: textSize.width + overhang * 2, height: textSize.height + overhang * 2)
         let origin = CGPoint(x: overhang, y: overhang)
         let image = UIGraphicsImageRenderer(size: canvas).image { context in
-            // A centred stroke is drawn twice as wide; the fill covers the
-            // inner half, leaving `strokeWidth` visible outside.
-            let outline: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .strokeColor: uiColor(stroke),
-                .strokeWidth: strokeWidth * 2 / font.pointSize * 100
-            ]
-            context.cgContext.setLineJoin(.round)
-            (text as NSString).draw(at: origin, withAttributes: outline)
+            let geometry = OverlayStrokeGeometry(text: text, font: font, width: strokeWidth)
+            context.cgContext.setAlpha(CGFloat(stroke.opacity))
+            geometry.draw(in: context.cgContext, at: origin,
+                          color: uiColor(stroke.withOpacity(1)), excludingFill: fill.opacity < 1)
+            context.cgContext.setAlpha(1)
             (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: uiColor(fill)])
         }
         return image

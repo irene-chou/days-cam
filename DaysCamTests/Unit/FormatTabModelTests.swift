@@ -5,21 +5,20 @@ import XCTest
 /// 24.1–24.5. Reuses `DisplaySettingsModel` directly (the format tab is a
 /// thin wrapper around it), so the interlock behavior itself — 0.1 11.8–11.14
 /// and `toggleUnit` — is already covered by `DisplaySettingsModelTests`; this
-/// file only covers what `FormatTabModel` adds: the second-layer tabs and the
-/// format-specific hidden-section hint.
+/// file only covers the unit controls staying operable now that the day
+/// count is always shown (TASK-48, 0.4 R-13; the second layer was removed in
+/// TASK-38).
 @MainActor
 final class FormatTabModelTests: XCTestCase {
     private func fixedNow() throws -> Date {
         try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
     }
 
-    private func baselineProfile(showDayCount: Bool = true,
-                                 showDate: Bool = false,
+    private func baselineProfile(showDate: Bool = false,
                                  displayUnits: Set<DisplayUnit> = [.day],
                                  useAgeWording: Bool = false) -> CameraProfile {
         CameraProfile(name: "小寶",
                      startDate: DateFixture.components(2026, 1, 1),
-                     showDayCount: showDayCount,
                      showDate: showDate,
                      displayUnits: displayUnits,
                      useAgeWording: useAgeWording)
@@ -40,12 +39,6 @@ final class FormatTabModelTests: XCTestCase {
                                                    renderer: TemplateRenderer(),
                                                    updateProfile: spy.update)
         return FormatTabModel(displaySettings: displaySettings)
-    }
-
-    // MARK: - 24.1 格式第二層項目
-
-    func testSubTabTitlesAreDisplayContentThenDayCountFormat() {
-        XCTAssertEqual(FormatTabModel.SubTab.allCases.map(\.title), ["顯示內容", "天數格式"], "24.1")
     }
 
     // MARK: - 24.2 天數格式初始（只勾天）
@@ -87,27 +80,17 @@ final class FormatTabModelTests: XCTestCase {
         XCTAssertTrue(model.displaySettings.isAgeWordingToggleDisabled, "24.4")
     }
 
-    // MARK: - 24.5 天數關閉時的說明文字
+    // MARK: - 48.3 單位區永遠可操作
 
-    func testDayCountFormatSectionDisabledMessageWhenDayCountOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true),
-                              now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.displaySettings.isDayCountFormatSectionDisabled, "24.5")
-        XCTAssertEqual(FormatTabModel.dayCountFormatHiddenHintMessage, "天數未顯示，格式設定暫不作用", "24.5")
-    }
-
-    func testDayCountFormatSectionEnabledWhenDayCountOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: true), now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.displaySettings.isDayCountFormatSectionDisabled)
-    }
-
-    // MARK: - selectedSubTab 是純畫面狀態，預設為顯示內容
-
-    func testSelectedSubTabDefaultsToDisplayContent() throws {
+    /// 48.3: the unit rows have no day-count-off state (0.4 R-13); toggling
+    /// units and 年改成歲 behaves as before on a default profile.
+    func testUnitControlsAlwaysOperable() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        XCTAssertEqual(model.selectedSubTab, .displayContent)
+        model.displaySettings.toggleUnit(.year)
+        XCTAssertTrue(model.displaySettings.profile.displayUnits.contains(.year), "48.3")
+        XCTAssertFalse(model.displaySettings.isAgeWordingToggleDisabled, "48.3")
+        model.displaySettings.setUseAgeWording(true)
+        XCTAssertTrue(model.displaySettings.profile.useAgeWording, "48.3")
     }
 }

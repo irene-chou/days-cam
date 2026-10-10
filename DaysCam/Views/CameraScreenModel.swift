@@ -18,6 +18,20 @@ import UIKit
 @MainActor
 final class CameraScreenModel: ObservableObject {
     let cameraService: CameraService
+    /// Pinch-to-zoom state of the viewfinder (TASK-61). Only `isPinching` is
+    /// forwarded to this object's changes (the overlay drag switch reads it);
+    /// the rest changes every frame of a pinch and is observed by the capsule
+    /// alone (issue #280).
+    let zoomModel: ViewfinderZoomModel
+    /// Tap-to-focus, exposure drag and AE/AF lock on the viewfinder (issue
+    /// #303). Observed by `FocusExposureOverlay` alone, so a drag redraws
+    /// only that.
+    let focusModel: ViewfinderFocusModel
+    #if DEBUG
+    private let fakeFocusBackend: FakeFocusExposureBackend?
+    #endif
+    /// Whether the quick-zoom capsule is open (issue #302).
+    let zoomExpansion = ZoomPresetExpansion()
     /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
     /// grid. Exposed (not `private`) the same way `cameraService` is, so
     /// `CameraToolbar` can read it directly; this model forwards its change
@@ -29,6 +43,38 @@ final class CameraScreenModel: ObservableObject {
     /// needs this model.
     let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
+    /// Where each overlay font's availability, download and launch
+    /// preparation come from (PRD 0.3). The real `FontLibrary` in the app;
+    /// tests inject a fake.
+    let fontLibrary: any FontShellControlling
+    /// Seconds the shutter waits for a `preparing` font before giving up and
+    /// drawing PingFang (PRD 0.3 FR-5.15). Injectable so tests need not wait
+    /// the real 3 seconds.
+    private let fontPreparationTimeout: TimeInterval
+    /// Turns a style's font and weight into the face to draw
+    /// (`OverlayMetrics.resolvedFont(for: style, ...)` in the app).
+    /// Injectable so tests can resolve to a face that ships with iOS instead
+    /// of a downloaded one.
+    private let resolveFont: @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont
+    /// "Profile → font" the user asked for that is still downloading; the
+    /// download finishing writes it (PRD 0.3 FR-5.18, A-8). One entry per
+    /// profile, the last request wins. Owned here, not by the font list, so
+    /// closing the list changes nothing (FR-16.11).
+    private var pendingFontApplications: [UUID: OverlayFontID] = [:]
+    /// Fonts whose launch/switch preparation ran past the timeout; the
+    /// shutter no longer waits for them (they still resolve to PingFang until
+    /// `available`).
+    private var timedOutPreparingFonts: Set<FontDownloadID> = []
+    private var preparationTimeoutTasks: [FontDownloadID: Task<Void, Never>] = [:]
+    /// The profile the font hooks last saw as current.
+    private var lastSeenProfileID: UUID?
+    /// Profile/font pairs the "needs re-download" notice was already shown
+    /// for during this launch (FR-16.14: once).
+    private var noticedUnavailableFonts: Set<UnavailableFontNotice> = []
+    private struct UnavailableFontNotice: Hashable {
+        let profileID: UUID
+        let fontID: OverlayFontID
+    }
     private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
     private let makeThumbnailLibrary: @MainActor (CapturedPhotoStore) -> GalleryLibrary
     private var didLoadLaunchThumbnail = false
@@ -67,12 +113,22 @@ final class CameraScreenModel: ObservableObject {
     /// (issue #135). Never persisted: every launch starts collapsed.
     @Published private(set) var isCameraToolsExpanded = false
 
-    /// Drives the management panel. Built once and reused: it mirrors the
-    /// store itself, so there is nothing to go stale between presentations.
+    /// Drives the 設定檔 sheet. Built once and reused: it mirrors the store
+    /// itself, so there is nothing to go stale between presentations. Its
+    /// edit page writes through a `TabProfileWriter` (#70, R-8).
     private(set) lazy var profileManagerModel = ProfileManagerModel(
         store: profileStore,
         calculator: calculator,
-        onProfileAdded: { [weak self] in self?.finishAddingProfile() }
+        renderer: renderer,
+        makeRulesModel: { [weak self] profile in
+            guard let self else { return RulesTabModel(profile: profile) { _ in } }
+            let writer = TabProfileWriter(baseline: profile, profileStore: self.profileStore)
+            return RulesTabModel(profile: profile,
+                                 calendar: self.calendar,
+                                 calculator: self.calculator,
+                                 renderer: self.renderer,
+                                 updateProfile: writer.write)
+        }
     )
 
     /// Drives the overlay panel's shell (PRD 0.2 FR-8, TASK-22): whether
@@ -101,14 +157,6 @@ final class CameraScreenModel: ObservableObject {
     /// strongly here — `overlayDragHandler` is `weak` (see its own doc
     /// comment), so nothing else keeps this alive.
     private var positionDragAdapter: PositionDragAdapter?
-
-    /// The 天數規則 tab's model (PRD 0.2 FR-13, TASK-25's `RulesTabView`).
-    /// Rebuilt only when `selectedProfileID` actually changes — same
-    /// reasoning as `displaySettingsModel`'s own doc comment: the panel's
-    /// tab-content closure re-runs on unrelated `@Published` changes while
-    /// it's on screen, and rebuilding a fresh `RulesTabModel` on every one of
-    /// those would discard an in-progress name edit each time.
-    @Published private(set) var rulesTabModel: RulesTabModel?
 
     /// True from the moment the shutter is tapped until the photo pipeline
     /// finishes, success or failure (PRD FR-5.5: disabled while saving).
@@ -164,7 +212,7 @@ final class CameraScreenModel: ObservableObject {
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage?
 
     /// Saves a baked photo to the system photo library, returning its new
     /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
@@ -248,8 +296,8 @@ final class CameraScreenModel: ObservableObject {
              ImageCropper().crop(image, to: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { image, text, style, placement in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement)
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { image, text, style, placement, font in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
@@ -263,10 +311,59 @@ final class CameraScreenModel: ObservableObject {
          },
          makeThumbnailLibrary: @escaping @MainActor (CapturedPhotoStore) -> GalleryLibrary = { store in
              SystemGalleryLibrary(store: store)
+         },
+         fontLibrary: (any FontShellControlling)? = nil,
+         fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
+         resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
+             OverlayMetrics.resolvedFont(for: $0, availability: $1)
          }) {
+        self.resolveFont = resolveFont
+        self.fontLibrary = fontLibrary ?? InertFontLibrary()
+        self.fontPreparationTimeout = fontPreparationTimeout
         self.makeGalleryModel = makeGalleryModel
         self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
+        #if DEBUG
+        let fakeFocusBackend = FakeFocusExposureBackend.isEnabled ? FakeFocusExposureBackend() : nil
+        self.fakeFocusBackend = fakeFocusBackend
+        #endif
+        let focusActions = FocusExposureActions(
+            focusAndExpose: { [cameraService] in cameraService.focusAndExpose(at: $0) },
+            lock: { [cameraService] in cameraService.lockFocusAndExposure(at: $0) },
+            setBias: { [cameraService] in cameraService.setExposureBias($0) },
+            setBiasForRequest: { [cameraService] in cameraService.setExposureBias($0, forFocusRequestID: $1) },
+            deviceBiasRange: { [cameraService] in cameraService.exposureBiasRange })
+        let focusModel: ViewfinderFocusModel
+        #if DEBUG
+        if let fakeFocusBackend {
+            // No camera to convert with: the fake takes the point as a share
+            // of the viewfinder.
+            focusModel = ViewfinderFocusModel(
+                actions: fakeFocusBackend.actions,
+                convert: { point, size in
+                    size.width > 0 && size.height > 0 ? CGPoint(x: point.x / size.width, y: point.y / size.height) : nil
+                },
+                // Slow simulators need time to find the reticle; the fade-out
+                // test asks for the real one.
+                hideDelay: ProcessInfo.processInfo.arguments.contains("-UITestFocusQuickFade") ? .seconds(2) : .seconds(60))
+            fakeFocusBackend.attach(focusModel)
+        } else {
+            focusModel = ViewfinderFocusModel(actions: focusActions)
+        }
+        #else
+        focusModel = ViewfinderFocusModel(actions: focusActions)
+        #endif
+        self.focusModel = focusModel
+        self.zoomModel = ViewfinderZoomModel(initialFactor: cameraService.zoomFactor,
+                                             zoomRange: { [cameraService] in
+                                                 Self.usesUITestZoomPlan ? ZoomRange(minimum: 0.5, maximum: 10) : cameraService.zoomRange
+                                             },
+                                             applyFactor: { [cameraService] in cameraService.setZoomFactor($0) },
+                                             applyPreset: { [cameraService, focusModel] in
+                                                 // A new lens starts at continuous auto (issue #303).
+                                                 focusModel.hideReticle()
+                                                 cameraService.setZoom(displayFactor: $0, animated: true)
+                                             })
         self.captureSettingsStore = captureSettingsStore
         self.capturedPhotoStore = capturedPhotoStore
         self.profileStore = profileStore
@@ -283,13 +380,23 @@ final class CameraScreenModel: ObservableObject {
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
+        self.lastSeenProfileID = profileStore.selectedProfileID
         self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
         bindToProfileStore()
         bindToCameraService()
+        bindToZoomModel()
+        bindToFocusModel()
         bindToCaptureSettingsStore()
         bindToPanelModel()
         bindToClockNotifications()
+        bindToFontLibrary()
         refreshOverlayPanelTabModelsIfNeeded()
+        // The launch-time preparation of the current profile's font starts
+        // counting its 3 seconds now (FR-5.15); `prepareFontsAtLaunch()`
+        // does the actual work.
+        if let style = selectedProfile?.style {
+            startPreparationTimeoutIfNeeded(for: Self.downloadID(of: style))
+        }
     }
 
     private func bindToProfileStore() {
@@ -298,12 +405,11 @@ final class CameraScreenModel: ObservableObject {
             .sink { [weak self] profiles in
                 guard let self else { return }
                 self.profiles = profiles
-                // Each tab model holds its own profile copy; keep the rules
-                // tab's read-only fields (e.g. `showDayCount`, owned by the
-                // format tab) in step with the store (#167).
-                if let rulesTabModel = self.rulesTabModel,
-                   let latest = profiles.first(where: { $0.id == rulesTabModel.profile.id }) {
-                    rulesTabModel.applyExternalChanges(from: latest)
+                // The style tab's own copy must pick up a font written outside
+                // it (`applyFont`; PRD 0.3 FR-5.18).
+                if let styleTabModel = self.styleTabModel,
+                   let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
+                    styleTabModel.applyExternalChanges(from: latest)
                 }
             }
             .store(in: &cancellables)
@@ -312,19 +418,19 @@ final class CameraScreenModel: ObservableObject {
             .sink { [weak self] in
                 self?.selectedProfileID = $0
                 self?.refreshOverlayPanelTabModelsIfNeeded()
+                self?.selectedProfileDidChange()
             }
             .store(in: &cancellables)
     }
 
     /// Rebuilds every overlay-panel tab model — `styleTabModel`,
-    /// `formatTabModel`, `positionTabModel` (plus its drag adapter) and
-    /// `rulesTabModel` — only when `selectedProfileID` has actually changed
-    /// since they were last built — see `rulesTabModel`'s own doc comment for
-    /// why that matters (rebuilding on every unrelated re-render would
-    /// discard whatever the user is mid-edit on).
+    /// `formatTabModel` and `positionTabModel` (plus its drag adapter) — only
+    /// when `selectedProfileID` has actually changed since they were last
+    /// built (rebuilding on every unrelated re-render would discard whatever
+    /// the user is mid-edit on).
     ///
-    /// All four are rebuilt together, gated on the same check, so they can
-    /// never point at four different profiles at once.
+    /// All three are rebuilt together, gated on the same check, so they can
+    /// never point at different profiles at once.
     ///
     /// Each tab model holds its own full `CameraProfile` copy and always
     /// calls its `updateProfile` closure with that *entire* copy, even
@@ -341,19 +447,25 @@ final class CameraScreenModel: ObservableObject {
     /// which merges only the fields that changed since that tab's own last
     /// write onto the store's current record.
     private func refreshOverlayPanelTabModelsIfNeeded() {
-        guard rulesTabModel?.profile.id != selectedProfileID else { return }
+        guard styleTabModel?.profile.id != selectedProfileID else { return }
         guard let selectedProfile else {
             styleTabModel = nil
             formatTabModel = nil
             positionTabModel = nil
             positionDragAdapter = nil
             panelModel.overlayDragHandler = nil
-            rulesTabModel = nil
             return
         }
 
         let styleWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        styleTabModel = StyleTabModel(profile: selectedProfile, updateProfile: styleWriter.write)
+        styleTabModel = StyleTabModel(
+            profile: selectedProfile,
+            fontLibrary: fontLibrary,
+            applyFont: { [weak self] fontID, profileID in
+                self?.applyFont(fontID, profileID: profileID)
+            },
+            allProfiles: { [weak self] in self?.profiles ?? [] },
+            updateProfile: styleWriter.write)
 
         let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
         let displaySettings = DisplaySettingsModel(profile: selectedProfile,
@@ -369,13 +481,6 @@ final class CameraScreenModel: ObservableObject {
         let adapter = PositionDragAdapter(positionTabModel: newPositionTabModel)
         positionDragAdapter = adapter
         panelModel.overlayDragHandler = adapter
-
-        let rulesWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        rulesTabModel = RulesTabModel(profile: selectedProfile,
-                                     calendar: calendar,
-                                     calculator: calculator,
-                                     renderer: renderer,
-                                     updateProfile: rulesWriter.write)
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
@@ -394,6 +499,71 @@ final class CameraScreenModel: ObservableObject {
     private func bindToCameraService() {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    /// The quick-zoom buttons the current camera offers (issue #279); empty
+    /// until a camera is configured.
+    var zoomPresets: [ZoomPreset] {
+        Self.usesUITestZoomPlan ? Self.uiTestZoomPresets : cameraService.availableZoomPresets
+    }
+
+    /// The simulator has no camera and so no zoom plan; the UI tests pass
+    /// `-UITestZoomPresets` to get a fixed one (issue #302). Debug builds only.
+    private static let uiTestZoomPresets = [ZoomPreset(displayFactor: 0.5),
+                                            ZoomPreset(displayFactor: 1),
+                                            ZoomPreset(displayFactor: 2)]
+    private static var usesUITestZoomPlan: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestZoomPresets")
+        #else
+        false
+        #endif
+    }
+
+    /// Forwards only `isPinching` (issue #280), and starts the next pinch at
+    /// 1× after a camera switch, which resets the zoom.
+    private func bindToZoomModel() {
+        zoomModel.$isPinching
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        cameraService.$facing
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.zoomModel.resetRequestedFactor() }
+            .store(in: &cancellables)
+    }
+
+    /// Feeds the service's focus/exposure answers to `focusModel`, and tells it
+    /// when a gesture may start and when the camera changes under it.
+    private func bindToFocusModel() {
+        focusModel.canAcceptGesture = { [weak self] in
+            guard let self else { return false }
+            guard !panelModel.isOpen, !isCameraToolsExpanded, !zoomExpansion.isExpanded else { return false }
+            #if DEBUG
+            if fakeFocusBackend != nil { return true }
+            #endif
+            return !isCaptureUnsupported && !needsPermissionGuidance && !isSessionNotRunning
+        }
+        focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
+        cameraService.focusExposureStatePublisher
+            .sink { [weak self] in self?.focusModel.receive($0) }
+            .store(in: &cancellables)
+        cameraService.focusExposureTapResetPublisher
+            .sink { [weak self] in self?.focusModel.receiveTapReset(appliedRequestID: $0) }
+            .store(in: &cancellables)
+        cameraService.focusExposureResetPublisher
+            .sink { [weak self] in self?.focusModel.receiveReset(appliedRequestID: $0) }
+            .store(in: &cancellables)
+        cameraService.focusExposureFailurePublisher
+            .sink { [weak self] _ in self?.focusModel.receiveFailure() }
+            .store(in: &cancellables)
+        cameraService.$facing
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.focusModel.hideReticle() }
             .store(in: &cancellables)
     }
 
@@ -516,6 +686,17 @@ final class CameraScreenModel: ObservableObject {
     /// both the button's `.disabled` state and `capturePhoto()`'s own guard.
     var isShutterDisabled: Bool {
         isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isCapturing
+            || isWaitingForFont
+    }
+
+    /// Whether the current profile's font is still being matched after
+    /// launch or a profile switch, within its 3 seconds (PRD 0.3 FR-5.15):
+    /// the shutter waits so a photo is never baked in PingFang by mistake.
+    var isWaitingForFont: Bool {
+        guard let style = selectedProfile?.style else { return false }
+        let unit = Self.downloadID(of: style)
+        return fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing
+            && !timedOutPreparingFonts.contains(unit)
     }
 
     /// A transient reason the viewfinder cannot show a live picture even
@@ -558,6 +739,13 @@ extension CameraScreenModel {
         selectedProfile?.style ?? OverlayStyle()
     }
 
+    /// The face the viewfinder draws `overlayStyle` with: the profile's font
+    /// when it is `available`, PingFang otherwise (PRD 0.3 FR-5.14). Resolved
+    /// afresh on every read, so the viewfinder follows the library.
+    var overlayFont: ResolvedOverlayFont {
+        resolveFont(overlayStyle, fontLibrary)
+    }
+
     /// Where `selectedProfile` draws its overlay: a grid anchor or a custom
     /// center (PRD 0.2 §4.1).
     var overlayPlacement: OverlayPlacement {
@@ -573,15 +761,6 @@ extension CameraScreenModel {
         selectedProfile?.name ?? ""
     }
 
-    /// The profile switcher's menu items: exactly the profiles, in
-    /// `ProfileStore`'s order, with no synthetic "manage profiles" entry
-    /// mixed in — that entry point moves to the bottom bar's own key
-    /// (TASK-26, `ProfileManagerModel`), so 0.2's menu is just names (PRD 0.2 FR-7.11, acceptance
-    /// 21.1).
-    var profileMenuItems: [CameraProfile] {
-        profiles
-    }
-
     /// Switches the camera to `id` without leaving the camera screen
     /// (PRD FR-1.4). Forwards straight to the store, which also persists
     /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
@@ -590,8 +769,11 @@ extension CameraScreenModel {
         profileStore.select(id: id)
     }
 
+    /// Opens the 設定檔 sheet on its list (#226 R-1), whatever the panel is
+    /// doing; the panel's state is left alone.
     func presentProfileManagement() {
         collapseCameraTools()
+        profileManagerModel.resetNavigation()
         isProfileManagerPresented = true
     }
 
@@ -665,13 +847,6 @@ extension CameraScreenModel {
         isProfileManagerPresented = false
     }
 
-    /// After "新增設定檔": the new profile is already selected, so close the
-    /// management panel and show the 天數規則 tab to name it and set its
-    /// start date (PRD 0.2 FR-9.8). The overlay panel stays open.
-    func finishAddingProfile() {
-        isProfileManagerPresented = false
-        panelModel.selectedTab = .rules
-    }
 }
 
 // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21)
@@ -750,6 +925,7 @@ extension CameraScreenModel {
     func openOverlayPanel() {
         collapseCameraTools()
         panelModel.open()
+        noticeUnavailableFontIfNeeded()
     }
 
     /// Closes the overlay panel, collapsing the tools capsule too (issue #135).
@@ -762,6 +938,7 @@ extension CameraScreenModel {
     /// only closes the capsule — the tap is consumed, so an open panel stays
     /// open; otherwise it closes the panel (PRD 0.2 FR-8.7).
     func handleViewfinderTap() {
+        zoomExpansion.collapse()
         if isCameraToolsExpanded {
             collapseCameraTools()
         } else if panelModel.isOpen {
@@ -797,11 +974,20 @@ extension CameraScreenModel {
     /// the simulator (same boundary `CameraServiceTests` documents), so this
     /// is what `CameraScreenModelTests` calls directly to verify 10.3/10.4
     /// without needing to drive a full capture through real hardware.
-    func captureContext(for profile: CameraProfile) -> (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement) {
+    ///
+    /// `font` is resolved here, on the main actor, at the moment the shutter
+    /// fires (a timer: when the countdown reaches zero) and travels with the
+    /// context to the background baking, which never reads the font library
+    /// (PRD 0.3 FR-5.14, FR-16.14).
+    func captureContext(for profile: CameraProfile) -> CaptureContext {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        return (capturedAt, text, profile.style, profile.position)
+        let font = resolveFont(profile.style, fontLibrary)
+        return (capturedAt, text, profile.style, profile.position, font)
     }
+
+    /// Everything the baking needs, fixed at the instant the shutter fires.
+    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont)
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
     /// FR-7.6).
@@ -929,8 +1115,7 @@ extension CameraScreenModel {
     /// `CameraScreenModelTests` calls directly to verify the bake-failure,
     /// save-success and save-failure branches, and that `isCapturing` ends
     /// up `false` on every one of them (PRD acceptance 10.22).
-    func processCapturedImage(_ image: UIImage,
-                              context: (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement)) {
+    func processCapturedImage(_ image: UIImage, context: CaptureContext) {
         // Redundant with `capturePhoto()`'s own assignment in the real flow
         // (already `true` by the time this runs there) — kept here so this
         // method is self-contained: a test calling it directly exercises the
@@ -954,7 +1139,7 @@ extension CameraScreenModel {
                 // showed for the same aspect ratio (FR-5.9, FR-5.11).
                 let cropped = crop(image, aspectRatio)
                 CaptureTiming.mark(.cropped)
-                return bake(cropped, context.text, context.style, context.placement)
+                return bake(cropped, context.text, context.style, context.placement, context.font)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
@@ -1056,6 +1241,223 @@ extension CameraScreenModel {
     }
 }
 
+// MARK: - Fonts (PRD 0.3, TASK-35)
+
+/// What the camera screen needs from the font library: availability and the
+/// list's cancel/delete (`FontListControlling`), plus download, preparation
+/// and the background cancel. `FontLibrary` conforms; tests inject a fake.
+@MainActor
+protocol FontShellControlling: FontListControlling {
+    /// Fires with the exact font and weight each time a download finishes
+    /// successfully; the state is already `.available` by then. The older
+    /// per-font event only speaks for the default weight.
+    var weightDownloadDidFinish: PassthroughSubject<FontDownloadID, Never> { get }
+    /// Starts a download; `false` when none was started.
+    @discardableResult func download(_ fontID: OverlayFontID) -> Bool
+    /// Settles one `.preparing` font now (FR-5.16).
+    func prepare(_ fontID: OverlayFontID) async
+    /// Settles one exact face.
+    func prepare(_ fontID: OverlayFontID, weightID: String?) async
+    /// Settles the fonts on the device after launch (FR-5.15).
+    func prepareAtLaunch(priority: OverlayFontID?) async
+    /// Same, with the priority font's exact weight first.
+    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async
+    /// Cancels every download in progress (FR-16.11).
+    func cancelAllDownloads()
+}
+
+extension FontLibrary: FontShellControlling {}
+
+/// The library `CameraScreenModel` uses when none is injected: only PingFang
+/// is usable and nothing downloads. Keeps previews and unrelated tests off
+/// the file system and the network.
+@MainActor
+private final class InertFontLibrary: FontShellControlling {
+    let objectWillChange = ObservableObjectPublisher()
+    let weightDownloadDidFinish = PassthroughSubject<FontDownloadID, Never>()
+
+    func state(for fontID: OverlayFontID) -> FontState {
+        fontID == .pingFang ? .available : .notDownloaded
+    }
+    func cancel(_ fontID: OverlayFontID) {}
+    func delete(_ fontID: OverlayFontID) -> Bool { false }
+    func download(_ fontID: OverlayFontID) -> Bool { false }
+    func prepare(_ fontID: OverlayFontID) async {}
+    func prepare(_ fontID: OverlayFontID, weightID: String?) async {}
+    func prepareAtLaunch(priority: OverlayFontID?) async {}
+    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async {}
+    func cancelAllDownloads() {}
+}
+
+extension CameraScreenModel {
+    /// The exact face `style` draws with, as the font library counts it.
+    static func downloadID(of style: OverlayStyle) -> FontDownloadID {
+        FontDownloadID(fontID: style.fontID, weightID: style.resolvedFontWeight.id)
+    }
+
+    /// Settles the fonts on the device after launch, the current profile's
+    /// font first (PRD 0.3 FR-5.15). Returns once that font is settled; the
+    /// shutter waits for it, for at most `fontPreparationTimeout`. Call once,
+    /// from the screen's `.task`.
+    func prepareFontsAtLaunch() async {
+        await fontLibrary.prepareAtLaunch(priority: selectedProfile?.style.fontID,
+                                          weightID: selectedProfile?.style.resolvedFontWeight.id)
+    }
+
+    /// The app went to the background: pending downloads stop and nobody is
+    /// left waiting to be applied (PRD 0.3 FR-16.11).
+    func sceneDidEnterBackground() {
+        pendingFontApplications.removeAll()
+        fontLibrary.cancelAllDownloads()
+    }
+
+    /// The one way a font is written to a profile (PRD 0.3 FR-5.18).
+    ///
+    /// An `available` font is written to `profileID` at once, and any earlier
+    /// request still pending for that profile is dropped. Anything else is
+    /// downloaded, and written to **that** profile once the download finishes
+    /// (A-8), even if the list was closed or another profile is current by
+    /// then; a later request for the same profile replaces this one, and a
+    /// cancelled, failed or interrupted download drops it.
+    func applyFont(_ fontID: OverlayFontID, profileID: UUID) {
+        switch fontLibrary.state(for: fontID) {
+        case .available:
+            pendingFontApplications[profileID] = nil
+            writeFont(fontID, to: profileID)
+        case .preparing:
+            pendingFontApplications[profileID] = fontID
+            Task { [weak self] in
+                await self?.fontLibrary.prepare(fontID)
+                self?.fontLibraryDidChange()
+            }
+        case .notDownloaded, .failed, .downloading:
+            pendingFontApplications[profileID] = fontID
+            fontLibrary.download(fontID)
+            fontLibraryDidChange()
+        }
+    }
+
+    /// Writes `fontID` into the stored profile and keeps the style tab's copy
+    /// in step. A profile that no longer exists is skipped.
+    ///
+    /// - Returns: whether the profile now has `fontID`; `false` for a missing
+    ///   profile or a failed save (which shows its own message).
+    @discardableResult
+    private func writeFont(_ fontID: OverlayFontID, to profileID: UUID) -> Bool {
+        guard var latest = profileStore.profiles.first(where: { $0.id == profileID }) else { return false }
+        if latest.style.fontID != fontID {
+            latest.style.fontID = fontID
+            do {
+                try profileStore.update(latest)
+            } catch {
+                showToast(message: "無法儲存字型設定")
+                return false
+            }
+        }
+        syncStyleTabModelWithStore()
+        return true
+    }
+
+    /// Hands the style tab the store's latest copy of its profile (FR-5.18).
+    fileprivate func syncStyleTabModelWithStore() {
+        guard let styleTabModel,
+              let latest = profileStore.profiles.first(where: { $0.id == styleTabModel.profile.id }) else { return }
+        styleTabModel.applyExternalChanges(from: latest)
+    }
+
+    /// Follows the library: finishes or drops pending applications, and
+    /// redraws what depends on font state (the viewfinder, the shutter).
+    fileprivate func bindToFontLibrary() {
+        fontLibrary.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+                // `objectWillChange` fires before the change lands.
+                DispatchQueue.main.async { self?.fontLibraryDidChange() }
+            }
+            .store(in: &cancellables)
+        fontLibrary.weightDownloadDidFinish
+            .sink { [weak self] _ in self?.fontLibraryDidChange() }
+            .store(in: &cancellables)
+    }
+
+    /// Settles every pending application against the font's current state.
+    func fontLibraryDidChange() {
+        for (profileID, fontID) in pendingFontApplications {
+            switch fontLibrary.state(for: fontID) {
+            case .available:
+                pendingFontApplications[profileID] = nil
+                guard profileStore.profiles.contains(where: { $0.id == profileID }) else { continue }
+                if writeFont(fontID, to: profileID) { announceApplied(fontID) }
+            case .notDownloaded, .failed:
+                pendingFontApplications[profileID] = nil
+            case .preparing, .downloading:
+                break
+            }
+        }
+    }
+
+    /// "已套用「<名稱>」" (FR-16.6): in the font list when it is open, on the
+    /// camera screen otherwise.
+    private func announceApplied(_ fontID: OverlayFontID) {
+        let text = "已套用「\(fontID.displayName)」"
+        if let list = styleTabModel?.fontLibraryModel {
+            list.post(text)
+        } else {
+            showToast(message: text)
+        }
+    }
+
+    /// The selected profile changed: a `.preparing` font starts matching now
+    /// instead of waiting in the launch queue (FR-5.16), and an unusable one
+    /// is announced once (FR-16.14).
+    func selectedProfileDidChange() {
+        guard let profile = selectedProfile, profile.id != lastSeenProfileID else { return }
+        lastSeenProfileID = profile.id
+        let unit = Self.downloadID(of: profile.style)
+        if fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing {
+            timedOutPreparingFonts.remove(unit)
+            startPreparationTimeoutIfNeeded(for: unit)
+            Task { [weak self] in
+                await self?.fontLibrary.prepare(unit.fontID, weightID: unit.weightID)
+                guard self?.selectedProfileID == profile.id else { return }
+                self?.noticeUnavailableFontIfNeeded()
+            }
+        } else {
+            noticeUnavailableFontIfNeeded()
+        }
+    }
+
+    /// Gives a `.preparing` font its 3 seconds from now; after that the
+    /// shutter stops waiting (FR-5.15, FR-5.16).
+    fileprivate func startPreparationTimeoutIfNeeded(for unit: FontDownloadID) {
+        guard fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing else { return }
+        preparationTimeoutTasks[unit]?.cancel()
+        let seconds = fontPreparationTimeout
+        preparationTimeoutTasks[unit] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.timedOutPreparingFonts.insert(unit)
+            self.objectWillChange.send()
+        }
+    }
+
+    /// "「<名稱>」需要重新下載，暫時用蘋方", once per profile and font during
+    /// this launch, when the current profile's font is neither available,
+    /// preparing nor downloading (FR-16.14).
+    func noticeUnavailableFontIfNeeded() {
+        guard let profile = selectedProfile else { return }
+        let fontID = profile.style.fontID
+        switch fontLibrary.state(for: fontID, weightID: profile.style.resolvedFontWeight.id) {
+        case .available, .preparing, .downloading:
+            return
+        case .notDownloaded, .failed:
+            let notice = UnavailableFontNotice(profileID: profile.id, fontID: fontID)
+            guard noticedUnavailableFonts.insert(notice).inserted else { return }
+            showToast(message: "「\(fontID.displayName)」需要重新下載，暫時用蘋方")
+        }
+    }
+}
+
 // MARK: - Overlay-panel write-through (#70)
 
 /// One overlay-panel tab's `updateProfile` closure, wrapped so a write only
@@ -1081,7 +1483,7 @@ extension CameraScreenModel {
 /// not built to reconcile two genuinely concurrent writes to the same
 /// profile.
 @MainActor
-private final class TabProfileWriter {
+final class TabProfileWriter {
     private var baseline: CameraProfile
     private let profileStore: ProfileStore
 

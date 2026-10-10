@@ -21,17 +21,15 @@ targets:
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.DaysCam
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.5.0"
         CURRENT_PROJECT_VERSION: "1"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   DaysCamTests:
     type: bundle.unit-test
@@ -44,12 +42,25 @@ targets:
       base:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: "YES"
+  DaysCamUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DaysCamUITests
+    dependencies:
+      - target: DaysCam
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: "YES"
 schemes:
   DaysCam:
     build:
       targets:
         DaysCam: all
         DaysCamTests: [test]
+        DaysCamUITests: [test]
     test:
       targets:
         - DaysCamTests
+        - DaysCamUITests

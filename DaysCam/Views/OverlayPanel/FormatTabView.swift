@@ -8,10 +8,18 @@ import SwiftUI
 /// drops this view into the panel body for the 格式 segment, passing in a
 /// `FormatTabModel` wrapping the active profile's `DisplaySettingsModel`.
 ///
-/// Second layer is plain text (顯示內容｜天數格式), unlike the style tab's
-/// icon-only row (FR-8.5).
+/// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
+/// sections now sit on one page. TASK-48 (0.4 R-13): 天數單位 heading on top
+/// of the unit row, 顯示內容 (日期、名稱 only) below under its own heading;
+/// the day count is always shown, so nothing here is ever disabled for it.
+/// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
+
+    /// Whether this view adds its own `.tabbody` inset (12 vertical, 14
+    /// horizontal). `ContentTabView` turns it off and applies the same inset
+    /// once around both sub-tabs.
+    var appliesOuterPadding: Bool = true
 
     /// Minimum height of every content row (display toggles, unit
     /// checkboxes, age-wording toggle), the same 44pt tap target the rules
@@ -19,22 +27,17 @@ struct FormatTabView: View {
     static let rowMinHeight: CGFloat = 44
 
     var body: some View {
-        // No gap of its own between `subTabRow` and `content` (#106): the
-        // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
-        // puts the whole visual gap inside `subTabRow`'s own bottom padding
-        // instead — see that view's `.padding(.top:.bottom:)`.
         VStack(alignment: .leading, spacing: 0) {
-            subTabRow
-            content
+            sectionHeading("天數單位")
+            dayCountFormatSection
+            sectionHeading("顯示內容")
+                .padding(.top, 8)
+            displayContentSection
         }
-        // This tab's own `.tabbody` outer inset — the generic D-4 value
-        // (`.tabbody{padding:12px 14px}`, #106 R2, the human's 2026-09-27
-        // call: each tab owns its own `.tabbody` padding rather than a
-        // generic one shared by all four — `ui-shell` is dropping the panel
-        // container's own generic inset in #105 to avoid stacking both).
-        // Was a flat `.padding(.horizontal, 16)` with no vertical inset.
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
+        // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
+        // #106 R2): each tab owns its own padding rather than a generic one.
+        .padding(.vertical, appliesOuterPadding ? 12 : 0)
+        .padding(.horizontal, appliesOuterPadding ? 14 : 0)
         .alert("無法儲存", isPresented: Binding(get: { model.displaySettings.lastError != nil },
                                              set: { if !$0 { model.displaySettings.lastError = nil } })) {
             Button("好") { model.displaySettings.lastError = nil }
@@ -43,39 +46,12 @@ struct FormatTabView: View {
         }
     }
 
-    // MARK: - 第二層：顯示內容｜天數格式 (FR-8.5, 24.1)
-
-    private var subTabRow: some View {
-        // 16pt gap, left-aligned, unselected uses the tertiary/t3 shade
-        // (design A, `D4-format-position-rules.html`'s `.subA{gap:16px}` —
-        // #106, was 14pt gap with the same shade).
-        HStack(spacing: 16) {
-            ForEach(FormatTabModel.SubTab.allCases, id: \.self) { subTab in
-                let isSelected = model.selectedSubTab == subTab
-                Button {
-                    model.selectedSubTab = subTab
-                } label: {
-                    Text(subTab.title)
-                        .font(CameraTheme.toolFont(.subheadline))
-                        .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
-                }
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-            Spacer(minLength: 0)
-        }
-        // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
-        // into the body's own `.tabbody` padding already (#106).
-        .padding(.top, 6)
-        // 8pt between this row and the first content row (#116 card).
-        .padding(.bottom, 8)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch model.selectedSubTab {
-        case .displayContent: displayContentSection
-        case .dayCountFormat: dayCountFormatSection
-        }
+    /// Small heading above the 天數單位 and 顯示內容 sections (13pt, secondary ink).
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13))
+            .foregroundColor(CameraTheme.inkSecondary)
+            .padding(.bottom, 2)
     }
 
     // MARK: - 顯示內容 (FR-11.1, FR-11.2)
@@ -86,7 +62,7 @@ struct FormatTabView: View {
         // (#116, the human's 2026-09-30 call — replaces the earlier 12pt row
         // gap, which still left rows ~28pt tall and read as cramped).
         VStack(alignment: .leading, spacing: 0) {
-            // The three toggles spread evenly across the full row, CSS
+            // The two toggles spread evenly across the full row, CSS
             // `space-around` exactly (`.swrow{justify-content:space-around}`,
             // #106 R3 — was a fixed 28pt gap): two consecutive plain
             // `Spacer`s between items occupy exactly double the width of the
@@ -97,16 +73,9 @@ struct FormatTabView: View {
             // edge" rhythm, not an approximation.
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                displayToggle(label: "天數",
-                             isOn: model.displaySettings.profile.showDayCount,
-                             isDisabled: model.displaySettings.isShowDayCountToggleDisabled) {
-                    model.displaySettings.setShowDayCount($0)
-                }
-                Spacer(minLength: 0)
-                Spacer(minLength: 0)
                 displayToggle(label: "日期",
                              isOn: model.displaySettings.profile.showDate,
-                             isDisabled: model.displaySettings.isShowDateToggleDisabled) {
+                             isDisabled: false) {
                     model.displaySettings.setShowDate($0)
                 }
                 Spacer(minLength: 0)
@@ -119,12 +88,6 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
-            if model.displaySettings.isShowDayCountToggleDisabled || model.displaySettings.isShowDateToggleDisabled {
-                Text(DisplaySettingsModel.mustShowAtLeastOneMessage)
-                    .font(.footnote)
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .padding(.top, 4)
-            }
         }
     }
 
@@ -151,7 +114,7 @@ struct FormatTabView: View {
         .accessibilityLabel(label)
     }
 
-    // MARK: - 天數格式 (FR-11.3, FR-11.4, FR-11.5)
+    // MARK: - 天數單位 (FR-11.3, FR-11.4)
 
     private var dayCountFormatSection: some View {
         // No gap between rows; each row is at least `rowMinHeight` tall and
@@ -179,15 +142,7 @@ struct FormatTabView: View {
                 ageWordingToggle
             }
             .frame(minHeight: Self.rowMinHeight)
-            if model.displaySettings.isDayCountFormatSectionDisabled {
-                Text(FormatTabModel.dayCountFormatHiddenHintMessage)
-                    .font(.footnote)
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .padding(.top, 4)
-            }
         }
-        .opacity(model.displaySettings.isDayCountFormatSectionDisabled ? 0.4 : 1)
-        .disabled(model.displaySettings.isDayCountFormatSectionDisabled)
     }
 
     private func unitCheckbox(_ unit: DisplayUnit) -> some View {
@@ -243,45 +198,22 @@ struct FormatTabView: View {
 // MARK: - Preview
 
 @MainActor
-private func previewModel(displayUnits: Set<DisplayUnit> = [.day], showDayCount: Bool = true) -> FormatTabModel {
+private func previewModel(displayUnits: Set<DisplayUnit> = [.day]) -> FormatTabModel {
     let profile = CameraProfile(name: "小寶",
                                startDate: DateComponents(year: 2026, month: 1, day: 1),
-                               showDayCount: showDayCount,
                                displayUnits: displayUnits)
     let displaySettings = DisplaySettingsModel(profile: profile) { _ in }
     return FormatTabModel(displaySettings: displaySettings)
 }
 
-#Preview("顯示內容 · iPhone SE 寬度 (375pt)") {
+#Preview("格式頁 · iPhone SE 寬度 (375pt)") {
     FormatTabView(model: previewModel())
         .frame(width: 375)
-        .padding(.vertical, 12)
         .background(Color(.systemBackground))
 }
 
-#Preview("天數格式（只勾天） · iPhone SE 寬度 (375pt)") {
-    let model = previewModel()
-    model.selectedSubTab = .dayCountFormat
-    return FormatTabView(model: model)
+#Preview("勾年月週天 · iPhone SE 寬度 (375pt)") {
+    FormatTabView(model: previewModel(displayUnits: [.year, .month, .week, .day]))
         .frame(width: 375)
-        .padding(.vertical, 12)
-        .background(Color(.systemBackground))
-}
-
-#Preview("天數格式（勾年月週天） · iPhone SE 寬度 (375pt)") {
-    let model = previewModel(displayUnits: [.year, .month, .week, .day])
-    model.selectedSubTab = .dayCountFormat
-    return FormatTabView(model: model)
-        .frame(width: 375)
-        .padding(.vertical, 12)
-        .background(Color(.systemBackground))
-}
-
-#Preview("天數關閉 · iPhone SE 寬度 (375pt)") {
-    let model = previewModel(showDayCount: false)
-    model.selectedSubTab = .dayCountFormat
-    return FormatTabView(model: model)
-        .frame(width: 375)
-        .padding(.vertical, 12)
         .background(Color(.systemBackground))
 }

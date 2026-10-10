@@ -14,62 +14,100 @@ import UIKit
 /// `.accessibilityLabel` only.
 struct StyleTabView: View {
     @ObservedObject var model: StyleTabModel
+    /// Content-area height the panel gives this tab (`OverlayPanelView`'s
+    /// `contentHeight`, 212pt in the regular layout). Pages that are shorter
+    /// than this are centered vertically (TASK-49 A).
+    var availableHeight: CGFloat = 212
+    /// Swatch diameter for the color rows, every device (TASK-49 B; was 34).
+    static let swatchDiameter: CGFloat = 30
+    /// Both color rows share this many columns (TASK-39 B).
+    static let colorColumnCount = 9
+    /// Height of a color row and diameter of the selection ring: the ring is
+    /// drawn 4pt outside the swatch (#155), so the row is as tall as the ring.
+    static let swatchCellHeight: CGFloat = swatchDiameter + 8
 
-    /// Swatch diameter for the color rows (`.prow .dot{width:28px}`, #106 —
-    /// was 26). The longest row (outline color: auto + nine swatches +
-    /// rainbow = eleven items) must still fit inside a 375pt-wide screen
-    /// without horizontal scrolling (FR-10.4, acceptance 23.12): at 28pt
-    /// with zero gap that is already only 11*28 = 308pt, inside a 343pt
-    /// content width (375 - 16*2) — the row's `space-between` layout
-    /// (`colorPalette` below) only ever turns that slack into gaps, never
-    /// overflow, so 23.12 holds regardless of how many swatches a given row
-    /// has.
-    private static let swatchDiameter: CGFloat = 28
-    /// Height of a swatch's cell and diameter of its selection ring (#155).
-    /// The ring used to be an overlay poking 4pt out of the 28pt swatch on
-    /// every side, which the pinned sub-tab row and the panel's edge cut
-    /// off. The cell is as tall as the ring so the ring lies inside it
-    /// vertically; horizontally the cell keeps the swatch's 28pt pitch
-    /// (eleven 36pt cells would not fit the 355pt content width, acceptance
-    /// 23.12), so the ring may extend into the neighboring gap / the
-    /// content padding, which nothing clips.
-    private static let swatchCellHeight: CGFloat = 36
-    /// Gap between items in the "recent" row, the one row that stays
-    /// left-aligned with a fixed gap rather than `space-between`
-    /// (`.prow:last-child{justify-content:flex-start;gap:10px}`, #106 — was
-    /// 5, shared with the first row before this).
-    private static let recentRowSpacing: CGFloat = 10
+    /// Gap between neighboring columns when the nine columns fill
+    /// `contentWidth` edge to edge (`space-between`). Never negative.
+    static func columnSpacing(forContentWidth contentWidth: CGFloat) -> CGFloat {
+        max(0, (contentWidth - CGFloat(colorColumnCount) * swatchDiameter) / CGFloat(colorColumnCount - 1))
+    }
+
+    /// Center x of each of the nine columns, shared by both color rows so the
+    /// second row's n-th swatch sits right under the first row's n-th.
+    static func columnCenters(forContentWidth contentWidth: CGFloat) -> [CGFloat] {
+        let pitch = swatchDiameter + columnSpacing(forContentWidth: contentWidth)
+        return (0..<colorColumnCount).map { swatchDiameter / 2 + CGFloat($0) * pitch }
+    }
+
+    /// Left/right inset of a page's scroll content (TASK-84): 14 puts sliders
+    /// and swatches 16pt from the panel edge. The font list keeps 10 because
+    /// its rows carry their own inset (#309).
+    static func contentHorizontalInset(for subTab: StyleTabModel.SubTab) -> CGFloat {
+        subTab == .font ? 10 : 14
+    }
+
+    /// Top inset of the whole tab (`.tabbody` padding).
+    static let tabTopInset: CGFloat = 4
+    /// Height of the pinned sub-tab row: 6 + 36 + 4.
+    static let subTabRowHeight: CGFloat = 46
+    /// Space kept under a vertically centered page (TASK-49 A).
+    static let centeredBottomInset: CGFloat = 10
+
+    /// Minimum height of a centered page so that it fills what is left of
+    /// `availableHeight` below the sub-tab row and above the bottom inset.
+    static func centeredContentMinHeight(availableHeight: CGFloat) -> CGFloat {
+        max(0, availableHeight - tabTopInset - subTabRowHeight - centeredBottomInset)
+    }
 
     var body: some View {
+        // The sub-tab row is fixed above the tab's own `ScrollView` (TASK-66):
+        // it used to be a pinned `LazyVStack` header inside the panel's outer
+        // scroll view, which let the row drift with the 4pt top inset, left
+        // a gap under it for the edge fade, and could push it out of view
+        // when a shorter page kept the old scroll offset.
+        //
         // No gap of its own between `subTabRow` and `content` (#106): the
         // design's `.subA{padding:6px 4px 4px}` + `.pane{...}` (no margin)
         // puts the whole visual gap inside `subTabRow`'s own bottom padding
         // instead — see that view's `.padding(.top:.bottom:)`.
         //
-        // `subTabRow` is a pinned section header (#129): this view sits
-        // inside the panel's own vertical `ScrollView`, and a `LazyVStack`
-        // with `pinnedViews` pins against that enclosing scroll view, so the
-        // icon row stays on top while the (taller) font grid scrolls under
-        // it. The header's opaque panel-colored background hides content
-        // passing beneath it.
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-            Section {
-                content
-            } header: {
-                subTabRow
-                    .background(CameraTheme.background)
-            }
-        }
         // This tab's own `.tabbody` outer inset (`D3-style-tab.html`'s
         // style-tab-specific override, `.tabbody{padding:4px 10px 6px}` —
-        // #106 R2, the human's 2026-09-27 call: each tab owns its own
-        // `.tabbody` padding rather than a generic one shared by all four
-        // — `ui-shell` is dropping the panel container's own generic inset
-        // in #105 to avoid stacking both). Was a flat `.padding(.horizontal,
-        // 16)` with no vertical inset at all.
-        .padding(.top, 4)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 6)
+        // #106 R2) is split between the row (top, sides) and the scroll
+        // content (sides, bottom).
+        VStack(alignment: .leading, spacing: 0) {
+            subTabRow
+                .padding(.top, Self.tabTopInset)
+                .padding(.horizontal, 10)
+                // The font list's messages sit over the fixed row, so they
+                // never cover the cells being tapped.
+                .overlay(alignment: .center) {
+                    FontToastView(model: model.fontList)
+                }
+            ScrollView {
+                Group {
+                    if model.selectedSubTab.isCentered {
+                        // Short pages sit in the middle of the space below
+                        // the sub-tab row; taller content just grows and
+                        // scrolls.
+                        content
+                            .frame(maxWidth: .infinity,
+                                   minHeight: Self.centeredContentMinHeight(availableHeight: availableHeight),
+                                   alignment: .center)
+                    } else {
+                        content
+                    }
+                }
+                .padding(.horizontal, Self.contentHorizontalInset(for: model.selectedSubTab))
+                .padding(.bottom, model.selectedSubTab.isCentered ? Self.centeredBottomInset : 6)
+            }
+            // Fades at the scroll edges and one indicator flash per sub-tab
+            // (TASK-58b); the row is outside the scroll view, so no top inset.
+            .scrollEdgeHint(flashTrigger: model.selectedSubTab)
+            // A new identity per sub-tab starts every page at the top, with
+            // no animated clamp of the old offset (TASK-66).
+            .id(model.selectedSubTab)
+        }
         .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
                                              set: { if !$0 { model.lastError = nil } })) {
             Button("好") { model.lastError = nil }
@@ -91,7 +129,7 @@ struct StyleTabView: View {
         // the leftover space, so N spacer instances together always claim N
         // times what one does), which is exactly that 2:1 ratio; a single
         // `Spacer` at each end supplies the half-width edge gap. Each icon's
-        // own tap target is 44×30 (`.subA .stab{width:44px;height:30px}`).
+        // own tap target is 52×36 (TASK-57, enlarged from the design's 44×30).
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             ForEach(Array(StyleTabModel.SubTab.allCases.enumerated()), id: \.offset) { index, subTab in
@@ -103,9 +141,10 @@ struct StyleTabView: View {
                     model.selectedSubTab = subTab
                 } label: {
                     subTabIcon(subTab)
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 22, weight: .medium))
+                        .frame(width: 28, height: 28)
                         .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
-                        .frame(width: 44, height: 30)
+                        .frame(width: 52, height: 36)
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
@@ -125,7 +164,7 @@ struct StyleTabView: View {
             // Final icon set per FR-10.1 / PRD §1 icon rules: SF Symbol
             // names are the spec, not the mockup's hand-drawn SVG
             // approximations (design decision, #71).
-            Image(systemName: "textformat").accessibilityHidden(true)
+            Image(systemName: "t.square").accessibilityHidden(true)
         case .color:
             // Two-layer palette icon (design decision, #71): the inner
             // circle previews the current text color live, the outer ring
@@ -139,7 +178,7 @@ struct StyleTabView: View {
                                 model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
                 .accessibilityHidden(true)
         case .outline:
-            Image(systemName: "square.dashed").accessibilityHidden(true)
+            Image(systemName: "character.square.fill").accessibilityHidden(true)
         case .shadow:
             Image(systemName: "shadow").accessibilityHidden(true)
         case .size:
@@ -152,7 +191,7 @@ struct StyleTabView: View {
     @ViewBuilder
     private var content: some View {
         switch model.selectedSubTab {
-        case .font: fontRow
+        case .font: fontContent
         case .color: colorContent
         case .outline: outlineContent
         case .shadow: shadowContent
@@ -160,141 +199,243 @@ struct StyleTabView: View {
         }
     }
 
-    // MARK: - 字型 (FR-10.2, FR-10.3)
+    // MARK: - 字型 (PRD 0.3 FR-16, TASK-56)
 
-    /// Height of one font cell; the whole cell is the tap target (#129).
-    static let fontCellHeight: CGFloat = 44
-    /// Font name size inside a cell (#129 — was 17 in the old chip row).
-    static let fontCellTextSize: CGFloat = 15
-
-    /// Three equal-width columns, rows in `fontOptions` order, the last row
-    /// left-aligned. Scrolls vertically with the panel instead of
-    /// horizontally (#129).
-    private var fontRow: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                  alignment: .leading,
-                  spacing: 8) {
-            ForEach(model.fontOptions, id: \.self) { fontID in
-                let isSelected = model.profile.style.fontID == fontID
-                Button {
-                    model.selectFont(fontID)
-                } label: {
-                    Text(fontID.displayName)
-                        .font(Font(OverlayMetrics.font(for: fontID, size: Self.fontCellTextSize)))
-                        .foregroundColor(CameraTheme.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Self.fontCellHeight)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 1.5 : 0)
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .padding(.vertical, 4)
+    /// The whole font list, scrolling with the panel; the pinned sub-tab row
+    /// stays on top.
+    private var fontContent: some View {
+        FontListView(model: model.fontList)
     }
 
     // MARK: - 顏色 (FR-10.4, FR-10.7)
 
     private var colorContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            opacitySlider(label: "文字不透明度",
+                          percent: model.textOpacityPercent,
+                          isDisabled: false,
+                          onChange: { model.setTextOpacityPercent($0) })
+            textColorPalette
+        }
+    }
+
+    private var textColorPalette: some View {
         colorPalette(current: model.profile.style.textColor,
                     swatches: model.textColorSwatches,
                     showAutoButton: false,
                     isDisabled: false,
                     onSelectSwatch: { model.selectTextColor($0) },
-                    onPickCustom: { model.pickCustomTextColor($0) })
+                    onApplyCustom: { model.applyCustomTextColor($0) },
+                    onCommitCustom: { model.commitCustomColor($0) })
     }
 
     // MARK: - 外框、外框顏色 (FR-10.5, FR-10.6, FR-10.10)
 
     private var outlineContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                // `.hs{gap:6px}` (#106) — was 14.
-                HStack(spacing: 6) {
-                    ForEach(model.outlineOptions, id: \.self) { outline in
-                        let previewStyle: OverlayStyle = {
-                            var style = model.profile.style
-                            style.outline = outline
-                            style.shadow = .none
-                            return style
-                        }()
-                        let isSelected = model.profile.style.outline == outline
-                        Button {
-                            model.selectOutline(outline)
-                        } label: {
-                            optionCell(isNone: outline == .none, previewStyle: previewStyle, isSelected: isSelected)
-                        }
-                        .accessibilityLabel(outlineName(outline))
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        VStack(alignment: .leading, spacing: 12) {
+            // Transparent boxes, left-aligned on the swatch's left edge
+            // (TASK-49 C); no horizontal scrolling.
+            optionRow {
+                ForEach(model.outlineOptions, id: \.self) { outline in
+                    let previewStyle: OverlayStyle = {
+                        var style = model.profile.style
+                        style.outline = outline
+                        style.applyShadowPreset(.none)
+                        // The option icons keep a fixed look whatever the
+                        // sliders are set to (TASK-70).
+                        style.strokeWidth = OverlayStyle.defaultStrokeWidth
+                        style.boxPadding = OverlayStyle.defaultBoxPadding
+                        return style
+                    }()
+                    let isSelected = model.profile.style.outline == outline
+                    Button {
+                        model.selectOutline(outline)
+                    } label: {
+                        optionCell(isNone: outline == .none, previewStyle: previewStyle,
+                                   isSelected: isSelected, side: Self.optionSide)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(outlineName(outline))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
-                .padding(.vertical, 4)
             }
+            outlineParameterSlider
+            opacitySlider(label: "外框不透明度",
+                          percent: model.outlineOpacityPercent,
+                          isDisabled: model.isOutlineColorSectionDisabled,
+                          onChange: { model.setOutlineOpacityPercent($0) })
             colorPalette(current: model.profile.style.outlineColor,
                         swatches: model.outlineColorSwatches,
                         showAutoButton: true,
                         isDisabled: model.isOutlineColorSectionDisabled,
                         onSelectSwatch: { model.selectOutlineColor($0) },
                         onSelectAuto: { model.selectOutlineColor(nil) },
-                        onPickCustom: { model.pickCustomOutlineColor($0) })
+                        onApplyCustom: { model.applyCustomOutlineColor($0) },
+                        onCommitCustom: { model.commitCustomColor($0) })
         }
+    }
+
+    /// The slider of the chosen outline (TASK-70): 粗細 for 描邊, 留白 for
+    /// 底框, nothing for 無, both marked by the "distance" icon. Same row
+    /// layout and spacing as `opacitySlider`.
+    @ViewBuilder
+    private var outlineParameterSlider: some View {
+        switch model.profile.style.outline {
+        case .none:
+            EmptyView()
+        case .stroke:
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "描邊粗細",
+                            identifier: "outlineStrokeWidthSlider",
+                            value: model.profile.style.strokeWidth,
+                            range: OverlayStyle.strokeWidthRange,
+                            step: StyleTabModel.strokeWidthStep,
+                            onChange: { model.setStrokeWidth($0) })
+        case .box, .squareBox:
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "底框留白",
+                            identifier: "outlineBoxPaddingSlider",
+                            value: model.profile.style.boxPadding,
+                            range: OverlayStyle.boxPaddingRange,
+                            step: StyleTabModel.boxPaddingStep,
+                            onChange: { model.setBoxPadding($0) })
+        }
+    }
+
+    private func parameterSlider(label: String? = nil, iconName: String? = nil,
+                                 accessibilityName: String, identifier: String, value: Double,
+                                 range: ClosedRange<Double>, step: Double,
+                                 isDisabled: Bool = false,
+                                 onChange: @escaping (Double) -> Void) -> some View {
+        let valueText = value.truncatingRemainder(dividingBy: 1) == 0
+            ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        return HStack(spacing: 10) {
+            // The row's mark sits where the opacity row has its 24pt chip, so
+            // every slider starts at the same x: an icon, or a short text
+            // label whose characters may spill into the gap.
+            Group {
+                if let iconName {
+                    Image(systemName: iconName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(CameraTheme.ink)
+                } else if let label {
+                    Text(label)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(CameraTheme.ink)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(width: 24, height: 24, alignment: iconName == nil ? .leading : .center)
+            .accessibilityHidden(true)
+            Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
+                .tint(CameraTheme.accentControl)
+                .accessibilityLabel(accessibilityName)
+                .accessibilityValue("\(valueText) 點")
+                .accessibilityIdentifier(identifier)
+            Text(valueText)
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .opacity(isDisabled ? 0.35 : 1)
+        .disabled(isDisabled)
     }
 
     // MARK: - 陰影 (FR-10.8, FR-10.10)
 
     private var shadowContent: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            // `.hs{gap:6px}` (#106) — was 14.
-            HStack(spacing: 6) {
+        let style = model.profile.style
+        let isDisabled = model.isShadowParametersDisabled
+        return VStack(alignment: .leading, spacing: 12) {
+            // Four quick presets: tapping one fills in the parameters below
+            // (TASK-71); none stays selected once a parameter is changed.
+            optionRow {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
                     // Isolates the shadow, clearing outline, mirroring
-                    // `outlineContent`'s swatches (which isolate the outline
-                    // by clearing shadow) so the two rows behave symmetrically.
+                    // `outlineContent`'s options (which isolate the outline
+                    // by clearing shadow) so the two pages behave symmetrically.
                     let previewStyle: OverlayStyle = {
                         var style = model.profile.style
-                        style.shadow = shadow
+                        style.applyShadowPreset(shadow)
                         style.outline = .none
                         return style
                     }()
-                    let isSelected = model.profile.style.shadow == shadow
+                    let isSelected = style.shadowPreset == shadow
                     Button {
                         model.selectShadow(shadow)
                     } label: {
-                        optionCell(isNone: shadow == .none, previewStyle: previewStyle, isSelected: isSelected)
+                        optionCell(isNone: shadow == .none, previewStyle: previewStyle,
+                                   isSelected: isSelected, side: Self.optionSide)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel(shadowName(shadow))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
-            .padding(.vertical, 4)
+            colorPalette(current: style.shadowColorSource == .textColor ? nil : style.shadowColor,
+                        swatches: model.outlineColorSwatches,
+                        showAutoButton: true,
+                        autoLabel: "跟隨文字顏色",
+                        isDisabled: isDisabled,
+                        onSelectSwatch: { model.selectShadowColor($0) },
+                        onSelectAuto: { model.selectShadowColor(nil) },
+                        onApplyCustom: { model.applyCustomShadowColor($0) },
+                        onCommitCustom: { model.commitCustomColor($0) })
+            opacitySlider(label: "陰影不透明度",
+                          percent: model.shadowOpacityPercent,
+                          isDisabled: isDisabled,
+                          onChange: { model.setShadowOpacityPercent($0) })
+            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "X 偏移", identifier: "shadowOffsetXSlider",
+                            value: style.shadowOffsetX, range: OverlayStyle.shadowOffsetRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowOffsetX($0) })
+            parameterSlider(iconName: "arrow.up.and.down", accessibilityName: "Y 偏移", identifier: "shadowOffsetYSlider",
+                            value: style.shadowOffsetY, range: OverlayStyle.shadowOffsetRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowOffsetY($0) })
+            parameterSlider(iconName: "drop.halffull", accessibilityName: "模糊", identifier: "shadowBlurSlider",
+                            value: style.shadowBlur, range: OverlayStyle.shadowBlurRange,
+                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
+                            onChange: { model.setShadowBlur($0) })
         }
     }
 
     // MARK: - 字級 (FR-10.9)
 
     private var sizeSlider: some View {
-        // `.zrow{gap:8px}` (#106) — was 12.
-        HStack(spacing: 8) {
-            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-            Slider(
-                value: Binding(
-                    get: { Double(model.profile.style.sizeScale) },
-                    set: { model.setSizeScale(Int($0.rounded())) }
-                ),
-                in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
-                step: Double(StyleTabModel.sizeScaleStep)
-            )
-            .accessibilityLabel("字級")
-            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+        // Three lines, `spacing` 12 (TASK-49 E): the live percentage, the
+        // slider row, a hint. Double-tapping the percentage or the slider row
+        // resets to the default size.
+        VStack(spacing: 12) {
             Text("\(model.profile.style.sizeScale)%")
-                .font(.subheadline.monospacedDigit())
-                .frame(minWidth: 46, alignment: .trailing)
+                .font(.system(size: 28, weight: .bold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { model.resetSizeScale() }
+                .accessibilityLabel("字級 \(model.profile.style.sizeScale)%")
+            // `.zrow{gap:8px}` (#106) — was 12.
+            HStack(spacing: 8) {
+                Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+                Slider(
+                    value: Binding(
+                        get: { Double(model.profile.style.sizeScale) },
+                        set: { model.setSizeScale(Int($0.rounded())) }
+                    ),
+                    in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
+                    step: Double(StyleTabModel.sizeScaleStep)
+                )
+                .tint(CameraTheme.accentControl)
+                .accessibilityLabel("字級")
+                .accessibilityAction(named: "回到預設大小") { model.resetSizeScale() }
+                Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+            }
+            // Simultaneous, so the slider's own drag still works.
+            .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
+            Text("拖曳調整，點兩下回到預設大小")
+                .font(.system(size: 12))
+                .foregroundColor(CameraTheme.inkSecondary)
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -308,66 +449,38 @@ struct StyleTabView: View {
     private func colorPalette(current: OverlayColor?,
                               swatches: [OverlayColor],
                               showAutoButton: Bool,
+                              autoLabel: String = "自動（黑或白）",
                               isDisabled: Bool,
                               onSelectSwatch: @escaping (OverlayColor) -> Void,
                               onSelectAuto: @escaping () -> Void = {},
-                              onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        // `.pal{gap:6px}` between the two rows (#106) — was 10.
+                              onApplyCustom: @escaping (OverlayColor) -> Void,
+                              onCommitCustom: @escaping (OverlayColor) -> Void) -> some View {
+        // `.pal{gap:6px}` between the two rows (#106).
         VStack(alignment: .leading, spacing: 6) {
-            // First row fills the full content width edge-to-edge, gaps
-            // sized automatically (`.prow{justify-content:space-between}`,
-            // #106 — was a fixed 5pt gap): (N-1) equal flexible spacers
-            // between N fixed-size swatches is `space-between`'s exact
-            // SwiftUI equivalent for a known, non-scrolling item count.
-            HStack(spacing: 0) {
+            // First row: nine swatches filling the content width, equal gaps.
+            paletteRow {
+                ForEach(swatches, id: \.hexString) { swatch in
+                    colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
+                }
+            }
+            // Second row: (auto,) rainbow, then recent custom colors, each in
+            // the same column as the first row's swatch above it, left-aligned.
+            paletteRow {
                 if showAutoButton {
-                    Button {
-                        onSelectAuto()
-                    } label: {
-                        Image(systemName: "circle.lefthalf.filled")
-                            .font(.system(size: 16))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                            .overlay(swatchSelectionRing(current == nil))
-                            .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
-                    }
-                    .accessibilityLabel("自動（黑或白）")
-                    .accessibilityAddTraits(current == nil ? .isSelected : [])
-                    Spacer(minLength: 0)
+                    autoColorButton(current: current, label: autoLabel, onSelectAuto: onSelectAuto)
                 }
-                ForEach(Array(swatches.enumerated()), id: \.element.hexString) { index, swatch in
-                    if index > 0 { Spacer(minLength: 0) }
-                    colorDot(swatch, isSelected: current == swatch) { onSelectSwatch(swatch) }
-                }
-                Spacer(minLength: 0)
                 // The rainbow swatch is "selected" when `current` is a custom
                 // color that does not match any preset or recent swatch —
                 // those already show their own ring, so this only fires for
                 // an actually custom color (R.3).
                 let isCustomSelected = current != nil
-                    && !swatches.contains(current!)
-                    && !model.recentColors.contains(current!)
-                customColorPicker(current: current, isSelected: isCustomSelected, onPickCustom: onPickCustom)
-            }
-            // Second ("recent") row stays left-aligned with a fixed gap
-            // (`.prow:last-child{justify-content:flex-start;gap:10px}`,
-            // #106) rather than `space-between` — it can have anywhere from
-            // zero to seven items, so stretching it to fill the row would
-            // leave huge, uneven gaps instead of a steady 10pt rhythm.
-            HStack(spacing: Self.recentRowSpacing) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 14))
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
-                    .accessibilityLabel("最近自訂")
-                if model.recentColors.isEmpty {
-                    Text("用彩虹圓自訂的顏色會出現在這裡")
-                        .font(.caption)
-                        .foregroundColor(CameraTheme.inkSecondary)
-                } else {
-                    ForEach(model.recentColors, id: \.hexString) { color in
-                        colorDot(color, isSelected: current == color, cellHeight: Self.swatchDiameter) {
-                            onSelectSwatch(color)
-                        }
+                    && !swatches.contains { isSame(current, $0) }
+                    && !model.recentColors.contains { isSame(current, $0) }
+                customColorPicker(current: current, isSelected: isCustomSelected,
+                                  onApply: onApplyCustom, onCommit: onCommitCustom)
+                ForEach(model.recentColors, id: \.hexString) { color in
+                    colorDot(color, isSelected: isSame(current, color), labelPrefix: "最近自訂 ") {
+                        onSelectSwatch(color)
                     }
                 }
             }
@@ -376,23 +489,58 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    /// `cellHeight` is `swatchCellHeight` for the first row; the "recent" row
-    /// below it passes the bare swatch height so the last row is 8pt shorter
-    /// and the whole palette fits 120pt-tall panels without scrolling under
-    /// the pinned sub-tab row (#155 Y.2). Its selection ring then extends
-    /// 4pt past the cell into the row gap above / the bottom padding below,
-    /// where nothing clips it.
-    private func colorDot(_ color: OverlayColor, isSelected: Bool,
-                          cellHeight: CGFloat = StyleTabView.swatchCellHeight,
+    /// One color row: items laid out on the shared nine-column grid.
+    private func paletteRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let built = content()
+        return GeometryReader { proxy in
+            HStack(spacing: Self.columnSpacing(forContentWidth: proxy.size.width)) {
+                built
+            }
+            .frame(width: proxy.size.width, alignment: .leading)
+        }
+        .frame(height: Self.swatchCellHeight)
+    }
+
+    /// The 外框顏色 "auto" button: one grid column wide like every swatch.
+    func autoColorButton(current: OverlayColor?, label: String = "自動（黑或白）",
+                         onSelectAuto: @escaping () -> Void) -> some View {
+        Button {
+            onSelectAuto()
+        } label: {
+            // Left half gray (the preview "A" color), right half white (TASK-49,
+            // human's follow-up). Drawn, not a symbol, so no system tint.
+            ZStack {
+                Circle().fill(Color.white)
+                Circle().trim(from: 0.25, to: 0.75).fill(swiftUIColor(StyleSwatchPreview.textColor))
+            }
+            .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+            .overlay(swatchEdge)
+            .overlay(swatchSelectionRing(current == nil))
+            .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(current == nil ? .isSelected : [])
+    }
+
+    func colorDot(_ color: OverlayColor, isSelected: Bool,
+                          labelPrefix: String = "",
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
                 .fill(swiftUIColor(color))
+                // Only a translucent color needs the checkerboard; under an
+                // opaque swatch it showed through the disabled (dimmed)
+                // palette of outline 無 (#310 QA, TASK-70).
+                .background {
+                    if color.opacity < 1 { CheckerboardView().clipShape(Circle()) }
+                }
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                .overlay(swatchEdge)
                 .overlay(swatchSelectionRing(isSelected))
-                .frame(width: Self.swatchDiameter, height: cellHeight)
+                .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }
-        .accessibilityLabel(color.hexString)
+        .accessibilityLabel(labelPrefix + color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -402,45 +550,94 @@ struct StyleTabView: View {
         .map { Color(hue: $0, saturation: 1, brightness: 1) }
 
     /// Custom-color entry point: a solid rainbow circle, same diameter as the
-    /// other swatches (issue #83) — not the system `ColorPicker`'s default
-    /// ring-with-current-color-well look. The real `ColorPicker` is still
-    /// there, made effectively invisible (`.opacity` low enough to read as
-    /// transparent but non-zero, since SwiftUI stops forwarding taps to a
-    /// fully transparent control) and stacked on top so tapping still opens
-    /// the system color picker and preserves FR-10.7's "add to recent"
-    /// behavior unchanged. The `ColorPicker`'s own accessibility label
-    /// (its title, "自訂顏色", even with `.labelsHidden()`) is left as-is
-    /// rather than combined, so VoiceOver's activation still routes to the
-    /// native control exactly as before this change (R.4).
-    private func customColorPicker(current: OverlayColor?,
-                                   isSelected: Bool,
-                                   onPickCustom: @escaping (OverlayColor) -> Void) -> some View {
-        ZStack {
+    /// other swatches (issue #83). Tapping it presents the system color picker
+    /// (`UIColorPickerViewController`, with alpha). Dragging calls `onApply`
+    /// continuously for the live preview; `onCommit` runs once when the picker
+    /// closes, and only if the final color differs from the one it opened
+    /// with, so the recent list gets one entry per pick (TASK-53).
+    func customColorPicker(current: OverlayColor?,
+                           isSelected: Bool,
+                           onApply: @escaping (OverlayColor) -> Void,
+                           onCommit: @escaping (OverlayColor) -> Void) -> some View {
+        CustomColorPickerButton(current: current ?? .white, onApply: onApply, onCommit: onCommit) {
             Circle()
                 .fill(AngularGradient(colors: Self.rainbowHues, center: .center))
                 .frame(width: Self.swatchDiameter, height: Self.swatchDiameter)
+                .overlay(swatchEdge)
                 .overlay(swatchSelectionRing(isSelected))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            ColorPicker("自訂顏色", selection: Binding(
-                get: { swiftUIColor(current ?? .white) },
-                set: { newValue in
-                    if let picked = OverlayColor(newValue) {
-                        onPickCustom(picked)
-                    }
-                }
-            ), supportsOpacity: false)
-            .labelsHidden()
-            .opacity(0.02)
         }
         .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
     }
 
-    /// Rounded-square selection frame of the outline/shadow options (corner
-    /// 10, 1.5pt, like the font cells), drawn inside the cell (#155).
+    /// Whether `color` is `swatch` ignoring opacity (a swatch stays selected
+    /// at any opacity, TASK-69).
+    private func isSame(_ color: OverlayColor?, _ swatch: OverlayColor) -> Bool {
+        guard let color else { return false }
+        return StyleTabModel.hasSameRGB(color, swatch)
+    }
+
+    /// The opacity row of the color, outline and shadow pages (TASK-69, TASK-83):
+    /// a fixed legend (transparent checkerboard half, solid half), the slider,
+    /// and the percentage. The legend does not follow the selected color.
+    private func opacitySlider(label: String, percent: Int,
+                               isDisabled: Bool, onChange: @escaping (Int) -> Void) -> some View {
+        let range = StyleTabModel.opacityPercentRange
+        return HStack(spacing: 10) {
+            opacityLegend
+            Slider(
+                value: Binding(get: { Double(percent) }, set: { onChange(Int($0.rounded())) }),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: 1
+            )
+            .tint(CameraTheme.accentControl)
+            .accessibilityLabel(label)
+            .accessibilityValue("\(percent)%")
+            Text("\(percent)%")
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: 44, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .opacity(isDisabled ? 0.35 : 1)
+        .disabled(isDisabled)
+    }
+
+    /// Fixed opacity legend of the three opacity rows (TASK-83): a plain gray
+    /// and white checkerboard circle in the same 24pt column as the other
+    /// slider icons, so it never follows the selected color.
+    private var opacityLegend: some View {
+        CheckerboardView()
+            .frame(width: 24, height: 24)
+            .clipShape(Circle())
+            .overlay(swatchEdge)
+            .accessibilityHidden(true)
+    }
+
+    /// Shared option-row metrics for the outline and shadow pages (TASK-87):
+    /// 48pt boxes, 8pt apart, 4pt above the row.
+    static let optionSide: CGFloat = 48
+    static let optionSpacing: CGFloat = 8
+    static let optionRowTopPadding: CGFloat = 4
+
+    /// The option row both pages share, left-aligned on the swatch edge.
+    private func optionRow<Options: View>(@ViewBuilder _ options: () -> Options) -> some View {
+        HStack(spacing: Self.optionSpacing) { options() }
+            .padding(.top, Self.optionRowTopPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The 1pt inner edge of every swatch (`ink` at 16%), so light colors
+    /// stay visible on the panel background (TASK-49 B).
+    private var swatchEdge: some View {
+        Circle().strokeBorder(CameraTheme.ink.opacity(0.16), lineWidth: 1)
+    }
+
+    /// Selection frame of the outline/shadow options: a 2pt `active` rounded
+    /// frame (corner 12) inside the box; unselected boxes have no frame or
+    /// fill at all (TASK-49 C).
     private func optionSelectionFrame(_ isSelected: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 1.5 : 0)
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(CameraTheme.active, lineWidth: isSelected ? 2 : 0)
     }
 
     /// Selection halo for the round color swatches (色票), matching the
@@ -456,33 +653,33 @@ struct StyleTabView: View {
             .frame(width: Self.swatchCellHeight, height: Self.swatchCellHeight)
     }
 
-    // MARK: - 共用：外框／陰影的 "Aa" 預覽
+    // MARK: - 共用：外框／陰影的 "A" 預覽
 
-    /// Draws "Aa" in the fixed preview look (`StyleSwatchPreview`: dark text,
-    /// gray outline/box/shadow) with `style`'s font and the outline/shadow
-    /// being previewed, layering outline then shadow (FR-10.5, FR-10.8).
-    /// Strokes are real glyph outlines, not offset copies (#155).
-    private func stylePreviewSwatch(_ style: OverlayStyle) -> some View {
+    /// Draws a single "A" in the fixed preview look (`StyleSwatchPreview`:
+    /// gray text in SF Rounded Semibold, gray outline/box/shadow, never the
+    /// current font) with the outline/shadow being previewed, layering outline
+    /// then shadow (FR-10.5, FR-10.8). Strokes are real glyph outlines (#155).
+    /// The glyph is about half the box side.
+    private func stylePreviewSwatch(_ style: OverlayStyle, side: CGFloat) -> some View {
         let fixedStyle = StyleSwatchPreview.fixedStyle(from: style)
-        let fontSize: CGFloat = 15
+        let fontSize = (side * 0.52).rounded()
         let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
-        let font = OverlayMetrics.font(for: fixedStyle.fontID, size: fontSize)
-        var layered = AnyView(Text("Aa")
+        let font = StyleSwatchPreview.previewFont(ofSize: fontSize)
+        let textSize = ("A" as NSString).size(withAttributes: [.font: font])
+        var layered = AnyView(Text("A")
             .font(Font(font))
-            .foregroundColor(CameraTheme.ink))
+            .foregroundColor(swiftUIColor(fixedStyle.textColor)))
 
         for decoration in StyleSwatchPreview.decorations(for: fixedStyle) {
             switch decoration {
             case let .stroke(color, width):
-                // Drawn at half the viewfinder's width (the preview is
-                // small); the image includes the fill, so it replaces the
-                // plain text rather than being layered under it.
-                let image = StyleSwatchPreview.strokedText("Aa",
+                // Half the viewfinder's width; the image includes the fill,
+                // so it replaces the plain text rather than being layered.
+                let image = StyleSwatchPreview.strokedText("A",
                                                            font: font,
                                                            fill: fixedStyle.textColor,
                                                            stroke: color,
                                                            strokeWidth: CGFloat(width) * scale * 0.5)
-                let textSize = ("Aa" as NSString).size(withAttributes: [.font: font])
                 layered = AnyView(Image(uiImage: image)
                     .frame(width: textSize.width, height: textSize.height))
             case let .backgroundBox(color, opacity, cornerRadius, insets):
@@ -507,24 +704,23 @@ struct StyleTabView: View {
             }
         }
 
-        // `.och{min-width:48px;height:44px}` (#106) — was 46×36.
-        return layered
-            .padding(6)
-            .frame(width: 48, height: 44)
+        return layered.frame(width: side, height: side)
     }
 
-    /// An outline/shadow option: its preview, or the `nosign` icon for 無
-    /// (#155), with the rounded-square selection frame drawn inside the cell.
+    /// An outline/shadow option: a transparent `side`-square box holding its
+    /// preview, or the `nosign` icon for 無, with the selection frame inside
+    /// the box (TASK-49 C). The name is the accessibility label only.
     @ViewBuilder
-    private func optionCell(isNone: Bool, previewStyle: OverlayStyle, isSelected: Bool) -> some View {
+    private func optionCell(isNone: Bool, previewStyle: OverlayStyle,
+                            isSelected: Bool, side: CGFloat) -> some View {
         Group {
             if isNone {
                 Image(systemName: "nosign")
-                    .font(.system(size: 20))
+                    .font(.system(size: 24))
                     .foregroundColor(CameraTheme.inkSecondary)
-                    .frame(width: 48, height: 44)
+                    .frame(width: side, height: side)
             } else {
-                stylePreviewSwatch(previewStyle)
+                stylePreviewSwatch(previewStyle, side: side)
             }
         }
         .overlay(optionSelectionFrame(isSelected))
@@ -534,14 +730,13 @@ struct StyleTabView: View {
     private func outlineName(_ outline: OverlayOutline) -> String {
         switch outline {
         case .none: return "無外框"
-        case .thinStroke: return "細描邊"
-        case .thickStroke: return "粗描邊"
-        case .translucentBox: return "半透明底框"
-        case .solidBox: return "實心底框"
+        case .stroke: return "描邊"
+        case .box: return "底框"
+        case .squareBox: return "直角底框"
         }
     }
 
-    private func shadowName(_ shadow: OverlayShadow) -> String {
+    private func shadowName(_ shadow: OverlayShadowPreset) -> String {
         switch shadow {
         case .none: return "無陰影"
         case .soft: return "柔和"
@@ -555,6 +750,18 @@ struct StyleTabView: View {
     }
 }
 
+extension StyleTabModel.SubTab {
+    /// Short pages (color, size) are centered vertically; the outline, shadow
+    /// and font pages start from the top (TASK-49 A; the shadow page grew
+    /// parameter rows in TASK-71).
+    var isCentered: Bool {
+        switch self {
+        case .color, .size: return true
+        case .font, .outline, .shadow: return false
+        }
+    }
+}
+
 private extension OverlayColor {
     /// Converts a `ColorPicker`-returned SwiftUI `Color` back into an
     /// `OverlayColor`, resolved in sRGB so the stored hex matches what the
@@ -563,7 +770,7 @@ private extension OverlayColor {
     init?(_ color: Color) {
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
-        self.init(red: Double(red), green: Double(green), blue: Double(blue), opacity: 1.0)
+        self.init(red: Double(red), green: Double(green), blue: Double(blue), opacity: Double(alpha))
     }
 }
 
@@ -582,13 +789,63 @@ private func previewProfile(style: OverlayStyle = OverlayStyle()) -> CameraProfi
 }
 
 @MainActor
-private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel {
+private func previewModel(style: OverlayStyle = OverlayStyle(),
+                          fontStates: [OverlayFontID: FontState] = [:]) -> StyleTabModel {
     let suiteName = "StyleTabView.Preview.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName) ?? .standard
     let store = RecentColorsStore(defaults: defaults)
     store.add(OverlayColor(red8: 0x7A, green8: 0x4E, blue8: 0x9C))
     store.add(OverlayColor(red8: 0x2E, green8: 0x8B, blue8: 0x57))
-    return StyleTabModel(profile: previewProfile(style: style), recentColorsStore: store) { _ in }
+    return StyleTabModel(profile: previewProfile(style: style),
+                         recentColorsStore: store,
+                         fontLibrary: StaticFontLibrary(states: fontStates),
+                         applyFont: { _, _ in },
+                         allProfiles: { [] }) { _ in }
+}
+
+#Preview("字型格子 · 只有蘋方 (375pt)") {
+    let model = previewModel()
+    model.selectedSubTab = .font
+    return StyleTabView(model: model)
+        .frame(width: 375)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+}
+
+#Preview("字型格子 · 已下載 3 套 (375pt)") {
+    let model = previewModel(style: OverlayStyle(fontID: .huninn),
+                             fontStates: [.huninn: .available, .notoSerifTC: .available, .iansui: .available])
+    model.selectedSubTab = .font
+    return StyleTabView(model: model)
+        .frame(width: 375)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+}
+
+#Preview("字型格子 · 目前字型需重新下載 (375pt)") {
+    let model = previewModel(style: OverlayStyle(fontID: .xingkai),
+                             fontStates: [.huninn: .available, .xingkai: .notDownloaded])
+    model.selectedSubTab = .font
+    return StyleTabView(model: model)
+        .frame(width: 375)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+}
+
+#Preview("字型格子 · 目前字型下載中 38% / 準備中 (375pt)") {
+    let downloading = previewModel(style: OverlayStyle(fontID: .xingkai),
+                                   fontStates: [.xingkai: .downloading(progress: 0.38)])
+    let preparing = previewModel(style: OverlayStyle(fontID: .songti),
+                                 fontStates: [.songti: .preparing])
+    downloading.selectedSubTab = .font
+    preparing.selectedSubTab = .font
+    return VStack {
+        StyleTabView(model: downloading)
+        StyleTabView(model: preparing)
+    }
+    .frame(width: 375)
+    .padding(.vertical, 12)
+    .background(Color(.systemBackground))
 }
 
 #Preview("字型 · iPhone SE 寬度 (375pt)") {
@@ -611,7 +868,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
 
 #Preview("外框 · iPhone SE 寬度 (375pt)") {
     var style = OverlayStyle()
-    style.outline = .translucentBox
+    style.outline = .box
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return StyleTabView(model: model)
@@ -650,7 +907,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
 
 #Preview("外框 · 內容區 120pt，捲到底，色票選定圈要完整 (375pt)") {
     var style = OverlayStyle()
-    style.outline = .thinStroke
+    style.outline = .stroke
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return ScrollView {
@@ -663,7 +920,7 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
 
 #Preview("外框 · 內容區 160pt (375pt)") {
     var style = OverlayStyle()
-    style.outline = .thinStroke
+    style.outline = .stroke
     let model = previewModel(style: style)
     model.selectedSubTab = .outline
     return ScrollView {
@@ -683,4 +940,94 @@ private func previewModel(style: OverlayStyle = OverlayStyle()) -> StyleTabModel
     .frame(width: 375, height: 120)
     .background(CameraTheme.background)
     .defaultScrollAnchor(.bottom)
+}
+
+/// Button that presents `UIColorPickerViewController` and reports live
+/// selections (`onApply`) separately from the single close-time result
+/// (`onCommit`, only when the color changed since opening).
+private struct CustomColorPickerButton<Label: View>: View {
+    let current: OverlayColor
+    let onApply: (OverlayColor) -> Void
+    let onCommit: (OverlayColor) -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var isPresented = false
+
+    var body: some View {
+        Button { isPresented = true } label: { label() }
+            .buttonStyle(.plain)
+            .accessibilityLabel("自訂顏色")
+            .background(
+                ColorPickerPresenter(isPresented: $isPresented, initial: current,
+                                     onApply: onApply, onCommit: onCommit)
+                    .frame(width: 0, height: 0)
+            )
+    }
+}
+
+/// Hosts the modal presentation of a `UIColorPickerViewController`.
+private struct ColorPickerPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let initial: OverlayColor
+    let onApply: (OverlayColor) -> Void
+    let onCommit: (OverlayColor) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        guard isPresented, host.presentedViewController == nil else { return }
+        let picker = UIColorPickerViewController()
+        picker.supportsAlpha = true
+        picker.selectedColor = UIColor(red: initial.red, green: initial.green,
+                                       blue: initial.blue, alpha: initial.opacity)
+        picker.delegate = coordinator
+        coordinator.startColor = initial
+        coordinator.latestColor = initial
+        host.present(picker, animated: true)
+    }
+
+    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+        var parent: ColorPickerPresenter?
+        var startColor: OverlayColor?
+        var latestColor: OverlayColor?
+
+        func colorPickerViewController(_ viewController: UIColorPickerViewController,
+                                       didSelect color: UIColor, continuously: Bool) {
+            guard let picked = OverlayColor(Color(uiColor: color)) else { return }
+            latestColor = picked
+            parent?.onApply(picked)
+        }
+
+        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
+            if let final = latestColor, final != startColor {
+                parent?.onCommit(final)
+            }
+            parent?.isPresented = false
+        }
+    }
+}
+
+/// A light gray checkerboard, drawn behind translucent colors so their
+/// opacity can be seen (TASK-69). Fills whatever frame it is given.
+private struct CheckerboardView: View {
+    private let cell: CGFloat = 5
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            let columns = Int((size.width / cell).rounded(.up))
+            let rows = Int((size.height / cell).rounded(.up))
+            for row in 0..<rows {
+                for column in 0..<columns where (row + column).isMultiple(of: 2) {
+                    let rect = CGRect(x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell, height: cell)
+                    context.fill(Path(rect), with: .color(Color(white: 0.78)))
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
 }

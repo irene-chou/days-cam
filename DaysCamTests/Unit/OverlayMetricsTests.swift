@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 import XCTest
 @testable import DaysCam
@@ -91,30 +92,24 @@ final class OverlayMetricsTests: XCTestCase {
     /// The convenience both `OverlayTextView` and `OverlayRenderer` call. 5.8
     /// and 5.9 again, this time measured with the font the text is drawn in.
     func testFittedFontSizeThroughTheRealFontObeysTheSameBounds() {
-        let theme = OverlayTheme.theme(for: .classicWhite)
         let base = OverlayMetrics.baseFontSize(forShortEdge: 3024)
 
         let shortText = OverlayMetrics.fittedFontSize(for: "第 1 天",
-                                                      theme: theme,
+                                                      font: .pingFang,
                                                       baseFontSize: base,
                                                       availableWidth: 3024)
         XCTAssertEqual(shortText, base, accuracy: 0.0001)
 
         let longText = OverlayMetrics.fittedFontSize(for: "小寶 2026.03.20　1 年 2 個月 5 天",
-                                                     theme: theme,
+                                                     font: .pingFang,
                                                      baseFontSize: base,
                                                      availableWidth: 800)
         XCTAssertLessThan(longText, base)
         XCTAssertGreaterThanOrEqual(longText, base * OverlayMetrics.minimumFontScale)
     }
 
-    func testEveryThemeResolvesToASystemFont() {
-        for theme in OverlayTheme.all {
-            let font = OverlayMetrics.font(for: theme, size: 40)
-            XCTAssertEqual(font.pointSize, 40, accuracy: 0.0001, "\(theme.id)")
-            XCTAssertGreaterThan(OverlayMetrics.textWidth(of: "第 430 天", theme: theme, fontSize: 40), 0,
-                                 "\(theme.id) must measure to a real width")
-        }
+    func testPingFangMeasuresToARealWidth() {
+        XCTAssertGreaterThan(OverlayMetrics.textWidth(of: "第 430 天", font: .pingFang, fontSize: 40), 0)
     }
 
     func testDecorationScaleTracksTheFontSize() {
@@ -136,29 +131,19 @@ final class OverlayMetricsTests: XCTestCase {
     func testShrinkFloorIsSixtyPercentOfTheScaledSize() {
         let base = OverlayMetrics.baseFontSize(forShortEdge: 3024, sizeScale: 70)
         let fitted = OverlayMetrics.fittedFontSize(for: String(repeating: "第 10 天 ", count: 40),
-                                                   theme: OverlayTheme(style: OverlayStyle(sizeScale: 70)),
+                                                   font: .pingFang,
                                                    baseFontSize: base,
                                                    availableWidth: 3024 - 2 * OverlayMetrics.margin(forShortEdge: 3024))
         XCTAssertGreaterThanOrEqual(fitted, 69.85, "18.6")
         XCTAssertEqual(fitted, 3024 * 0.055 * 0.7 * 0.6, accuracy: 0.01, "18.6: overlong text sits on the floor")
     }
 
+    @MainActor
     func testEveryFontIDResolvesAtTheRequestedSize() {
         for fontID in OverlayFontID.allCases {
-            let font = OverlayMetrics.font(for: fontID, size: 40)
+            let font = OverlayMetrics.font(for: fontID, size: 40, availability: FontAvailabilitySpy())
             XCTAssertEqual(font.pointSize, 40, accuracy: 0.0001, "\(fontID)")
-            if let name = fontID.postScriptName {
-                XCTAssertEqual(font.fontName, name, "\(fontID) must load the named face, not the fallback")
-            }
         }
-    }
-
-    func testSystemFontDesignsDiffer() {
-        let rounded = OverlayMetrics.font(for: .sfRounded, size: 40).fontDescriptor
-        let serif = OverlayMetrics.font(for: .newYork, size: 40).fontDescriptor
-        XCTAssertNotEqual(rounded.postscriptName, serif.postscriptName)
-        XCTAssertNotEqual(OverlayMetrics.font(for: .sfPro, size: 40).fontName,
-                          OverlayMetrics.font(for: .sfMono, size: 40).fontName)
     }
 
     func testCustomPlacementCentersTheBlockOnThePoint() {
@@ -207,5 +192,113 @@ final class OverlayMetricsTests: XCTestCase {
         XCTAssertEqual(bottomTrailing, CGPoint(x: 1000 - margin - 200, y: 2000 - margin - 50))
         let center = OverlayMetrics.origin(forBlockSize: block, in: frame, placement: .anchor(.middleCenter))
         XCTAssertEqual(center, CGPoint(x: 400, y: 975))
+    }
+}
+
+// MARK: - Font resolution (TASK-32 32.5 ... 32.8, PRD 0.3 FR-5.14)
+
+/// Availability that answers from a table and records every question.
+@MainActor
+final class FontAvailabilitySpy: FontAvailabilityProviding {
+    var states: [OverlayFontID: FontState]
+    private(set) var asked: [OverlayFontID] = []
+
+    init(_ states: [OverlayFontID: FontState] = [:]) {
+        self.states = states
+    }
+
+    func state(for fontID: OverlayFontID) -> FontState {
+        asked.append(fontID)
+        return states[fontID] ?? .notDownloaded
+    }
+}
+
+/// Covers TASK-32 32.5 ... 32.8: `available` resolves to the font itself,
+/// anything else to PingFang, and PingFang needs no availability at all.
+///
+/// The 20 downloadable fonts are not on a test simulator, so where a font
+/// must really load, a face that ships with iOS stands in for it through
+/// `resolvedFont(state:postScriptName:)` — the rule
+/// `resolvedFont(for:availability:)` applies after looking the name up in
+/// `FontCatalog`.
+@MainActor
+final class OverlayFontResolutionTests: XCTestCase {
+    /// A face that ships with iOS, standing in for a downloaded font.
+    private let standIn = "Georgia-Bold"
+    private let notAvailable: [FontState] = [.notDownloaded, .preparing, .downloading(progress: 0.4),
+                                              .failed(.noNetwork), .failed(.other)]
+
+    /// 32.8: PingFang is PingFangTC-Semibold and never asks availability.
+    func testPingFangResolvesWithoutAskingAvailability() {
+        let spy = FontAvailabilitySpy([.pingFang: .failed(.other)])
+        let resolved = OverlayMetrics.resolvedFont(for: .pingFang, availability: spy)
+        XCTAssertEqual(resolved, .pingFang, "32.8")
+        XCTAssertEqual(resolved.font(ofSize: 20).fontName, "PingFangTC-Semibold", "32.8")
+        XCTAssertEqual(ResolvedOverlayFont.pingFang.font(ofSize: 20).fontName, "PingFangTC-Semibold", "32.8")
+        XCTAssertEqual(OverlayMetrics.font(for: .pingFang, size: 20, availability: spy).fontName,
+                       "PingFangTC-Semibold", "32.8")
+        XCTAssertTrue(spy.asked.isEmpty, "32.8: PingFang must not depend on availability")
+    }
+
+    /// 32.5: an `available` font resolves to its own PostScript name.
+    func testAvailableFontResolvesToItself() {
+        let resolved = OverlayMetrics.resolvedFont(state: .available, postScriptName: standIn)
+        XCTAssertEqual(resolved.postScriptName, standIn, "32.5")
+        XCTAssertEqual(resolved.font(ofSize: 30).fontName, standIn, "32.5")
+        XCTAssertEqual(resolved.font(ofSize: 30).pointSize, 30, accuracy: 0.0001)
+    }
+
+    /// 32.5 with the real files: set `DAYSCAM_FONT_FIXTURES` (pass it as
+    /// `TEST_RUNNER_DAYSCAM_FONT_FIXTURES`) to a folder holding the four
+    /// open-source font files from `irene-chou/dayscam-fonts@v2`. Each is
+    /// registered for this process only and resolved through `FontCatalog`.
+    /// Skipped without the variable: the files are not in the repo.
+    func testRegisteredOpenSourceFontsResolveThroughTheCatalog() throws {
+        guard let path = ProcessInfo.processInfo.environment["DAYSCAM_FONT_FIXTURES"] else {
+            throw XCTSkip("DAYSCAM_FONT_FIXTURES not set; the open-source font files are not in the repo")
+        }
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        for entry in FontCatalog.entries {
+            guard let asset = entry.openSource else { continue }
+            let url = folder.appendingPathComponent(asset.fileName)
+            var error: Unmanaged<CFError>?
+            let registered = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+            XCTAssertTrue(registered, "32.5: could not register \(asset.fileName): \(String(describing: error))")
+            defer { CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil) }
+
+            let spy = FontAvailabilitySpy([entry.fontID: .available])
+            let font = OverlayMetrics.font(for: entry.fontID, size: 24, availability: spy)
+            XCTAssertEqual(font.fontName, entry.postScriptName, "32.5 \(entry.fontID)")
+            XCTAssertEqual(spy.asked, [entry.fontID])
+        }
+    }
+
+    /// 32.6: every other state resolves to PingFang, for every catalog font
+    /// and for a face that would load.
+    func testEveryStateButAvailableResolvesToPingFang() {
+        for state in notAvailable {
+            XCTAssertEqual(OverlayMetrics.resolvedFont(state: state, postScriptName: standIn), .pingFang,
+                           "32.6 \(state)")
+            for fontID in OverlayFontID.allCases where fontID != .pingFang {
+                let spy = FontAvailabilitySpy([fontID: state])
+                XCTAssertEqual(OverlayMetrics.font(for: fontID, size: 20, availability: spy).fontName,
+                               "PingFangTC-Semibold", "32.6 \(fontID) \(state)")
+                XCTAssertEqual(spy.asked, [fontID], "32.6: asks about the style's own font, once")
+            }
+        }
+    }
+
+    /// 32.7a: reported `failed` although iOS can already load the face — a
+    /// match that completed after its timeout. Still PingFang.
+    func testFailedFontThatWouldLoadStillResolvesToPingFang() {
+        XCTAssertNotNil(UIFont(name: standIn, size: 20), "fixture sanity: the face does load")
+        XCTAssertEqual(OverlayMetrics.resolvedFont(state: .failed(.other), postScriptName: standIn), .pingFang,
+                       "32.7a")
+    }
+
+    /// Reported `available` but the face does not load (dropped by iOS, say):
+    /// PingFang, never some other face.
+    func testAvailableButUnloadableResolvesToPingFang() {
+        XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: "NoSuchFont-Bold"), .pingFang)
     }
 }

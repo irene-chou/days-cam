@@ -16,9 +16,6 @@ import Foundation
 /// clamp (FR-1.6) and the "no later than today" start-date bound (0.1 §7.2).
 @MainActor
 final class RulesTabModel: ObservableObject {
-    /// Shown in place of the start-date and counting-rule rows when the day
-    /// count is off (FR-13.5, FR-3.7).
-    static let hiddenHintMessage = "天數未顯示，起始日與起算規則已隱藏"
     /// Label for `CountingRule.dayOne` (FR-13.4). Order matches
     /// `CountingRule.allCases`: this one is listed first.
     static let countingRuleDayOneLabel = "當天算第 1 天"
@@ -46,7 +43,7 @@ final class RulesTabModel: ObservableObject {
     ///
     /// - Parameters:
     ///   - calculator: Supplies the start-date picker's upper bound and the
-    ///     capture moment `overlayPreviewText` is rendered as of. Defaults to
+    ///     capture moment `dayCountPreviewText` is rendered as of. Defaults to
     ///     `DayCountCalculator()`, whose default clock honours
     ///     `DAYSCAM_FAKE_TODAY` in debug builds.
     ///   - updateProfile: Forwarded to the real persistence layer by the
@@ -64,27 +61,6 @@ final class RulesTabModel: ObservableObject {
         self.calculator = calculator
         self.renderer = renderer
         self.updateProfile = updateProfile
-    }
-
-    /// Pulls in changes another screen made to the same profile while this
-    /// model was alive (#167): the model is only rebuilt when the selected
-    /// profile changes, so without this the 格式 tab turning 天數 off never
-    /// reached `showsCountingFields`.
-    ///
-    /// Only the fields this tab reads but does not own are taken —
-    /// `showDayCount` (格式 tab) and `name` (profile list rename, only when
-    /// the field is not mid-edit). `startDate` and `countingRule` are this
-    /// tab's own, so its working copy is already current. Does not persist
-    /// anything and ignores a profile with a different id.
-    func applyExternalChanges(from latest: CameraProfile) {
-        guard latest.id == profile.id else { return }
-        if latest.showDayCount != profile.showDayCount {
-            profile.showDayCount = latest.showDayCount
-        }
-        if latest.name != profile.name, nameDraft == profile.name {
-            profile.name = latest.name
-            nameDraft = latest.name
-        }
     }
 
     private func mutate(_ change: (inout CameraProfile) -> Void) {
@@ -165,21 +141,20 @@ extension RulesTabModel {
     }
 }
 
-// MARK: - 顯示狀態與預覽 (FR-13.1, FR-13.5, FR-3.7)
+// MARK: - 預覽 (FR-13.1, #227)
 
 extension RulesTabModel {
-    /// Whether the start-date and counting-rule rows should be shown; they
-    /// only affect the day-count output, so they are hidden once that output
-    /// is off (FR-13.5, FR-3.7) — the profile keeps the values, it just stops
-    /// asking the user about them.
-    var showsCountingFields: Bool {
-        profile.showDayCount
-    }
-
-    /// The overlay text this profile would print right now — exists so a
-    /// counting-rule change (25.4) can be checked end-to-end rather than only
-    /// as a stored enum value.
-    var overlayPreviewText: String {
-        renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar)
+    /// The day count this profile shows today, e.g. 「第 280 天」: always days
+    /// only, whatever the display units, date, name or day-count toggles say
+    /// (#227, the human's 2026-10-07 call). Exists so a counting-rule change
+    /// (25.4) can be checked end-to-end rather than only as a stored enum value.
+    var dayCountPreviewText: String {
+        var daysOnly = profile
+        daysOnly.showDayCount = true
+        daysOnly.showDate = false
+        daysOnly.showName = false
+        daysOnly.displayUnits = [.day]
+        daysOnly.useAgeWording = false
+        return renderer.render(profile: daysOnly, capturedAt: calculator.now(), calendar: calendar)
     }
 }

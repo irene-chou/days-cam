@@ -15,6 +15,9 @@ enum CameraProfileValidationError: Error, Equatable {
     /// or `month: 13` (invariant 2).
     case startDateNotARealDate
     /// Both `showDayCount` and `showDate` are off (invariant 3).
+    ///
+    /// No longer reachable through `validatedForPersistence(calendar:)`:
+    /// `normalized()` forces `showDayCount` on (#226 R-13, TASK-47).
     case displaySwitchesAllOff
     /// `displayUnits` is empty (PRD 0.2 §4.1, replacing 0.1 invariant 4).
     case displayUnitsEmpty
@@ -25,9 +28,18 @@ enum CameraProfileValidationError: Error, Equatable {
     case sizeScaleOutOfRange(Int)
     /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
     case customPositionOutOfRange(x: Double, y: Double)
-    /// `style.textColor` or `style.outlineColor` has a component outside 0...1
-    /// or is not fully opaque (PRD 0.2 §4.1).
+    /// `style.textColor`, `style.outlineColor` or `style.shadowColor` has an
+    /// RGB component outside 0...1, or one of them or
+    /// `style.autoOutlineOpacity` has an opacity outside
+    /// `OverlayColor.minimumStorableOpacity`...1 (PRD 0.2 §4.1 as amended by
+    /// TASK-69, TASK-70 and TASK-71).
     case colorNotStorable
+    /// `style.strokeWidth` or `style.boxPadding` is outside its range
+    /// (TASK-70).
+    case outlineParameterOutOfRange
+    /// `style.shadowOffsetX`, `style.shadowOffsetY` or `style.shadowBlur` is
+    /// outside its range (TASK-71).
+    case shadowParameterOutOfRange
 }
 
 /// One saved set of overlay settings: what to print, how to count and how it looks.
@@ -54,6 +66,10 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     /// Whether the start date itself is day 1 or day 0.
     var countingRule: CountingRule
     /// Whether the elapsed amount is printed.
+    ///
+    /// Always `true` once persisted: the day count is always shown (#226 R-13)
+    /// and `normalized()` turns a `false` on. The field stays so that
+    /// `profiles.json` keeps its format.
     var showDayCount: Bool
     /// Whether the capture date is printed.
     var showDate: Bool
@@ -115,14 +131,28 @@ extension CameraProfile {
     /// so that stray components — `hour`, `minute`, `second`, `timeZone`,
     /// `calendar` and the rest — are dropped. Values that are simply wrong, such
     /// as `month: 13`, are left alone for `validate(calendar:)` to reject.
+    ///
+    /// Also turns `showDayCount` on (#226 R-13): an older profile that showed
+    /// only the date is migrated rather than rejected, so no profile is lost.
+    ///
+    /// Rounds the style colors to 8 bits per component, alpha included
+    /// (TASK-69), and `style.autoOutlineOpacity` to the same 8-bit steps
+    /// (TASK-70), so the saved profile equals the one read back. The shadow
+    /// color too (TASK-71).
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.showDayCount = true
         var stripped = DateComponents()
         stripped.year = startDate.year
         stripped.month = startDate.month
         stripped.day = startDate.day
         copy.startDate = stripped
+        // What is validated and written is exactly what reads back (TASK-69).
+        copy.style.textColor = style.textColor.quantized
+        copy.style.outlineColor = style.outlineColor?.quantized
+        copy.style.autoOutlineOpacity = (style.autoOutlineOpacity * 255).rounded() / 255
+        copy.style.shadowColor = style.shadowColor.quantized
         return copy
     }
 
@@ -185,8 +215,17 @@ extension CameraProfile {
             throw CameraProfileValidationError.customPositionOutOfRange(x: x, y: y)
         }
 
-        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true else {
+        guard style.textColor.isStorable, style.outlineColor?.isStorable ?? true, style.shadowColor.isStorable,
+              (OverlayColor.minimumStorableOpacity...1.0).contains(style.autoOutlineOpacity) else {
             throw CameraProfileValidationError.colorNotStorable
+        }
+
+        guard style.hasValidOutlineParameters else {
+            throw CameraProfileValidationError.outlineParameterOutOfRange
+        }
+
+        guard style.hasValidShadowParameters else {
+            throw CameraProfileValidationError.shadowParameterOutOfRange
         }
     }
 

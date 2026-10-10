@@ -15,7 +15,7 @@
 
 ### 方法
 
-`DaysCamTests/Research/FontsTCResearchTests.swift`：
+`DaysCamTests/Research/FontsTCResearchTests.swift`（調查結束後已移除，見 §7）：
 
 - `test_A1`：以 `kCTFontDownloadableAttribute: true` 查詢字型目錄（共 1260 筆），列出顯示名稱含漢字者。模擬器上各筆的 `kCTFontLanguagesAttribute` 都是空的，所以改用顯示名稱篩選。
 - `test_A2`：每個字型先檢查 `UIFont(name:)`，再呼叫 `CTFontDescriptorMatchFontDescriptorsWithProgressHandler` 下載，記錄 `kCTFontDescriptorMatchingTotalAssetSize`（下載量）、耗時、下載後的檔案大小（整個家族的 `.ttc`）與 4808 字涵蓋率。
@@ -177,7 +177,7 @@
 
 ## 7. 如何重現
 
-實測程式在 `DaysCamTests/Research/FontsTCResearchTests.swift`，**平常的測試會自動 skip**，只有設了環境變數才跑。字型檔不在 repo 裡，要自行下載到某個資料夾（例如上表的連結）。
+實測程式 `DaysCamTests/Research/FontsTCResearchTests.swift` 已在 0.4 精簡時移除，需重現時先取回：`git show 35a8b12:DaysCamTests/Research/FontsTCResearchTests.swift > DaysCamTests/Research/FontsTCResearchTests.swift`。它平常會自動 skip，只有設了環境變數才跑。字型檔不在 repo 裡，要自行下載到某個資料夾（例如上表的連結）。
 
 ```sh
 xcodegen generate

@@ -22,6 +22,11 @@ struct OverlayTextView: View {
     let style: OverlayStyle
     /// Where to draw `text`: a nine-point anchor or a custom center (PRD 0.2 §4.1).
     let placement: OverlayPlacement
+    /// The face to draw with, already resolved on the main actor
+    /// (`OverlayMetrics.resolvedFont(for:availability:)`, PRD 0.3 FR-5.14).
+    /// Measured and drawn with this one value, and part of the render cache
+    /// key so a font changing state always redraws.
+    let font: ResolvedOverlayFont
     /// The size of the frame the overlay is positioned within — the
     /// viewfinder's bounds live, the photo's pixel size when baking. Margin
     /// and base font size scale off its short edge (PRD FR-4.3, FR-4.7).
@@ -75,12 +80,14 @@ struct OverlayTextView: View {
          style: OverlayStyle,
          placement: OverlayPlacement,
          frameSize: CGSize,
+         font: ResolvedOverlayFont = .pingFang,
          onDragChanged: ((CGPoint, CGSize) -> Void)? = nil,
          onDragEnded: ((CGPoint, CGSize) -> Void)? = nil) {
         self.text = text
         self.style = style
         self.placement = placement
         self.frameSize = frameSize
+        self.font = font
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
     }
@@ -97,7 +104,7 @@ struct OverlayTextView: View {
     }
 
     var body: some View {
-        if let rendered = renderCache.image(text: text, style: style,
+        if let rendered = renderCache.image(text: text, style: style, font: font,
                                             frameSize: frameSize, displayScale: displayScale) {
             let blockSize = rendered.blockSize
             let settledOrigin = Self.origin(forBlockSize: blockSize, frameSize: frameSize, placement: placement)
@@ -176,8 +183,9 @@ struct OverlayTextView: View {
     /// Exposed (rather than left as a body-local `let`) so
     /// `OverlayTextViewTests` can confirm it, without a hosting controller,
     /// against `OverlayMetrics` directly.
-    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize) -> CGFloat {
-        OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize)
+    static func fittedFontSize(for text: String, style: OverlayStyle, frameSize: CGSize,
+                               font: ResolvedOverlayFont = .pingFang) -> CGFloat {
+        OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize, font: font)
     }
 
     /// The top-left corner this view places a block of `blockSize` at for
@@ -240,24 +248,27 @@ final class OverlayTextRenderCache {
     private struct Key: Equatable {
         let text: String
         let style: OverlayStyle
+        /// The resolved face (PRD 0.3 FR-5.14): a state change that changes
+        /// the face must never reuse the previous picture.
+        let font: ResolvedOverlayFont
         let frameSize: CGSize
         let displayScale: CGFloat
     }
 
     private var key: Key?
     private var rendered: RenderedOverlayText?
-    private let render: (String, OverlayStyle, CGFloat, CGFloat) -> RenderedOverlayText?
+    private let render: (String, OverlayStyle, CGFloat, CGFloat, ResolvedOverlayFont) -> RenderedOverlayText?
 
-    init(render: @escaping (String, OverlayStyle, CGFloat, CGFloat) -> RenderedOverlayText? = {
-        OverlayRenderer().renderText($0, style: $1, fontSize: $2, displayScale: $3)
+    init(render: @escaping (String, OverlayStyle, CGFloat, CGFloat, ResolvedOverlayFont) -> RenderedOverlayText? = {
+        OverlayRenderer().renderText($0, style: $1, fontSize: $2, displayScale: $3, font: $4)
     }) {
         self.render = render
     }
 
     /// Returns pixels at the current screen scale, redrawing only for new inputs.
-    func image(text: String, style: OverlayStyle, frameSize: CGSize,
+    func image(text: String, style: OverlayStyle, font: ResolvedOverlayFont = .pingFang, frameSize: CGSize,
                displayScale: CGFloat) -> RenderedOverlayText? {
-        let next = Key(text: text, style: style, frameSize: frameSize, displayScale: displayScale)
+        let next = Key(text: text, style: style, font: font, frameSize: frameSize, displayScale: displayScale)
         if key == next { return rendered }
         key = next
         guard !text.isEmpty, frameSize.width.isFinite, frameSize.height.isFinite,
@@ -267,8 +278,8 @@ final class OverlayTextRenderCache {
             return nil
         }
         rendered = render(text, style,
-                          OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize),
-                          displayScale)
+                          OverlayRenderer.fittedFontSize(for: text, style: style, frameSize: frameSize, font: font),
+                          displayScale, font)
         return rendered
     }
 }
@@ -290,7 +301,7 @@ final class OverlayTextRenderCache {
     ZStack {
         Color.gray
         OverlayTextView(text: "自訂位置",
-                         style: OverlayStyle(outline: .thinStroke, shadow: .soft),
+                         style: OverlayStyle(outline: .stroke, shadow: .soft),
                          placement: .custom(x: 1.0, y: 1.0),
                          frameSize: CGSize(width: 300, height: 400))
     }
@@ -298,8 +309,8 @@ final class OverlayTextRenderCache {
 }
 
 #Preview("Every outline and shadow, bottom trailing") {
-    let outlines: [OverlayOutline] = [.none, .thinStroke, .thickStroke, .translucentBox, .solidBox]
-    let shadows: [OverlayShadow] = [.none, .soft, .hard, .glow]
+    let outlines: [OverlayOutline] = [.none, .stroke, .box]
+    let shadows: [OverlayShadowPreset] = [.none, .soft, .hard, .glow]
     return ZStack {
         Color(white: 0.5)
         VStack(alignment: .trailing, spacing: 4) {
@@ -327,7 +338,9 @@ final class OverlayTextRenderCache {
                 OverlayTextView(text: fontID.displayName,
                                  style: OverlayStyle(fontID: fontID, textColor: .autoContrastDark, shadow: .none),
                                  placement: .anchor(.middleCenter),
-                                 frameSize: CGSize(width: 280, height: 32))
+                                 frameSize: CGSize(width: 280, height: 32),
+                                 font: OverlayMetrics.resolvedFont(state: .available,
+                                                                   postScriptName: fontID.postScriptName))
                     .frame(width: 280, height: 32)
             }
         }
@@ -354,7 +367,7 @@ final class OverlayTextRenderCache {
     ZStack {
         Color.white
         OverlayTextView(text: "小寶 2026.03.20　1 年 2 個月 5 天",
-                         style: OverlayStyle(outline: .translucentBox, shadow: .none),
+                         style: OverlayStyle(outline: .box, shadow: .none),
                          placement: .anchor(.bottomTrailing),
                          frameSize: CGSize(width: 300, height: 400))
     }

@@ -32,10 +32,11 @@ final class ProfileManagerModelTests: XCTestCase {
         return store
     }
 
-    private func makeModel(store: ProfileStore, onAdded: @escaping () -> Void = {}) throws -> ProfileManagerModel {
+    private func makeModel(store: ProfileStore,
+                           makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil) throws -> ProfileManagerModel {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { now })
-        return ProfileManagerModel(store: store, calculator: calculator, onProfileAdded: onAdded)
+        return ProfileManagerModel(store: store, calculator: calculator, makeRulesModel: makeRulesModel)
     }
 
     @discardableResult
@@ -51,13 +52,24 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.1 Subtitle
 
-    func testSubtitleShowsStartDateOrDateOnly() throws {
+    func testSubtitleShowsStartDateAndTodaysDayCount() throws {
         let store = try makeStore()
         try addProfile("小寶", to: store)
-        try addProfile("只看日期", to: store, showDayCount: false)
+        try store.add(CameraProfile(name: "第零天", startDate: DateFixture.components(2026, 1, 1),
+                                    countingRule: .dayZero))
         let model = try makeModel(store: store)
 
-        XCTAssertEqual(model.rows.map(\.subtitle), ["2026/01/10 起", "2026/01/01 起", "只顯示日期"])
+        XCTAssertEqual(model.rows.map(\.subtitle),
+                       ["2026/01/10 起・今天第 1 天", "2026/01/01 起・今天第 10 天", "2026/01/01 起・今天第 9 天"])
+    }
+
+    func testSubtitleIgnoresDisplayTogglesAndUnits() throws {
+        let store = try makeStore()
+        try store.add(CameraProfile(name: "年月", startDate: DateFixture.components(2026, 1, 1),
+                                    showDate: true, showName: true, displayUnits: [.year, .month]))
+        let model = try makeModel(store: store)
+
+        XCTAssertEqual(model.rows.last?.subtitle, "2026/01/01 起・今天第 10 天")
     }
 
     func testCurrentRowIsMarkedAndRowsFollowStoreOrder() throws {
@@ -109,10 +121,9 @@ final class ProfileManagerModelTests: XCTestCase {
 
     // MARK: - 26.5 Add
 
-    func testAddSelectsTheNewProfileAndReportsIt() throws {
+    func testAddSelectsTheNewProfileAndPushesItsEditPage() throws {
         let store = try makeStore()
-        var addedCount = 0
-        let model = try makeModel(store: store) { addedCount += 1 }
+        let model = try makeModel(store: store)
 
         model.addProfile()
 
@@ -120,7 +131,49 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(model.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(store.profiles.last?.startDate, DateFixture.components(2026, 1, 10))
-        XCTAssertEqual(addedCount, 1)
+        XCTAssertEqual(model.path, [store.profiles.last?.id].compactMap { $0 })
+        XCTAssertTrue(model.focusesName(of: model.path[0]))
+    }
+
+    func testEditPushesThePageWithoutSwitchingProfiles() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        let model = try makeModel(store: store)
+        let current = model.selectedProfileID
+
+        model.edit(id: second.id)
+
+        XCTAssertEqual(model.path, [second.id])
+        XCTAssertEqual(model.selectedProfileID, current)
+        XCTAssertFalse(model.focusesName(of: second.id))
+        model.resetNavigation()
+        XCTAssertTrue(model.path.isEmpty)
+    }
+
+    func testDeletingFromTheEditPageReturnsToTheList() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        let model = try makeModel(store: store)
+        model.edit(id: second.id)
+
+        model.requestDeletion(of: second.id)
+        model.confirmDeletion()
+
+        XCTAssertTrue(model.path.isEmpty)
+        XCTAssertEqual(store.profiles.count, 1)
+    }
+
+    func testEditPageRulesModelWritesThroughTheInjectedWriter() throws {
+        let store = try makeStore()
+        var written: [CameraProfile] = []
+        let model = try makeModel(store: store) { profile in
+            RulesTabModel(profile: profile) { written.append($0) }
+        }
+
+        model.rulesModel(for: store.profiles[0]).setName("改名")
+
+        XCTAssertEqual(written.map(\.name), ["改名"])
+        XCTAssertEqual(store.profiles[0].name, "預設", "must not bypass the injected writer")
     }
 
     func testAddNumbersDuplicateNames() throws {
@@ -175,6 +228,88 @@ final class ProfileManagerModelTests: XCTestCase {
     }
 
     // MARK: - 26.6 Delete
+
+    func testMoveToInsertionIndexPersistsTheNewOrder() throws {
+        let store = try makeStore()
+        let second = try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let first = model.profiles[0].id
+
+        model.move(id: first, toIndex: 3) // dropped below the last row
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+
+        model.move(id: second.id, toIndex: 2) // down one slot
+        XCTAssertEqual(store.profiles.map(\.name), ["阿公", "小寶", "預設"])
+        model.move(id: UUID(), toIndex: 0)
+        XCTAssertEqual(store.profiles.count, 3)
+    }
+
+    // MARK: - TASK-58 長按拖曳（57.1／57.2／57.6）
+
+    func testDragTargetIndexUsesAHalfRowThresholdAndClamps() {
+        let target = { (from: Int, dy: CGFloat) in
+            ProfileManagerModel.dragTargetIndex(from: from, translation: dy, rowHeight: 60, count: 4)
+        }
+        XCTAssertEqual(target(1, 0), 1)
+        XCTAssertEqual(target(1, 29), 1, "未過半列")
+        XCTAssertEqual(target(1, 30), 2, "過半列")
+        XCTAssertEqual(target(1, 125), 3, "兩格")
+        XCTAssertEqual(target(1, -31), 0)
+        XCTAssertEqual(target(1, 1000), 3, "不超過最後一列")
+        XCTAssertEqual(target(1, -1000), 0, "不超過第一列")
+        XCTAssertEqual(ProfileManagerModel.dragTargetIndex(from: 2, translation: 500, rowHeight: 0, count: 4), 2, "尚未量到列高")
+        XCTAssertEqual(ProfileManagerModel.dragTargetIndex(from: 0, translation: 50, rowHeight: 60, count: 0), 0)
+    }
+
+    // MARK: - TASK-76 放手不跳動（76.1／76.2／76.4）
+
+    func testReleaseResidualIsTheFingerOffsetFromTheNewSlot() {
+        let residual = { (dy: CGFloat, from: Int, to: Int) in
+            ProfileManagerModel.releaseResidual(translation: dy, from: from, to: to, rowHeight: 60)
+        }
+        XCTAssertEqual(residual(40, 1, 2), -20, "往下 1 格：手指比新槽少 20，列從新槽上方滑回")
+        XCTAssertEqual(residual(-100, 3, 2), -40, "往上 1 格")
+        XCTAssertEqual(residual(200, 0, 3), 20, "往下 3 格，手指略過頭")
+        XCTAssertEqual(residual(-190, 4, 1), -10, "往上 3 格")
+        XCTAssertEqual(residual(25, 2, 2), 25, "拖回原位：剩餘位移就是整段位移")
+        // Dragged row's on-screen offset before and after the reorder is continuous.
+        let (dy, from, to): (CGFloat, Int, Int) = (130, 1, 3)
+        XCTAssertEqual(CGFloat(from) * 60 + dy, CGFloat(to) * 60 + residual(dy, from, to))
+    }
+
+    func testReleaseInPlaceDoesNotWriteAndReleaseElsewherePersists() throws {
+        let store = try makeStore()
+        try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let url = directory.appendingPathComponent("profiles.json")
+        let before = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+
+        model.move(id: model.profiles[1].id, toFinalIndex: 1) // 76.2: dropped back in place
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        let after = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        XCTAssertEqual(before, after, "原位放手不寫入")
+
+        model.move(id: model.profiles[0].id, toFinalIndex: 2) // 76.4: order survives a restart
+        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
+        XCTAssertEqual(reloaded.load().map(\.name), ["小寶", "阿公", "預設"])
+    }
+
+    func testMoveToFinalIndexMatchesWhereTheDragShowedTheRow() throws {
+        let store = try makeStore()
+        try addProfile("小寶", to: store)
+        try addProfile("阿公", to: store)
+        let model = try makeModel(store: store)
+        let first = model.profiles[0].id
+
+        model.move(id: first, toFinalIndex: 2) // 57.1: down two slots
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+        model.move(id: first, toFinalIndex: 0) // 57.2: back to the top
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        model.move(id: first, toFinalIndex: 0) // same slot: no change
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+    }
 
     func testDeletingTheCurrentProfileSelectsThePreviousRow() throws {
         let store = try makeStore()
