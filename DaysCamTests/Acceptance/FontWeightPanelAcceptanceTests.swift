@@ -391,4 +391,168 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
         let noto = try XCTUnwrap(model.entries.first { $0.fontID == .notoSerifTC })
         XCTAssertEqual(noto.files.count, 3)
     }
+
+    // MARK: Re-QA after d8c21ef / 5e26bd3 (SHA 7681b3c)
+
+    /// Deleting is open as soon as any face of the family is on the device,
+    /// even when the default face is not; it closes when no face is.
+    func testDeleteIsOpenWhenAnyFaceOfTheFamilyIsDownloaded() throws {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .notDownloaded   // default 粗 missing
+        library.weightStates[black()] = .available          // only 特粗 present
+        let panel = makePanel(library: library)
+        XCTAssertTrue(try cell(.notoSerifTC, in: panel.fontList).canDelete, "只有特粗在機上也能刪")
+        panel.fontList.requestDeletion(of: .notoSerifTC)
+        XCTAssertEqual(panel.fontList.deletePrompt?.fontID, .notoSerifTC)
+        panel.fontList.deletePrompt = nil
+
+        library.weightStates[black()] = .notDownloaded
+        panel.fontList.libraryDidChange()
+        XCTAssertFalse(try cell(.notoSerifTC, in: panel.fontList).canDelete, "沒有任何字重就不能刪")
+        panel.fontList.requestDeletion(of: .notoSerifTC)
+        XCTAssertNil(panel.fontList.deletePrompt)
+    }
+
+    /// Single-weight open-source fonts follow the font state; system and
+    /// built-in fonts never open a delete prompt.
+    func testDeleteRulesForSingleWeightAndSystemFonts() throws {
+        let library = StandInLibrary()
+        library.fontStates[.iansui] = .available
+        let panel = makePanel(library: library)
+        XCTAssertTrue(try cell(.iansui, in: panel.fontList).canDelete)
+        XCTAssertFalse(try cell(.huninn, in: panel.fontList).canDelete)
+        for system in [OverlayFontID.pingFang, .songti, .kaiti] {
+            XCTAssertFalse(try cell(system, in: panel.fontList).canDelete, "\(system)")
+            panel.fontList.requestDeletion(of: system)
+            XCTAssertNil(panel.fontList.deletePrompt, "\(system)")
+        }
+    }
+
+    /// The license page lists a single-file family with its own file name,
+    /// weight and version, not only the family name.
+    func testLicensePageShowsFileAndWeightForSingleFileFamilies() throws {
+        let model = FontLicenseModel()
+        for fontID in [OverlayFontID.huninn, .iansui, .chenyuluoyan] {
+            let entry = try XCTUnwrap(model.entries.first { $0.fontID == fontID }, "\(fontID)")
+            XCTAssertEqual(entry.files.count, 1, "\(fontID)")
+            let file = try XCTUnwrap(entry.files.first)
+            let asset = try XCTUnwrap(FontCatalog.entry(for: fontID).weights.first?.openSource)
+            XCTAssertEqual(file.fileName, asset.fileName)
+            XCTAssertFalse(file.weightName.isEmpty)
+            XCTAssertEqual(file.version, asset.version)
+        }
+        let source = try String(contentsOfFile: #filePath.replacingOccurrences(
+            of: "DaysCamTests/Acceptance/FontWeightPanelAcceptanceTests.swift",
+            with: "DaysCam/Views/OverlayPanel/FontLicenseView.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if !entry.files.isEmpty"), "view 以有檔案就列出檔名與字重")
+    }
+
+    /// Row title: a multi-weight font shows the family name alone (expanded
+    /// and collapsed, whatever the weight); a single-weight font keeps its
+    /// full name.
+    func testRowTitleShowsOnlyTheFamilyNameForMultiWeightFonts() throws {
+        let family: [OverlayFontID: String] = [
+            .pingFang: "蘋方-繁", .notoSerifTC: "Noto Serif TC", .hiraginoSans: "冬青黑體繁體中文",
+            .songti: "宋體-繁", .kaiti: "楷體-繁", .yuanti: "圓體-繁", .hannotate: "手札體-繁"]
+        let multi = Set(OverlayFontID.allCases.filter { FontCatalog.entry(for: $0).weights.count > 1 })
+        XCTAssertEqual(multi, Set(family.keys), "多字重字型的集合與設計一致")
+        for selected in [OverlayFontID.pingFang, .notoSerifTC, .songti] {
+            let library = StandInLibrary()
+            library.fontStates[.notoSerifTC] = .available
+            let list = FontLibraryModel(profileID: UUID(), currentFontID: selected, library: library,
+                                        profiles: { [] }, applyFont: { _, _ in })
+            list.listDidAppear()
+            for cell in list.sections.flatMap(\.cells) {
+                if let expected = family[cell.fontID] {
+                    XCTAssertEqual(cell.name, expected, "\(cell.fontID) 選取=\(selected)")
+                } else {
+                    XCTAssertEqual(cell.name, FontCatalog.entry(for: cell.fontID).fullName, "單一字重維持 fullName \(cell.fontID)")
+                }
+            }
+        }
+        // Choosing another weight does not change the title.
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        library.weightStates[black()] = .available
+        let panel = makePanel(library: library)
+        panel.fontList.didTapWeight("black")
+        XCTAssertEqual(try cell(.notoSerifTC, in: panel.fontList).name, "Noto Serif TC")
+    }
+
+    /// A pending face that settles by preparing (no finish event) is applied
+    /// once it is usable, and not before.
+    func testPendingWeightAppliesWhenPreparingSettlesWithoutAnEvent() throws {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        let saved = Saved()
+        let panel = makePanel(library: library, saved: saved)
+        panel.fontList.didTapWeight("black")
+        library.weightStates[black()] = .preparing
+        panel.fontList.libraryDidChange()
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "bold", "準備中不套用")
+        XCTAssertEqual(panel.fontList.pendingWeight, black())
+        XCTAssertTrue(saved.profiles.isEmpty)
+
+        library.weightStates[black()] = .available
+        panel.fontList.libraryDidChange()
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black", "準備完成後套用")
+        XCTAssertEqual(saved.profiles.last?.style.resolvedFontWeight.id, "black")
+        XCTAssertNil(panel.fontList.pendingWeight)
+    }
+
+    /// Tapping a face that is already preparing records it as pending and
+    /// applies it when ready.
+    func testTappingAPreparingWeightWaitsThenApplies() {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        library.weightStates[black()] = .preparing
+        let panel = makePanel(library: library)
+        panel.fontList.didTapWeight("black")
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "bold")
+        XCTAssertEqual(panel.fontList.pendingWeight, black())
+        library.weightStates[black()] = .available
+        panel.fontList.libraryDidChange()
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black")
+    }
+
+    /// A pending face that became usable while the list was off screen is
+    /// applied when the list returns, and does not announce while hidden.
+    func testPendingWeightFinishedWhileOffScreenAppliesOnReturn() {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        let panel = makePanel(library: library)
+        panel.fontList.didTapWeight("black")
+        panel.fontList.listDidDisappear()
+        library.weightStates[black()] = .available
+        panel.fontList.listDidAppear()
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black")
+    }
+
+    /// The default face is also a download unit: when asking for it fails,
+    /// the pending request is cleared, the failure is shown and the old
+    /// weight stays.
+    func testFailedDefaultWeightDownloadClearsPending() throws {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .notDownloaded   // default 粗 missing
+        library.weightStates[black()] = .available
+        var profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        profile.style.fontID = .notoSerifTC
+        profile.style.fontWeight = "black"
+        let saved = Saved()
+        let panel = makePanel(profile: profile, library: library, saved: saved)
+        panel.fontList.didTapWeight("bold")
+        XCTAssertEqual(panel.fontList.pendingWeight, FontDownloadID(fontID: .notoSerifTC, weightID: "bold"))
+        library.fontStates[.notoSerifTC] = .downloading(progress: 0.2)
+        panel.fontList.libraryDidChange()
+        library.fontStates[.notoSerifTC] = .failed(.other)
+        panel.fontList.libraryDidChange()
+
+        XCTAssertNil(panel.fontList.pendingWeight, "預設字重失敗要清 pending")
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black", "保留原字重")
+        XCTAssertTrue(saved.profiles.isEmpty)
+        let text = try XCTUnwrap(panel.fontList.toast?.text)
+        XCTAssertTrue(text.contains("失敗"), text)
+        library.weightDownloadDidFinish.send(FontDownloadID(fontID: .notoSerifTC, weightID: "bold"))
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black", "遲到的完成事件不套用")
+    }
 }
