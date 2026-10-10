@@ -250,6 +250,19 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         }
     }
 
+    /// 92.14: the open panel is full width (no 6pt side inset), with the
+    /// design's 18pt top corners and an upward-only shadow.
+    func testPanelIsFullWidthWithTopRoundedCornersAndUpwardShadow() {
+        for device in [(w: 393.0, h: 852.0, t: 59.0, b: 34.0), (w: 375.0, h: 667.0, t: 20.0, b: 0.0),
+                       (w: 430.0, h: 932.0, t: 59.0, b: 34.0)] {
+            let metrics = makeMetrics(width: device.w, height: device.h, top: device.t, bottom: device.b)
+            XCTAssertEqual(metrics.panelWidth, device.w, "92.14 \(device.w)")
+        }
+        XCTAssertEqual(CameraScreenLayoutMetrics.panelTopCornerRadius, 18, "92.14")
+        XCTAssertEqual(CameraScreenLayoutMetrics.panelShadowRadius, 18, "92.14")
+        XCTAssertLessThan(CameraScreenLayoutMetrics.panelShadowYOffset, 0, "92.14: the shadow rises")
+    }
+
     func testFooterSideButtonCenterInset() {
         XCTAssertEqual(makeMetrics(width: 393, height: 852, top: 59, bottom: 34).footerSideButtonCenterInset, 71.25, accuracy: 0.05)
         XCTAssertEqual(makeMetrics(width: 375, height: 667, top: 20, bottom: 0).footerSideButtonCenterInset, 66.75, accuracy: 0.05)

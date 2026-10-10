@@ -90,6 +90,37 @@ struct OverlayPanelView: View {
         // Pinned top-aligned so the grabber's and the segmented control's y
         // positions stay identical across every tab (#75, T.7).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(panelBackground)
+    }
+
+    // MARK: - Panel surface (FR-8.8, design option 2)
+
+    /// Same color as the camera background, rounded at the top, with a soft
+    /// shadow that only rises above the top edge: the shadow layer is masked
+    /// to the band from well above the panel down to the end of the corner
+    /// arc, so nothing leaks past the sides or the bottom. The fill is drawn
+    /// again on top without the shadow. No border. The background runs off
+    /// the bottom of the screen (`.bottom` safe area ignored).
+    private var panelBackground: some View {
+        let cornerRadius = CameraScreenLayoutMetrics.panelTopCornerRadius
+        let shape = UnevenRoundedRectangle(topLeadingRadius: cornerRadius, bottomLeadingRadius: 0,
+                                           bottomTrailingRadius: 0, topTrailingRadius: cornerRadius,
+                                           style: .continuous)
+        return ZStack {
+            shape
+                .fill(CameraTheme.background)
+                .shadow(color: CameraTheme.popoverShadow,
+                        radius: CameraScreenLayoutMetrics.panelShadowRadius,
+                        x: 0, y: CameraScreenLayoutMetrics.panelShadowYOffset)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .offset(y: cornerRadius - 100)
+                }
+            shape.fill(CameraTheme.background)
+        }
+        .ignoresSafeArea(edges: .bottom)
     }
 
     // MARK: - Grabber (TASK-92)

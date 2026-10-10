@@ -322,8 +322,10 @@ struct CameraScreen: View {
 
     /// The open panel (TASK-92): `metrics.panelVisibleHeight` tall — grabber,
     /// tab bar, usable content down to `footerBase`, then the home-indicator
-    /// band — inset 6pt at the sides, and pulled down by `panelDragOffset`
-    /// while the grabber is being dragged.
+    /// band — full width (`panelWidth`, no side inset), and pulled down by
+    /// `panelDragOffset` while the grabber is being dragged. Its background,
+    /// rounded top and upward shadow live in `OverlayPanelView`, so they
+    /// move with the offset.
     private func overlayPanel(metrics: CameraScreenLayoutMetrics) -> some View {
         OverlayPanelView(model: model,
                          contentHeight: metrics.panelContentHeight,
@@ -331,8 +333,7 @@ struct CameraScreen: View {
                          bottomSafeAreaInset: metrics.bottomInset,
                          dragOffset: $panelDragOffset,
                          onCollapse: { collapsePanelFromGrabber(slideDistance: metrics.panelVisibleHeight) })
-            .frame(height: metrics.panelVisibleHeight)
-            .padding(.horizontal, 6)
+            .frame(width: metrics.panelWidth, height: metrics.panelVisibleHeight)
             .offset(y: panelDragOffset)
             // A pull that collapsed the panel leaves the offset where the
             // slide ended; the panel is invisible by then, so this snaps it

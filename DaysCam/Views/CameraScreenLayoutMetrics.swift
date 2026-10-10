@@ -95,6 +95,16 @@ struct CameraScreenLayoutMetrics {
     /// height, taken out of `panelContentHeight`, so `panelTop` stays put.
     static let panelGrabberHeight: CGFloat = 24
 
+    /// Top corner radius of the open panel's shape (PRD FR-8.8, TASK-92,
+    /// design option 2 "同色底加陰影"); the bottom corners are square since
+    /// the panel runs off the screen's bottom edge.
+    static let panelTopCornerRadius: CGFloat = 18
+
+    /// Blur radius and vertical offset of the upward shadow along the
+    /// panel's top edge (`CameraTheme.popoverShadow`); negative y = up.
+    static let panelShadowRadius: CGFloat = 18
+    static let panelShadowYOffset: CGFloat = -6
+
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
 
@@ -141,6 +151,12 @@ struct CameraScreenLayoutMetrics {
     /// `bottomInset` (0 on a 4.7-inch screen, where the two coincide).
     var panelVisibleHeight: CGFloat {
         screenSize.height - panelTop
+    }
+
+    /// The open panel spans the full screen width (TASK-92 / 92.14): no side
+    /// inset, so the upward shadow along its top edge is one unbroken line.
+    var panelWidth: CGFloat {
+        screenSize.width
     }
 
     /// Gap between the viewfinder box's bottom edge and the panel's top.
