@@ -725,7 +725,8 @@ struct StyleTabView: View {
         switch outline {
         case .none: return "無外框"
         case .stroke: return "描邊"
-        case .box, .squareBox: return "底框"
+        case .box: return "底框"
+        case .squareBox: return "直角底框"
         }
     }
 

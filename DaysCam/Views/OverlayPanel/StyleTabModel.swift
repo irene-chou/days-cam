@@ -274,9 +274,8 @@ extension StyleTabModel {
 // MARK: - 外框、陰影 (FR-10.5, FR-10.8, FR-10.10)
 
 extension StyleTabModel {
-    /// The three outline options, in display order (FR-10.5, TASK-70).
-    // 直角底框選項 UI 由 ui-panel 後續加入（#334）
-    var outlineOptions: [OverlayOutline] { [.none, .stroke, .box] }
+    /// The four outline options, in display order (FR-10.5, TASK-70, TASK-81).
+    var outlineOptions: [OverlayOutline] { [.none, .stroke, .box, .squareBox] }
 
     /// The four shadow options, in display order (FR-10.8).
     var shadowOptions: [OverlayShadowPreset] { OverlayShadowPreset.allCases }

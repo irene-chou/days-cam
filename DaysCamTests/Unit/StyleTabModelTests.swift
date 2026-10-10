@@ -323,15 +323,34 @@ final class StyleTabModelTests: XCTestCase {
 
     func testOutlineAndShadowOptionOrder() {
         let model = makeModel()
-        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box])
+        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box, .squareBox], "81.1")
         XCTAssertEqual(model.shadowOptions, [.none, .soft, .hard, .glow])
     }
 
-    // ui-panel will update this temporary contract when adding the UI (#334).
-    func testOutlineOptionsRemainThreeUntilSquareBoxUIIsAdded() {
+    /// 81.3: 底框 ↔ 直角底框 keeps the padding, color and opacity.
+    func testSwitchingBetweenBoxAndSquareBoxKeepsPaddingColorAndOpacity() throws {
         let model = makeModel()
-        XCTAssertEqual(model.outlineOptions.count, 3)
-        XCTAssertEqual(model.outlineOptions, [.none, .stroke, .box])
+        model.selectOutline(.box)
+        model.setBoxPadding(18)
+        model.selectOutlineColor(try hex("#123456"))
+        model.setOutlineOpacityPercent(40)
+        let before = model.profile.style
+        model.selectOutline(.squareBox)
+        XCTAssertEqual(model.profile.style.outline, .squareBox)
+        XCTAssertEqual(model.profile.style.boxPadding, 18, "81.3")
+        XCTAssertEqual(model.profile.style.outlineColor, before.outlineColor, "81.3")
+        XCTAssertEqual(model.outlineOpacityPercent, 40, "81.3")
+        model.selectOutline(.box)
+        XCTAssertEqual(model.profile.style.boxPadding, 18, "81.3")
+        XCTAssertEqual(model.profile.style.outlineColor, before.outlineColor, "81.3")
+    }
+
+    /// 81.4: the square box choice survives a restart.
+    func testSquareBoxSurvivesTheProfileFile() throws {
+        let model = makeModel()
+        model.selectOutline(.squareBox)
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(model.profile))
+        XCTAssertEqual(decoded.style.outline, .squareBox, "81.4")
     }
 
     // MARK: - 失敗回報為 lastError

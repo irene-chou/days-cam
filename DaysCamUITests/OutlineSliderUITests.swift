@@ -35,11 +35,12 @@ final class OutlineSliderUITests: XCTestCase {
         add(attachment)
     }
 
-    /// 70.1: three options, and no slider while 無 is selected.
-    func testOnlyThreeOptionsAndNoSliderForNone() {
+    /// 70.1 / 81.1: four options, and no slider while 無 is selected.
+    func testFourOptionsAndNoSliderForNone() {
         XCTAssertTrue(app.buttons["無外框"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["描邊"].exists)
         XCTAssertTrue(app.buttons["底框"].exists)
+        XCTAssertTrue(app.buttons["直角底框"].exists)
         XCTAssertFalse(strokeSlider.exists)
         XCTAssertFalse(paddingSlider.exists)
         attach("outline-none")
@@ -63,6 +64,24 @@ final class OutlineSliderUITests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: paddingSlider)
         waitForExpectations(timeout: 3)
+    }
+
+    /// 81.1 / 81.3: 直角底框 is the fourth option, shows the same 留白 slider and
+    /// keeps its value when switching with 底框.
+    func testSquareBoxOptionSharesThePaddingSlider() {
+        XCTAssertTrue(app.buttons["直角底框"].waitForExistence(timeout: 3))
+        app.buttons["底框"].tap()
+        XCTAssertTrue(paddingSlider.waitForExistence(timeout: 3))
+        paddingSlider.adjust(toNormalizedSliderPosition: 1)
+        let dragged = points(paddingSlider)
+        XCTAssertGreaterThanOrEqual(dragged, 23, "dragged toward the end of 0...24")
+        app.buttons["直角底框"].tap()
+        XCTAssertTrue(app.buttons["直角底框"].isSelected)
+        XCTAssertTrue(paddingSlider.exists, "same slider for the square box")
+        XCTAssertEqual(points(paddingSlider), dragged, "81.3")
+        attach("outline-square-box")
+        app.buttons["底框"].tap()
+        XCTAssertEqual(points(paddingSlider), dragged, "81.3")
     }
 
     /// 70.3 / 70.4: dragging writes through, and the value survives a relaunch
