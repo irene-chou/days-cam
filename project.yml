@@ -23,8 +23,6 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -33,7 +31,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.irenechou.DaysCam
         MARKETING_VERSION: "0.5.0"
         CURRENT_PROJECT_VERSION: "1"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
   DaysCamTests:
     type: bundle.unit-test

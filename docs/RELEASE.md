@@ -14,7 +14,7 @@
 | 字型授權 | ✅ | OFL／Apache 全文隨 App 內建並可在字型頁查看；下載來源為公開 repo（允許 2.5.2：下載的是字型檔不是程式碼） |
 | App 圖示 | ✅ | `AppIcon.png` 1024×1024、RGB 無 alpha、未預切圓角（#383 合併） |
 | **版本號** | ⏳ 待升 | 目前 `0.5.0`；正式上架才改 `1.0.0`（AGENTS 硬規則），走升版 PR `chore/bump-1.0.0` 讓 CI 跑全套測試 |
-| **iPad 支援** | ⚠️ 待決定 | `TARGETED_DEVICE_FAMILY: "1,2"` 等於宣告支援 iPad：審查會在 iPad 測、必須附 13 吋 iPad 截圖，而所有設計稿都只照 iPhone 16 |
+| iPad 支援 | ✅ 已決定只上 iPhone | 2026-10-10 人類裁定；`TARGETED_DEVICE_FAMILY` 改 `"1"`、移除 iPad 方向設定。日後要上 iPad 再升次版並補 13 吋截圖 |
 | 隱私權政策網址 | ⏳ | App Store Connect 必填。草稿在 [PRIVACY-POLICY.md](PRIVACY-POLICY.md)，需放到公開網址 |
 | 螢幕截圖、商店文案 | ⏳ | 第 5 步 |
 | 實機驗收（B 級） | ⏳ | 第 4 步，透過 TestFlight |
@@ -23,18 +23,18 @@
 
 | # | 問題 | 建議 |
 |---|---|---|
-| D1 | 要不要支援 iPad？ | **建議只上 iPhone**：把 `TARGETED_DEVICE_FAMILY` 改 `"1"`，刪掉 `UISupportedInterfaceOrientations~ipad`。少一組截圖與審查面，之後想加再升版。保留 iPad 就要補 13 吋截圖並在 iPad 實機跑一遍 B 級 |
+| D1 | 要不要支援 iPad？ | ✅ 已決定只上 iPhone（2026-10-10），`project.yml` 已改 |
 | D2 | 商店顯示名稱 | App 在裝置上目前顯示「DaysCam」。若想顯示「天數相機」，在 `project.yml` `info.properties` 加 `CFBundleDisplayName`。商店名稱（最長 30 字）可寫「DaysCam 天數相機」 |
 | D4 | 價格與地區 | 建議免費、全地區；MVP 排除 IAP（PRD §排除項） |
 | D5 | 隱私權政策放哪 | GitHub Pages、Notion 公開頁或任何固定網址皆可；內容用 [PRIVACY-POLICY.md](PRIVACY-POLICY.md) 改 |
 | D6 | 支援信箱／網址 | App Store Connect 必填支援 URL；可用 repo Issues 頁或 Notion 頁 |
 
-決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D1–D2 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
+決定後由 Lead 開一張任務卡（`chore/release-1.0`）處理 D2 的程式變更，再開 `chore/bump-1.0.0` 升版 PR。
 
 ## 第 1 步：程式與專案準備（Lead／agent 可做）
 
 1. 合併本次的隱私清單與出口管制設定。
-2. 依 D1、D2 修改 `project.yml`。
+2. 依 D2 修改 `project.yml`（D1 已改）。
 3. 開 `chore/bump-1.0.0`：`MARKETING_VERSION` 改 `"1.0.0"`、`CURRENT_PROJECT_VERSION` 保持 `"1"`（每次重新上傳同版本就加 1）；README 路線圖把 0.4 改為已完成並加一列「1.0 上架」。這條分支會觸發 `swift.yml` 跑完整測試，全綠才合併。
 4. 建議在合併升版 PR 後打 tag：`git tag v1.0.0 && git push origin v1.0.0`。
 
@@ -84,7 +84,6 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | R-7 | 跨午夜或改裝置日期後回到 App | 觀景窗天數即時更新 |
 | R-8 | 來電／切到背景再回來 | 預覽恢復，可繼續拍 |
 | R-9 | 兩個設定檔快速切換後拍照 | 照片印的是切換後的設定檔 |
-| R-10 | （保留 iPad 時）iPad 直向 | 版面不破、可拍可存 |
 
 Release build 沒有 `DAYSCAM_FAKE_TODAY`，R-7 要真的改系統日期或等到跨日。
 
@@ -93,7 +92,7 @@ Release build 沒有 `DAYSCAM_FAKE_TODAY`，R-7 要真的改系統日期或等�
 **截圖**（App Store Connect → 該版本 → App 預覽與截圖）：
 
 - iPhone 6.9 吋（iPhone 16 Pro Max／17 Pro Max，1320×2868）必填，最多 10 張；其他 iPhone 尺寸會自動沿用。
-- 保留 iPad 時另需 iPad 13 吋（2064×2752）。
+- 只上 iPhone，不需 iPad 截圖。
 - 建議 5 張：觀景窗＋天數、疊字面板（樣式）、位置拖曳、設定檔頁、成品照片。用模擬器 `⌘S` 截圖即可，不能是裝置外框合成以外的加工畫面。
 
 **文案草稿**（可直接改）：
