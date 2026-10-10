@@ -97,8 +97,13 @@ final class PanelOutsideTapUITests: XCTestCase {
         ratioButton.tap()
         assertPanelOpen("97.5 the panel stays open after the ratio button")
         XCTAssertNotEqual(ratioButton.label, before, "97.5 the ratio still cycled")
-        app.buttons["翻轉鏡頭"].tap()
-        assertPanelOpen("97.5 flip leaves the panel open")
+        // The simulator has no camera, so flip is disabled there and a tap on
+        // a disabled button falls through to the tap layer; only a live
+        // flip button is part of 97.5.
+        if app.buttons["翻轉鏡頭"].isEnabled {
+            app.buttons["翻轉鏡頭"].tap()
+            assertPanelOpen("97.5 flip leaves the panel open")
+        }
         app.buttons["相機設定"].tap()
         XCTAssertTrue(app.buttons["閃光燈"].waitForExistence(timeout: 3), "97.5 the tools capsule opened")
         assertPanelOpen("97.5 the tools toggle leaves the panel open")
@@ -113,15 +118,20 @@ final class PanelOutsideTapUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["設定檔"].waitForExistence(timeout: 5), "97.5 the profile chip still opens the sheet")
     }
 
-    /// 97.8: taps inside the panel never collapse it; the grabber does (TASK-92).
+    /// 97.8: taps inside the panel never collapse it; the grabber strip does
+    /// (TASK-92 — the whole 24pt strip at the top is the handle, so "beside
+    /// the bar" within that strip is the grabber, not blank panel space).
     func testTapsInsideThePanelKeepItOpen() {
         openPanel()
-        let panel = grabber.frame
-        tap(x: panel.midX - 120, y: panel.midY)
-        assertPanelOpen("97.8 blank space beside the grabber")
         let tabs = styleTab.frame
-        tap(x: app.windows.firstMatch.frame.midX, y: tabs.maxY + 40)
+        let width = app.windows.firstMatch.frame.width
+        tap(x: width / 2, y: tabs.maxY + 40)
         assertPanelOpen("97.8 inside the content area")
+        tap(x: 12, y: tabs.maxY + 90)
+        assertPanelOpen("97.8 the content area's left margin")
+        tap(x: width - 12, y: app.windows.firstMatch.frame.maxY - 4)
+        assertPanelOpen("97.8 the panel's home-indicator band")
+        attach("97.8_panel-still-open")
         grabber.tap()
         assertPanelClosed("97.8 the grabber still collapses")
     }
