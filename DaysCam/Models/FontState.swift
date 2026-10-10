@@ -44,4 +44,16 @@ protocol FontAvailabilityProviding {
     /// The current state of `fontID`. `pingFang` is always `.available`;
     /// resolution does not even ask for it.
     func state(for fontID: OverlayFontID) -> FontState
+    /// Availability of an exact catalog face.
+    func state(for fontID: OverlayFontID, weightID: String?) -> FontState
+}
+
+extension FontAvailabilityProviding {
+    /// Legacy providers only know the default face; other faces stay unavailable.
+    func state(for fontID: OverlayFontID, weightID: String?) -> FontState {
+        let entry = FontCatalog.entry(for: fontID)
+        let weight = entry.weight(for: weightID)
+        if entry.source == .builtIn { return .available }
+        return weight.id == entry.defaultWeight.id ? state(for: fontID) : .notDownloaded
+    }
 }

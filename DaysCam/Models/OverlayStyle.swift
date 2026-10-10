@@ -4,7 +4,7 @@ import Foundation
 /// ten Latin fonts).
 ///
 /// Case order is the order the grid and the font list show them in, whatever
-/// their download state. Weights are fixed per font (FR-10.3′). Names, sources
+/// their download state. Exact weights are listed in the catalog (TASK-89). Names, sources
 /// and download facts live in `FontCatalog`; turning an ID into a drawable font
 /// is the rendering layer's job (`OverlayMetrics.resolvedFont`), so this type
 /// stays free of UIKit.
@@ -150,7 +150,17 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Allowed `shadowBlur`, in points at a 17pt font (TASK-71).
     static let shadowBlurRange = 0.0...16.0
 
-    var fontID: OverlayFontID
+    var fontID: OverlayFontID {
+        didSet {
+            if fontID != oldValue { fontWeight = FontCatalog.entry(for: fontID).defaultWeight.id }
+        }
+    }
+    /// Optional stored face ID; absent or invalid values resolve to the default.
+    var fontWeight: String?
+
+    /// The exact face used by preview and baking.
+    var resolvedFontWeight: FontWeightOption { FontCatalog.entry(for: fontID).weight(for: fontWeight) }
+
     var textColor: OverlayColor
     var outline: OverlayOutline
     /// The outline or box color; `nil` means "automatic" (FR-10.6).
@@ -191,6 +201,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Creates a style. The defaults equal 0.1's "classic white" (PRD 0.2
     /// §4.2), drawn in PingFang (PRD 0.3 §4.1).
     init(fontID: OverlayFontID = .pingFang,
+         fontWeight: String? = nil,
          textColor: OverlayColor = .white,
          outline: OverlayOutline = .none,
          outlineColor: OverlayColor? = nil,
@@ -200,6 +211,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
          shadow: OverlayShadowPreset = .soft,
          sizeScale: Int = 100) {
         self.fontID = fontID
+        self.fontWeight = FontCatalog.entry(for: fontID).weight(for: fontWeight).id
         self.textColor = textColor
         self.outline = outline
         self.outlineColor = outlineColor
@@ -342,7 +354,7 @@ extension OverlayStyle {
 
 extension OverlayStyle {
     private enum CodingKeys: String, CodingKey {
-        case fontID, textColor, outline, outlineColor, autoOutlineOpacity, strokeWidth, boxPadding
+        case fontID, fontWeight, textColor, outline, outlineColor, autoOutlineOpacity, strokeWidth, boxPadding
         case showsShadow, shadowColorSource, shadowColor, shadowOffsetX, shadowOffsetY, shadowBlur
         case sizeScale
         /// The 0.2–0.5 shadow name. Read, never written (TASK-71).
@@ -384,6 +396,8 @@ extension OverlayStyle {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontID = try container.decode(OverlayFontID.self, forKey: .fontID)
+        let storedWeight = try? container.decode(String.self, forKey: .fontWeight)
+        fontWeight = FontCatalog.entry(for: fontID).weight(for: storedWeight).id
         textColor = try container.decode(OverlayColor.self, forKey: .textColor)
         outlineColor = try container.decodeIfPresent(OverlayColor.self, forKey: .outlineColor)
         sizeScale = try container.decode(Int.self, forKey: .sizeScale)
@@ -466,6 +480,7 @@ extension OverlayStyle {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(fontID, forKey: .fontID)
+        try container.encode(resolvedFontWeight.id, forKey: .fontWeight)
         try container.encode(textColor, forKey: .textColor)
         try container.encode(outline, forKey: .outline)
         try container.encodeIfPresent(outlineColor, forKey: .outlineColor)

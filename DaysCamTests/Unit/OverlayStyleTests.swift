@@ -6,6 +6,44 @@ import XCTest
 /// IDs: the style model, its fonts and the `OverlayColor` additions it relies
 /// on (PRD 0.2 §4.2, FR-10; PRD 0.3 §4.1).
 final class OverlayStyleTests: XCTestCase {
+    func testWeightRoundTripAndChangingFontResetsToDefault() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(OverlayStyle(fontID: .notoSerifTC))) as? [String: Any])
+        object["fontWeight"] = "black"
+        var style = try JSONDecoder().decode(OverlayStyle.self, from: JSONSerialization.data(withJSONObject: object))
+        func storedWeight(_ style: OverlayStyle) throws -> String? {
+            let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(style)) as? [String: Any])
+            return encoded["fontWeight"] as? String
+        }
+        XCTAssertEqual(try storedWeight(style), "black")
+        style.fontID = .iansui
+        XCTAssertEqual(try storedWeight(style), "regular")
+        style.fontID = .notoSerifTC
+        XCTAssertEqual(try storedWeight(style), "bold")
+    }
+
+    func testMissingAndUnknownWeightUseDefaultForEveryFont() throws {
+        for fontID in OverlayFontID.allCases {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(OverlayStyle(fontID: fontID))) as? [String: Any])
+            for weight in [NSNull(), "unknown", 42, ["id": "bold"]] as [Any] {
+                object["fontWeight"] = weight
+                let style = try JSONDecoder().decode(OverlayStyle.self, from: JSONSerialization.data(withJSONObject: object))
+                XCTAssertEqual(style, OverlayStyle(fontID: fontID))
+            }
+            object.removeValue(forKey: "fontWeight")
+            let style = try JSONDecoder().decode(OverlayStyle.self, from: JSONSerialization.data(withJSONObject: object))
+            XCTAssertEqual(style, OverlayStyle(fontID: fontID))
+        }
+    }
+
+    func testMalformedWeightKeepsStyleAndFallsBack() throws {
+        let data = try JSONEncoder().encode(OverlayStyle(fontID: .notoSerifTC))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["fontWeight"] = ["bad": 42]
+        let decoded = try JSONDecoder().decode(OverlayStyle.self, from: JSONSerialization.data(withJSONObject: object))
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any])
+        XCTAssertEqual(encoded["fontWeight"] as? String, "bold")
+    }
+
 
     private func hex(_ string: String, file: StaticString = #filePath, line: UInt = #line) throws -> OverlayColor {
         try XCTUnwrap(OverlayColor(hex: string), "bad fixture \(string)", file: file, line: line)

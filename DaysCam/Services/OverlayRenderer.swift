@@ -31,7 +31,7 @@ struct OverlayRenderer {
     /// Returns nil only when the image has no pixels to draw into; the caller
     /// treats nil as a baking failure and does not save the photo.
     ///
-    /// `font` must be `OverlayMetrics.resolvedFont(for: style.fontID, ...)`,
+    /// `font` must be `OverlayMetrics.resolvedFont(for: style, ...)`,
     /// resolved when the shutter is pressed — the same value the viewfinder
     /// was drawing with (PRD 0.3 FR-5.14). It is used both to fit the size and
     /// to draw, so the two cannot disagree.

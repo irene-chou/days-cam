@@ -164,9 +164,19 @@ enum OverlayMetrics {
     /// to the viewfinder and to the background baking work.
     @MainActor
     static func resolvedFont(for fontID: OverlayFontID,
+                             weightID: String? = nil,
                              availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
-        guard fontID != .pingFang else { return .pingFang }
-        return resolvedFont(state: availability.state(for: fontID), postScriptName: fontID.postScriptName)
+        let entry = FontCatalog.entry(for: fontID)
+        let weight = entry.weight(for: weightID)
+        return resolvedFont(state: entry.source == .builtIn ? .available : availability.state(for: fontID, weightID: weight.id),
+                            postScriptName: weight.postScriptName)
+    }
+
+    /// Resolves a profile's font and weight together before measuring or baking.
+    @MainActor
+    static func resolvedFont(for style: OverlayStyle,
+                             availability: any FontAvailabilityProviding) -> ResolvedOverlayFont {
+        resolvedFont(for: style.fontID, weightID: style.fontWeight, availability: availability)
     }
 
     /// The rule behind `resolvedFont(for:availability:)`, with the state and
@@ -190,8 +200,8 @@ enum OverlayMetrics {
     /// itself, such as the style grid; overlay text goes through
     /// `resolvedFont(for:availability:)` and the renderer's `font:` forms.
     @MainActor
-    static func font(for fontID: OverlayFontID, size: CGFloat, availability: any FontAvailabilityProviding) -> UIFont {
-        resolvedFont(for: fontID, availability: availability).font(ofSize: size)
+    static func font(for fontID: OverlayFontID, weightID: String? = nil, size: CGFloat, availability: any FontAvailabilityProviding) -> UIFont {
+        resolvedFont(for: fontID, weightID: weightID, availability: availability).font(ofSize: size)
     }
 }
 

@@ -11,6 +11,47 @@ final class FontCatalogTests: XCTestCase {
 
 
     /// TASK-78 78.3/78.4: verified full face names, while short names stay unchanged.
+    func testApprovedWeightsResolveToExactFacesAndPreserveLegacyDefaults() {
+        let expected: [(OverlayFontID, [String], [String], String)] = [
+            (.pingFang, ["light", "regular", "semibold"], ["PingFangTC-Light", "PingFangTC-Regular", "PingFangTC-Semibold"], "semibold"),
+            (.notoSerifTC, ["regular", "bold", "black"], ["NotoSerifTC-Regular", "NotoSerifTC-Bold", "NotoSerifTC-Black"], "bold"),
+            (.hiraginoSans, ["w3", "w6"], ["HiraginoSansTC-W3", "HiraginoSansTC-W6"], "w6"),
+            (.songti, ["light", "regular", "bold"], ["STSongti-TC-Light", "STSongti-TC-Regular", "STSongti-TC-Bold"], "bold"),
+            (.kaiti, ["regular", "bold", "black"], ["STKaitiTC-Regular", "STKaitiTC-Bold", "STKaitiTC-Black"], "bold"),
+            (.yuanti, ["light", "regular", "bold"], ["STYuanti-TC-Light", "STYuanti-TC-Regular", "STYuanti-TC-Bold"], "bold"),
+            (.hannotate, ["w5", "w7"], ["HannotateTC-W5", "HannotateTC-W7"], "w7"),
+            (.chenyuluoyan, ["thin"], ["ChenYuluoyan-2.0-Thin"], "thin")
+        ]
+        for (id, weights, faces, defaultID) in expected {
+            let entry = FontCatalog.entry(for: id)
+            XCTAssertEqual(entry.weights.map(\.id), weights)
+            XCTAssertEqual(entry.weights.map(\.postScriptName), faces)
+            XCTAssertEqual(entry.defaultWeight.id, defaultID)
+        }
+        for entry in FontCatalog.entries {
+            XCTAssertEqual(entry.weight(for: nil).postScriptName, entry.postScriptName)
+            XCTAssertEqual(entry.weight(for: "invalid").postScriptName, entry.postScriptName)
+            XCTAssertTrue((1...3).contains(entry.weights.count))
+            XCTAssertEqual(Set(entry.weights.map(\.id)).count, entry.weights.count)
+        }
+    }
+
+    func testNewNotoWeightsCarryVerifiedDownloadAndLicenseFacts() throws {
+        let entry = FontCatalog.entry(for: .notoSerifTC)
+        let regular = try XCTUnwrap(entry.weight(for: "regular").openSource)
+        let black = try XCTUnwrap(entry.weight(for: "black").openSource)
+        XCTAssertEqual(regular.fileName, "NotoSerifTC-Regular.otf")
+        XCTAssertEqual(regular.byteCount, 7_936_104)
+        XCTAssertEqual(regular.sha256, "63515eb0622d589a2f4062e8757c598b3da3bffd053f69abd181c210158ef10c")
+        XCTAssertEqual(black.fileName, "NotoSerifTC-Black.otf")
+        XCTAssertEqual(black.byteCount, 8_122_092)
+        XCTAssertEqual(black.sha256, "55c68df309e702cdb56b9ffd6b8185468afc0cb070aa9c2f14099de0cae64d12")
+        for asset in [regular, black] {
+            XCTAssertEqual(asset.copyright, "© 2017-2024 Adobe (http://www.adobe.com/).")
+            XCTAssertEqual(asset.licenseFileNames, ["notoSerifTC-OFL.txt"])
+        }
+    }
+
     func testFullNamesMatchVerifiedFontMetadata() {
         let names: [OverlayFontID: String] = [
             .pingFang: "蘋方-繁 中粗體",

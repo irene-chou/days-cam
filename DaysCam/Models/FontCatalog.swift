@@ -66,6 +66,26 @@ struct OpenSourceFontAsset: Equatable, Hashable, Sendable {
     var fileExtension: String { (fileName as NSString).pathExtension }
 }
 
+/// An exact face and its download/license facts (TASK-89).
+struct FontWeightOption: Identifiable, Equatable, Hashable, Sendable {
+    let id: String
+    let displayName: String
+    let postScriptName: String
+    let downloadSizeMegabytes: Double?
+    let openSource: OpenSourceFontAsset?
+}
+
+/// A stable download unit. Default faces retain the old disk/defaults key.
+struct FontDownloadID: Equatable, Hashable, Sendable {
+    let fontID: OverlayFontID
+    let weightID: String
+
+    var rawValue: String {
+        let entry = FontCatalog.entry(for: fontID)
+        return weightID == entry.defaultWeight.id ? fontID.rawValue : "\(fontID.rawValue)/\(weightID)"
+    }
+}
+
 /// Everything the App knows about one overlay font (PRD 0.3 §4.1).
 struct FontCatalogEntry: Equatable, Hashable, Sendable {
     let fontID: OverlayFontID
@@ -73,12 +93,43 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     let displayName: String
     let section: FontSection
     let source: FontSource
-    /// The exact face drawn; weights are fixed (FR-10.3′).
+    /// The legacy default face; explicit weights resolve through `weight(for:)`.
     let postScriptName: String
     /// Download size in megabytes as §4.1 lists it; `nil` for PingFang.
     let downloadSizeMegabytes: Double?
     /// Download and license facts; only open-source fonts have them.
     let openSource: OpenSourceFontAsset?
+
+    /// At most three approved exact faces, in picker order.
+    let weights: [FontWeightOption]
+
+    init(fontID: OverlayFontID, displayName: String, section: FontSection, source: FontSource,
+         postScriptName: String, downloadSizeMegabytes: Double?, openSource: OpenSourceFontAsset?,
+         weights: [FontWeightOption]? = nil) {
+        self.fontID = fontID
+        self.displayName = displayName
+        self.section = section
+        self.source = source
+        self.postScriptName = postScriptName
+        self.downloadSizeMegabytes = downloadSizeMegabytes
+        self.openSource = openSource
+        self.weights = weights ?? FontCatalog.weightOptions(for: fontID, postScriptName: postScriptName,
+                                                            megabytes: downloadSizeMegabytes, asset: openSource)
+        precondition(!self.weights.isEmpty && self.weights.count <= 3)
+        precondition(Set(self.weights.map(\.id)).count == self.weights.count)
+        precondition(self.weights.contains { $0.postScriptName == postScriptName })
+    }
+
+    /// The existing face, preserved for old profiles and files.
+    var defaultWeight: FontWeightOption {
+        // The initializer guarantees the legacy face exists.
+        weights.first { $0.postScriptName == postScriptName } ?? weights[0]
+    }
+
+    /// Unknown or absent IDs safely use the existing default face.
+    func weight(for id: String?) -> FontWeightOption {
+        weights.first { $0.id == id } ?? defaultWeight
+    }
 
     /// The localized full face name shown in the font list and VoiceOver.
     /// Verified against CoreText localized names and the font name table (TASK-78).
@@ -214,6 +265,60 @@ enum FontCatalog {
             (c) 2022 王立宇、劉韋辰 版權所有。
             """,
         licenseFileNames: ["chenyuluoyan-OFL.txt"])
+
+    /// Lead-approved face list, Issue #362 (89.1).
+    static func weightOptions(for fontID: OverlayFontID, postScriptName: String,
+                              megabytes: Double?, asset: OpenSourceFontAsset?) -> [FontWeightOption] {
+        func option(_ id: String, _ name: String, _ face: String,
+                    _ download: OpenSourceFontAsset? = nil) -> FontWeightOption {
+            FontWeightOption(id: id, displayName: name, postScriptName: face,
+                             downloadSizeMegabytes: download.map { Double($0.byteCount) / 1_000_000 } ?? megabytes,
+                             openSource: download)
+        }
+        switch fontID {
+        case .pingFang:
+            return [option("light", "細", "PingFangTC-Light"), option("regular", "標準", "PingFangTC-Regular"),
+                    option("semibold", "粗", postScriptName)]
+        case .notoSerifTC:
+            return [option("regular", "標準", "NotoSerifTC-Regular", notoSerifTCRegularAsset),
+                    option("bold", "粗", postScriptName, asset),
+                    option("black", "特粗", "NotoSerifTC-Black", notoSerifTCBlackAsset)]
+        case .hiraginoSans:
+            return [option("w3", "標準", "HiraginoSansTC-W3"), option("w6", "粗", postScriptName)]
+        case .songti:
+            return [option("light", "細", "STSongti-TC-Light"), option("regular", "標準", "STSongti-TC-Regular"),
+                    option("bold", "粗", postScriptName)]
+        case .kaiti:
+            return [option("regular", "標準", "STKaitiTC-Regular"), option("bold", "粗", postScriptName),
+                    option("black", "特粗", "STKaitiTC-Black")]
+        case .yuanti:
+            return [option("light", "細", "STYuanti-TC-Light"), option("regular", "標準", "STYuanti-TC-Regular"),
+                    option("bold", "粗", postScriptName)]
+        case .hannotate:
+            return [option("w5", "標準", "HannotateTC-W5"), option("w7", "粗", postScriptName)]
+        case .chenyuluoyan: return [option("thin", "細", postScriptName, asset)]
+        default: return [option("regular", "標準", postScriptName, asset)]
+        }
+    }
+
+    static let notoSerifTCRegularAsset = notoAsset(
+        face: "Regular", bytes: 7_936_104,
+        sha256: "63515eb0622d589a2f4062e8757c598b3da3bffd053f69abd181c210158ef10c")
+    static let notoSerifTCBlackAsset = notoAsset(
+        face: "Black", bytes: 8_122_092,
+        sha256: "55c68df309e702cdb56b9ffd6b8185468afc0cb070aa9c2f14099de0cae64d12")
+
+    private static func notoAsset(face: String, bytes: Int, sha256: String) -> OpenSourceFontAsset {
+        let path = "Serif/SubsetOTF/TC/NotoSerifTC-\(face).otf"
+        let commit = "f8d157532fbfaeda587e826d4cd5b21a49186f7c"
+        return OpenSourceFontAsset(
+            fileName: "NotoSerifTC-\(face).otf", repositoryPath: "noto-serif-tc/NotoSerifTC-\(face).otf",
+            byteCount: bytes, sha256: sha256,
+            primaryURL: remoteURL("https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@\(commit)/\(path)"),
+            fallbackURL: remoteURL("https://raw.githubusercontent.com/notofonts/noto-cjk/\(commit)/\(path)"),
+            version: "2.003", copyright: "© 2017-2024 Adobe (http://www.adobe.com/).",
+            licenseFileNames: ["notoSerifTC-OFL.txt"])
+    }
 
     // MARK: - Builders
 
