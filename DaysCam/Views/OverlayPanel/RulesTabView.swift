@@ -135,6 +135,7 @@ struct RulesTabView: View {
                 set: { model.setStartDate($0) }
             ), displayedComponents: .date)
             .labelsHidden()
+            .accessibilityIdentifier("startDatePicker")
             .datePickerStyle(.compact)
         }
         .padding(.horizontal, Self.rowHorizontalPadding)
