@@ -2,10 +2,10 @@
 
 App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-32），由 TASK-31 產生；換版本時新增 `dayscam-fonts` 的 tag 並同步本表。
 
-- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v2`（TASK-40 起；`v1` 保留不覆寫，`v2` 含 `v1` 的三個原檔加辰宇落雁體）
-- 主要網址：`https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/<路徑>`
-- 備援網址：`https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/<路徑>`
-- 2026-10-06 已對 `v1` 的 6 個網址完整下載驗證，大小與 SHA-256 一致（驗收 31.1，紀錄見 #162）；`v2` 的 8 個網址待 tag 推上後驗證（驗收 40.5，#219）
+- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v3`（TASK-91 起；`v1`、`v2` 保留不覆寫。`v2` 含 `v1` 的三個原檔加辰宇落雁體，`v3` 含 `v2` 全部檔案加思源宋體 Regular／Black）
+- 主要網址：`https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/<路徑>`
+- 備援網址：`https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/<路徑>`
+- 2026-10-06 已對 `v1` 的 6 個網址完整下載驗證，大小與 SHA-256 一致（驗收 31.1，紀錄見 #162）；`v2` 的 8 個網址待 tag 推上後驗證（驗收 40.5，#219）；2026-10-10 以 `curl -sIL` 確認 `v3` 的 Regular、Black 與粉圓在 jsDelivr／raw 皆回 200，raw 的 content-length 與本表 bytes 相同（驗收 91.3，#384）
 
 | fontID | 顯示名稱 | 路徑 | bytes | SHA-256 | PostScript | 字型版本 | App 內授權檔 |
 |---|---|---|---|---|---|---|---|
@@ -50,7 +50,7 @@ TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`；toast、�
 ## TASK-89 字重下載與上游授權紀錄
 
 - 名單依 Issue #362 最後的查證表與 Lead 裁定；思源宋體預設仍為 `bold`，新增 Regular／Black 不覆寫 Bold 或既有 v2 tag。
-- 新增 OTF 固定於 notofonts/noto-cjk `f8d157532fbfaeda587e826d4cd5b21a49186f7c` 的 `Serif/SubsetOTF/TC/`。暫以該固定 commit 的 jsDelivr／GitHub raw URL 提供兩個新增 face；dayscam-fonts 新 tag 待 Lead 協調發布，舊四個 face 保留 v2。
+- 新增 OTF 取自 notofonts/noto-cjk `f8d157532fbfaeda587e826d4cd5b21a49186f7c` 的 `Serif/SubsetOTF/TC/`，原檔不改寫放進 `dayscam-fonts@v3`（#378）。TASK-91 起 App 一律從 `v3` 下載全部開源字型，不再直接連上游 URL；檔案路徑、bytes、SHA-256 與 `v2` 相同，已下載的使用者不需重新下載。
 - 三個 Noto OTF 各自的 copyright 均為 `© 2017-2024 Adobe (http://www.adobe.com/).`；[上游 Serif/LICENSE](https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/LICENSE) 為 SIL OFL 1.1，與 App 的 `notoSerifTC-OFL.txt` 一併保留，授權頁須逐 face 列檔名與 copyright。
 - 辰宇 Thin 固定 commit 的上游 `license.txt` 另有上游著作權段落；App 現有逐字字型內嵌英文／繁中 copyright 與 OFL 全文繼續保留，不以新查證覆寫舊 tag。
 - Default face 的磁碟路徑仍為 `<fontID>.<ext>`；其他字重為 `<fontID>-<weightID>.<ext>`。系統 matching 與持久化改按指定 face，舊 `downloadedSystemFontIDs` 僅代表預設 face；新 `downloadedSystemFontWeights` 記錄非預設的 `<fontID>/<weightID>`，讀取時相容舊紀錄。

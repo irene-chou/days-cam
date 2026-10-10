@@ -178,7 +178,7 @@ enum FontCatalog {
     /// The public repository and tag the open-source fonts are served from.
     static let repository = "irene-chou/dayscam-fonts"
     /// The fixed tag the URLs point at.
-    static let repositoryTag = "v2"
+    static let repositoryTag = "v3"
 
     /// Every font in list order, which is `OverlayFontID.allCases` order.
     static var entries: [FontCatalogEntry] { OverlayFontID.allCases.map(entry(for:)) }
@@ -309,15 +309,12 @@ enum FontCatalog {
         sha256: "55c68df309e702cdb56b9ffd6b8185468afc0cb070aa9c2f14099de0cae64d12")
 
     private static func notoAsset(face: String, bytes: Int, sha256: String) -> OpenSourceFontAsset {
-        let path = "Serif/SubsetOTF/TC/NotoSerifTC-\(face).otf"
-        let commit = "f8d157532fbfaeda587e826d4cd5b21a49186f7c"
-        return OpenSourceFontAsset(
-            fileName: "NotoSerifTC-\(face).otf", repositoryPath: "noto-serif-tc/NotoSerifTC-\(face).otf",
-            byteCount: bytes, sha256: sha256,
-            primaryURL: remoteURL("https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@\(commit)/\(path)"),
-            fallbackURL: remoteURL("https://raw.githubusercontent.com/notofonts/noto-cjk/\(commit)/\(path)"),
-            version: "2.003", copyright: "© 2017-2024 Adobe (http://www.adobe.com/).",
-            licenseFileNames: ["notoSerifTC-OFL.txt"])
+        asset(path: "noto-serif-tc/NotoSerifTC-\(face).otf",
+              byteCount: bytes,
+              sha256: sha256,
+              version: "2.003",
+              copyright: "© 2017-2024 Adobe (http://www.adobe.com/).",
+              licenseFileNames: ["notoSerifTC-OFL.txt"])
     }
 
     // MARK: - Builders
