@@ -45,6 +45,12 @@ struct OverlayPanelView: View {
     /// (`OverlayPanelDismissDrag`), or VoiceOver's activate/escape (92.10).
     var onCollapse: () -> Void = {}
 
+    /// True while a finger is pulling the grabber. SwiftUI resets it when
+    /// the gesture is cancelled by the system too, which `onEnded` never
+    /// reports (same pattern as `CameraScreen.isViewfinderTouched`, #303),
+    /// so a cancelled pull still springs the panel back (review of #390).
+    @GestureState private var isPulling = false
+
     var body: some View {
         VStack(spacing: 0) {
             grabber
@@ -146,6 +152,14 @@ struct OverlayPanelView: View {
             .accessibilityAction { onCollapse() }
             .accessibilityAction(.escape) { onCollapse() }
             .accessibilityIdentifier("panelGrabber")
+            .onChange(of: isPulling) { _, pulling in
+                // A pull that collapsed the panel has already closed the
+                // model (and is sliding the panel out), so only a pull that
+                // ended or was cancelled while still open springs back.
+                if !pulling, model.panelModel.isOpen, dragOffset != 0 {
+                    withAnimation(CameraTheme.spring) { dragOffset = 0 }
+                }
+            }
     }
 
     /// Global coordinates on purpose: the panel moves with the finger, so a
@@ -153,6 +167,7 @@ struct OverlayPanelView: View {
     /// itself.
     private var grabberDrag: some Gesture {
         DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .updating($isPulling) { _, state, _ in state = true }
             .onChanged { value in
                 dragOffset = OverlayPanelDismissDrag.offset(forTranslation: value.translation.height)
             }
