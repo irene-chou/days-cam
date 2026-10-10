@@ -41,6 +41,9 @@
 ## 第 2 步：Apple Developer 與 App Store Connect 建檔（人類）
 
 1. 確認 [Apple Developer Program](https://developer.apple.com/account) 會員有效，且 Team `W5937V2WUF` 是這個帳號。
+   - 進 App Store Connect 若出現「Apple 帳號未啟用 iTunes Connect」（2026-10-10 遇到），表示登入的 Apple ID 不是付費 Program 成員：免費帳號（Xcode Accounts 顯示「Personal Team」）只能裝到自己的裝置，不能建檔上架。
+   - 處理：到 developer.apple.com/account 看有無「Enroll」按鈕；沒加入就以個人身分[加入](https://developer.apple.com/programs/enroll/)（年費 99 美元，需雙重認證，可用 iPhone 的 Apple Developer App 付款），審核 24–48 小時。剛加入要先到 Agreements 接受 Program License Agreement。
+   - 若付費團隊的 Team ID 與 `W5937V2WUF` 不同，由 Lead 改 `project.yml` 的 `DEVELOPMENT_TEAM` 與 `scripts/ExportOptions.plist` 的 `teamID`。
 2. Certificates, Identifiers & Profiles → Identifiers：確認 `com.irenechou.DaysCam` 已註冊（Xcode 自動簽名第一次 Archive 時也會自動建立，可先跳過）。Capability 不需要額外勾選。
 3. [App Store Connect](https://appstoreconnect.apple.com) → My Apps → ＋ → New App：
    - 平台 iOS、名稱（D2）、主要語言「繁體中文」、Bundle ID 選 `com.irenechou.DaysCam`、SKU 填 `dayscam-ios`。
