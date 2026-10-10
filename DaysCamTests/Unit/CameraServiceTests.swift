@@ -733,10 +733,18 @@ private final class FakeFocusDevice: FocusExposureCaptureDevice {
     var isExposurePointOfInterestSupported = true
     var supportedFocusModes: Set<AVCaptureDevice.FocusMode> = [.locked, .autoFocus, .continuousAutoFocus]
     var supportedExposureModes: Set<AVCaptureDevice.ExposureMode> = [.locked, .autoExpose, .continuousAutoExposure]
-    var focusPointOfInterest = CGPoint(x: 0.5, y: 0.5)
-    var exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5)
-    var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus
-    var exposureMode: AVCaptureDevice.ExposureMode = .continuousAutoExposure
+    var focusPointOfInterest = CGPoint(x: 0.5, y: 0.5) {
+        didSet { XCTAssertTrue(isLocked, "focus point set outside lock") }
+    }
+    var exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5) {
+        didSet { XCTAssertTrue(isLocked, "exposure point set outside lock") }
+    }
+    var focusMode: AVCaptureDevice.FocusMode = .continuousAutoFocus {
+        didSet { if focusMode == .autoFocus { XCTAssertTrue(isLocked, "focus mode set outside lock") } }
+    }
+    var exposureMode: AVCaptureDevice.ExposureMode = .continuousAutoExposure {
+        didSet { if exposureMode == .autoExpose { XCTAssertTrue(isLocked, "exposure mode set outside lock") } }
+    }
     var minExposureTargetBias: Float = -8
     var maxExposureTargetBias: Float = 8
     var isSubjectAreaChangeMonitoringEnabled = false
@@ -771,6 +779,115 @@ private final class FakeFocusDevice: FocusExposureCaptureDevice {
 }
 
 final class CameraServiceFocusExposureTests: XCTestCase {
+
+    func testNewAndRepeatedTapResetBiasAndUnlockInOneConfiguration() {
+        let device = FakeFocusDevice()
+        let points = [CGPoint(x: 0.2, y: 0.7), CGPoint(x: 0.8, y: 0.1), CGPoint(x: 0.8, y: 0.1)]
+        for point in points {
+            CameraService.applyExposureBias(1, to: device)
+            device.focusMode = .locked
+            device.exposureMode = .locked
+            let before = device.lockCount
+            CameraService.applyFocusAndExpose(at: point, to: device)
+            XCTAssertEqual(device.bias, 0)
+            XCTAssertEqual(device.focusMode, .autoFocus)
+            XCTAssertEqual(device.exposureMode, .autoExpose)
+            XCTAssertEqual(device.focusPointOfInterest, point)
+            XCTAssertEqual(device.exposurePointOfInterest, point)
+            XCTAssertEqual(device.lockCount, before + 1)
+            XCTAssertEqual(device.unlockCount, device.lockCount)
+        }
+    }
+
+    func testLongPressLockKeepsBias() {
+        let device = FakeFocusDevice()
+        CameraService.applyExposureBias(1, to: device)
+        CameraService.applyFocusAndExpose(at: CGPoint(x: 0.3, y: 0.6), to: device, resetBias: false)
+        XCTAssertEqual(device.bias, 1)
+    }
+
+    func testTapPublishesZeroUnlockedAndConfirmationEvenForRepeatedTap() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeFocusDevice()
+        var confirmations: [Int] = []
+        let subscription = service.focusExposureTapResetPublisher.sink { confirmations.append($0) }
+        service.lastAppliedFocusRequestID = 1
+        service.applyBias(1, forFocusRequestID: 1, to: device)
+        service.lastAppliedFocusRequestID = 2
+        service.applyTap(at: CGPoint(x: 0.8, y: 0.1), to: device)
+        service.lastAppliedFocusRequestID = 3
+        service.applyTap(at: CGPoint(x: 0.8, y: 0.1), to: device)
+        let flushed = expectation(description: "tap feedback delivered")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(service.focusExposureState, .initial)
+        XCTAssertEqual(confirmations, [2, 3])
+        subscription.cancel()
+    }
+
+    func testOldBiasCannotOverwriteNewTapButNewDragStillApplies() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeFocusDevice()
+        service.lastAppliedFocusRequestID = 1
+        service.applyBias(1, forFocusRequestID: 1, to: device)
+        service.lastAppliedFocusRequestID = 2
+        service.applyTap(at: CGPoint(x: 0.8, y: 0.1), to: device)
+        let count = device.lockCount
+        service.applyBias(1.5, forFocusRequestID: 1, to: device)
+        XCTAssertEqual(device.bias, 0)
+        XCTAssertEqual(device.lockCount, count)
+        let flushed = expectation(description: "stale bias publishes nothing")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(service.focusExposureState, .initial)
+        service.applyBias(-0.7, forFocusRequestID: 2, to: device)
+        XCTAssertEqual(device.bias, -0.7)
+    }
+
+    func testFailedOrInvalidTapDoesNotResetBiasOrConfirmSuccess() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeFocusDevice()
+        service.applyBias(1, forFocusRequestID: 0, to: device)
+        var confirmations = 0
+        let subscription = service.focusExposureTapResetPublisher.sink { _ in confirmations += 1 }
+        service.applyTap(at: CGPoint(x: .nan, y: 0.5), to: device)
+        device.lockFails = true
+        service.applyTap(at: CGPoint(x: 0.2, y: 0.7), to: device)
+        let flushed = expectation(description: "failure delivered")
+        DispatchQueue.main.async { flushed.fulfill() }
+        wait(for: [flushed], timeout: 2)
+        XCTAssertEqual(device.bias, 1)
+        XCTAssertEqual(service.focusExposureState.exposureBias, 1)
+        XCTAssertEqual(confirmations, 0)
+        subscription.cancel()
+    }
+
+    func testUnsupportedTapPublishesActualStateWithoutSuccessConfirmation() {
+        for unsupportedPoints in [true, false] {
+            let service = CameraService(isCaptureSupported: false)
+            let device = FakeFocusDevice()
+            device.focusMode = .locked
+            device.exposureMode = .locked
+            if unsupportedPoints {
+                device.isFocusPointOfInterestSupported = false
+                device.isExposurePointOfInterestSupported = false
+            } else {
+                device.supportedFocusModes = [.locked]
+                device.supportedExposureModes = [.locked]
+            }
+            service.applyBias(1, forFocusRequestID: 0, to: device)
+            var confirmations = 0
+            let subscription = service.focusExposureTapResetPublisher.sink { _ in confirmations += 1 }
+            service.applyTap(at: CGPoint(x: 0.2, y: 0.7), to: device)
+            let flushed = expectation(description: "unsupported tap state delivered")
+            DispatchQueue.main.async { flushed.fulfill() }
+            wait(for: [flushed], timeout: 2)
+            XCTAssertEqual(service.focusExposureState.exposureBias, 0)
+            XCTAssertTrue(service.focusExposureState.isLocked)
+            XCTAssertEqual(confirmations, 0)
+            subscription.cancel()
+        }
+    }
 
     func testTapSetsPointsModesAndMonitoring() {
         let device = FakeFocusDevice()
