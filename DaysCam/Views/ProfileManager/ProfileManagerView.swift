@@ -14,6 +14,12 @@ struct ProfileManagerView: View {
     /// finger has moved, and where the row would land.
     @State private var draggingID: UUID?
     @State private var dragTranslation: CGFloat = 0
+    /// True from the release until the dragged row has settled (TASK-102,
+    /// #411): a sequenced long-press-then-drag can deliver one more
+    /// `onChanged` with the finger's full translation *after* `onEnded`,
+    /// which used to overwrite the residual and park the row one slot past
+    /// its new place for a frame — the "fly-away".
+    @State private var isReleasing = false
     @State private var dragTarget = 0
     /// Each realized row's top edge in the list's space; the row pitch (row
     /// plus the list's own spacing) is read from these, not guessed.
@@ -119,7 +125,7 @@ struct ProfileManagerView: View {
         LongPressGesture(minimumDuration: 0.3)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
             .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
+                guard case .second(true, let drag) = value, !isReleasing else { return }
                 if draggingID == nil {
                     // Start from this row's own slot without animating a stale
                     // `dragTarget` left over from the previous drag (TASK-76).
@@ -153,6 +159,7 @@ struct ProfileManagerView: View {
                 // jump TASK-76 fixes.
                 let residual = ProfileManagerModel.releaseResidual(translation: dragTranslation, from: index,
                                                                    to: target, rowHeight: rowHeight)
+                isReleasing = true
                 var instant = Transaction()
                 instant.disablesAnimations = true
                 withTransaction(instant) {
@@ -168,6 +175,7 @@ struct ProfileManagerView: View {
                         withTransaction(instant) { dragTranslation = residual * remaining }
                     }
                     withAnimation(.easeOut(duration: 0.15)) { draggingID = nil }
+                    isReleasing = false
                 }
                 // The release that ends a long press must not also count as a tap.
                 suppressTap = true
@@ -180,11 +188,11 @@ struct ProfileManagerView: View {
 
     private func profileRow(_ row: ProfileManagerModel.Row) -> some View {
         HStack(spacing: 0) {
-            Button {
-                guard !suppressTap else { return }
-                model.select(id: row.id)
-                onClose()
-            } label: {
+            // A tap gesture rather than a `Button` (TASK-103, #412): with the
+            // reorder gesture on the row, a `Button` fired on release even
+            // after a horizontal drag, which selected the profile and closed
+            // the sheet instead of revealing the swipe action.
+            Group {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
@@ -205,11 +213,20 @@ struct ProfileManagerView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .onTapGesture {
+                guard !suppressTap else { return }
+                model.select(id: row.id)
+                onClose()
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(row.name)，\(row.subtitle)")
             .accessibilityIdentifier("profileRow")
-            .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
+            .accessibilityAddTraits(row.isCurrent ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction {
+                guard !suppressTap else { return }
+                model.select(id: row.id)
+                onClose()
+            }
 
             Button {
                 model.edit(id: row.id)
