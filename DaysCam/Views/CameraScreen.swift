@@ -33,6 +33,12 @@ struct CameraScreen: View {
     /// ~0.15s, softer under Reduce Motion.
     @State private var flashOpacity: Double = 0
 
+    /// How far the overlay panel has been pulled down by its grabber
+    /// (TASK-92): the panel is offset by it while open. A collapse started
+    /// from the grabber slides the panel the rest of the way off the bottom
+    /// as it fades; the value is reset the next time the panel appears.
+    @State private var panelDragOffset: CGFloat = 0
+
     /// True while a finger is down on the viewfinder; SwiftUI resets it when a
     /// gesture is cancelled too, which `onEnded` does not report (issue #303).
     @GestureState private var isViewfinderTouched = false
@@ -242,11 +248,14 @@ struct CameraScreen: View {
     // MARK: - Capture flights (issue #148)
 
     /// Topmost layer: each captured photo lifts off the viewfinder and flies
-    /// into the thumbnail button. Never takes touches.
+    /// into the thumbnail button. Never takes touches. While the panel is
+    /// open there is no footer row to land on (TASK-92), so the flight is
+    /// skipped (`skipsFlightWhenPanelOpen`) and the thumbnail just updates;
+    /// `end` is the closed footer's thumbnail either way.
     private func captureFlights(metrics: CameraScreenLayoutMetrics) -> some View {
         let isOpen = model.panelModel.isOpen
         let start = viewfinderContentFrame(metrics: metrics)
-        let target = metrics.leftFooterButtonCenter(isPanelOpen: isOpen)
+        let target = metrics.leftFooterButtonCenter
         let end = CGRect(x: target.x - Self.footerButtonSize / 2, y: target.y - Self.footerButtonSize / 2,
                          width: Self.footerButtonSize, height: Self.footerButtonSize)
         return ZStack(alignment: .topLeading) {
@@ -274,12 +283,15 @@ struct CameraScreen: View {
 
     // MARK: - Footer
 
-    /// Bottom bar, plus the panel above it while open, anchored to the
-    /// bottom of a region that ends at `metrics.footerBase` (issue #101 rule
-    /// ③ — the home indicator's top edge). Closed, the region starts at
-    /// `metrics.footerRegionTop` and holds just the bottom bar. Open (issue
-    /// #128), it starts at `metrics.panelTop`: a fixed-height panel, 4pt, the
-    /// 44pt button row, 8pt to `footerBase` — no shutter.
+    /// Bottom bar while the panel is closed, or the panel while open,
+    /// anchored to the bottom of a region that starts at
+    /// `metrics.footerRegionTop` / `metrics.panelTop` (issue #101 rule ③,
+    /// issue #128). Closed, the region ends at `metrics.footerBase` (the
+    /// home indicator's top edge) and holds just the bottom bar. Open
+    /// (TASK-92), it runs on to the screen's physical bottom edge: the
+    /// panel's usable area ends at `footerBase`, its scroll view continues
+    /// under the home indicator (seen, faded, not tappable), and there is no
+    /// footer row beneath it — the grabber at its top edge collapses it.
     ///
     /// Always a transparent background (issue #121): the bottom bar's icons
     /// switch to a light color over a photo instead, via
@@ -288,25 +300,56 @@ struct CameraScreen: View {
         let ratio = model.captureSettingsStore.captureAspectRatio
         let isOpen = model.panelModel.isOpen
         let regionTop = isOpen ? metrics.panelTop : metrics.footerRegionTop
+        let regionBottom = isOpen ? metrics.screenSize.height : metrics.footerBase
         let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: ratio, isPanelOpen: isOpen)
-        return VStack(spacing: CameraScreenLayoutMetrics.panelToFooterGap) {
+        return ZStack(alignment: .bottom) {
             if isOpen {
-                OverlayPanelView(model: model, contentHeight: metrics.panelContentHeight,
-                                 tabBarHeight: metrics.panelTabBarHeight)
-                    .frame(height: metrics.panelHeight)
-                    .padding(.horizontal, 6)
+                overlayPanel(metrics: metrics)
+                    .transition(.opacity)
+            } else {
+                bottomBar(metrics: metrics, isOnPhoto: isOnPhoto)
                     .transition(.opacity)
             }
-            bottomBar(metrics: metrics, isOnPhoto: isOnPhoto)
         }
-        .padding(.bottom, isOpen ? CameraScreenLayoutMetrics.footerToBaseGap : 0)
         .frame(width: metrics.screenSize.width,
-               height: metrics.footerBase - regionTop,
+               height: regionBottom - regionTop,
                alignment: .bottom)
         .background(Color.clear)
         .offset(x: 0, y: regionTop)
         .animation(CameraTheme.spring, value: model.panelModel.isOpen)
         .animation(CameraTheme.spring, value: isOnPhoto)
+    }
+
+    /// The open panel (TASK-92): `metrics.panelVisibleHeight` tall — grabber,
+    /// tab bar, usable content down to `footerBase`, then the home-indicator
+    /// band — inset 6pt at the sides, and pulled down by `panelDragOffset`
+    /// while the grabber is being dragged.
+    private func overlayPanel(metrics: CameraScreenLayoutMetrics) -> some View {
+        OverlayPanelView(model: model,
+                         contentHeight: metrics.panelContentHeight,
+                         tabBarHeight: metrics.panelTabBarHeight,
+                         bottomSafeAreaInset: metrics.bottomInset,
+                         dragOffset: $panelDragOffset,
+                         onCollapse: { collapsePanelFromGrabber(slideDistance: metrics.panelVisibleHeight) })
+            .frame(height: metrics.panelVisibleHeight)
+            .padding(.horizontal, 6)
+            .offset(y: panelDragOffset)
+            // A pull that collapsed the panel leaves the offset where the
+            // slide ended; the panel is invisible by then, so this snaps it
+            // back for the next open before anything is seen.
+            .onAppear { panelDragOffset = 0 }
+    }
+
+    /// Collapse asked for by the grabber (tap, pull past the threshold, or
+    /// VoiceOver, TASK-92): the panel slides the rest of the way down off
+    /// the screen while it fades, with the same spring the viewfinder uses
+    /// to grow back. The viewfinder-tap collapse (FR-8.7) is unchanged and
+    /// still just fades (`CameraScreenModel.handleViewfinderTap`).
+    private func collapsePanelFromGrabber(slideDistance: CGFloat) {
+        withAnimation(CameraTheme.spring) {
+            panelDragOffset = slideDistance
+            model.closeOverlayPanel()
+        }
     }
 
     // MARK: - Viewfinder contents
@@ -454,33 +497,26 @@ struct CameraScreen: View {
 
     // MARK: - Bottom bar (PRD 0.2 FR-7.3, FR-8.3)
 
-    /// Left/right switch with the panel (PRD 0.2 FR-8.3, issue #128): closed
-    /// is thumbnail／shutter／Aa; open is manage-profiles／(nothing)／collapse
-    /// — the shutter is gone while the panel is open, so nothing can take a
-    /// photo. No text labels, no background — every button is just an icon
+    /// Only while the panel is closed (TASK-92; it used to switch to
+    /// manage-profiles／(nothing)／collapse while open): thumbnail／shutter／
+    /// Aa. No text labels, no background — every button is just an icon
     /// (FR-14.2).
     ///
     /// The side buttons' centers sit `footerSideButtonCenterInset` from the
-    /// screen edge (midway to the shutter's edge, minus 8pt), open or
-    /// closed, so they never shift when the panel toggles. Closed, the row sits 16pt
-    /// above the bottom of the footer region; open, `footerColumn` supplies
-    /// the 8pt gap itself and the row is exactly 32pt tall (TASK-55).
+    /// screen edge (midway to the shutter's edge, minus 8pt); the row sits
+    /// 16pt above the bottom of the footer region.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
-        let isOpen = model.panelModel.isOpen
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
         return ZStack {
-            if !isOpen {
-                shutterButton
-            }
+            shutterButton
             HStack {
-                leftBottomBarButton(isOnPhoto: isOnPhoto)
+                thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
-                rightBottomBarButton(isOnPhoto: isOnPhoto)
+                openPanelButton(isOnPhoto: isOnPhoto)
             }
             .padding(.horizontal, sideInset)
         }
-        .frame(height: isOpen ? CameraScreenLayoutMetrics.panelOpenFooterRowHeight : nil)
-        .padding(.bottom, isOpen ? 0 : CameraScreenLayoutMetrics.closedFooterBottomPadding)
+        .padding(.bottom, CameraScreenLayoutMetrics.closedFooterBottomPadding)
     }
 
     /// Tap target of every footer side button, and the thumbnail's size
@@ -491,61 +527,27 @@ struct CameraScreen: View {
     /// decision 2026-10-08 settled on 24, issue #239).
     private static let footerIconSize: CGFloat = 24
 
-    /// Icon size of the collapse key while the panel is open (TASK-55); its
-    /// tap target is 44 wide × the 32pt open footer row.
-    private static let panelOpenFooterIconSize: CGFloat = 20
-
-    @ViewBuilder
-    private func leftBottomBarButton(isOnPhoto: Bool) -> some View {
-        switch model.panelModel.leftBottomBarAction {
-        case .latestPhoto:
-            thumbnailButton(isOnPhoto: isOnPhoto)
-        case .empty:
-            Color.clear.frame(width: Self.footerButtonSize, height: CameraScreenLayoutMetrics.panelOpenFooterRowHeight)
-        }
-    }
-
-    @ViewBuilder
-    private func rightBottomBarButton(isOnPhoto: Bool) -> some View {
-        switch model.panelModel.rightBottomBarAction {
-        case .openOverlayPanel:
-            // `character.textbox` (human decision, 2026-10-07, #221; it
-            // replaced `pencil.tip.crop.circle` from #84). Not `textformat`
-            // or other T-style icons: the style tab's font icon `t.square`
-            // (#215) and the outline icon `character.square.fill` would
-            // read as the same button twice while the panel is open.
-            iconButton(systemName: "character.textbox", accessibilityLabel: "疊字設定", isOnPhoto: isOnPhoto) {
-                model.openOverlayPanel()
-            }
-        case .collapse:
-            iconButton(systemName: "chevron.down", accessibilityLabel: "收起面板", isOnPhoto: isOnPhoto,
-                       iconSize: Self.panelOpenFooterIconSize,
-                       buttonHeight: CameraScreenLayoutMetrics.panelOpenFooterRowHeight) {
-                model.closeOverlayPanel()
-            }
-        }
-    }
-
-    /// 44×44 tap target by default (`footerButtonSize`; issue #128; the collapse key is 44×32, TASK-55) — every
-    /// bottom bar icon button except `thumbnailButton`, which shows a photo
-    /// thumbnail of the same 44×44 size rather than a plain icon.
-    /// `isOnPhoto` picks `CameraTheme.ink`/`inkOnPhoto` the same way
-    /// `CameraToolbar`'s own icons do (issue #121) — in practice this button
-    /// only ever appears while the panel is open (`.collapse`, PRD 0.2 FR-8.3),
-    /// where the viewfinder is never behind the footer (issue #120), so callers always pass `false` today; still
-    /// threaded through properly rather than assumed, so it stays correct
-    /// if that ever changes.
-    private func iconButton(systemName: String, accessibilityLabel: String, isOnPhoto: Bool,
-                            iconSize: CGFloat = footerIconSize, buttonHeight: CGFloat = footerButtonSize,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: iconSize, weight: .medium))
+    /// Right key: opens the panel. `character.textbox` (human decision,
+    /// 2026-10-07, #221; it replaced `pencil.tip.crop.circle` from #84). Not
+    /// `textformat` or other T-style icons: the style tab's font icon
+    /// `t.square` (#215) and the outline icon `character.square.fill` would
+    /// read as the same button twice while the panel is open.
+    ///
+    /// 44×44 tap target (`footerButtonSize`, issue #128). `isOnPhoto` picks
+    /// `CameraTheme.ink`/`inkOnPhoto` the same way `CameraToolbar`'s own
+    /// icons do (issue #121): 9:16 with the panel closed has the viewfinder
+    /// behind this row.
+    private func openPanelButton(isOnPhoto: Bool) -> some View {
+        Button {
+            model.openOverlayPanel()
+        } label: {
+            Image(systemName: "character.textbox")
+                .font(.system(size: Self.footerIconSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: Self.footerButtonSize, height: buttonHeight)
+                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
                 .legibleOverPhoto(isOnPhoto)
         }
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel("疊字設定")
     }
 
     /// Left key while closed: the newest DaysCam photo, or a placeholder
@@ -594,7 +596,7 @@ struct CameraScreen: View {
 
     /// Center: the shutter — the one place PRD 0.2 FR-14.2 allows a filled
     /// background (the `accent` circle) plus a ring, matching D-1. Only
-    /// shown while the panel is closed (issue #128).
+    /// shown while the panel is closed (issue #128), like the whole bar.
     private var shutterButton: some View {
         let diameter: CGFloat = 76
         let ringWidth: CGFloat = 4
@@ -694,7 +696,7 @@ private struct GridLinesView: View {
     return CameraScreen(model: model)
 }
 
-#Preview("疊字面板打開（22.6，對照 D-2）") {
+#Preview("疊字面板打開（22.6；TASK-92 拖桿、延伸到底）") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
