@@ -82,6 +82,11 @@ struct CameraScreen: View {
                 .presentationDetents([.fraction(0.68)])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
+                // TASK-103 (#412): drags inside the content scroll the list
+                // (and reach the rows' swipe actions) instead of resizing or
+                // dismissing the sheet; the sheet still comes down from its
+                // drag indicator, or from the list once it is at the top.
+                .presentationContentInteraction(.scrolls)
             }
             .fullScreenCover(isPresented: $model.isGalleryPresented) {
                 if let galleryModel = model.galleryModel {

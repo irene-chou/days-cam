@@ -75,7 +75,9 @@ struct ProfileManagerView: View {
                     // otherwise hide them from the list (insets, separator).
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    // A full swipe asks to delete straight away (TASK-104,
+                    // #413); the confirmation dialog stays either way.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         if model.canDelete {
                             Button(role: .destructive) {
                                 model.requestDeletion(of: row.id)
