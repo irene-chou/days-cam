@@ -107,9 +107,19 @@ final class StyleTabViewLayoutTests: XCTestCase {
 
     /// 49.5 / 49.6: option boxes fit one row at SE content width (355pt).
     func testOptionRowsFitSEContentWidth() {
-        // Four outline options (TASK-81), also inside the 4pt side inset of #327.
-        XCTAssertLessThanOrEqual(4 * StyleTabView.outlineOptionSide + 3 * 8, 355 - 8)
-        XCTAssertLessThanOrEqual(4 * StyleTabView.shadowOptionSide + 3 * 18, 355)
+        // Four outline options (TASK-81) and up to five shadow options share
+        // the TASK-87 metrics, inside the 4pt side inset of #327.
+        let side = StyleTabView.optionSide
+        let gap = StyleTabView.optionSpacing
+        XCTAssertLessThanOrEqual(4 * side + 3 * gap, 355 - 8)
+        XCTAssertLessThanOrEqual(5 * side + 4 * gap, 355 - 8)
+    }
+
+    /// 87.1 / 87.2 / 87.4: both pages share one 48pt / 8pt / 4pt option row.
+    func testOutlineAndShadowShareOptionRowMetrics() {
+        XCTAssertEqual(StyleTabView.optionSide, 48)
+        XCTAssertEqual(StyleTabView.optionSpacing, 8)
+        XCTAssertEqual(StyleTabView.optionRowTopPadding, 4)
     }
 
     /// 49.1: a centered page measures exactly the panel's content height.

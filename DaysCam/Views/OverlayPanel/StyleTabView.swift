@@ -233,9 +233,9 @@ struct StyleTabView: View {
 
     private var outlineContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Five transparent boxes, left-aligned on the swatch's left edge
+            // Transparent boxes, left-aligned on the swatch's left edge
             // (TASK-49 C); no horizontal scrolling.
-            HStack(spacing: 8) {
+            optionRow {
                 ForEach(model.outlineOptions, id: \.self) { outline in
                     let previewStyle: OverlayStyle = {
                         var style = model.profile.style
@@ -252,14 +252,13 @@ struct StyleTabView: View {
                         model.selectOutline(outline)
                     } label: {
                         optionCell(isNone: outline == .none, previewStyle: previewStyle,
-                                   isSelected: isSelected, side: Self.outlineOptionSide)
+                                   isSelected: isSelected, side: Self.optionSide)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(outlineName(outline))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
-            .padding(.top, 4)
             outlineParameterSlider
             opacitySlider(label: "外框不透明度",
                           percent: model.outlineOpacityPercent,
@@ -350,7 +349,7 @@ struct StyleTabView: View {
         return VStack(alignment: .leading, spacing: 12) {
             // Four quick presets: tapping one fills in the parameters below
             // (TASK-71); none stays selected once a parameter is changed.
-            HStack(spacing: 18) {
+            optionRow {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
                     // Isolates the shadow, clearing outline, mirroring
                     // `outlineContent`'s options (which isolate the outline
@@ -366,14 +365,13 @@ struct StyleTabView: View {
                         model.selectShadow(shadow)
                     } label: {
                         optionCell(isNone: shadow == .none, previewStyle: previewStyle,
-                                   isSelected: isSelected, side: Self.shadowOptionSide)
+                                   isSelected: isSelected, side: Self.optionSide)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(shadowName(shadow))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
-            .frame(maxWidth: .infinity)
             colorPalette(current: style.shadowColorSource == .textColor ? nil : style.shadowColor,
                         swatches: model.outlineColorSwatches,
                         showAutoButton: true,
@@ -400,7 +398,6 @@ struct StyleTabView: View {
                             step: StyleTabModel.shadowStep, isDisabled: isDisabled,
                             onChange: { model.setShadowBlur($0) })
         }
-        .padding(.top, 4)
     }
 
     // MARK: - 字級 (FR-10.9)
@@ -616,9 +613,18 @@ struct StyleTabView: View {
             .accessibilityHidden(true)
     }
 
-    /// Option box sides (TASK-49 C): outline 48, shadow 64.
-    static let outlineOptionSide: CGFloat = 48
-    static let shadowOptionSide: CGFloat = 64
+    /// Shared option-row metrics for the outline and shadow pages (TASK-87):
+    /// 48pt boxes, 8pt apart, 4pt above the row.
+    static let optionSide: CGFloat = 48
+    static let optionSpacing: CGFloat = 8
+    static let optionRowTopPadding: CGFloat = 4
+
+    /// The option row both pages share, left-aligned on the swatch edge.
+    private func optionRow<Options: View>(@ViewBuilder _ options: () -> Options) -> some View {
+        HStack(spacing: Self.optionSpacing) { options() }
+            .padding(.top, Self.optionRowTopPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     /// The 1pt inner edge of every swatch (`ink` at 16%), so light colors
     /// stay visible on the panel background (TASK-49 B).
