@@ -135,6 +135,9 @@ struct OverlayTextView: View {
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
+                // TASK-96 (#400): the first-launch tour's step 2 lights this
+                // block up where it actually is — a look-only cut-out.
+                .onboardingTarget(.overlayText)
                 .position(x: displayOrigin.x + blockSize.width / 2, y: displayOrigin.y + blockSize.height / 2)
                 .allowsHitTesting(isInteractive)
                 .gesture(

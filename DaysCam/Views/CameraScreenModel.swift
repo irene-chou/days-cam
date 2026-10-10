@@ -137,6 +137,12 @@ final class CameraScreenModel: ObservableObject {
     /// depends on `selectedProfile`, so there is nothing to go stale.
     let panelModel = OverlayPanelModel()
 
+    /// The first-launch two-step spotlight (TASK-96, #400). Its changes are
+    /// forwarded to this object's `objectWillChange` (see
+    /// `bindToOnboarding`), the same way `cameraService`'s are, so
+    /// `CameraScreen` re-renders when a step changes.
+    let onboarding: OnboardingSpotlightModel
+
     /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
     /// Rebuilt only when `selectedProfileID` actually changes — see
     /// `refreshOverlayPanelTabModelsIfNeeded`.
@@ -313,11 +319,13 @@ final class CameraScreenModel: ObservableObject {
              SystemGalleryLibrary(store: store)
          },
          fontLibrary: (any FontShellControlling)? = nil,
+         onboarding: OnboardingSpotlightModel = OnboardingSpotlightModel(),
          fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
          resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
              OverlayMetrics.resolvedFont(for: $0, availability: $1)
          }) {
         self.resolveFont = resolveFont
+        self.onboarding = onboarding
         self.fontLibrary = fontLibrary ?? InertFontLibrary()
         self.fontPreparationTimeout = fontPreparationTimeout
         self.makeGalleryModel = makeGalleryModel
@@ -390,6 +398,7 @@ final class CameraScreenModel: ObservableObject {
         bindToPanelModel()
         bindToClockNotifications()
         bindToFontLibrary()
+        bindToOnboarding()
         refreshOverlayPanelTabModelsIfNeeded()
         // The launch-time preparation of the current profile's font starts
         // counting its 3 seconds now (FR-5.15); `prepareFontsAtLaunch()`
@@ -499,6 +508,25 @@ final class CameraScreenModel: ObservableObject {
     private func bindToCameraService() {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    /// Makes the tour's fresh-install decision, forwards its changes like
+    /// `bindToCameraService` does, and feeds it every camera permission
+    /// value: a due tour starts once the permission prompt has been
+    /// answered — granted or denied — never while the system prompt is
+    /// still up (TASK-96, 96.8, 96.16, 96.17).
+    /// `CameraService.publish(permission:)` already delivers on the main
+    /// queue.
+    private func bindToOnboarding() {
+        // The one-time fresh-install decision (#400): `ProfileStore.load()`
+        // already ran in `DaysCamApp` by the time this model exists.
+        onboarding.decideIfNeeded(isFreshInstall: profileStore.didSeedFreshInstall)
+        onboarding.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        cameraService.$permission
+            .sink { [weak self] permission in self?.onboarding.cameraPermissionDidChange(permission) }
             .store(in: &cancellables)
     }
 
@@ -775,6 +803,18 @@ extension CameraScreenModel {
         collapseCameraTools()
         profileManagerModel.resetNavigation()
         isProfileManagerPresented = true
+    }
+
+    /// A highlighted tour target was tapped (TASK-96, 96.4／96.5): the tour
+    /// ends, recorded as seen, and the button does what it always does.
+    func onboardingTargetTapped(_ target: OnboardingTarget) {
+        onboarding.targetTapped()
+        switch target {
+        case .profileChip: presentProfileManagement()
+        case .overlayPanelButton: openOverlayPanel()
+        // Look-only (96.19): the mask never lets a tap reach it.
+        case .overlayText: break
+        }
     }
 
     /// The thumbnail was tapped (PRD 0.2 FR-15.3): ask for `.readWrite`

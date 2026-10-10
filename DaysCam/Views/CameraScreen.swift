@@ -159,6 +159,56 @@ struct CameraScreen: View {
             }
             .ignoresSafeArea()
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
+            // TASK-96: while the tour is up nothing under its mask is
+            // reachable by VoiceOver either (96.10); the overlay itself is
+            // added after this, so it stays reachable.
+            .accessibilityHidden(model.onboarding.isActive)
+            .overlayPreferenceValue(OnboardingTargetKey.self) { anchors in
+                onboardingOverlay(anchors: anchors, metrics: metrics)
+            }
+        }
+    }
+
+    // MARK: - First-launch spotlight (TASK-96, #400)
+
+    /// The two-step tour over everything else, on a fresh install once the
+    /// camera permission prompt has been answered (`OnboardingSpotlightModel`
+    /// decides when). The holes follow the published bounds of the
+    /// highlighted button and, on step 2, the day-count text; the step
+    /// change moves them with `CameraTheme.spring`, or instantly under
+    /// Reduce Motion (96.11).
+    @ViewBuilder
+    private func onboardingOverlay(anchors: [OnboardingTarget: Anchor<CGRect>],
+                                   metrics: CameraScreenLayoutMetrics) -> some View {
+        if let step = model.onboarding.step {
+            GeometryReader { proxy in
+                let frame = anchors[step.target].map { proxy[$0] } ?? .zero
+                let secondary = step.secondaryTarget.flatMap { anchors[$0] }.map { proxy[$0] }
+                OnboardingSpotlightView(step: step,
+                                        targetFrame: frame,
+                                        overlayTextFrame: secondary,
+                                        screenSize: metrics.screenSize,
+                                        targetLabel: onboardingTargetLabel(step.target),
+                                        onAdvance: {
+                                            withAnimation(reduceMotion ? nil : CameraTheme.spring) {
+                                                model.onboarding.advance()
+                                            }
+                                        },
+                                        onTargetTap: { model.onboardingTargetTapped(step.target) },
+                                        onEscape: { model.onboarding.finish() })
+            }
+            .ignoresSafeArea()
+            .transition(.opacity)
+        }
+    }
+
+    /// The real button's accessibility label, repeated on the tour's proxy
+    /// over it so VoiceOver reads the same thing (96.10).
+    private func onboardingTargetLabel(_ target: OnboardingTarget) -> String {
+        switch target {
+        case .profileChip: return "設定檔：\(model.currentProfileName)"
+        case .overlayPanelButton: return "疊字設定"
+        case .overlayText: return model.overlayText
         }
     }
 
@@ -576,6 +626,8 @@ struct CameraScreen: View {
                 .legibleOverPhoto(isOnPhoto)
         }
         .accessibilityLabel("疊字設定")
+        // TASK-96: the first-launch tour's step 2 points here.
+        .onboardingTarget(.overlayPanelButton)
     }
 
     /// Left key while closed: the newest DaysCam photo, or a placeholder
