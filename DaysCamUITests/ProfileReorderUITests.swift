@@ -19,7 +19,21 @@ final class ProfileReorderUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
     }
     private var sheetBar: XCUIElement { app.navigationBars["設定檔"] }
-    private var rows: XCUIElementQuery { app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '，' AND NOT (label BEGINSWITH '編輯')")) }
+    private var rows: XCUIElementQuery { app.descendants(matching: .any).matching(identifier: "profileRow") }
+
+    /// Appends a line to `reorder.log` under `DAYSCAM_UI_SHOT_DIR` (xcodebuild
+    /// does not surface `print` from the test runner).
+    private func log(_ line: String) {
+        guard let path = ProcessInfo.processInfo.environment["DAYSCAM_UI_SHOT_DIR"], !path.isEmpty else { return }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("reorder.log")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile(); handle.write((line + "\n").data(using: .utf8)!); try? handle.close()
+        } else {
+            try? (line + "\n").write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
 
     private func openSheet() {
         XCTAssertTrue(profileChip.waitForExistence(timeout: 10))
@@ -50,7 +64,7 @@ final class ProfileReorderUITests: XCTestCase {
         let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = start.withOffset(CGVector(dx: 0, dy: CGFloat(to - from) * pitch))
         start.press(forDuration: 0.6, thenDragTo: end, withVelocity: velocity, thenHoldForDuration: 0.2)
-        let moved = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name + "，")).firstMatch
+        let moved = rows.matching(NSPredicate(format: "label BEGINSWITH %@", name + "，")).firstMatch
         var samples: [CGFloat] = []
         let deadline = Date().addingTimeInterval(0.6)
         while Date() < deadline {
@@ -75,7 +89,7 @@ final class ProfileReorderUITests: XCTestCase {
             XCTAssertEqual(after[to], result.name, "round \(round): \(names) → \(after)")
             let overshoot = result.samples.filter { to < from ? $0 < result.finalY - 3 : $0 > result.finalY + 3 }
             if !overshoot.isEmpty { overshoots += 1 }
-            print("TASK102 round \(round) from \(from) to \(to) final \(result.finalY) samples \(result.samples.map { Int($0) })")
+            log("TASK102 two round \(round) from \(from) to \(to) final \(Int(result.finalY)) overshoot=\(!overshoot.isEmpty) samples \(result.samples.map { Int($0) })")
         }
         XCTAssertEqual(overshoots, 0, "102.1／102.2 the dragged row never flies past its slot")
         app.terminate()
@@ -99,7 +113,7 @@ final class ProfileReorderUITests: XCTestCase {
             }
             let overshoot = result.samples.filter { to < from ? $0 < result.finalY - 3 : (to > from ? $0 > result.finalY + 3 : abs($0 - result.finalY) > 3) }
             if !overshoot.isEmpty { overshoots += 1 }
-            print("TASK102 four \(from)→\(to) final \(result.finalY) samples \(result.samples.map { Int($0) })")
+            log("TASK102 four \(from)→\(to) final \(Int(result.finalY)) overshoot=\(!overshoot.isEmpty) samples \(result.samples.map { Int($0) })")
         }
         XCTAssertEqual(overshoots, 0, "102.3 no fly-away")
     }

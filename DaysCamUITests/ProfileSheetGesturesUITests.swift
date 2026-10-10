@@ -24,7 +24,27 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '刪除「'")).firstMatch
     }
     private var rows: XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '，' AND NOT (label BEGINSWITH '編輯')"))
+        app.descendants(matching: .any).matching(identifier: "profileRow")
+    }
+
+    /// Screenshot plus a line in `gestures.log` under `DAYSCAM_UI_SHOT_DIR`
+    /// (diagnostics for the B′ comparison and for reading a failed run).
+    private func snap(_ name: String, note: String = "") {
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        guard let path = ProcessInfo.processInfo.environment["DAYSCAM_UI_SHOT_DIR"], !path.isEmpty else { return }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("\(name).png"))
+        let line = "\(name): sheet=\(sheetBar.exists) rows=\(rows.count) dialog=\(deleteDialogButton.exists) delete=\(app.buttons["刪除"].exists) \(note)\n"
+        if let handle = try? FileHandle(forWritingTo: directory.appendingPathComponent("gestures.log")) {
+            handle.seekToEndOfFile(); handle.write(line.data(using: .utf8)!); try? handle.close()
+        } else {
+            try? line.write(to: directory.appendingPathComponent("gestures.log"), atomically: true, encoding: .utf8)
+        }
     }
 
     private func openSheet() {
@@ -57,12 +77,16 @@ final class ProfileSheetGesturesUITests: XCTestCase {
     func testVerticalDragScrollsInsteadOfDismissing() {
         openSheet()
         addProfiles(7)
-        XCTAssertGreaterThanOrEqual(rows.count, 8, "eight profiles")
+        // A lazy list only reports the rendered rows; with eight profiles
+        // in a 0.68 sheet that is still more than fit, i.e. it must scroll.
+        XCTAssertGreaterThanOrEqual(rows.count, 5, "eight profiles, several on screen")
+        snap("103.1_eight-profiles")
         let first = rows.firstMatch
         let firstY = first.frame.minY
         let middle = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 0, dy: -220)), withVelocity: .slow,
                      thenHoldForDuration: 0.1)
+        snap("103.1_after-drag-up")
         XCTAssertTrue(sheetBar.exists, "103.1 the sheet is still open after dragging up")
         XCTAssertLessThan(first.frame.minY, firstY - 40, "103.1 the list scrolled")
         middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .slow,
@@ -82,9 +106,10 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         let countBefore = rows.count
         XCTAssertGreaterThanOrEqual(countBefore, 2)
         var reached = 0
-        for _ in 0..<5 {
+        for attempt in 0..<5 {
             fullSwipeLeft(rows.element(boundBy: 1))
-            if deleteDialogButton.waitForExistence(timeout: 2) {
+            snap("104.1_after-full-swipe-\(attempt)")
+            if deleteDialogButton.waitForExistence(timeout: 3) {
                 reached += 1
                 app.buttons["取消"].tap()
                 XCTAssertFalse(deleteDialogButton.waitForExistence(timeout: 1))
@@ -103,7 +128,13 @@ final class ProfileSheetGesturesUITests: XCTestCase {
     func testHalfSwipeShowsDeleteButton() {
         openSheet()
         addProfiles(1)
-        rows.element(boundBy: 1).swipeLeft()
+        // A short, slow drag: XCUITest's `swipeLeft` is long enough to count
+        // as a full swipe now that full swipes delete.
+        let row = rows.element(boundBy: 1)
+        let start = row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)),
+                    withVelocity: .slow, thenHoldForDuration: 0.2)
+        snap("104.3_after-half-swipe")
         let delete = app.buttons["刪除"]
         XCTAssertTrue(delete.waitForExistence(timeout: 3), "104.3 the 刪除 button is revealed")
         delete.tap()
@@ -116,8 +147,12 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         openSheet()
         XCTAssertEqual(rows.count, 1)
         fullSwipeLeft(rows.firstMatch)
+        snap("104.4_after-full-swipe-single")
         XCTAssertFalse(deleteDialogButton.waitForExistence(timeout: 1.5), "104.4 no delete on the only profile")
-        rows.firstMatch.swipeLeft()
+        let only = rows.firstMatch
+        only.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: only.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.2)
         XCTAssertFalse(app.buttons["刪除"].waitForExistence(timeout: 1), "104.4 no 刪除 button either")
         XCTAssertTrue(sheetBar.exists)
     }

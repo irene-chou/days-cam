@@ -208,6 +208,7 @@ struct ProfileManagerView: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(row.name)，\(row.subtitle)")
+            .accessibilityIdentifier("profileRow")
             .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
 
             Button {
