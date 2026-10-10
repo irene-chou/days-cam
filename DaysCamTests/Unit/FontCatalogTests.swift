@@ -52,6 +52,27 @@ final class FontCatalogTests: XCTestCase {
         }
     }
 
+    /// 91.1 / 91.2: every weight's open-source asset, including Noto Regular
+    /// and Black, downloads from `dayscam-fonts@v3`; no upstream URL remains.
+    func testEveryWeightAssetDownloadsFromTheV3Tag() {
+        let assets = FontCatalog.entries.flatMap { $0.weights.compactMap(\.openSource) }
+        XCTAssertEqual(assets.count, 6, "91.1")
+        for asset in assets {
+            XCTAssertEqual(asset.primaryURL.absoluteString,
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/\(asset.repositoryPath)",
+                           "91.1 \(asset.fileName)")
+            XCTAssertEqual(asset.fallbackURL.absoluteString,
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/\(asset.repositoryPath)",
+                           "91.1 \(asset.fileName)")
+            XCTAssertFalse(asset.primaryURL.absoluteString.contains("notofonts"), "91.1 \(asset.fileName)")
+            XCTAssertFalse(asset.fallbackURL.absoluteString.contains("notofonts"), "91.1 \(asset.fileName)")
+        }
+        let notoPaths = FontCatalog.entry(for: .notoSerifTC).weights.compactMap(\.openSource?.repositoryPath)
+        XCTAssertEqual(notoPaths, ["noto-serif-tc/NotoSerifTC-Regular.otf",
+                                   "noto-serif-tc/NotoSerifTC-Bold.otf",
+                                   "noto-serif-tc/NotoSerifTC-Black.otf"], "91.1")
+    }
+
     func testFullNamesMatchVerifiedFontMetadata() {
         let names: [OverlayFontID: String] = [
             .pingFang: "蘋方-繁 中粗體",
@@ -211,10 +232,10 @@ final class FontCatalogTests: XCTestCase {
                        "Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.\n(c) 2022 王立宇、劉韋辰 版權所有。", "40.2")
         XCTAssertEqual(asset.licenseFileNames, ["chenyuluoyan-OFL.txt"])
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
     }
 
@@ -239,22 +260,22 @@ final class FontCatalogTests: XCTestCase {
     }
 
     /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag
-    /// (`v2` since TASK-40, 40.2).
+    /// (`v3` since TASK-91, 91.1).
     func testOpenSourceURLsPointAtTheFixedTag() throws {
         let asset = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).openSource)
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fileExtension, "otf")
         XCTAssertEqual(FontCatalog.entries.compactMap(\.openSource).count, 4, "40.2")
         for entry in FontCatalog.entries {
             guard let asset = entry.openSource else { continue }
             XCTAssertEqual(asset.primaryURL.absoluteString,
-                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v2/\(asset.repositoryPath)",
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertEqual(asset.fallbackURL.absoluteString,
-                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v2/\(asset.repositoryPath)",
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertTrue(asset.primaryURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
             XCTAssertTrue(asset.fallbackURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
