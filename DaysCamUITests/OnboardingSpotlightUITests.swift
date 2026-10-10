@@ -107,7 +107,10 @@ final class OnboardingSpotlightUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["設定檔"].waitForExistence(timeout: 5), "96.4 the profile sheet opened")
         XCTAssertFalse(spotlight.exists, "96.4 the tour is gone under the sheet")
         attach("96.4_profiles-open")
-        app.buttons["完成"].tap()
+        // Close the sheet by swiping it down (no checkmark key after TASK-101).
+        let sheet = app.navigationBars["設定檔"]
+        let start = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 500)))
         assertTourGone("96.4 no step 2 after closing the sheet")
         app.terminate()
         launch(reset: false)
