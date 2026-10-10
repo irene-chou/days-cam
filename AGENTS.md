@@ -5,7 +5,7 @@
 ## 開工入口
 
 - 先讀本檔，再依 [閱讀矩陣](docs/AGENT-READING-MAP.md) 讀角色與單張任務；不要預設通讀所有 PRD／TASKS。
-- Claude：需求／規格／Lead、UI 開發（ui-panel／ui-shell）；Codex：邏輯開發（core-style／core-device）。review 不分作者，由全新 session 的 agent 執行；高風險卡需兩家都 approve，並另開獨立 QA。詳細分工見 [WORKFLOW](docs/WORKFLOW.md)。
+- Claude：需求／規格／Lead、所有開發（ui-panel／ui-shell／core-style／core-device）、QA 與查證；Codex：只做 GitHub PR code review（connector `@codex review`），不派任何實作、修正或 QA 工作（2026-10-10 使用者裁定）。review 不分作者，由全新 session 的 agent 執行；高風險卡需 Claude 與 Codex 都 approve，並另開獨立 QA。詳細分工見 [WORKFLOW](docs/WORKFLOW.md)。
 - `CLAUDE.md` 匯入本檔；兩家的角色入口共用 `docs/agents/`，0.2 所有權以 [任務表](docs/TASKS-0.2-ui-redesign.md#檔案所有權) 為準。
 
 ## 技術與風格
