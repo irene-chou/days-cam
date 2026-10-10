@@ -128,7 +128,7 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["無陰影"].isSelected)
         XCTAssertFalse(blur.isEnabled)
         XCTAssertFalse(offsetX.isEnabled)
-        XCTAssertFalse(app.sliders["陰影透明度"].isEnabled)
+        XCTAssertFalse(app.sliders["陰影不透明度"].isEnabled)
         attach("shadow-none-disabled")
         app.buttons["柔和"].tap()
         XCTAssertTrue(blur.isEnabled)
