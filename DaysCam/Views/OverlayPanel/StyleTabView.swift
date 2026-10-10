@@ -169,7 +169,7 @@ struct StyleTabView: View {
             // Final icon set per FR-10.1 / PRD §1 icon rules: SF Symbol
             // names are the spec, not the mockup's hand-drawn SVG
             // approximations (design decision, #71).
-            Image(systemName: "t.square").accessibilityHidden(true)
+            Image(systemName: "t.square").latinSymbol().accessibilityHidden(true)
         case .color:
             // Two-layer palette icon (design decision, #71): the inner
             // circle previews the current text color live, the outer ring
@@ -183,11 +183,11 @@ struct StyleTabView: View {
                                 model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
                 .accessibilityHidden(true)
         case .outline:
-            Image(systemName: "character.square.fill").accessibilityHidden(true)
+            Image(systemName: "character.square.fill").latinSymbol().accessibilityHidden(true)
         case .shadow:
             Image(systemName: "shadow").accessibilityHidden(true)
         case .size:
-            Image(systemName: "textformat.size").accessibilityHidden(true)
+            Image(systemName: "textformat.size").latinSymbol().accessibilityHidden(true)
         }
     }
 

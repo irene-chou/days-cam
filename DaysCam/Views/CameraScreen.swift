@@ -568,6 +568,8 @@ struct CameraScreen: View {
             model.openOverlayPanel()
         } label: {
             Image(systemName: "character.textbox")
+                // Latin glyph regardless of the app's 繁中 locale (TASK-100).
+                .latinSymbol()
                 .font(.system(size: Self.footerIconSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                 .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
