@@ -43,11 +43,7 @@ enum StyleSwatchPreview {
         }
     }
 
-    /// The sample text drawn as one clean outline hugging the glyphs, with the fill on
-    /// top. Core Graphics strokes the real glyph outline (same method as
-    /// `OverlayRenderer.stroked`: `.strokeWidth` positive = outline only,
-    /// round joins) instead of stacking offset copies of the text, which
-    /// looked like several overlapping texts at this small size.
+    /// The sample text uses the renderer's shared solid glyph outline.
     ///
     /// `strokeWidth` is the visible width outside the glyph in points. The
     /// returned image's layout size is the text's own size, so it drops in
@@ -62,15 +58,11 @@ enum StyleSwatchPreview {
         let canvas = CGSize(width: textSize.width + overhang * 2, height: textSize.height + overhang * 2)
         let origin = CGPoint(x: overhang, y: overhang)
         let image = UIGraphicsImageRenderer(size: canvas).image { context in
-            // A centred stroke is drawn twice as wide; the fill covers the
-            // inner half, leaving `strokeWidth` visible outside.
-            let outline: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .strokeColor: uiColor(stroke),
-                .strokeWidth: strokeWidth * 2 / font.pointSize * 100
-            ]
-            context.cgContext.setLineJoin(.round)
-            (text as NSString).draw(at: origin, withAttributes: outline)
+            let geometry = OverlayStrokeGeometry(text: text, font: font, width: strokeWidth)
+            context.cgContext.setAlpha(CGFloat(stroke.opacity))
+            geometry.draw(in: context.cgContext, at: origin,
+                          color: uiColor(stroke.withOpacity(1)), excludingFill: fill.opacity < 1)
+            context.cgContext.setAlpha(1)
             (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: uiColor(fill)])
         }
         return image

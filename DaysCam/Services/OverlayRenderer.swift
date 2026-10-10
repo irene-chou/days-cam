@@ -232,9 +232,8 @@ private struct OverlayLayout {
 
     /// An outline around the glyphs, drawn under `inner`.
     ///
-    /// Core Graphics strokes the real glyph outline; a stroke is centred on
-    /// the outline, so it is drawn twice as wide and the fill covers the
-    /// inner half, leaving `width` visible outside the glyph.
+    /// The shared geometry unions filled glyphs with their round expanded
+    /// outlines before drawing, so intersecting contours cannot erase ink.
     ///
     /// Translucent text would let that inner half show through, so it is
     /// cut out of the stroke first; a translucent stroke is faded as one
@@ -242,18 +241,9 @@ private struct OverlayLayout {
     private func stroked(_ inner: DrawingBlock, textSize: CGSize, color: OverlayColor, width: Double) -> DrawingBlock {
         let lineWidth = CGFloat(width) * decorationScale * 2
         guard lineWidth > 0, fontSize > 0 else { return inner }
-        // `.strokeWidth` is a percentage of the font size; positive means
-        // outline only, no fill.
-        let outline: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .strokeColor: uiColor(color, opacity: 1),
-            .strokeWidth: lineWidth / fontSize * 100
-        ]
-        let knockout: [NSAttributedString.Key: Any]? = theme.textColor.opacity < 1
-            ? [.font: font, .foregroundColor: UIColor.black]
-            : nil
+        let geometry = OverlayStrokeGeometry(text: text, font: font, width: lineWidth / 2)
+        let excludesFill = theme.textColor.opacity < 1
         let strokeOpacity = color.opacity
-        let text = self.text
         let visible = lineWidth / 2
         let overflow = UIEdgeInsets(top: inner.overflow.top + visible,
                                     left: inner.overflow.left + visible,
@@ -267,13 +257,10 @@ private struct OverlayLayout {
             // Round joins: at photo size the stroke is ~20 pixels wide, and
             // mitred corners would spike out of every sharp glyph.
             context.setLineJoin(.round)
-            Self.withOpacity(strokeOpacity, isolating: knockout != nil, in: context,
+            Self.withOpacity(strokeOpacity, in: context,
                              bounds: Self.inkBounds(origin: origin, size: inner.size, overflow: overflow)) {
-                (text as NSString).draw(at: textOrigin, withAttributes: outline)
-                if let knockout {
-                    context.setBlendMode(.destinationOut)
-                    (text as NSString).draw(at: textOrigin, withAttributes: knockout)
-                }
+                geometry.draw(in: context, at: textOrigin, color: uiColor(color, opacity: 1),
+                              excludingFill: excludesFill)
             }
             context.restoreGState()
             inner.draw(context, origin)
