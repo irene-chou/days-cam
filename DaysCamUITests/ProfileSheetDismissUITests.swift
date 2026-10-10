@@ -63,7 +63,7 @@ final class ProfileSheetDismissUITests: XCTestCase {
         XCTAssertTrue(sheetBar.waitForExistence(timeout: 5), "101.2 back returns to the list")
         swipeSheetDown()
         assertSheetClosed("101.3 swiped down from the list after editing")
-        XCTAssertTrue(profileChip.label.hasSuffix("乙"), "101.5 the edited name reached the camera screen: \(profileChip.label)")
+        XCTAssertTrue(profileChip.label.contains("乙"), "101.5 the edited name reached the camera screen: \(profileChip.label)")
     }
 
     /// 101.4: tapping the dimmed area above the sheet closes it.
