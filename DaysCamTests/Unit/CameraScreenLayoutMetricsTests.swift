@@ -134,10 +134,13 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
          Device(width: 440, height: 956, top: 59, bottom: 34, viewfinderHeight: 476, boxWidth: 357)]
     }
 
-    func testPanelOpenBoxMatchesReferenceValuesOnEveryDevice() {
+    /// 98.3 (TASK-98, #402): 3:4 while open is exactly where #128's shared
+    /// box put it — height = the area, width = 3/4 of it, top at the header,
+    /// centered, the gap above the panel intact.
+    func testPanelOpenThreeByFourMatchesReferenceValuesOnEveryDevice() {
         for device in devices {
             let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
-            let box = metrics.panelOpenViewfinderFrame
+            let box = metrics.panelOpenViewfinderFrame(for: .threeByFour)
             XCTAssertEqual(box.minY, metrics.headerBottom, accuracy: accuracy)
             XCTAssertEqual(box.height, device.viewfinderHeight, accuracy: 1)
             XCTAssertEqual(box.width, device.boxWidth, accuracy: 1)
@@ -147,18 +150,69 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         }
     }
 
-    func testPanelOpenContentSizePerRatioOnEveryDevice() {
+    /// 98.1 (TASK-98, #402) on iPhone SE, iPhone 16 and 16 Pro Max (and the
+    /// other reference devices): each ratio fitted to the area on its own.
+    func testPanelOpenFramesFitEachRatioOnEveryDevice() {
         for device in devices {
             let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
-            let box = metrics.panelOpenViewfinderFrame
-            let threeByFour = metrics.viewfinderContentSize(for: .threeByFour, boxSize: box.size, isPanelOpen: true)
-            XCTAssertEqual(threeByFour, box.size)
-            let square = metrics.viewfinderContentSize(for: .oneByOne, boxSize: box.size, isPanelOpen: true)
-            XCTAssertEqual(square.width, box.width, accuracy: accuracy)
-            XCTAssertEqual(square.height, box.width, accuracy: accuracy)
-            let tall = metrics.viewfinderContentSize(for: .nineBySixteen, boxSize: box.size, isPanelOpen: true)
-            XCTAssertEqual(tall.height, box.height, accuracy: accuracy)
-            XCTAssertEqual(tall.width, box.height * 9 / 16, accuracy: accuracy)
+            let area = metrics.panelOpenViewfinderArea
+            let width = device.width
+            let height = metrics.panelOpenViewfinderAreaHeight
+            XCTAssertEqual(area, CGRect(x: 0, y: metrics.headerBottom, width: width, height: height))
+
+            let square = metrics.panelOpenViewfinderFrame(for: .oneByOne)
+            let side = min(width, height)
+            XCTAssertEqual(square.width, side, accuracy: accuracy, "1:1 is W×W when H ≥ W, else H×H (\(device.width)×\(device.height))")
+            XCTAssertEqual(square.height, side, accuracy: accuracy)
+
+            let threeByFour = metrics.panelOpenViewfinderFrame(for: .threeByFour)
+            XCTAssertEqual(threeByFour.width, min(width, height * 3 / 4), accuracy: accuracy)
+            XCTAssertEqual(threeByFour.height, threeByFour.width * 4 / 3, accuracy: accuracy)
+
+            let tall = metrics.panelOpenViewfinderFrame(for: .nineBySixteen)
+            XCTAssertEqual(tall.width, min(width, height * 9 / 16), accuracy: accuracy)
+            XCTAssertEqual(tall.height, tall.width * 16 / 9, accuracy: accuracy)
+            if height * 9 / 16 <= width {
+                XCTAssertEqual(tall.height, height, accuracy: accuracy, "9:16 is as tall as the area")
+            }
+
+            for ratio in CaptureAspectRatio.allCases {
+                let frame = metrics.panelOpenViewfinderFrame(for: ratio)
+                XCTAssertEqual(frame.midX, width / 2, accuracy: accuracy, "\(ratio) centered")
+                XCTAssertGreaterThanOrEqual(frame.minY, area.minY - accuracy, "\(ratio) below the header")
+                XCTAssertLessThanOrEqual(frame.maxY, area.maxY + accuracy, "\(ratio) above the gap")
+                XCTAssertEqual(frame.midY, area.midY, accuracy: accuracy, "\(ratio) vertically centered in the area")
+                let content = metrics.viewfinderContentSize(for: ratio, boxSize: frame.size, isPanelOpen: true)
+                XCTAssertEqual(content, frame.size, "\(ratio) fills its own fitted frame")
+            }
+        }
+    }
+
+    /// 98.2: on iPhone 16 the open 1:1 picture is the full 393pt wide —
+    /// #128's shared box made it ≈294.5.
+    func testPanelOpenSquareOnIPhone16IsFullWidth() {
+        let metrics = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
+        let square = metrics.panelOpenViewfinderFrame(for: .oneByOne)
+        XCTAssertEqual(square.width, 393, accuracy: accuracy)
+        XCTAssertEqual(square.height, 393, accuracy: accuracy)
+        XCTAssertGreaterThan(square.width, 294.5 + 90)
+        let closed = metrics.viewfinderPlacement(for: .oneByOne, isPanelOpen: false)
+        let open = metrics.viewfinderPlacement(for: .oneByOne, isPanelOpen: true)
+        XCTAssertEqual(open.scale.width, 1, accuracy: 0.001, "a picture that fits is not scaled")
+        XCTAssertEqual(open.scale.height, 1, accuracy: 0.001)
+        XCTAssertEqual(open.layoutSize, closed.layoutSize)
+    }
+
+    /// 98.3: 9:16 while open is unchanged too — as tall as the area, 9/16 of
+    /// that wide, top at the header, centered.
+    func testPanelOpenNineBySixteenMatchesReferenceValuesOnEveryDevice() {
+        for device in devices {
+            let metrics = makeMetrics(width: device.width, height: device.height, top: device.top, bottom: device.bottom)
+            let tall = metrics.panelOpenViewfinderFrame(for: .nineBySixteen)
+            XCTAssertEqual(tall.minY, metrics.headerBottom, accuracy: accuracy)
+            XCTAssertEqual(tall.height, device.viewfinderHeight, accuracy: 1)
+            XCTAssertEqual(tall.width, device.viewfinderHeight * 9 / 16, accuracy: 1)
+            XCTAssertEqual(tall.midX, device.width / 2, accuracy: accuracy)
         }
     }
 
@@ -210,8 +264,8 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(large.panelContentHeight, 244)
         XCTAssertEqual(large.panelBottom, normal.panelBottom, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderAreaHeight, normal.panelOpenViewfinderAreaHeight - 6, accuracy: accuracy)
-        XCTAssertEqual(large.panelOpenViewfinderFrame.minY, large.headerBottom, accuracy: accuracy)
-        XCTAssertLessThanOrEqual(large.panelOpenViewfinderFrame.maxY + large.panelGapAboveBox, large.panelTop + accuracy)
+        XCTAssertEqual(large.panelOpenViewfinderFrame(for: .threeByFour).minY, large.headerBottom, accuracy: accuracy)
+        XCTAssertLessThanOrEqual(large.panelOpenViewfinderFrame(for: .threeByFour).maxY + large.panelGapAboveBox, large.panelTop + accuracy)
     }
 
     /// Never smaller than the default, so default Dynamic Type matches #134.
@@ -392,7 +446,7 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
                 let open = metrics.viewfinderPlacement(for: ratio, isPanelOpen: true)
                 XCTAssertEqual(open.layoutSize, closed.layoutSize)
                 XCTAssertEqual(open.center.x, device.width / 2, accuracy: 0.05, "\(ratio)")
-                let box = metrics.panelOpenViewfinderFrame
+                let box = metrics.panelOpenViewfinderFrame(for: ratio)
                 let expected = metrics.viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: true)
                 XCTAssertEqual(open.layoutSize.width * open.scale.width, expected.width, accuracy: 0.05, "\(ratio)")
                 XCTAssertEqual(open.layoutSize.height * open.scale.height, expected.height, accuracy: 0.05, "\(ratio)")
