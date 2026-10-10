@@ -555,4 +555,35 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
         library.weightDownloadDidFinish.send(FontDownloadID(fontID: .notoSerifTC, weightID: "bold"))
         XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black", "遲到的完成事件不套用")
     }
+
+    /// cca92a0: after choosing a not-yet-downloaded weight, tapping another
+    /// font drops the request at once; the weight finishing later neither
+    /// writes the profile nor says it was applied.
+    func testTappingAnotherFontDropsThePendingWeight() {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        library.fontStates[.songti] = .available
+        let saved = Saved()
+        let panel = makePanel(library: library, saved: saved)
+        panel.fontList.didTapWeight("black")
+        XCTAssertEqual(panel.fontList.pendingWeight, black())
+        panel.fontList.didTap(.songti)
+        XCTAssertNil(panel.fontList.pendingWeight, "點別的字型立即清除")
+        library.finish(black())
+        XCTAssertTrue(saved.profiles.isEmpty, "完成後不得寫入設定檔")
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "bold")
+        XCTAssertFalse(panel.fontList.toast?.text.contains("已套用") ?? false)
+    }
+
+    /// cca92a0: tapping the same font again does not cancel its pending weight.
+    func testTappingTheSameFontKeepsThePendingWeight() {
+        let library = StandInLibrary()
+        library.fontStates[.notoSerifTC] = .available
+        let panel = makePanel(library: library)
+        panel.fontList.didTapWeight("black")
+        panel.fontList.didTap(.notoSerifTC)
+        XCTAssertEqual(panel.fontList.pendingWeight, black())
+        library.finish(black())
+        XCTAssertEqual(panel.profile.style.resolvedFontWeight.id, "black")
+    }
 }
