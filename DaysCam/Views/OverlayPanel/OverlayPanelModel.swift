@@ -45,39 +45,12 @@ final class OverlayPanelModel: ObservableObject {
         isOpen = true
     }
 
-    /// Collapses the panel — the "收起" key, or tapping the viewfinder
-    /// outside the overlay text while open (PRD 0.2 FR-8.3, FR-8.7). Does
-    /// not reset `selectedTab` (acceptance 22.2).
+    /// Collapses the panel — the grabber at its top edge (tap or pull down,
+    /// TASK-92; it replaced the footer's "收起" key), or tapping the
+    /// viewfinder outside the overlay text while open (PRD 0.2 FR-8.3,
+    /// FR-8.7). Does not reset `selectedTab` (acceptance 22.2).
     func close() {
         isOpen = false
-    }
-}
-
-// MARK: - Bottom bar (PRD 0.2 FR-7.3, FR-8.3, acceptance 22.5)
-
-extension OverlayPanelModel {
-    /// What the bottom bar's left key does right now.
-    enum LeftBottomBarAction: Equatable {
-        /// Panel open: nothing, the slot stays reserved (#226 R-12).
-        case empty
-        /// Panel closed: TASK-21's photo thumbnail / gallery entry (FR-15.2).
-        case latestPhoto
-    }
-
-    /// What the bottom bar's right key does right now.
-    enum RightBottomBarAction: Equatable {
-        /// Panel open: collapses it.
-        case collapse
-        /// Panel closed: expands it.
-        case openOverlayPanel
-    }
-
-    var leftBottomBarAction: LeftBottomBarAction {
-        isOpen ? .empty : .latestPhoto
-    }
-
-    var rightBottomBarAction: RightBottomBarAction {
-        isOpen ? .collapse : .openOverlayPanel
     }
 }
 
