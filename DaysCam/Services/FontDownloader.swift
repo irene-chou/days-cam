@@ -97,10 +97,15 @@ enum FontFileVerifier {
     /// Whether the file at `url` has exactly the asset's size and SHA-256.
     ///
     /// Reads the whole file, so call it off the main actor.
+    ///
+    /// The size comes from `URLResourceKey.fileSizeKey` rather than
+    /// `FileManager.attributesOfItem(atPath:)`: the latter also returns the
+    /// file's timestamps, which puts it near Apple's "file timestamp"
+    /// required-reason API list (privacy manifest, `docs/RELEASE.md`); the
+    /// size key alone is not on that list and is all this check needs.
     static func isValid(fileAt url: URL, for asset: OpenSourceFontAsset) -> Bool {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attributes[.size] as? NSNumber,
-              size.intValue == asset.byteCount,
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size == asset.byteCount,
               let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
             return false
         }
