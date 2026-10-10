@@ -587,6 +587,29 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertTrue(calls.weights.isEmpty)
     }
 
+    func testTappingAnotherFontAtOnceDropsThePendingWeight() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("black")
+        // The new font is still downloading, so the current font has not changed yet.
+        model.didTap(.songti)
+        XCTAssertEqual(calls.fonts, [.songti])
+        XCTAssertNil(model.pendingWeight, "點別的字型立即清除 pending")
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertTrue(calls.weights.isEmpty, "較舊的字重請求不得在較新的選擇之後套用")
+        XCTAssertNil(model.toast)
+    }
+
+    func testTappingTheCurrentFontKeepsThePendingWeight() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let model = makeModel(library: library)
+        model.didTapWeight("black")
+        model.didTap(.notoSerifTC)
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+    }
+
     func testPickingAnAvailableWeightDropsAPendingOne() {
         let library = FakeFontLibrary([.notoSerifTC: .available])
         library.weightStates[noto("regular")] = .available

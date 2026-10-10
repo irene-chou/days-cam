@@ -433,6 +433,9 @@ final class FontLibraryModel: ObservableObject {
     /// `applyFont` (which downloads when needed); a download in progress is
     /// never cancelled, and a font still preparing does nothing.
     func didTap(_ fontID: OverlayFontID) {
+        // Choosing another font is the newer intent: a face still downloading
+        // for the current font must not be applied after it (TASK-89).
+        if fontID != currentFontID { pendingWeight = nil }
         switch library.state(for: fontID) {
         case .available, .notDownloaded, .failed:
             applyFont(fontID, profileID)
