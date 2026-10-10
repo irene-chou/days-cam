@@ -12,6 +12,7 @@ struct FontListView: View {
     /// The name and size text follow Dynamic Type, so a row grows with them.
     @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
     @ScaledMetric(relativeTo: .caption) private var sizeTextSize: CGFloat = 12
+    @ScaledMetric(relativeTo: .subheadline) private var weightTextSize: CGFloat = FontListView.weightTextSize
 
     /// Row metrics (TASK-77): a row is at least 52pt and grows with the name.
     static let rowMinHeight: CGFloat = 52
@@ -19,6 +20,12 @@ struct FontListView: View {
     /// Font name size in a downloaded row.
     static let rowTextSize: CGFloat = 17
     static let statusIconSize: CGFloat = 20
+    /// The weight buttons of the expanded card (TASK-89, design A): at least
+    /// 44pt tall, equal widths, each drawn in its own weight.
+    static let weightButtonMinHeight: CGFloat = 44
+    static let weightTextSize: CGFloat = 15
+    static let weightButtonSpacing: CGFloat = 8
+    static let cardCornerRadius: CGFloat = 12
     /// The selection bar left of the name.
     static let selectionBarWidth: CGFloat = 3
     /// The `danger` token of the design (`#E0503F`).
@@ -70,27 +77,120 @@ struct FontListView: View {
         let button = Button {
             model.didTap(cell.fontID)
         } label: {
-            cellLabel(cell, showsSeparator: showsSeparator)
+            cell.isExpanded ? AnyView(cardTitle(cell)) : AnyView(cellLabel(cell, showsSeparator: showsSeparator))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(cell.accessibilityLabel)
         .accessibilityAddTraits(cell.isSelected ? .isSelected : [])
-        if cell.canDelete {
-            button
-                .contextMenu {
-                    Button("套用") { model.didTap(cell.fontID) }
-                    Button(role: .destructive) {
-                        model.requestDeletion(of: cell.fontID)
-                    } label: {
-                        Label("刪除字型", systemImage: "trash")
-                        if let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
-                            Text("釋放 \(size)")
+        let row = Group {
+            if cell.canDelete {
+                button
+                    .contextMenu {
+                        Button("套用") { model.didTap(cell.fontID) }
+                        Button(role: .destructive) {
+                            model.requestDeletion(of: cell.fontID)
+                        } label: {
+                            Label("刪除字型", systemImage: "trash")
+                            if let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
+                                Text("釋放 \(size)")
+                            }
                         }
                     }
-                }
-                .accessibilityAction(named: "刪除字型") { model.requestDeletion(of: cell.fontID) }
+                    .accessibilityAction(named: "刪除字型") { model.requestDeletion(of: cell.fontID) }
+            } else {
+                button
+            }
+        }
+        if cell.isExpanded {
+            VStack(spacing: 0) {
+                row
+                weightButtons(cell)
+            }
+            .background(RoundedRectangle(cornerRadius: Self.cardCornerRadius)
+                .fill(CameraTheme.active.opacity(0.12)))
+            .padding(.vertical, 6)
         } else {
-            button
+            row
+        }
+    }
+
+    // MARK: - Expanded card (TASK-89, design A)
+
+    /// The selected multi-weight font's name row inside its card: the name in
+    /// the chosen weight and a check at the trailing edge.
+    private func cardTitle(_ cell: FontLibraryModel.Cell) -> some View {
+        HStack(spacing: 8) {
+            nameView(cell)
+            Spacer(minLength: 8)
+            Image(systemName: "checkmark")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(CameraTheme.active)
+                .frame(minWidth: Self.statusIconSize)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .frame(minHeight: Self.rowMinHeight)
+        .contentShape(Rectangle())
+    }
+
+    /// One equal-width button per weight, each in its own weight; the chosen
+    /// one has the yellow frame. A face not on the device shows its download
+    /// icon, and tapping it downloads first and applies afterwards.
+    private func weightButtons(_ cell: FontLibraryModel.Cell) -> some View {
+        HStack(spacing: Self.weightButtonSpacing) {
+            ForEach(cell.weights) { weight in
+                Button {
+                    model.didTapWeight(weight.weightID)
+                } label: {
+                    weightLabel(weight)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(weight.accessibilityLabel)
+                .accessibilityAddTraits(weight.isSelected ? .isSelected : [])
+                .accessibilityIdentifier("fontWeight.\(weight.weightID)")
+            }
+        }
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.bottom, 12)
+    }
+
+    private func weightLabel(_ weight: FontLibraryModel.WeightCell) -> some View {
+        HStack(spacing: 4) {
+            Text(weight.name)
+                .font(Font(OverlayMetrics.font(for: weight.fontID,
+                                               weightID: weight.weightID,
+                                               size: weightTextSize,
+                                               availability: model.availability)))
+                .foregroundColor(CameraTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            weightStatusIcon(weight.status)
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.weightButtonMinHeight)
+        .background(RoundedRectangle(cornerRadius: 10)
+            .fill(CameraTheme.ink.opacity(weight.isSelected ? 0.08 : 0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(CameraTheme.active, lineWidth: weight.isSelected ? 2 : 0))
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func weightStatusIcon(_ status: FontLibraryModel.Status) -> some View {
+        switch status {
+        case .none, .justCompleted:
+            EmptyView()
+        case .notDownloaded:
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 14))
+                .foregroundColor(CameraTheme.inkTertiary)
+        case .downloading(let progress):
+            FontProgressRing(progress: progress, diameter: 14)
+        case .preparing:
+            FontProgressRing(progress: nil, diameter: 14)
+        case .failed:
+            Image(systemName: "exclamationmark.arrow.circlepath")
+                .font(.system(size: 14))
+                .foregroundColor(Self.danger)
         }
     }
 
@@ -98,6 +198,12 @@ struct FontListView: View {
         HStack(spacing: 8) {
             nameView(cell)
             Spacer(minLength: 8)
+            if let countText = cell.weightCountText {
+                Text(countText)
+                    .font(.system(size: sizeTextSize))
+                    .foregroundColor(CameraTheme.inkTertiary)
+                    .fixedSize()
+            }
             if case .notDownloaded = cell.status,
                let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
                 Text(size)
@@ -136,7 +242,7 @@ struct FontListView: View {
             // The font itself, resolved as the viewfinder resolves it. Long
             // names wrap onto a second line, never shrink or truncate.
             Text(cell.name)
-                .font(Font(OverlayMetrics.resolvedFont(for: cell.fontID, availability: model.availability)
+                .font(Font(OverlayMetrics.resolvedFont(for: cell.fontID, weightID: cell.nameWeightID, availability: model.availability)
                     .font(ofSize: nameSize)))
                 .foregroundColor(CameraTheme.ink)
                 .lineLimit(2)

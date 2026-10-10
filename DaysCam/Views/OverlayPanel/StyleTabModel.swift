@@ -38,7 +38,11 @@ final class StyleTabModel: ObservableObject {
     /// persisted (FR-8.6).
     @Published private(set) var profile: CameraProfile {
         // Keeps the font list's selection on the profile's font.
-        didSet { fontList.update(profileID: profile.id, currentFontID: profile.style.fontID) }
+        didSet {
+            fontList.update(profileID: profile.id,
+                            currentFontID: profile.style.fontID,
+                            currentWeightID: profile.style.fontWeight)
+        }
     }
     /// Which second-layer item is selected. In-memory only — not part of the
     /// profile and not persisted, matching `lastPanelTab`'s sibling state.
@@ -91,9 +95,15 @@ final class StyleTabModel: ObservableObject {
         self.updateProfile = updateProfile
         self.fontList = FontLibraryModel(profileID: profile.id,
                                          currentFontID: profile.style.fontID,
+                                         currentWeightID: profile.style.fontWeight,
                                          library: self.fontLibrary,
                                          profiles: allProfiles,
                                          applyFont: applyFont)
+        // The weight goes through this model's own saving path, so the
+        // closure can only be set once `self` is complete.
+        fontList.applyWeight = { [weak self] fontID, weightID in
+            self?.applyFontWeight(weightID, for: fontID) ?? false
+        }
 
         // Forward the store's changes so a view observing only this model
         // (not the store separately) still redraws when the recent-colors
@@ -111,15 +121,20 @@ final class StyleTabModel: ObservableObject {
     /// Takes over the fields other writers own, from the latest copy of this
     /// profile (PRD 0.3 FR-5.18; same idea as `RulesTabModel`).
     ///
-    /// Only `style.fontID` is taken: `applyFont` writes it
-    /// outside this tab, and this tab's own copy must not write the old font
-    /// back the next time it changes a color. Everything else in the style is
-    /// this tab's own. Does not persist anything; ignores another profile.
+    /// Only `style.fontID` and `style.fontWeight` are taken: `applyFont`
+    /// writes them outside this tab, and this tab's own copy must not write
+    /// the old font or weight back the next time it changes a color.
+    /// Everything else in the style is this tab's own. Does not persist
+    /// anything; ignores another profile.
     func applyExternalChanges(from latest: CameraProfile) {
         guard latest.id == profile.id else { return }
-        if latest.style.fontID != profile.style.fontID {
-            profile.style.fontID = latest.style.fontID
-        }
+        guard latest.style.fontID != profile.style.fontID
+                || latest.style.fontWeight != profile.style.fontWeight else { return }
+        var style = profile.style
+        // Changing `fontID` resets the weight, so the weight is set after it.
+        style.fontID = latest.style.fontID
+        style.fontWeight = latest.style.fontWeight
+        profile.style = style
     }
 
     /// Recently picked custom colors, newest first, shared by text and
@@ -128,14 +143,18 @@ final class StyleTabModel: ObservableObject {
         recentColorsStore.recentCustomColors
     }
 
-    private func mutate(_ change: (inout OverlayStyle) -> Void) {
+    /// - Returns: whether the change was saved.
+    @discardableResult
+    private func mutate(_ change: (inout OverlayStyle) -> Void) -> Bool {
         var style = profile.style
         change(&style)
         profile.style = style
         do {
             try updateProfile(profile)
+            return true
         } catch {
             lastError = error
+            return false
         }
     }
 }
@@ -148,13 +167,38 @@ extension StyleTabModel {
     /// is available, PingFang otherwise. For the font cells and the
     /// outline/shadow previews.
     func resolvedFont(ofSize size: CGFloat, for fontID: OverlayFontID? = nil) -> UIFont {
-        OverlayMetrics.resolvedFont(for: fontID ?? profile.style.fontID, availability: fontLibrary)
-            .font(ofSize: size)
+        guard let fontID, fontID != profile.style.fontID else {
+            // The profile's own font keeps its chosen weight (TASK-89).
+            return OverlayMetrics.resolvedFont(for: profile.style, availability: fontLibrary).font(ofSize: size)
+        }
+        return OverlayMetrics.resolvedFont(for: fontID, availability: fontLibrary).font(ofSize: size)
     }
 
     /// Applies `fontID` to this profile through `applyFont` (FR-5.18).
     func selectFont(_ fontID: OverlayFontID) {
         applyFont(fontID, profile.id)
+    }
+
+    /// Writes `weightID` of the profile's current font and saves it. Only a
+    /// face the library can already draw reaches here (`FontLibraryModel`
+    /// downloads the others first); a weight of another font or an unknown ID
+    /// is ignored.
+    ///
+    /// - Returns: whether the profile now has `weightID` saved. When saving
+    ///   fails the old weight is put back (and `lastError` is set), so the
+    ///   panel never shows a weight that would vanish on relaunch.
+    @discardableResult
+    func applyFontWeight(_ weightID: String, for fontID: OverlayFontID) -> Bool {
+        let entry = FontCatalog.entry(for: fontID)
+        guard fontID == profile.style.fontID,
+              entry.weights.contains(where: { $0.id == weightID }) else { return false }
+        guard profile.style.resolvedFontWeight.id != weightID else { return true }
+        let previous = profile
+        guard mutate({ $0.fontWeight = weightID }) else {
+            profile = previous
+            return false
+        }
+        return true
     }
 }
 

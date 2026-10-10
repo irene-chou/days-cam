@@ -23,6 +23,19 @@ protocol FontListControlling: FontAvailabilityProviding {
     /// Removes a downloaded open-source font; `false` when it could not be
     /// removed (FR-16.12).
     func delete(_ fontID: OverlayFontID) -> Bool
+    /// Starts downloading one exact face (TASK-89); `false` when none was
+    /// started. The default does nothing.
+    @discardableResult
+    func download(_ fontID: OverlayFontID, weightID: String?) -> Bool
+    /// Fires with the exact face only after it is verified and usable
+    /// (TASK-89). The default never fires.
+    var weightDownloadDidFinish: PassthroughSubject<FontDownloadID, Never> { get }
+}
+
+extension FontListControlling {
+    @discardableResult
+    func download(_ fontID: OverlayFontID, weightID: String?) -> Bool { false }
+    var weightDownloadDidFinish: PassthroughSubject<FontDownloadID, Never> { PassthroughSubject() }
 }
 
 /// A library in which only PingFang is usable and nothing can be downloaded.
@@ -34,9 +47,21 @@ final class StaticFontLibrary: FontListControlling {
     let objectWillChange = ObservableObjectPublisher()
     /// The state of each font; fonts not listed are `.notDownloaded`.
     var states: [OverlayFontID: FontState]
+    /// The state of a non-default face; faces not listed are `.notDownloaded`
+    /// (PingFang's are always available).
+    var weightStates: [FontDownloadID: FontState]
 
-    init(states: [OverlayFontID: FontState] = [:]) {
+    init(states: [OverlayFontID: FontState] = [:],
+         weightStates: [FontDownloadID: FontState] = [:]) {
         self.states = states
+        self.weightStates = weightStates
+    }
+
+    func state(for fontID: OverlayFontID, weightID: String?) -> FontState {
+        let entry = FontCatalog.entry(for: fontID)
+        let weight = entry.weight(for: weightID)
+        if entry.source == .builtIn || weight.id == entry.defaultWeight.id { return state(for: fontID) }
+        return weightStates[FontDownloadID(fontID: fontID, weightID: weight.id)] ?? .notDownloaded
     }
 
     func state(for fontID: OverlayFontID) -> FontState {
@@ -67,6 +92,12 @@ enum FontStateText {
     /// FR-16.10 for any other failure.
     static func failedMessage(name: String) -> String {
         "「\(name)」下載失敗，點一下重試"
+    }
+
+    /// "<字型>　<字重>" as a weight is named in messages.
+    static func weightName(fontID: OverlayFontID, weightID: String) -> String {
+        let entry = FontCatalog.entry(for: fontID)
+        return "\(entry.displayName)　\(entry.weight(for: weightID).displayName)"
     }
 }
 
@@ -110,7 +141,22 @@ final class FontLibraryModel: ObservableObject {
         /// Whether the long-press menu offers "刪除字型": a downloaded
         /// open-source font (PingFang and system fonts cannot be deleted).
         let canDelete: Bool
+        /// The weight buttons of the selected font's expanded card (TASK-89,
+        /// design A); empty for every other row and for single-weight fonts.
+        let weights: [WeightCell]
+        /// How many faces the font has.
+        let weightCount: Int
+        /// The weight the row's name is drawn in (the profile's, when selected).
+        let nameWeightID: String
         var id: OverlayFontID { fontID }
+
+        /// Whether the row is the expanded card.
+        var isExpanded: Bool { !weights.isEmpty }
+
+        /// "N 種字重" on a collapsed row of a multi-weight font.
+        var weightCountText: String? {
+            weightCount > 1 && !isExpanded ? "\(weightCount) 種字重" : nil
+        }
 
         /// Whether the name is drawn with the font itself; otherwise with its
         /// preview image.
@@ -125,6 +171,29 @@ final class FontLibraryModel: ObservableObject {
             case .failed: return "\(name)，下載失敗，點兩下重試"
             case .justCompleted: return "\(name)，已下載"
             case .none: return name
+            }
+        }
+    }
+
+    /// One weight button of the expanded card.
+    struct WeightCell: Identifiable, Equatable {
+        let fontID: OverlayFontID
+        let weightID: String
+        let name: String
+        /// Whether it is the profile's weight (the yellow frame).
+        let isSelected: Bool
+        /// `.none` when usable; otherwise the download icon, ring or failure.
+        let status: Status
+        var id: String { weightID }
+
+        /// What VoiceOver reads for the button.
+        var accessibilityLabel: String {
+            switch status {
+            case .none, .justCompleted: return name
+            case .notDownloaded: return "\(name)，未下載，點兩下下載"
+            case .downloading(let progress): return "\(name)，下載中，\(FontStateText.percent(progress))"
+            case .preparing: return "\(name)，準備中"
+            case .failed: return "\(name)，下載失敗，點兩下重試"
             }
         }
     }
@@ -156,6 +225,7 @@ final class FontLibraryModel: ObservableObject {
     }
 
     static let licenseRowTitle = "字型授權"
+    static let weightSaveFailedMessage = "無法儲存字重設定"
     static let deleteFailedMessage = "無法刪除，請再試一次"
     /// How long the check of a just-finished download stays.
     static let completionCheckDuration: TimeInterval = 1.5
@@ -163,6 +233,8 @@ final class FontLibraryModel: ObservableObject {
     /// The profile fonts are applied to (the one the panel is editing).
     private(set) var profileID: UUID
     @Published private(set) var currentFontID: OverlayFontID
+    /// The profile's stored weight ID; `nil` or unknown means the default face.
+    @Published private(set) var currentWeightID: String?
     @Published private(set) var toast: Toast?
     @Published var deletePrompt: DeletePrompt?
     /// Fonts that finished downloading a moment ago and still show the check.
@@ -174,7 +246,16 @@ final class FontLibraryModel: ObservableObject {
     private let library: any FontListControlling
     private let profiles: () -> [CameraProfile]
     private let applyFont: (OverlayFontID, UUID) -> Void
+    /// Writes an already usable weight to the profile and returns whether it
+    /// was saved; never called for a face that is still being downloaded.
+    var applyWeight: (OverlayFontID, String) -> Bool
     private var knownStates: [OverlayFontID: FontState]
+    /// States of the non-default faces of the current font, as last seen.
+    private var knownWeightStates: [FontDownloadID: FontState] = [:]
+    /// The face the user chose that is still downloading; applied only when
+    /// `weightDownloadDidFinish` reports exactly this face (TASK-89).
+    private(set) var pendingWeight: FontDownloadID?
+    private var weightCancellable: AnyCancellable?
     /// Fonts that went from `downloading` to `preparing` and are not yet
     /// available, so the check shows when they are.
     private var finishingFonts: Set<OverlayFontID> = []
@@ -188,16 +269,24 @@ final class FontLibraryModel: ObservableObject {
     ///   - profiles: every profile, to count who uses a font before deleting.
     ///   - applyFont: the only way a font gets written to a profile
     ///     (`applyFont(fontID, profileID)`, PRD FR-5.18).
+    ///   - currentWeightID: the profile's stored weight ID.
+    ///   - applyWeight: writes an already usable weight to the profile
+    ///     (`applyWeight(fontID, weightID)`); never called for a face that
+    ///     is still being downloaded.
     init(profileID: UUID,
          currentFontID: OverlayFontID,
+         currentWeightID: String? = nil,
          library: any FontListControlling,
          profiles: @escaping () -> [CameraProfile],
-         applyFont: @escaping (OverlayFontID, UUID) -> Void) {
+         applyFont: @escaping (OverlayFontID, UUID) -> Void,
+         applyWeight: @escaping (OverlayFontID, String) -> Bool = { _, _ in true }) {
         self.profileID = profileID
         self.currentFontID = currentFontID
+        self.currentWeightID = currentWeightID
         self.library = library
         self.profiles = profiles
         self.applyFont = applyFont
+        self.applyWeight = applyWeight
         self.knownStates = Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, library.state(for: $0)) })
         refreshLayout()
 
@@ -207,6 +296,8 @@ final class FontLibraryModel: ObservableObject {
                 // The state has not changed yet when this fires.
                 DispatchQueue.main.async { [weak self] in self?.libraryDidChange() }
             }
+        weightCancellable = library.weightDownloadDidFinish
+            .sink { [weak self] unit in self?.weightDownloadDidFinish(unit) }
     }
 
     /// Font availability for drawing the names with the fonts themselves.
@@ -240,14 +331,61 @@ final class FontLibraryModel: ObservableObject {
         return result
     }
 
+    /// The row title: the full face name, except that a font with several
+    /// weights shows the family name alone, since the weight is read from the
+    /// buttons below it and the "N 種字重" text (TASK-89, design A).
+    static func listName(of entry: FontCatalogEntry) -> String {
+        guard entry.weights.count > 1 else { return entry.fullName }
+        switch entry.fontID {
+        case .pingFang: return "蘋方-繁"
+        case .notoSerifTC: return "Noto Serif TC"
+        case .hiraginoSans: return "冬青黑體繁體中文"
+        case .songti: return "宋體-繁"
+        case .kaiti: return "楷體-繁"
+        case .yuanti: return "圓體-繁"
+        case .hannotate: return "手札體-繁"
+        default: return entry.displayName
+        }
+    }
+
     private func cell(for entry: FontCatalogEntry) -> Cell {
         let state = library.state(for: entry.fontID)
+        let isSelected = entry.fontID == currentFontID
+        let selectedWeight = entry.weight(for: isSelected ? currentWeightID : nil)
         return Cell(fontID: entry.fontID,
-                    name: entry.fullName,
+                    name: Self.listName(of: entry),
                     state: state,
-                    isSelected: entry.fontID == currentFontID,
+                    isSelected: isSelected,
                     status: status(of: entry.fontID, state: state),
-                    canDelete: state.isAvailable && entry.source == .openSource)
+                    canDelete: entry.source == .openSource && hasDownloadedFace(entry),
+                    weights: isSelected && entry.weights.count > 1 ? weightCells(of: entry, selected: selectedWeight) : [],
+                    weightCount: entry.weights.count,
+                    nameWeightID: selectedWeight.id)
+    }
+
+    /// Whether any face of the font is on the device: deleting removes them all.
+    private func hasDownloadedFace(_ entry: FontCatalogEntry) -> Bool {
+        entry.weights.contains { library.state(for: entry.fontID, weightID: $0.id).isAvailable }
+    }
+
+    private func weightCells(of entry: FontCatalogEntry, selected: FontWeightOption) -> [WeightCell] {
+        entry.weights.map { weight in
+            WeightCell(fontID: entry.fontID,
+                       weightID: weight.id,
+                       name: weight.displayName,
+                       isSelected: weight.id == selected.id,
+                       status: weightStatus(library.state(for: entry.fontID, weightID: weight.id)))
+        }
+    }
+
+    private func weightStatus(_ state: FontState) -> Status {
+        switch state {
+        case .available: return .none
+        case .notDownloaded: return .notDownloaded
+        case .preparing: return .preparing
+        case .downloading(let progress): return .downloading(progress: progress)
+        case .failed: return .failed
+        }
     }
 
     private func status(of fontID: OverlayFontID, state: FontState) -> Status {
@@ -266,6 +404,7 @@ final class FontLibraryModel: ObservableObject {
     func listDidAppear() {
         isVisible = true
         knownStates = Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, library.state(for: $0)) })
+        dropStalePendingWeight()
         refreshLayout()
     }
 
@@ -276,10 +415,15 @@ final class FontLibraryModel: ObservableObject {
 
     /// Called when the panel's profile copy changes (a font was applied), so
     /// the selection follows.
-    func update(profileID: UUID, currentFontID: OverlayFontID) {
+    func update(profileID: UUID, currentFontID: OverlayFontID, currentWeightID: String? = nil) {
+        // A pending face belongs to one profile and one font.
+        if self.profileID != profileID || self.currentFontID != currentFontID { pendingWeight = nil }
         self.profileID = profileID
         if self.currentFontID != currentFontID {
             self.currentFontID = currentFontID
+        }
+        if self.currentWeightID != currentWeightID {
+            self.currentWeightID = currentWeightID
         }
     }
 
@@ -289,11 +433,87 @@ final class FontLibraryModel: ObservableObject {
     /// `applyFont` (which downloads when needed); a download in progress is
     /// never cancelled, and a font still preparing does nothing.
     func didTap(_ fontID: OverlayFontID) {
+        // Choosing another font is the newer intent: a face still downloading
+        // for the current font must not be applied after it (TASK-89).
+        if fontID != currentFontID { pendingWeight = nil }
         switch library.state(for: fontID) {
         case .available, .notDownloaded, .failed:
             applyFont(fontID, profileID)
         case .downloading, .preparing:
             break
+        }
+    }
+
+    /// A tap on a weight button of the expanded card (TASK-89). A usable
+    /// face is applied at once. Any other face keeps the old setting: it is
+    /// downloaded, remembered as pending, and applied only when the library
+    /// reports exactly that face finished; a failed download drops it.
+    func didTapWeight(_ weightID: String) {
+        let fontID = currentFontID
+        let entry = FontCatalog.entry(for: fontID)
+        guard entry.weights.count > 1 else { return }
+        let weight = entry.weight(for: weightID)
+        let unit = FontDownloadID(fontID: fontID, weightID: weight.id)
+        switch library.state(for: fontID, weightID: weight.id) {
+        case .available:
+            pendingWeight = nil
+            if !applyWeight(fontID, weight.id) { post(Self.weightSaveFailedMessage) }
+        case .notDownloaded, .failed:
+            pendingWeight = unit
+            if !library.download(fontID, weightID: weight.id) { pendingWeight = nil }
+            knownWeightStates[unit] = library.state(for: fontID, weightID: weight.id)
+            objectWillChange.send()
+        case .downloading, .preparing:
+            pendingWeight = unit
+        }
+    }
+
+    /// The library finished a face: applies it only if it is the pending one.
+    func weightDownloadDidFinish(_ unit: FontDownloadID) {
+        guard pendingWeight == unit else { return }
+        pendingWeight = nil
+        guard unit.fontID == currentFontID else { return }
+        guard applyWeight(unit.fontID, unit.weightID) else {
+            // Saving failed: the old weight stays and the failure is shown.
+            if isVisible { post(Self.weightSaveFailedMessage) }
+            return
+        }
+        if isVisible {
+            post("已套用「\(FontStateText.weightName(fontID: unit.fontID, weightID: unit.weightID))」")
+        }
+    }
+
+    /// A face that failed or was cancelled while the list was off screen no
+    /// longer waits for a download.
+    private func dropStalePendingWeight() {
+        guard let unit = pendingWeight else { return }
+        knownWeightStates = [:]
+        switch library.state(for: unit.fontID, weightID: unit.weightID) {
+        case .downloading, .preparing: break
+        case .available: weightDownloadDidFinish(unit)
+        case .notDownloaded, .failed: pendingWeight = nil
+        }
+    }
+
+    /// Reports a failed download of the pending face, reading only that
+    /// face's own state, and drops the pending request.
+    private func noteWeightStates() {
+        let entry = FontCatalog.entry(for: currentFontID)
+        guard entry.weights.count > 1 else { return }
+        // A face that settled by preparing (no download event) still applies.
+        if let unit = pendingWeight, library.state(for: unit.fontID, weightID: unit.weightID).isAvailable {
+            weightDownloadDidFinish(unit)
+        }
+        for weight in entry.weights {
+            let unit = FontDownloadID(fontID: entry.fontID, weightID: weight.id)
+            let old = knownWeightStates[unit]
+            let new = library.state(for: entry.fontID, weightID: weight.id)
+            knownWeightStates[unit] = new
+            guard old != new, case .failed(let reason) = new, pendingWeight == unit else { continue }
+            pendingWeight = nil
+            post(reason == .noNetwork
+                 ? FontStateText.offlineMessage
+                 : FontStateText.failedMessage(name: FontStateText.weightName(fontID: unit.fontID, weightID: unit.weightID)))
         }
     }
 
@@ -303,7 +523,7 @@ final class FontLibraryModel: ObservableObject {
     /// open-source font has one.
     func requestDeletion(of fontID: OverlayFontID) {
         let entry = FontCatalog.entry(for: fontID)
-        guard entry.source == .openSource, library.state(for: fontID).isAvailable else { return }
+        guard entry.source == .openSource, hasDownloadedFace(entry) else { return }
         deletePrompt = DeletePrompt(fontID: fontID,
                                     title: "\(entry.displayName)　\(entry.downloadSizeText ?? "")",
                                     usage: usageText(of: fontID))
@@ -363,6 +583,7 @@ final class FontLibraryModel: ObservableObject {
     /// bake path relies on no reads after the shutter).
     func libraryDidChange() {
         guard isVisible else { return }
+        noteWeightStates()
         for fontID in OverlayFontID.allCases {
             let old = knownStates[fontID]
             let new = library.state(for: fontID)

@@ -144,6 +144,140 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.fontList.currentFontID, .xingkai)
     }
 
+    // MARK: - TASK-89 字重 (89.3 to 89.5)
+
+    private func makeWeightModel(library: FakeFontLibrary,
+                                 font: OverlayFontID = .notoSerifTC,
+                                 weight: String? = nil,
+                                 spy: Spy = Spy()) -> StyleTabModel {
+        var profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        profile.style.fontID = font
+        if let weight { profile.style.fontWeight = weight }
+        return StyleTabModel(profile: profile,
+                             recentColorsStore: RecentColorsStore(defaults: defaults),
+                             fontLibrary: library,
+                             applyFont: { _, _ in },
+                             allProfiles: { [] },
+                             updateProfile: spy.update)
+    }
+
+    func testTappingAnAvailableWeightWritesItAndSavesTheProfile() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[FontDownloadID(fontID: .notoSerifTC, weightID: "black")] = .available
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("black")
+        XCTAssertEqual(model.profile.style.fontWeight, "black", "89.3")
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "black", "89.3 存進設定檔")
+        XCTAssertEqual(spy.updated.last?.style.fontID, .notoSerifTC)
+        XCTAssertEqual(model.fontList.currentWeightID, "black", "字型頁選取跟著設定檔")
+    }
+
+    func testAMissingWeightIsOnlyWrittenAfterItsDownloadFinishes() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let unit = FontDownloadID(fontID: .notoSerifTC, weightID: "black")
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.didTapWeight("black")
+        XCTAssertEqual(model.profile.style.fontWeight, "bold", "89.5 下載中保留舊字重")
+        XCTAssertTrue(spy.updated.isEmpty, "89.5 下載中不寫設定檔")
+        library.weightStates[unit] = .available
+        library.weightDownloadDidFinish.send(unit)
+        XCTAssertEqual(model.profile.style.fontWeight, "black", "89.5 完成後才套用")
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "black")
+    }
+
+    func testAFailedWeightKeepsTheOldOneInTheSavedProfile() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let unit = FontDownloadID(fontID: .notoSerifTC, weightID: "black")
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("black")
+        library.weightStates[unit] = .failed(.other)
+        model.fontList.libraryDidChange()
+        XCTAssertEqual(model.profile.style.fontWeight, "bold", "89.5")
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    func testASaveFailureAfterTheDownloadKeepsTheOldWeightAndShowsFailure() {
+        struct SaveError: Error {}
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let unit = FontDownloadID(fontID: .notoSerifTC, weightID: "black")
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("black")
+        spy.shouldThrow = SaveError()
+        library.weightStates[unit] = .available
+        library.weightDownloadDidFinish.send(unit)
+        XCTAssertEqual(model.profile.style.fontWeight, "bold", "存檔失敗保留原字重")
+        XCTAssertEqual(model.fontList.currentWeightID, "bold")
+        XCTAssertNil(model.fontList.pendingWeight, "pending 清除")
+        XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage, "顯示失敗而非已套用")
+        XCTAssertNotNil(model.lastError)
+        XCTAssertTrue(spy.updated.isEmpty)
+        // The next edit does not write the unsaved weight back.
+        spy.shouldThrow = nil
+        model.selectTextColor(OverlayStyle.swatches[2])
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "bold")
+    }
+
+    func testASaveFailureOnAnAvailableWeightKeepsTheOldOneAndShowsFailure() {
+        struct SaveError: Error {}
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        library.weightStates[FontDownloadID(fontID: .notoSerifTC, weightID: "regular")] = .available
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        spy.shouldThrow = SaveError()
+        model.fontList.didTapWeight("regular")
+        XCTAssertEqual(model.profile.style.fontWeight, "bold")
+        XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage)
+    }
+
+    func testApplyFontWeightIgnoresOtherFontsUnknownIDsAndTheCurrentWeight() {
+        let spy = Spy()
+        let model = makeWeightModel(library: FakeFontLibrary([.notoSerifTC: .available]), spy: spy)
+        model.applyFontWeight("light", for: .songti)
+        model.applyFontWeight("nope", for: .notoSerifTC)
+        model.applyFontWeight("bold", for: .notoSerifTC)
+        XCTAssertTrue(spy.updated.isEmpty)
+        XCTAssertEqual(model.profile.style.fontWeight, "bold")
+    }
+
+    func testApplyExternalChangesTakesTheWeightAndAFontChangeResetsIt() {
+        let spy = Spy()
+        let model = makeWeightModel(library: FakeFontLibrary(), weight: "black", spy: spy)
+        // Another writer changed the weight only.
+        var latest = model.profile
+        latest.style.fontWeight = "regular"
+        model.applyExternalChanges(from: latest)
+        XCTAssertEqual(model.profile.style.fontWeight, "regular", "89.3")
+        XCTAssertEqual(model.fontList.currentWeightID, "regular")
+        // Changing the font resets to the new font's default weight (89.4).
+        var other = model.profile
+        other.style.fontID = .huninn
+        model.applyExternalChanges(from: other)
+        XCTAssertEqual(model.profile.style.fontID, .huninn)
+        XCTAssertEqual(model.profile.style.fontWeight, "regular", "89.4 芫荽預設字重")
+        // Switching back lands on Noto's default, not on the old choice.
+        var back = model.profile
+        back.style.fontID = .notoSerifTC
+        model.applyExternalChanges(from: back)
+        XCTAssertEqual(model.profile.style.fontWeight, "bold", "89.4 換回思源宋體為預設字重")
+        XCTAssertTrue(spy.updated.isEmpty, "applyExternalChanges does not persist")
+        model.selectTextColor(OverlayStyle.swatches[2])
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "bold", "下一次改色不會寫回舊字重")
+    }
+
+    func testResolvedFontForTheProfileUsesItsWeight() {
+        // PingFang is built in, so its light face really resolves.
+        let model = makeWeightModel(library: FakeFontLibrary(), font: .pingFang, weight: "light")
+        XCTAssertEqual(model.resolvedFont(ofSize: 15).fontName, "PingFangTC-Light")
+        XCTAssertEqual(model.resolvedFont(ofSize: 15, for: .pingFang).fontName, "PingFangTC-Light")
+    }
+
     func testFontLibraryModelIsOnlyReachableWhileTheListIsOnScreen() {
         let model = makeFontModel(library: FakeFontLibrary())
         XCTAssertNil(model.fontLibraryModel)
