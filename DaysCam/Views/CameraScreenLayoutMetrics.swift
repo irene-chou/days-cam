@@ -182,18 +182,29 @@ struct CameraScreenLayoutMetrics {
         panelTop - panelGapAboveBox - headerBottom
     }
 
-    /// The shared 3:4 box every ratio uses while the panel is open: height
-    /// = the available area, width = 3/4 of it; capped to the screen width
-    /// (then height follows). Top-aligned to the header, horizontally centered.
-    var panelOpenViewfinderFrame: CGRect {
-        let areaHeight = max(panelOpenViewfinderAreaHeight, 0)
-        var width = areaHeight * 3 / 4
-        var height = areaHeight
-        if width > screenSize.width {
-            width = screenSize.width
-            height = width * 4 / 3
-        }
-        return CGRect(x: (screenSize.width - width) / 2, y: headerBottom, width: width, height: height)
+    /// The area the viewfinder may use while the panel is open (TASK-98,
+    /// #402): the full screen width, from the header's bottom edge down to
+    /// the gap above the panel.
+    var panelOpenViewfinderArea: CGRect {
+        CGRect(x: 0, y: headerBottom, width: screenSize.width, height: max(panelOpenViewfinderAreaHeight, 0))
+    }
+
+    /// Where `ratio`'s picture sits while the panel is open (TASK-98, #402;
+    /// PRD 0.2 FR-8.2 as amended 2026-10-10). Each ratio is fitted to
+    /// `panelOpenViewfinderArea` on its own — width = min(W, H × aspect),
+    /// height = width ÷ aspect — so a picture whose closed size already fits
+    /// (1:1 whenever H ≥ W) is not shrunk at all, and one that does not is
+    /// scaled down until its height is H. Horizontally centered, vertically
+    /// centered in the area; a picture exactly H tall therefore starts at the
+    /// header's bottom edge, which is where #128's shared 3:4 box put 3:4 and
+    /// 9:16, so those two come out unchanged. The fitted height never
+    /// exceeds H (width ≤ H × aspect), so nothing ever overlaps the panel.
+    func panelOpenViewfinderFrame(for ratio: CaptureAspectRatio) -> CGRect {
+        let area = panelOpenViewfinderArea
+        let aspect = ratio.shortToLongRatio
+        let width = min(area.width, area.height * aspect)
+        let height = width / aspect
+        return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
     }
 
     /// Distance from each screen edge to the center of the footer's side
@@ -248,29 +259,19 @@ struct CameraScreenLayoutMetrics {
     /// center for free inside a taller/wider box via a `ZStack`'s default
     /// alignment (PRD 0.2 FR-8.2 rule ②).
     ///
-    /// 9:16 depends on `isPanelOpen` (issue #120): closed, `boxSize` already
-    /// *is* the 9:16 shape from `viewfinderFrame(for: .nineBySixteen,
-    /// boxWidth:)`, so content fills it as-is, same as 3:4. Open, callers
-    /// pass the *shared* panel-open box instead — the exact same 80%-width,
-    /// 3:4-shaped box 3:4/1:1 use (`viewfinderFrame(for: .threeByFour,
-    /// boxWidth:)`, PRD 0.2 FR-8.2) — because PRD 0.2 FR-7.8's own full-bleed
-    /// 9:16 has no defined position once the panel covers part of the
-    /// screen (issue #120's own background: the overlay text landed
-    /// underneath the panel with no way to drag it out). Fitting a 9:16
-    /// rectangle to that box's *height* and letting it center horizontally
-    /// the same way 1:1 centers vertically keeps the whole photo above the
-    /// panel, fully draggable, on every ratio the same size/position rules
-    /// (issue #120's whole point).
+    /// Open (TASK-98, #402), `boxSize` is already the ratio's own fitted
+    /// frame from `panelOpenViewfinderFrame(for:)`, so every ratio fills it
+    /// as-is — there is no shared box to center inside any more (that was
+    /// #120/#128's rule, superseded 2026-10-10). Closed, 9:16's `boxSize`
+    /// already *is* the 9:16 shape from `viewfinderFrame(for:
+    /// .nineBySixteen, boxWidth:)`, so it fills that too.
     func viewfinderContentSize(for ratio: CaptureAspectRatio, boxSize: CGSize, isPanelOpen: Bool) -> CGSize {
+        guard !isPanelOpen else { return boxSize }
         switch ratio {
-        case .threeByFour:
+        case .threeByFour, .nineBySixteen:
             return boxSize
         case .oneByOne:
             return CGSize(width: boxSize.width, height: boxSize.width)
-        case .nineBySixteen:
-            guard isPanelOpen else { return boxSize }
-            let height = boxSize.height
-            return CGSize(width: height * 9 / 16, height: height)
         }
     }
 
@@ -294,7 +295,7 @@ struct CameraScreenLayoutMetrics {
     func viewfinderPlacement(for ratio: CaptureAspectRatio, isPanelOpen: Bool) -> ViewfinderPlacement {
         let closedBox = viewfinderFrame(for: ratio, boxWidth: screenSize.width)
         let layoutSize = viewfinderContentSize(for: ratio, boxSize: closedBox.size, isPanelOpen: false)
-        let box = isPanelOpen ? panelOpenViewfinderFrame : closedBox
+        let box = isPanelOpen ? panelOpenViewfinderFrame(for: ratio) : closedBox
         let size = viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: isPanelOpen)
         let scale = CGSize(width: layoutSize.width > 0 ? size.width / layoutSize.width : 1,
                            height: layoutSize.height > 0 ? size.height / layoutSize.height : 1)
@@ -308,9 +309,9 @@ struct CameraScreenLayoutMetrics {
     /// (`isFallback`, issue #101 assumption 2): that viewfinder fills the
     /// whole screen edge to edge, with the header floating over the top of
     /// it. Every other combination has the header sitting above either an
-    /// empty area (nothing behind it) or, once the panel is open, #120's
-    /// shared panel-open viewfinder, which never reaches up behind the
-    /// header regardless of ratio. `CameraScreen` reads this to decide
+    /// empty area (nothing behind it) or, once the panel is open, the
+    /// ratio's fitted panel-open viewfinder (TASK-98), which sits inside
+    /// `panelOpenViewfinderArea` below the header regardless of ratio. `CameraScreen` reads this to decide
     /// between `CameraTheme.ink`/`inkOnPhoto` for the toolbar rather than
     /// hard-coding "9:16 means light chrome" itself, so the two stay in
     /// sync as this layout's own rules evolve (a real risk: issue #120

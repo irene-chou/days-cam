@@ -188,7 +188,7 @@ struct CameraScreen: View {
     /// The box's frame in screen coordinates for the current ratio/panel state.
     private func viewfinderBoxFrame(metrics: CameraScreenLayoutMetrics) -> CGRect {
         model.panelModel.isOpen
-            ? metrics.panelOpenViewfinderFrame
+            ? metrics.panelOpenViewfinderFrame(for: model.captureSettingsStore.captureAspectRatio)
             : metrics.viewfinderFrame(for: model.captureSettingsStore.captureAspectRatio, boxWidth: metrics.screenSize.width)
     }
 
@@ -206,15 +206,17 @@ struct CameraScreen: View {
     /// Closed, the box's frame comes straight from `metrics`: 3:4 and 9:16
     /// both start at the header's bottom edge (issue #101 rule ①); 1:1 reuses
     /// the same 3:4-shaped box and its smaller square content centers inside
-    /// (rule ②). Open (issue #128), every ratio shares the box that fills
-    /// the space between the header and the fixed-height panel
-    /// (`metrics.panelOpenViewfinderFrame`); 1:1 centers vertically in it and
-    /// 9:16 fits its height and centers horizontally.
+    /// (rule ②). Open (TASK-98, #402, superseding #128's shared 3:4 box),
+    /// each ratio gets its own frame fitted to the area between the header
+    /// and the panel (`metrics.panelOpenViewfinderFrame(for:)`): a picture
+    /// that already fits keeps its closed size, the rest shrink until their
+    /// height is the area's; 3:4 and 9:16 land where they always did.
     ///
     /// Issue #153: the content is always laid out at its panel-closed size and
     /// only scaled about its own center (and moved) while the panel is open,
     /// so the camera preview's UIKit layer scales with it instead of jumping
-    /// to the final size, pinned top-left, while the spring still runs.
+    /// to the final size, pinned top-left, while the spring still runs. A
+    /// picture that fits keeps scale 1 and only moves.
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let placement = metrics.viewfinderPlacement(for: model.captureSettingsStore.captureAspectRatio,
                                                     isPanelOpen: model.panelModel.isOpen)
