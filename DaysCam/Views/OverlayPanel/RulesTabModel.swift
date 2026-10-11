@@ -31,6 +31,13 @@ final class RulesTabModel: ObservableObject {
     /// emptied field is held here only, not persisted, until
     /// `endEditingName()` resolves it (A-5).
     @Published private(set) var nameDraft: String
+    /// The name field's placeholder: "名稱" normally; the automatic name of a
+    /// just-added profile while the field is deliberately empty (TASK-106).
+    @Published private(set) var namePlaceholder = "名稱"
+    /// Whether the field is showing the placeholder instead of the automatic
+    /// name (TASK-106): set by `beginUntitled`, cleared by the first typed
+    /// name, and keeps A-5's restore from putting the automatic name back.
+    private var isUntitled = false
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
@@ -93,6 +100,12 @@ extension RulesTabModel {
             : newValue
         nameDraft = clamped
         guard !clamped.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if isUntitled {
+            // The first real name: from here on the field behaves like any
+            // other profile's (A-5 restores to what was typed).
+            isUntitled = false
+            namePlaceholder = "名稱"
+        }
         guard clamped != profile.name else { return }
         mutate { $0.name = clamped }
     }
@@ -103,7 +116,18 @@ extension RulesTabModel {
     /// otherwise a no-op, since `setName` already wrote the value through.
     func endEditingName() {
         guard nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !isUntitled else { return }
         nameDraft = profile.name
+    }
+
+    /// Shows the name field empty with `placeholder` for a just-added profile
+    /// (TASK-106, #421; FR-9.9): the stored name stays the automatic one, so
+    /// nothing is written until the person types; A-5's restore is held off
+    /// until then too, since the automatic name was never theirs.
+    func beginUntitled(placeholder: String) {
+        isUntitled = true
+        namePlaceholder = placeholder
+        nameDraft = ""
     }
 }
 

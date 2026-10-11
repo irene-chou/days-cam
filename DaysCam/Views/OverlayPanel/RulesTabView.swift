@@ -109,7 +109,7 @@ struct RulesTabView: View {
             Text("名稱").foregroundColor(CameraTheme.inkSecondary)
             // `.rr{gap:10px}` (#106) — was 12.
             Spacer(minLength: 10)
-            TextField("名稱", text: Binding(
+            TextField(model.namePlaceholder, text: Binding(
                 get: { model.nameDraft },
                 set: { model.setName($0) }
             ), selection: $nameSelection)

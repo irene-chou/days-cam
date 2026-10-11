@@ -901,6 +901,9 @@ extension CameraScreenModel {
 
     func dismissProfileManagement() {
         isProfileManagerPresented = false
+        // Swiping the sheet down or tapping outside it leaves whatever page
+        // it was on — including a just-added profile's (TASK-106).
+        profileManagerModel.sheetDidDismiss()
     }
 
 }
