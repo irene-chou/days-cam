@@ -44,7 +44,7 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(isOn(toggle("天數")), "107.1 day count on by default")
         XCTAssertFalse(isOn(toggle("日期")), "107.1 date off by default")
         XCTAssertFalse(isOn(toggle("名稱")), "107.1 name off by default")
-        XCTAssertTrue(app.buttons["天"].isEnabled, "units are live while the day count is on")
+        XCTAssertTrue(app.buttons["週"].isEnabled, "units are live while the day count is on")
 
         toggle("日期").tap()
         toggle("天數").tap()
