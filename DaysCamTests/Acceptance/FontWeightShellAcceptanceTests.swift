@@ -92,8 +92,9 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
     }
 
     private func registerFixtures() throws {
-        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["DAYSCAM_FONT_FIXTURES"],
-                                 "font fixtures not provided")
+        guard let path = ProcessInfo.processInfo.environment["DAYSCAM_FONT_FIXTURES"] else {
+            throw XCTSkip("DAYSCAM_FONT_FIXTURES not set; the Noto Serif fixture files are not in the repo")
+        }
         for name in ["NotoSerifTC-Bold.otf", "NotoSerifTC-Black.otf"] {
             var error: Unmanaged<CFError>?
             let url = URL(fileURLWithPath: path).appendingPathComponent(name) as CFURL

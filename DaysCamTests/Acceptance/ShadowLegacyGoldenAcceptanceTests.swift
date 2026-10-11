@@ -58,7 +58,7 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
         return list
     }()
 
-    /// Digests produced by origin/main fca680c.
+    /// Digests produced by origin/main fca680c (one stroked fixture re-captured, see below).
     private let golden: [String: String] = [
         "new-custom-green-25": "86f26ada5031d90caa01ef5e08dcf654379565af0201b8324a3ee1ff36a5e254",
         "new-follow-text-25": "f5b00b53b35658907c07c4fded38bf18c32097a0c0bbedf33df6d21397528b4f",
@@ -66,7 +66,10 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
         "pre05-glow-#1C1C1E": "da7ebbcdab4c801921d5c4bcef97a72793eb4a06ebf9d5df6359e1a98f804a4a",
         "pre05-glow-#FF6B9D80": "c26b760f730dd31018b3b1e5c7629d9939c5a567c06bdb02b82b3dbbdd3520bf",
         "pre05-glow-#FFFFFF": "1c63628bcbc5ccd807a3d4ce0a35140d1f710eb16a184ea3d3192f6823b4fdde",
-        "pre05-glow-thinStroke": "b7648d4460d99f00a64426a9193a92735ca11393d2854eb78156ff18ee1ce225",
+        // Re-captured on main after TASK-80's segmented stroke geometry
+        // (ab6fae6, PR #367) landed on top of fca680c: it changes every
+        // stroked pixel, not the shadow; the other digests still match fca680c.
+        "pre05-glow-thinStroke": "5817d384ecee1bbc6080bcd53c4b86aea483beaebe608d575b29d90c714e1f14",
         "pre05-hard-#1C1C1E": "dd7ef8c3f3fd3685bf6718df9b8e5d52151d254474251b3d56545cd47b0fa2b6",
         "pre05-hard-#FF6B9D80": "a91bdf98cd12cc485361c2dca3bcdd49c9da5d6c35661a69491773ab87fc5d93",
         "pre05-hard-#FFFFFF": "4a3dc762c2a4df42888aed79d769a21173406d3b28093e1e92bd964c0ef3c2d7",
