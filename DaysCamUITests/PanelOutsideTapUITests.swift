@@ -21,9 +21,9 @@ final class PanelOutsideTapUITests: XCTestCase {
     private var styleTab: XCUIElement { app.buttons["樣式"] }
     /// The panel's collapse button (TASK-99 replaced the pull strip with it).
     private var collapseButton: XCUIElement { app.buttons["panelCollapseButton"] }
-    /// The panel's top edge: the tab bar starts right at it, and the tab
-    /// buttons sit 2pt inside the bar.
-    private var panelTop: CGFloat { styleTab.frame.minY - 2 }
+    /// The panel's top edge: the tab bar starts 10pt below it
+    /// (`panelTopPadding`, PR #455), and the tab buttons sit 2pt inside the bar.
+    private var panelTop: CGFloat { styleTab.frame.minY - 2 - 10 }
     private var profileChip: XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
     }

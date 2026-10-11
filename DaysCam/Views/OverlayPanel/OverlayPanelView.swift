@@ -81,6 +81,8 @@ struct OverlayPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             segmentedControl
+                // Clear of the rounded top edge (PR #455).
+                .padding(.top, CameraScreenLayoutMetrics.panelTopPadding)
             // The tab body scrolls within whatever space is left, rather
             // than growing the panel or getting clipped, on a tab whose
             // content is taller than the panel (#75, T.8) — e.g. the format
