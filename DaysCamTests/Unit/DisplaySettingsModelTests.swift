@@ -385,6 +385,7 @@ final class DisplaySettingsModelTests: XCTestCase {
     /// newer refusal restarts the clock.
     func testVisibleHintClearsItselfAfterTheDuration() async throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        XCTAssertEqual(DisplaySettingsModel.hintDuration, 1.5, "108.1 about 1.5 s")
         XCTAssertNil(model.visibleHint)
         model.toggleUnit(.day)
         XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day), "shown at once")

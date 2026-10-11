@@ -10,7 +10,8 @@ final class LastUnitFeedbackUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        // `-UITestLongHints`: 6 s hints, since `tap()` returns only once animations settle.
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestLongHints", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.buttons["疊字設定"].tap()
         let content = app.buttons["內容"]
@@ -47,7 +48,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 4), .completed, "108.1 the hint went away")
+        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 9), .completed, "108.1 the hint went away")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 still in place after the hint")
     }
 
@@ -57,7 +58,6 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(app.buttons["週"].isSelected)
         app.buttons["天"].tap()
         XCTAssertFalse(app.buttons["天"].isSelected, "108.3 unchecked")
-        sleep(1)
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.3 no hint")
     }
 
@@ -69,7 +69,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != '至少顯示天數或日期'"), object: contentHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 4), .completed)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 9), .completed)
 
         toggle("日期").tap()
         toggle("天數").tap()
@@ -90,7 +90,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let shown = NSPredicate(format: "label == '先打開天數'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 the hint appeared")
         let gone = NSPredicate(format: "label != '先打開天數'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 4), .completed)
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
         toggle("天數").tap()
         app.buttons["週"].tap()
         XCTAssertTrue(app.buttons["週"].isSelected, "108.8 works once the day count is on")

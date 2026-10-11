@@ -50,9 +50,18 @@ final class DisplaySettingsModel: ObservableObject {
     /// clock. Owned here, not by the view, so the hint's lifetime does not
     /// depend on view identity or re-renders.
     @Published private(set) var visibleHint: Rejection?
-    /// How long a hint stays before fading (108.1).
-    static let hintDuration: TimeInterval = 1.5
+    /// How long a hint stays before fading (108.1): 1.5 s. UI tests launch
+    /// with `-UITestLongHints` to stretch it, because `XCUIElement.tap()`
+    /// only returns once the app's animations settle — by then a 1.5 s hint
+    /// has nearly expired; the 1.5 s itself is pinned by a unit test.
+    static var hintDuration: TimeInterval {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestLongHints") { return 6 }
+        #endif
+        return 1.5
+    }
     private var hintTask: Task<Void, Never>?
+
 
     /// Refusals of the same kind closer together than this are one event:
     /// a switch that springs back can report its refusal more than once,
