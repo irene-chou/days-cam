@@ -29,7 +29,7 @@ struct FormatTabView: View {
     /// Height reserved under the unit row and under the display-content row
     /// for the refusal hint (TASK-108): always laid out, normally invisible,
     /// so showing the hint never moves the rows below it (108.2).
-    static let hintRowHeight: CGFloat = 18
+    static let hintRowHeight: CGFloat = 20
 
     /// The unit whose checkbox is bouncing right now (TASK-108).
     @State private var bouncingUnit: DisplayUnit?
@@ -110,7 +110,7 @@ struct FormatTabView: View {
     /// `rejection` is set, and the line keeps its height either way (108.2).
     private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String) -> some View {
         Text(rejection?.hint ?? " ")
-            .font(.system(size: 11.5))
+            .font(.system(size: 13))
             .foregroundColor(CameraTheme.active)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,7 +286,11 @@ struct FormatTabView: View {
                                      set: { model.displaySettings.setUseAgeWording($0) }))
                 .tint(CameraTheme.accentControl)
                 .labelsHidden()
-                .disabled(model.displaySettings.isAgeWordingToggleDisabled)
+                // Stays tappable while the day count is off even without
+                // the year ticked, so the tap reaches the model and gets
+                // the 先打開天數 feedback (108.8); the dimmed look for "no
+                // year" is kept below.
+                .disabled(model.displaySettings.isAgeWordingToggleDisabled && !model.displaySettings.areUnitsInert)
         }
         .opacity(model.displaySettings.isAgeWordingToggleDisabled ? 0.4 : 1)
     }

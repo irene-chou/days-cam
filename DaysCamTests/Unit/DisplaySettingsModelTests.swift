@@ -398,6 +398,18 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "108.8 live again")
     }
 
+    /// 108.8: with the day count off and no year ticked, 年改成歲 still
+    /// reports 先打開天數 (the day-count rule comes before the year rule).
+    func testAgeWordingTapWithoutYearWhileTheDayCountIsOffIsDayCountOff() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.isAgeWordingToggleDisabled, "no year ticked")
+        model.setUseAgeWording(true)
+        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8")
+        XCTAssertFalse(model.profile.useAgeWording)
+    }
+
     /// 108.1／108.2: the hint stays `hintDuration` then clears itself; a
     /// newer refusal restarts the clock.
     func testVisibleHintClearsItselfAfterTheDuration() async throws {

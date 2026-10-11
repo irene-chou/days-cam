@@ -91,6 +91,10 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 the hint appeared")
         let gone = NSPredicate(format: "label != '先打開天數'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
+        // 年改成歲 without the year ticked: still answered with the hint.
+        toggle("年改成歲").tap()
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 年改成歲 hints too")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
         toggle("天數").tap()
         app.buttons["週"].tap()
         XCTAssertTrue(app.buttons["週"].isSelected, "108.8 works once the day count is on")
