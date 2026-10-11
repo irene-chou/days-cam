@@ -45,7 +45,11 @@ final class ProfileReorderUITests: XCTestCase {
         let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '新增'")).firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 5))
         add.tap()
-        XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5))
+        let nameField = app.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        // An untouched new profile is not kept (TASK-106): give it a name.
+        nameField.tap()
+        nameField.typeText("甲")
         app.navigationBars.firstMatch.buttons.firstMatch.tap()
         XCTAssertTrue(sheetBar.waitForExistence(timeout: 5))
     }

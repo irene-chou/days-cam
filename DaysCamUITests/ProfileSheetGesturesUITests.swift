@@ -74,7 +74,11 @@ final class ProfileSheetGesturesUITests: XCTestCase {
             XCTAssertTrue(add.waitForExistence(timeout: 5))
             add.tap()
             let back = app.navigationBars.firstMatch.buttons.firstMatch
-            XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5), "the new profile's edit page")
+            let nameField = app.textFields.firstMatch
+            XCTAssertTrue(nameField.waitForExistence(timeout: 5), "the new profile's edit page")
+            // An untouched new profile is not kept (TASK-106): give it a name.
+            nameField.tap()
+            nameField.typeText("甲")
             back.tap()
             XCTAssertTrue(sheetBar.waitForExistence(timeout: 5))
         }
