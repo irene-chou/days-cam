@@ -1,7 +1,6 @@
 import XCTest
 
-/// The shadow sub-tab's presets and parameter rows end to end (TASK-71,
-/// 71.3 and 71.4). The app starts from a fresh profile via
+/// The shadow sub-tab's presets and colors end to end (TASK-71 / TASK-118). The app starts from a fresh profile via
 /// `-UITestFreshProfiles <name>`.
 final class ShadowSliderUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -18,100 +17,39 @@ final class ShadowSliderUITests: XCTestCase {
         app.buttons["陰影"].tap()
     }
 
-    private var offsetX: XCUIElement { app.sliders["X 偏移"] }
-    private var offsetY: XCUIElement { app.sliders["Y 偏移"] }
-    private var blur: XCUIElement { app.sliders["模糊"] }
-
-    /// The panel is short, so a lower row may sit under its bottom edge, where
-    /// it still counts as hittable although a fade hides it. Drag the page up
-    /// slowly (no fling, from the left margin so a slider does not take the
-    /// drag) until `element`'s middle is well above that edge.
-    private func scrollToReveal(_ element: XCUIElement) {
-        let screenHeight = app.windows.firstMatch.frame.height
-        var tries = 0
-        while (!element.isHittable || element.frame.midY > screenHeight * 0.82) && tries < 10 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.88))
-                .press(forDuration: 0.1,
-                       thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.76)),
-                       withVelocity: .slow, thenHoldForDuration: 0.5)
-            tries += 1
-        }
-        if !element.isHittable { attach("not-hittable") }
-        XCTAssertTrue(element.isHittable, "scrolled into view")
-    }
-
-    /// Waits until `element` stops moving, so a scroll that is still settling
-    /// does not carry the slider away from the finger.
-    private func waitForSettled(_ element: XCUIElement) {
-        var last = element.frame
-        for _ in 0..<10 {
-            Thread.sleep(forTimeInterval: 0.4)
-            let now = element.frame
-            if now == last { return }
-            last = now
-        }
-    }
-
-    /// Drags `slider`'s thumb to the far right. On the SE the row sits at the
-    /// panel's bottom edge, and one drag now and then missed (the value stayed
-    /// put), so: reveal, let the page settle, drag from the thumb, check, and
-    /// try again a few times before giving up.
-    private func dragToEnd(_ slider: XCUIElement, expecting end: String) {
-        for attempt in 0..<3 {
-            scrollToReveal(slider)
-            waitForSettled(slider)
-            // The blur slider runs 0...16.
-            let fraction = (Double((slider.value as? String ?? "").split(separator: " ").first ?? "") ?? 0) / 16
-            let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: min(max(fraction, 0.03), 0.97), dy: 0.5))
-            let target = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
-            thumb.press(forDuration: 0.2, thenDragTo: target)
-            if slider.value as? String == end { return }
-            if attempt == 2 { attach("slider-drag-missed") }
-        }
-        XCTAssertEqual(slider.value as? String, end, "dragged to the end")
-    }
-
     private func attach(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        if let path = ProcessInfo.processInfo.environment["DAYSCAM_UI_SHOT_DIR"], !path.isEmpty {
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("\(name).png"))
+        }
     }
 
-    /// 71.3: the four presets, and the parameter rows that follow them.
-    func testPresetsFillTheParameterRows() {
+    /// 71.3 / 118.1 / 118.2: the four presets are all there, and the page has
+    /// no offset or blur sliders (TASK-118).
+    func testPresetsAreTheOnlyShapeControls() {
         for name in ["無陰影", "柔和", "硬陰影", "發光"] {
             XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 3), name)
         }
         XCTAssertTrue(app.buttons["柔和"].isSelected, "預設 soft")
-        XCTAssertEqual(offsetX.value as? String, "0 點")
-        XCTAssertEqual(offsetY.value as? String, "2 點")
-        XCTAssertEqual(blur.value as? String, "4 點")
-        attach("shadow-soft")
+        for name in ["X 偏移", "Y 偏移", "模糊"] {
+            XCTAssertFalse(app.sliders[name].exists, "118.1 \(name)")
+        }
+        attach("118.1_shadow-soft")
 
         app.buttons["硬陰影"].tap()
-        XCTAssertTrue(app.buttons["硬陰影"].isSelected)
-        XCTAssertEqual(offsetX.value as? String, "2 點")
-        XCTAssertEqual(offsetY.value as? String, "2 點")
-        XCTAssertEqual(blur.value as? String, "0 點")
-        attach("shadow-hard")
+        XCTAssertTrue(app.buttons["硬陰影"].isSelected, "118.2")
+        XCTAssertFalse(app.buttons["柔和"].isSelected)
+        attach("118.2_shadow-hard")
 
         app.buttons["發光"].tap()
-        XCTAssertEqual(offsetY.value as? String, "0 點")
-        XCTAssertEqual(blur.value as? String, "8 點")
-        attach("shadow-glow")
-    }
-
-    /// 71.3: moving a slider clears the preset's selection.
-    func testAdjustingAParameterClearsThePreset() {
-        app.buttons["硬陰影"].tap()
-        XCTAssertTrue(app.buttons["硬陰影"].isSelected)
-        dragToEnd(blur, expecting: "16 點")
-        XCTAssertFalse(app.buttons["硬陰影"].isSelected)
-        for name in ["無陰影", "柔和", "發光"] { XCTAssertFalse(app.buttons[name].isSelected, name) }
-        app.buttons["硬陰影"].tap()
-        XCTAssertTrue(app.buttons["硬陰影"].isSelected)
-        XCTAssertEqual(blur.value as? String, "0 點")
+        XCTAssertTrue(app.buttons["發光"].isSelected, "118.2")
+        attach("118.2_shadow-glow")
     }
 
     private var red: XCUIElement {
@@ -151,14 +89,14 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertTrue(red.isSelected, "86.4 再選類型沿用顏色")
     }
 
-    /// 無 disables the parameter rows, which stay visible.
-    func testNoneDisablesTheParameterRows() {
+    /// 118.3: 無 disables the color swatches, and another preset enables them.
+    func testNoneDisablesTheColorSection() {
         app.buttons["無陰影"].tap()
         XCTAssertTrue(app.buttons["無陰影"].isSelected)
-        XCTAssertFalse(blur.isEnabled)
-        XCTAssertFalse(offsetX.isEnabled)
-        attach("shadow-none-disabled")
+        XCTAssertFalse(red.isEnabled)
+        attach("118.3_shadow-none-disabled")
         app.buttons["柔和"].tap()
-        XCTAssertTrue(blur.isEnabled)
+        XCTAssertTrue(red.isEnabled)
+        attach("118.3_shadow-soft-enabled")
     }
 }

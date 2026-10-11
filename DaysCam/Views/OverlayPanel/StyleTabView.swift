@@ -368,10 +368,10 @@ struct StyleTabView: View {
 
     private var shadowContent: some View {
         let style = model.profile.style
-        let isDisabled = model.isShadowParametersDisabled
+        let isDisabled = model.isShadowColorDisabled
         return VStack(alignment: .leading, spacing: 12) {
-            // Four quick presets: tapping one fills in the parameters below
-            // (TASK-71); none stays selected once a parameter is changed.
+            // The shape comes only from these four presets (TASK-118); a
+            // profile with custom parameters shows none selected.
             optionRow {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
                     // Isolates the shadow, clearing outline, mirroring
@@ -404,18 +404,6 @@ struct StyleTabView: View {
                         onSelectAuto: { model.selectShadowColor(nil) },
                         onApplyCustom: { model.applyCustomShadowColor($0) },
                         onCommitCustom: { model.commitCustomColor($0) })
-            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "X 偏移", identifier: "shadowOffsetXSlider",
-                            value: style.shadowOffsetX, range: OverlayStyle.shadowOffsetRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowOffsetX($0) })
-            parameterSlider(iconName: "arrow.up.and.down", accessibilityName: "Y 偏移", identifier: "shadowOffsetYSlider",
-                            value: style.shadowOffsetY, range: OverlayStyle.shadowOffsetRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowOffsetY($0) })
-            parameterSlider(iconName: "drop.halffull", accessibilityName: "模糊", identifier: "shadowBlurSlider",
-                            value: style.shadowBlur, range: OverlayStyle.shadowBlurRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowBlur($0) })
         }
     }
 

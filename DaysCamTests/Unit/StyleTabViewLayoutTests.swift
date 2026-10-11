@@ -76,16 +76,14 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(outlineHeight, 314, "外框頁 \(outlineHeight)pt")
     }
 
-    /// TASK-71: the shadow page is presets, color palette, opacity and three
-    /// slider rows. Taller than the panel, so it scrolls under the pinned
-    /// sub-tab row (TASK-66); the cap is the 4 + 64 + 12 + 82 + 12 + 30 + 3 x 43
-    /// of the rows plus the page's insets, with some slack.
-    func testShadowPageScrollsButStaysBounded() throws {
+    /// TASK-118: the shadow page is only the presets and the color palette
+    /// (the offset and blur sliders are gone), so it fits the 224pt content
+    /// area without scrolling.
+    func testShadowPageFitsWithoutScrolling() throws {
         let model = try makeModel()
         model.selectedSubTab = .shadow
         let height = pageHeight(model)
-        XCTAssertGreaterThan(height, 224, "比面板高，靠捲動 \(height)pt")
-        XCTAssertLessThanOrEqual(height, 400, "陰影頁 \(height)pt")
+        XCTAssertLessThanOrEqual(height, 224, "陰影頁 \(height)pt")
     }
 
     /// 57.6 → 110.1: the sub-tab row is 4 + (24 icon + 2 + 10pt caption, in

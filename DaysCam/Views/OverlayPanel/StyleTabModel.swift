@@ -328,12 +328,9 @@ extension StyleTabModel {
         mutate { $0.applyShadowPreset(shadow) }
     }
 
-    /// Whether the shadow parameter rows are disabled: there is no shadow to
-    /// tune while it is off (preset 無, TASK-71).
-    var isShadowParametersDisabled: Bool { !profile.style.showsShadow }
-
-    /// Slider step of the shadow offsets and blur, in points at a 17pt font.
-    static let shadowStep = 1.0
+    /// Whether the shadow color section is disabled: there is no shadow to
+    /// color while it is off (preset 無, TASK-71).
+    var isShadowColorDisabled: Bool { !profile.style.showsShadow }
 
     /// The opacity a swatch or "follow the text color" gives the shadow
     /// (TASK-113): the default shadow's 60%, not fully opaque, which would be
@@ -364,34 +361,6 @@ extension StyleTabModel {
             $0.shadowColorSource = .custom
             $0.shadowColor = picked
         }
-    }
-
-    /// Sets `shadowOffsetX` from a raw slider value, snapped to `shadowStep`
-    /// and clamped to `OverlayStyle.shadowOffsetRange`.
-    func setShadowOffsetX(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
-        guard clamped != profile.style.shadowOffsetX else { return }
-        mutate { $0.shadowOffsetX = clamped }
-    }
-
-    /// Sets `shadowOffsetY`, like `setShadowOffsetX`.
-    func setShadowOffsetY(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
-        guard clamped != profile.style.shadowOffsetY else { return }
-        mutate { $0.shadowOffsetY = clamped }
-    }
-
-    /// Sets `shadowBlur` from a raw slider value, snapped to `shadowStep` and
-    /// clamped to `OverlayStyle.shadowBlurRange`.
-    func setShadowBlur(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowBlurRange)
-        guard clamped != profile.style.shadowBlur else { return }
-        mutate { $0.shadowBlur = clamped }
-    }
-
-    private static func snappedShadow(_ rawValue: Double, in range: ClosedRange<Double>) -> Double {
-        let snapped = (rawValue / shadowStep).rounded() * shadowStep
-        return min(max(snapped, range.lowerBound), range.upperBound)
     }
 }
 
