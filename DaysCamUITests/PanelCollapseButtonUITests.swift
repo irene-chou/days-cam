@@ -1,10 +1,10 @@
 import XCTest
 
-/// The panel's floating collapse button end to end (TASK-99, #404: 99.1,
-/// 99.3–99.6, 99.9). The app starts from a fresh profile via
+/// The panel's collapse chevron and swipe end to end (TASK-116, #447:
+/// 116.1–116.8, 116.10). The app starts from a fresh profile via
 /// `-UITestFreshProfiles <name>` and skips the first-launch tour.
 ///
-/// Screenshots for the B′ comparison (99.12) are attached to the result;
+/// Screenshots for the B′ comparison (116.13) are attached to the result;
 /// with `DAYSCAM_UI_SHOT_DIR` in the test runner's environment they are
 /// also written there as PNGs.
 final class PanelCollapseButtonUITests: XCTestCase {
@@ -26,7 +26,7 @@ final class PanelCollapseButtonUITests: XCTestCase {
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         app.buttons["疊字設定"].tap()
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5), "the panel opened")
-        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5), "99.3 the collapse button is there while the panel is open")
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 5), "116.1 the collapse chevron is there while the panel is open")
     }
 
     private func assertPanelClosed(_ message: String) {
@@ -48,96 +48,121 @@ final class PanelCollapseButtonUITests: XCTestCase {
         }
     }
 
-    /// 99.3／99.4 as amended 2026-10-11: the 48×48 button is centered where
-    /// the closed footer's「疊字設定」key was — `(W / 2 − 38) / 2 − 8` from
-    /// the right edge and 16 + 38 above the home indicator — and a tap
-    /// collapses the panel.
-    func testButtonPositionAndTapCollapses() {
+    private var bottomInset: CGFloat { app.windows.firstMatch.frame.height >= 700 ? 34 : 0 }
+
+    private func drag(from start: CGPoint, dy: CGFloat, dx: CGFloat = 0, velocity: XCUIGestureVelocity = .slow) {
+        let window = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        let from = window.withOffset(CGVector(dx: start.x, dy: start.y))
+        from.press(forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: dx, dy: dy)), withVelocity: velocity,
+                   thenHoldForDuration: 0.2)
+    }
+
+    /// 116.1／116.2: the chevron shares the segmented row, sits the same
+    /// distance from the right edge as the track does from the left, is at
+    /// least 44pt square, and a tap collapses the panel.
+    func testChevronPositionAndTapCollapses() {
         let window = app.windows.firstMatch.frame
         let frame = collapseButton.frame
-        XCTAssertEqual(frame.width, 48, accuracy: 1, "99.3 tap target")
-        XCTAssertEqual(frame.height, 48, accuracy: 1, "99.3 tap target")
-        let sideButtonCenterInset = (window.width / 2 - 38) / 2 - 8
-        XCTAssertEqual(window.maxX - frame.midX, sideButtonCenterInset, accuracy: 1.5, "99.3 centered on the 疊字設定 key's x")
-        // The band below the usable area is the bottom safe-area inset: 34
-        // on a home-indicator phone, 0 on a 4.7-inch one.
-        let bottomInset = window.height >= 700 ? 34.0 : 0.0
-        XCTAssertEqual(window.maxY - frame.midY, bottomInset + 16 + 38, accuracy: 1.5, "99.3／99.10 centered 54pt above footerBase")
-        attach("99.12_panel-open_style")
+        XCTAssertGreaterThanOrEqual(frame.width, 44 - 0.5, "116.2 tap target")
+        XCTAssertGreaterThanOrEqual(frame.height, 44 - 0.5, "116.2 tap target")
+        let row = styleTab.frame
+        XCTAssertEqual(frame.midY, row.midY, accuracy: 3, "116.1 same row as the segments")
+        XCTAssertGreaterThan(frame.minX, app.buttons["位置"].frame.maxX, "116.2 does not overlap the last segment")
+        XCTAssertEqual(window.maxX - frame.maxX, row.minX - window.minX - 2, accuracy: 2,
+                       "116.1 right margin mirrors the track's left margin")
+        XCTAssertFalse(app.descendants(matching: .any)["panelGrabber"].exists)
+        attach("116.13_panel-open_style")
         collapseButton.tap()
-        assertPanelClosed("99.4 the button collapses the panel")
+        assertPanelClosed("116.2 the chevron collapses the panel")
         XCTAssertTrue(app.buttons["疊字設定"].exists, "the closed footer is back")
     }
 
-    /// 99.1: there is no grabber, and pulling down from the panel's top edge
-    /// neither moves nor collapses it.
-    func testNoGrabberAndPullingDoesNothing() {
-        XCTAssertFalse(app.descendants(matching: .any)["panelGrabber"].exists, "99.1／99.11 no grabber")
-        let tabs = styleTab.frame
-        let start = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: app.windows.firstMatch.frame.midX, dy: tabs.minY - 2))
-        let restingY = tabs.minY
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 200)), withVelocity: .slow,
-                    thenHoldForDuration: 0.3)
-        XCTAssertTrue(styleTab.waitForExistence(timeout: 2), "99.1 still open after a pull")
-        XCTAssertEqual(styleTab.frame.minY, restingY, accuracy: 2, "99.1 the panel did not move")
+    /// 116.2: tapping the last segment does not hit the chevron.
+    func testTappingLastSegmentDoesNotCollapse() {
+        app.buttons["位置"].tap()
+        XCTAssertTrue(collapseButton.exists, "116.2 still open")
+        XCTAssertTrue(app.buttons["位置"].isSelected, "and the segment switched")
     }
 
-    /// 99.5: the button stays put across tabs, sub-tabs and scrolling.
-    func testButtonStaysPutAcrossTabsAndScrolling() {
+    /// 116.3: a downward swipe on the segmented row collapses on release.
+    func testSwipeDownOnSegmentedRowCollapses() {
+        let row = app.buttons["內容"].frame
+        drag(from: CGPoint(x: row.midX, y: row.midY), dy: 70)
+        assertPanelClosed("116.3 swipe down on the segmented row")
+    }
+
+    func testSwipeDownOnChevronCollapses() {
+        let frame = collapseButton.frame
+        drag(from: CGPoint(x: frame.midX, y: frame.midY), dy: 70)
+        assertPanelClosed("116.3 swipe down starting on the chevron")
+    }
+
+    /// 116.4: up, sideways and short drags leave the panel alone.
+    func testOtherSwipesOnSegmentedRowDoNothing() {
+        let row = app.buttons["內容"].frame
+        let start = CGPoint(x: row.midX, y: row.midY)
+        drag(from: start, dy: -60)
+        XCTAssertTrue(collapseButton.exists, "116.4 up")
+        drag(from: start, dy: 0, dx: 80)
+        XCTAssertTrue(collapseButton.exists, "116.4 sideways")
+        drag(from: start, dy: 15)
+        XCTAssertTrue(collapseButton.exists, "116.4 short")
+    }
+
+    /// 116.5: dragging down on the list scrolls it and does not collapse.
+    func testSwipeDownOnListDoesNotCollapse() {
+        app.buttons["字型"].tap()
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        list.swipeUp()
+        list.swipeDown()
+        list.swipeDown()
+        XCTAssertTrue(collapseButton.exists, "116.5 list swipes never collapse the panel")
+    }
+
+    /// 116.7: the chevron stays put across tabs, sub-tabs and scrolling.
+    func testChevronStaysPutAcrossTabsAndScrolling() {
         let resting = collapseButton.frame
         for tab in ["內容", "位置", "樣式"] {
             app.buttons[tab].tap()
-            XCTAssertEqual(collapseButton.frame, resting, "99.5 same place on \(tab)")
+            XCTAssertEqual(collapseButton.frame, resting, "116.7 same place on \(tab)")
         }
         app.buttons["字型"].tap()
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         list.swipeUp()
         list.swipeUp()
-        XCTAssertEqual(collapseButton.frame, resting, "99.5 same place after scrolling")
-        attach("99.12_font-list-scrolled-to-bottom")
+        XCTAssertEqual(collapseButton.frame, resting, "116.7 same place after scrolling")
         app.buttons["外框"].tap()
-        XCTAssertEqual(collapseButton.frame, resting, "99.5 same place on a sub-tab")
+        XCTAssertEqual(collapseButton.frame, resting, "116.7 same place on a sub-tab")
     }
 
-    /// 99.6: scrolled all the way down, the font list's last row sits fully
-    /// inside the scroll view and above the button — not under it.
-    func testLastRowScrollsAboveTheButton() {
+    /// 116.8: scrolled all the way down, the font list's last row sits above
+    /// the home-indicator fade band.
+    func testLastRowScrollsAboveTheFadeBand() {
         app.buttons["字型"].tap()
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         let rows = list.buttons.allElementsBoundByIndex
-        XCTAssertFalse(rows.isEmpty, "99.6 the font list has rows")
+        XCTAssertFalse(rows.isEmpty, "116.8 the font list has rows")
         guard let last = rows.last else { return }
-        // Drag the list up by coordinates (a `swipeUp` on the scroll view
-        // element did not scroll the font list on the larger phones), from
-        // just above the collapse button to just below the sub-tab row,
-        // enough times to reach the end.
         let window = app.windows.firstMatch
-        let x = window.frame.midX
+        let fadeTop = window.frame.maxY - bottomInset
         for _ in 0..<10 {
-            let from = window.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: x, dy: collapseButton.frame.minY - 20))
-            let to = window.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: x, dy: styleTab.frame.maxY + 70))
-            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .fast, thenHoldForDuration: 0.1)
+            drag(from: CGPoint(x: window.frame.midX, y: fadeTop - 20),
+                 dy: (styleTab.frame.maxY + 70) - (fadeTop - 20), velocity: .fast)
         }
         Thread.sleep(forTimeInterval: 0.8)
-        attach("99.12_font-list-last-row-above-button")
-        let button = collapseButton.frame
-        let visible = list.buttons.allElementsBoundByIndex.filter { $0.isHittable }
-        let lowest = visible.max { $0.frame.maxY < $1.frame.maxY }
-        let detail = "list \(list.frame) button \(button) last '\(last.label)' \(last.frame) lowest hittable '\(lowest?.label ?? "-")' \(lowest?.frame ?? .zero)"
-        XCTAssertLessThanOrEqual(last.frame.maxY, button.minY + 1,
-                                 "99.6 the last row ends above the button's tap target — \(detail)")
-        XCTAssertLessThanOrEqual(last.frame.maxY, list.frame.maxY + 1, "99.6 and is inside the scroll view — \(detail)")
-        XCTAssertFalse(last.frame.intersects(button), "99.6 not under the button")
+        attach("116.13_font-list-last-row")
+        XCTAssertLessThanOrEqual(last.frame.maxY, fadeTop + 1,
+                                 "116.8 the last row ends above the fade band — last \(last.frame) fadeTop \(fadeTop)")
+        last.tap()
+        XCTAssertTrue(styleTab.exists, "116.8 the last row can be operated without leaving the panel")
     }
 
-    /// 99.9: a tap on the viewfinder still collapses the panel (FR-8.7).
+    /// 116.10: a tap on the viewfinder still collapses the panel (FR-8.7).
     func testViewfinderTapStillCollapses() {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
-        assertPanelClosed("99.9 viewfinder tap collapses")
+        assertPanelClosed("116.10 viewfinder tap collapses")
     }
 }

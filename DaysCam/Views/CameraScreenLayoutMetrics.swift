@@ -111,15 +111,6 @@ struct CameraScreenLayoutMetrics {
                 y: footerBase - Self.closedFooterButtonCenterAboveBase)
     }
 
-    /// Where the open panel's collapse button is centered (human decision
-    /// 2026-10-11): exactly where the closed footer's right「疊字設定」key
-    /// sits — `leftFooterButtonCenter` mirrored to the right edge — so the
-    /// thumb that opened the panel closes it without moving.
-    var panelCollapseButtonCenter: CGPoint {
-        CGPoint(x: screenSize.width - footerSideButtonCenterInset,
-                y: footerBase - Self.closedFooterButtonCenterAboveBase)
-    }
-
     /// True for iPhone SE-class heights (< 700pt).
     var isSmallScreen: Bool {
         screenSize.height < Self.smallScreenHeightThreshold
