@@ -403,14 +403,18 @@ struct CameraScreen: View {
     /// tab bar, usable content down to `footerBase`, then the home-indicator
     /// band — full width (`panelWidth`, no side inset), straight on the
     /// camera background with no surface of its own. Its collapse button
-    /// (bottom-right, #404) closes it with the same fade every other
-    /// collapse uses.
+    /// (#404) sits where the「疊字設定」key that opened it was
+    /// (`panelCollapseButtonCenter`, 2026-10-11) and closes it with the same
+    /// fade every other collapse uses; the segmented control keeps the same
+    /// margin at the sides as the gap above the panel.
     private func overlayPanel(metrics: CameraScreenLayoutMetrics) -> some View {
         OverlayPanelView(model: model,
                          contentHeight: metrics.panelContentHeight,
                          tabBarHeight: metrics.panelTabBarHeight,
                          bottomSafeAreaInset: metrics.bottomInset,
-                         onCollapse: { model.closeOverlayPanel() })
+                         onCollapse: { model.closeOverlayPanel() },
+                         tabBarHorizontalInset: metrics.panelGapAboveBox,
+                         collapseButtonCenterTrailingInset: metrics.footerSideButtonCenterInset)
             .frame(width: metrics.panelWidth, height: metrics.panelVisibleHeight)
     }
 

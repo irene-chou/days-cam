@@ -39,18 +39,33 @@ struct OverlayPanelView: View {
     /// Collapse the panel: the collapse button, or VoiceOver's escape (99.8).
     var onCollapse: () -> Void = {}
 
-    /// Diameter of the collapse button's white disc (TASK-99, #404).
-    static let collapseButtonDiameter: CGFloat = 40
-    /// The collapse button's tap target.
-    static let collapseButtonTapSide: CGFloat = 44
-    /// Distance from the button's right edge to the screen's right edge, and
-    /// from its bottom edge to `footerBase` (the home indicator's top edge).
-    static let collapseButtonInset: CGFloat = 12
+    /// The segmented control's distance from each screen edge. `CameraScreen`
+    /// passes `CameraScreenLayoutMetrics.panelGapAboveBox` (6, small screens
+    /// 4) so the track's side margin equals the gap between the viewfinder
+    /// and the panel above it (human decision 2026-10-11; it was a fixed 2).
+    var tabBarHorizontalInset: CGFloat = 6
+
+    /// Distance from the collapse button's center to the screen's right
+    /// edge. `CameraScreen` passes `footerSideButtonCenterInset`, which puts
+    /// the button exactly where the closed footer's「疊字設定」key was
+    /// (`CameraScreenLayoutMetrics.panelCollapseButtonCenter`, human
+    /// decision 2026-10-11); the default only serves previews.
+    var collapseButtonCenterTrailingInset: CGFloat = 71.25
+
+    /// Diameter of the collapse button's white disc (TASK-99, #404; 40 → 48,
+    /// human decision 2026-10-11 「放大一些」).
+    static let collapseButtonDiameter: CGFloat = 48
+    /// The collapse button's tap target — the disc itself, already over 44.
+    static let collapseButtonTapSide: CGFloat = 48
+    /// Distance from the button's center up to `footerBase` (the home
+    /// indicator's top edge): the closed footer's 16 + 38, the same height
+    /// the「疊字設定」key sits at.
+    static let collapseButtonCenterAboveBase: CGFloat = CameraScreenLayoutMetrics.closedFooterButtonCenterAboveBase
     /// Room every tab leaves under its last row so it can scroll up above
-    /// the button (99.6): the band, the button's inset and tap target, and
-    /// 8pt of clearance.
+    /// the button (99.6): the band, the button's top edge above `footerBase`
+    /// (center 54 + half the 48pt target), and 8pt of clearance.
     static func bottomContentInset(bottomSafeAreaInset: CGFloat) -> CGFloat {
-        bottomSafeAreaInset + collapseButtonInset + collapseButtonTapSide + 8
+        bottomSafeAreaInset + collapseButtonCenterAboveBase + collapseButtonTapSide / 2 + 8
     }
 
     /// What every tab keeps clear under its last row (99.6).
@@ -117,31 +132,31 @@ struct OverlayPanelView: View {
 
     // MARK: - Collapse button (TASK-99, #404, design option D)
 
-    /// A 40pt white disc with a soft shadow and a `chevron.down`, floating
-    /// over the list in the panel's bottom-right corner: 12pt in from the
-    /// screen's right edge and 12pt above `footerBase` (the band below the
-    /// usable area is `bottomSafeAreaInset` tall), inside a 44×44 tap target.
-    /// It never scrolls and never moves between tabs (99.5). The disc and
-    /// its shadow are a FR-14.2 exception — a button floating over a list
-    /// needs a surface to be seen.
+    /// A 48pt white disc with a soft shadow and a `chevron.down`, floating
+    /// over the list in the panel's bottom-right corner, centered where the
+    /// closed footer's「疊字設定」key was: `collapseButtonCenterTrailingInset`
+    /// from the screen's right edge and 54pt above `footerBase` (the band
+    /// below the usable area is `bottomSafeAreaInset` tall). The disc is its
+    /// own 48×48 tap target. It never scrolls and never moves between tabs
+    /// (99.5). The disc and its shadow are a FR-14.2 exception — a button
+    /// floating over a list needs a surface to be seen.
     private var collapseButton: some View {
-        let targetOverhang = (Self.collapseButtonTapSide - Self.collapseButtonDiameter) / 2
-        return Button(action: onCollapse) {
+        Button(action: onCollapse) {
             ZStack {
                 Circle()
                     .fill(CameraTheme.popoverBackground)
                     .shadow(color: CameraTheme.popoverShadow, radius: 12, x: 0, y: 4)
                     .frame(width: Self.collapseButtonDiameter, height: Self.collapseButtonDiameter)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(CameraTheme.ink)
             }
             .frame(width: Self.collapseButtonTapSide, height: Self.collapseButtonTapSide)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .padding(.trailing, Self.collapseButtonInset - targetOverhang)
-        .padding(.bottom, bottomSafeAreaInset + Self.collapseButtonInset - targetOverhang)
+        .padding(.trailing, collapseButtonCenterTrailingInset - Self.collapseButtonTapSide / 2)
+        .padding(.bottom, bottomSafeAreaInset + Self.collapseButtonCenterAboveBase - Self.collapseButtonTapSide / 2)
         .accessibilityLabel("收合面板")
         .accessibilityIdentifier("panelCollapseButton")
     }
@@ -187,7 +202,8 @@ struct OverlayPanelView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(CameraTheme.fill)
         )
-        .padding(.horizontal, 2)
+        // Same margin at the sides as the gap above the panel (2026-10-11).
+        .padding(.horizontal, tabBarHorizontalInset)
     }
 
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,
