@@ -52,14 +52,19 @@ final class DayCountToggleUITests: XCTestCase {
         let text = overlayText
         XCTAssertTrue(text.waitForExistence(timeout: 3))
         XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(text.label)")
-        XCTAssertFalse(app.buttons["天"].isHittable, "107.4 the units are inert")
+        // Inert: tapping a unit changes nothing (XCUITest still reports the
+        // dimmed buttons as hittable, so the check is behavioural).
+        app.buttons["週"].tap()
+        XCTAssertFalse(app.buttons["週"].isSelected, "107.4 the units are inert")
 
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 預設$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
 
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "107.4 back on")
-        XCTAssertTrue(app.buttons["天"].isHittable, "107.4 the units are live again")
+        XCTAssertTrue(app.buttons["天"].isSelected, "107.4 the earlier tick is still there")
+        app.buttons["週"].tap()
+        XCTAssertTrue(app.buttons["週"].isSelected, "107.4 the units are live again")
     }
 
     /// 107.3: the last of 天數／日期 springs back, both ways.
@@ -79,7 +84,8 @@ final class DayCountToggleUITests: XCTestCase {
         openContentTab()
         toggle("日期").tap()
         toggle("天數").tap()
-        app.buttons["panelCollapseButton"].firstMatch.exists ? app.buttons["panelCollapseButton"].firstMatch.tap() : app.buttons["疊字設定"].tap()
+        // Close the panel by tapping the viewfinder (FR-8.7).
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         chip.tap()
