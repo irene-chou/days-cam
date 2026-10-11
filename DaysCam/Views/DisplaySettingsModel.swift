@@ -45,6 +45,14 @@ final class DisplaySettingsModel: ObservableObject {
     }
     /// The most recent refusal; `nil` until one happens.
     @Published private(set) var lastRejection: Rejection?
+    /// The refusal whose hint is on screen right now (TASK-108): set by
+    /// `reject`, cleared `hintDuration` later; a newer refusal restarts the
+    /// clock. Owned here, not by the view, so the hint's lifetime does not
+    /// depend on view identity or re-renders.
+    @Published private(set) var visibleHint: Rejection?
+    /// How long a hint stays before fading (108.1).
+    static let hintDuration: TimeInterval = 1.5
+    private var hintTask: Task<Void, Never>?
 
     /// Refusals of the same kind closer together than this are one event:
     /// a switch that springs back can report its refusal more than once,
@@ -59,7 +67,15 @@ final class DisplaySettingsModel: ObservableObject {
             return
         }
         lastRejectionTime = now
-        lastRejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
+        let rejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
+        lastRejection = rejection
+        visibleHint = rejection
+        hintTask?.cancel()
+        hintTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.hintDuration))
+            guard !Task.isCancelled, let self, self.visibleHint == rejection else { return }
+            self.visibleHint = nil
+        }
     }
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?

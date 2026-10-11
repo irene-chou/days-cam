@@ -380,4 +380,21 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.toggleUnit(.week)
         XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "108.8 live again")
     }
+
+    /// 108.1／108.2: the hint stays `hintDuration` then clears itself; a
+    /// newer refusal restarts the clock.
+    func testVisibleHintClearsItselfAfterTheDuration() async throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        XCTAssertNil(model.visibleHint)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day), "shown at once")
+        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.5))
+        XCTAssertNotNil(model.visibleHint, "still shown halfway")
+        model.setShowDayCount(false)
+        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "a newer refusal replaces it")
+        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.7))
+        XCTAssertNotNil(model.visibleHint, "the clock restarted")
+        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.5))
+        XCTAssertNil(model.visibleHint, "cleared after the duration")
+    }
 }

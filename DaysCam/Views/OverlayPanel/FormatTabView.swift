@@ -30,8 +30,6 @@ struct FormatTabView: View {
     /// for the refusal hint (TASK-108): always laid out, normally invisible,
     /// so showing the hint never moves the rows below it (108.2).
     static let hintRowHeight: CGFloat = 18
-    /// How long the hint stays before fading (108.1).
-    static let hintDuration: TimeInterval = 1.5
 
     /// The unit whose checkbox is bouncing right now (TASK-108).
     @State private var bouncingUnit: DisplayUnit?
@@ -40,10 +38,21 @@ struct FormatTabView: View {
     /// Whether the whole unit section is nudging (108.8: tapped while the
     /// day count is off).
     @State private var bouncingUnits = false
-    /// The refusal whose hint is showing under the unit row, if any.
-    @State private var unitHint: DisplaySettingsModel.Rejection?
+    /// The refusal whose hint is showing under the unit row, if any (the
+    /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
+    private var unitHint: DisplaySettingsModel.Rejection? {
+        guard let hint = model.displaySettings.visibleHint else { return nil }
+        switch hint.kind {
+        case .lastUnit, .dayCountOff: return hint
+        case .lastContentSwitch: return nil
+        }
+    }
     /// The refusal whose hint is showing under the display-content row, if any.
-    @State private var contentHint: DisplaySettingsModel.Rejection?
+    private var contentHint: DisplaySettingsModel.Rejection? {
+        guard let hint = model.displaySettings.visibleHint else { return nil }
+        if case .lastContentSwitch = hint.kind { return hint }
+        return nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -80,15 +89,12 @@ struct FormatTabView: View {
         switch rejection.kind {
         case .lastUnit(let unit):
             withAnimation(bounce) { bouncingUnit = unit }
-            withAnimation(.easeOut(duration: 0.2)) { unitHint = rejection }
         case .lastContentSwitch(let contentSwitch):
             withAnimation(bounce) { bouncingSwitch = contentSwitch }
-            withAnimation(.easeOut(duration: 0.2)) { contentHint = rejection }
         case .dayCountOff:
             // The whole unit row nudges (108.8): the tap could have been any
             // checkbox or the age-wording switch.
             withAnimation(bounce) { bouncingUnits = true }
-            withAnimation(.easeOut(duration: 0.2)) { unitHint = rejection }
         }
         UIAccessibility.post(notification: .announcement, argument: rejection.hint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -102,8 +108,7 @@ struct FormatTabView: View {
 
     /// The reserved hint line under a row: its text is only visible while
     /// `rejection` is set, and the line keeps its height either way (108.2).
-    private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String,
-                         clear: @escaping () -> Void) -> some View {
+    private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String) -> some View {
         Text(rejection?.hint ?? " ")
             .font(.system(size: 11.5))
             .foregroundColor(CameraTheme.active)
@@ -112,16 +117,9 @@ struct FormatTabView: View {
             .frame(height: Self.hintRowHeight)
             .padding(.leading, 8)
             .opacity(rejection == nil ? 0 : 1)
+            .animation(.easeOut(duration: rejection == nil ? 0.3 : 0.2), value: rejection?.serial)
             .accessibilityHidden(rejection == nil)
             .accessibilityIdentifier(identifier)
-            // Fades after `hintDuration`; a newer refusal restarts the clock
-            // (the task is cancelled and re-created when `serial` changes).
-            .task(id: rejection?.serial) {
-                guard rejection != nil else { return }
-                try? await Task.sleep(for: .seconds(Self.hintDuration))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.3)) { clear() }
-            }
     }
 
     /// Small heading above the 天數單位 and 顯示內容 sections (13pt, secondary ink).
@@ -177,7 +175,7 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
-            hintRow(contentHint, identifier: "contentSwitchHint") { contentHint = nil }
+            hintRow(contentHint, identifier: "contentSwitchHint")
         }
     }
 
@@ -236,7 +234,7 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
-            hintRow(unitHint, identifier: "unitHint") { unitHint = nil }
+            hintRow(unitHint, identifier: "unitHint")
             HStack {
                 Spacer(minLength: 0)
                 ageWordingToggle
