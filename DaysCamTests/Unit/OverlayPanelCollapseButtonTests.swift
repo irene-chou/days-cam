@@ -44,12 +44,12 @@ final class OverlayPanelCollapseButtonTests: XCTestCase {
     }
 
     /// 116.9: the panel is top padding, tab bar and content, so `panelTop`
-    /// is unchanged (PR #455 moved 10pt from the content to the padding).
+    /// is unchanged (PR #455 moved 8pt from the content to the padding).
     func testPanelHeightUnchanged() {
         let metrics = CameraScreenLayoutMetrics(screenSize: CGSize(width: 393, height: 852),
                                                 safeAreaInsets: EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0))
         XCTAssertEqual(metrics.panelHeight, CameraScreenLayoutMetrics.panelTopPadding + metrics.panelTabBarHeight + metrics.panelContentHeight)
-        XCTAssertEqual(CameraScreenLayoutMetrics.panelTopPadding, 10)
+        XCTAssertEqual(CameraScreenLayoutMetrics.panelTopPadding, 8)
         XCTAssertEqual(metrics.panelHeight, 300, accuracy: 0.01)
     }
 }

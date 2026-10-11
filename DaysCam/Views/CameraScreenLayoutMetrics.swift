@@ -101,9 +101,9 @@ struct CameraScreenLayoutMetrics {
 
     /// Space between the panel's rounded top edge and the segmented row, so
     /// the row does not touch the edge or the rounded corners (PR #455, user
-    /// 2026-10-12 「面板須留 padding」). Taken out of the content area, so
+    /// 2026-10-12 「面板須留 padding」「內距改為 8pt」). Taken out of the content area, so
     /// `panelTop` and the viewfinder stay where they were.
-    static let panelTopPadding: CGFloat = 10
+    static let panelTopPadding: CGFloat = 8
 
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
@@ -143,8 +143,8 @@ struct CameraScreenLayoutMetrics {
     /// TASK-99 (#404) removed the grabber and gave its 24pt back — 268
     /// regular, 176 small — so `panelTop` is unchanged throughout.
     ///
-    /// PR #455: `panelTopPadding` (10pt) above the segmented row comes out
-    /// of this — 258 regular, 166 small.
+    /// PR #455: `panelTopPadding` (8pt) above the segmented row comes out
+    /// of this — 260 regular, 168 small.
     var panelContentHeight: CGFloat {
         (isSmallScreen ? 176 : 268) - Self.panelTopPadding
     }
