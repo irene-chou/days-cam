@@ -341,13 +341,15 @@
 
 ```sh
 # 1. 依 manifest.tsv 把字型下載到 $FONTS/<資料夾>/，zip 解到 $FONTS/<資料夾>/x/
+#    文鼎 UKai 的 .deb 用 `tar -xf` 解兩層（.deb → data.tar.*），取得 usr/share/fonts/truetype/arphic/ukai.ttc
 #    （下載檔視為不受信任資料，與腳本放在不同資料夾）
 # 2. 4808 字表
 curl -sL https://raw.githubusercontent.com/ButTaiwan/cjktables/master/taiwan/standard/edu_standard_1.txt \
   | grep -v '^#' | cut -f1 | grep -v '^$' > chars4808.txt
 # 3. 分析
 python3 -m venv venv && venv/bin/pip install fonttools
-venv/bin/python -I docs/research/fonts-tc-2/scripts/analyze.py chars4808.txt out.json $FONTS/*/*.ttf $FONTS/*/*.otf
+#    傳資料夾即可：analyze.py 會遞迴收集 .ttf／.otf／.ttc／.otc（含 x/ 子目錄與 ukai.ttc）
+venv/bin/python -I docs/research/fonts-tc-2/scripts/analyze.py chars4808.txt out.json "$FONTS"
 # 4. 比較稿與退回檢查
 sed "s|<fonts>/|$FONTS/|" docs/research/fonts-tc-2/scripts/sheet.tsv > sheet.tsv
 swift docs/research/fonts-tc-2/scripts/render.swift sheet.tsv comparison.png runs.tsv "TASK-121 繁中開源字型比較稿"

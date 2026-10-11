@@ -1,6 +1,7 @@
 """Analyze font files: names, version, fsType, weight, 4808 coverage, overlay chars, size, sha256.
 
-Usage: python -I analyze.py <chars4808.txt> <out.json> <font files...>
+Usage: python -I analyze.py <chars4808.txt> <out.json> <font files or folders...>
+Folders are searched recursively for .ttf/.otf/.ttc/.otc files.
 """
 import hashlib
 import json
@@ -9,6 +10,7 @@ import sys
 
 from fontTools.ttLib import TTCollection, TTFont
 
+FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".otc")
 OVERLAY = "0123456789.第天歲個月年又週尚未開始 　我的紀錄"
 
 
@@ -52,10 +54,22 @@ def analyze_face(font, chars):
     }
 
 
+def font_paths(args):
+    for arg in args:
+        if os.path.isdir(arg):
+            for root, dirs, files in os.walk(arg):
+                dirs.sort()
+                for name in sorted(files):
+                    if name.lower().endswith(FONT_EXTENSIONS):
+                        yield os.path.join(root, name)
+        else:
+            yield arg
+
+
 def main():
     chars = [l.strip() for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
     out = []
-    for path in sys.argv[3:]:
+    for path in font_paths(sys.argv[3:]):
         data = open(path, "rb").read()
         entry = {
             "path": path,
