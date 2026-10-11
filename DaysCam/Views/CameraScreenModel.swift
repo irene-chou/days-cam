@@ -142,6 +142,10 @@ final class CameraScreenModel: ObservableObject {
     /// `bindToOnboarding`), the same way `cameraService`'s are, so
     /// `CameraScreen` re-renders when a step changes.
     let onboarding: OnboardingSpotlightModel
+    /// Where the overlay text block currently sits, in the viewfinder's
+    /// coordinates; the view keeps it current (TASK-105). Not published: it
+    /// only gates touches and must not redraw anything.
+    var overlayTextFrame: CGRect = .null
 
     /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
     /// Rebuilt only when `selectedProfileID` actually changes — see
@@ -980,11 +984,6 @@ extension CameraScreenModel {
     func handleViewfinderTap() {
         handleTapOutsidePanel()
     }
-
-    /// Where the overlay text block currently sits, in the viewfinder's
-    /// coordinates; the view keeps it current (TASK-105). Not published: it
-    /// only gates touches and must not redraw anything.
-    var overlayTextFrame: CGRect = .null
 
     /// A tap on the overlay text itself (TASK-105, #420): opens the panel
     /// while it is closed, on whichever tab it was last on; does nothing
