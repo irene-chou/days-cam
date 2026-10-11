@@ -82,7 +82,9 @@ final class NewProfileDraftUITests: XCTestCase {
         addProfile()
         // The keyboard is up on the new profile's page (its name field takes
         // focus); the space above the sheet is still the camera screen.
-        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        // Same spot as 101.4 (`ProfileSheetDismissUITests`): the dimmed strip
+        // above the sheet, below the status bar.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5), "106.2 tapped outside")
         XCTAssertFalse(nameField.waitForExistence(timeout: 2), "106.2 the edit page went away with the sheet")
         XCTAssertTrue(profileChip.waitForExistence(timeout: 5))
