@@ -181,6 +181,19 @@ struct ProfileManagerView: View {
         }
     }
 
+    /// A tap on the row itself: another profile is selected and the sheet
+    /// closes (#226 R-3); the current one opens its own editor instead
+    /// (TASK-105, #420 — "selecting the selected" meant nothing, and in the
+    /// usability walkthrough it was a first-time user's very first tap).
+    private func rowTapped(_ row: ProfileManagerModel.Row) {
+        if row.isCurrent {
+            model.edit(id: row.id)
+        } else {
+            model.select(id: row.id)
+            onClose()
+        }
+    }
+
     private func profileRow(_ row: ProfileManagerModel.Row, index: Int) -> some View {
         HStack(spacing: 0) {
             // A tap gesture rather than a `Button` (TASK-103, #412): with the
@@ -214,31 +227,31 @@ struct ProfileManagerView: View {
                 RowLongPressDrag(onBegan: { liftRow(row, index: index) },
                                  onChanged: { dragRow(row, index: index, translation: $0) },
                                  onEnded: { releaseRow(row, index: index) },
-                                 onTap: {
-                                     model.select(id: row.id)
-                                     onClose()
-                                 })
+                                 onTap: { rowTapped(row) })
             )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(row.name)，\(row.subtitle)")
             .accessibilityIdentifier("profileRow")
             .accessibilityAddTraits(row.isCurrent ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction {
-                model.select(id: row.id)
-                onClose()
-            }
+            .accessibilityAction { rowTapped(row) }
 
+            // The pencil edits this row without switching to it (TASK-105,
+            // #420; FR-9.3): the row is the option, the button at its end
+            // changes that option — the Wi-Fi list's ⓘ structure with a
+            // plainer glyph. A plain `pencil`, no circle (user decision
+            // 2026-10-11), accent-colored, in a 44pt target.
             Button {
                 model.edit(id: row.id)
             } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(CameraTheme.inkTertiary)
+                Image(systemName: "pencil")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(CameraTheme.active)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("編輯\(row.name)")
+            .accessibilityIdentifier("profileEditButton")
         }
     }
 

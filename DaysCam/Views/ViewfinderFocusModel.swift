@@ -81,6 +81,9 @@ final class ViewfinderFocusModel: ObservableObject {
     var canAcceptGesture: () -> Bool = { true }
     /// Whether a pinch is under way.
     var isPinching: () -> Bool = { false }
+    /// Whether a touch that begins at this point belongs to something else —
+    /// the overlay text's own tap (TASK-105) — and must be ignored outright.
+    var shouldIgnoreTouch: (CGPoint) -> Bool = { _ in false }
 
     private var serviceState = FocusExposureState.initial
     private var pendingBias: Float?
@@ -202,7 +205,7 @@ final class ViewfinderFocusModel: ObservableObject {
 
     private func beginTouch(at start: CGPoint) {
         holdTask?.cancel()
-        guard canAcceptGesture(), !isPinching() else {
+        guard canAcceptGesture(), !isPinching(), !shouldIgnoreTouch(start) else {
             touch = Touch(start: start, mode: .ignored)
             return
         }

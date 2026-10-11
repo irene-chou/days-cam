@@ -32,8 +32,11 @@ final class ViewfinderFocusModelTests: XCTestCase {
             holdDuration: hold, dimDelay: dim, hideDelay: hide)
         model.canAcceptGesture = { [unowned self] in accepts }
         model.isPinching = { [unowned self] in pinching }
+        model.shouldIgnoreTouch = { [unowned self] in ignoredRegion?.contains($0) ?? false }
         return model
     }
+    /// Where `shouldIgnoreTouch` answers true (TASK-105: the overlay text).
+    private var ignoredRegion: CGRect?
 
     private func tap(_ model: ViewfinderFocusModel, at point: CGPoint = CGPoint(x: 150, y: 200)) {
         model.touchChanged(startLocation: point, location: point, viewfinderSize: size)
@@ -677,5 +680,20 @@ final class ViewfinderFocusModelTests: XCTestCase {
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 150), viewfinderSize: size)
         model.touchChanged(startLocation: start, location: CGPoint(x: 150, y: 100), viewfinderSize: size)
         XCTAssertFalse(model.isReticleDimmed)
+    }
+
+    /// TASK-105 (105.3): a touch that begins where `shouldIgnoreTouch` says
+    /// so is ignored outright — no focus on release, no exposure on drag —
+    /// while one beginning elsewhere still focuses.
+    func testTouchesBeginningOnTheOverlayTextAreIgnored() async {
+        ignoredRegion = CGRect(x: 100, y: 100, width: 100, height: 50)
+        let model = makeModel()
+        tap(model, at: CGPoint(x: 150, y: 120))
+        XCTAssertTrue(focused.isEmpty, "105.3 no focus from a tap on the text")
+        model.touchChanged(startLocation: CGPoint(x: 150, y: 120), location: CGPoint(x: 150, y: 180), viewfinderSize: size)
+        model.touchEnded()
+        XCTAssertTrue(biases.isEmpty, "105.3 no exposure from a drag starting on the text")
+        tap(model, at: CGPoint(x: 20, y: 20))
+        XCTAssertEqual(focused.count, 1, "a tap beside the text still focuses")
     }
 }

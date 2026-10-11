@@ -576,6 +576,7 @@ final class CameraScreenModel: ObservableObject {
             return !isCaptureUnsupported && !needsPermissionGuidance && !isSessionNotRunning
         }
         focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
+        focusModel.shouldIgnoreTouch = { [weak self] in self?.viewfinderTouchStartsOnOverlayText(at: $0) ?? false }
         cameraService.focusExposureStatePublisher
             .sink { [weak self] in self?.focusModel.receive($0) }
             .store(in: &cancellables)
@@ -978,6 +979,28 @@ extension CameraScreenModel {
     /// any other tap outside the panel (`handleTapOutsidePanel`).
     func handleViewfinderTap() {
         handleTapOutsidePanel()
+    }
+
+    /// Where the overlay text block currently sits, in the viewfinder's
+    /// coordinates; the view keeps it current (TASK-105). Not published: it
+    /// only gates touches and must not redraw anything.
+    var overlayTextFrame: CGRect = .null
+
+    /// A tap on the overlay text itself (TASK-105, #420): opens the panel
+    /// while it is closed, on whichever tab it was last on; does nothing
+    /// while it is open — the text is what the panel edits, so tapping it
+    /// must not collapse the panel (contrast `handleViewfinderTap`).
+    func handleOverlayTextTap() {
+        zoomExpansion.collapse()
+        guard !panelModel.isOpen else { return }
+        openOverlayPanel()
+    }
+
+    /// Whether a viewfinder touch beginning at `point` (viewfinder
+    /// coordinates) lands on the overlay text, where it belongs to the text's
+    /// own tap and must not focus or adjust exposure (105.3).
+    func viewfinderTouchStartsOnOverlayText(at point: CGPoint) -> Bool {
+        !overlayTextFrame.isNull && overlayTextFrame.contains(point)
     }
 
     /// A tap anywhere outside the panel — the viewfinder, the blank space
