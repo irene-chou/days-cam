@@ -303,17 +303,24 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertFalse(model.profile.showDayCount)
     }
 
-    /// 107.4: with the day count off the unit controls are inert and keep
-    /// their ticks; turning it on restores them.
+    /// 107.4: with the day count off the unit controls refuse every tap and
+    /// keep their ticks; turning it on restores them.
     func testUnitsAreInertWhileTheDayCountIsOff() throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        model.toggleUnit(.year)
         model.toggleUnit(.week)
         model.setShowDate(true)
         model.setShowDayCount(false)
         XCTAssertTrue(model.areUnitsInert, "107.4")
-        XCTAssertEqual(model.profile.displayUnits, [.week, .day], "107.4 ticks kept")
+        model.toggleUnit(.month)
+        model.toggleUnit(.day)
+        model.setUseAgeWording(true)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "107.4 taps change nothing")
+        XCTAssertFalse(model.profile.useAgeWording, "107.4 age wording refused too")
         model.setShowDayCount(true)
         XCTAssertFalse(model.areUnitsInert)
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 1 週又 3 天", "107.4 the units are back in use")
+        model.setUseAgeWording(true)
+        XCTAssertTrue(model.profile.useAgeWording, "107.4 live again")
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 0 歲 1 週又 3 天", "107.4 the units are back in use")
     }
 }

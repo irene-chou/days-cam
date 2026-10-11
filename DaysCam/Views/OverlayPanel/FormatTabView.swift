@@ -155,11 +155,10 @@ struct FormatTabView: View {
             }
             .frame(minHeight: Self.rowMinHeight)
         }
-        // With the day count off the whole unit section goes dim and inert,
-        // in place — no text, nothing moves (107.4; FR-11.5 as revised by
-        // TASK-107). Turning the day count back on restores it as it was.
-        .opacity(model.displaySettings.areUnitsInert ? 0.4 : 1)
-        .allowsHitTesting(!model.displaySettings.areUnitsInert)
+        // With the day count off the unit section looks exactly as usual —
+        // not dimmed, not hidden, no text (107.4; the user's 2026-10-12
+        // call: dimming reads as "half broken", hiding moves the rows). The
+        // model refuses the taps; TASK-108 answers them with feedback.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dayCountUnits")
     }
