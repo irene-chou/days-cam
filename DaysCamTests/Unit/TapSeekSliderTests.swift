@@ -40,6 +40,24 @@ final class TapSeekSliderTests: XCTestCase {
         }
     }
 
+    /// A tap on the thumb (within its radius of the centre) is not a seek,
+    /// so a tap at the thumb's edge cannot push the value a step.
+    func testTapsOnTheThumbAreNotSeeks() {
+        let on = { (x: CGFloat, value: Double) in
+            TapSeekSlider.isOnThumb(x: x, value: value, trackWidth: 300, thumbRadius: 14, range: 0...16)
+        }
+        XCTAssertEqual(TapSeekSlider.thumbCenterX(for: 8, trackWidth: 300, thumbRadius: 14, range: 0...16), 150)
+        XCTAssertEqual(TapSeekSlider.thumbCenterX(for: 0, trackWidth: 300, thumbRadius: 14, range: 0...16), 14)
+        XCTAssertEqual(TapSeekSlider.thumbCenterX(for: 16, trackWidth: 300, thumbRadius: 14, range: 0...16), 286)
+        XCTAssertTrue(on(150, 8))
+        XCTAssertTrue(on(136, 8), "left edge of the thumb")
+        XCTAssertTrue(on(164, 8), "right edge of the thumb")
+        XCTAssertFalse(on(135, 8))
+        XCTAssertFalse(on(165, 8))
+        XCTAssertTrue(on(0, 0), "the end zone belongs to the thumb at the bound")
+        XCTAssertFalse(on(150, 0))
+    }
+
     func testZeroStepDoesNotSnap() {
         XCTAssertEqual(seek(150, step: 0), 8, accuracy: 0.0001)
         XCTAssertEqual(seek(151, step: 0), 8 + 16.0 / 272, accuracy: 0.0001)

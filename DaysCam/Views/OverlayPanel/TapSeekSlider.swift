@@ -41,6 +41,10 @@ struct TapSeekSlider: View {
             .onEnded { drag in
                 guard !isDisabled, trackWidth > 0 else { return }
                 guard hypot(drag.translation.width, drag.translation.height) <= Self.tapSlop else { return }
+                // A tap on the thumb itself is not a seek: at the thumb's
+                // edge the tapped point could otherwise be a step away.
+                guard !Self.isOnThumb(x: drag.startLocation.x, value: value, trackWidth: trackWidth,
+                                      thumbRadius: Self.thumbRadius, range: range) else { return }
                 let target = Self.value(atX: drag.startLocation.x, trackWidth: trackWidth,
                                         thumbRadius: Self.thumbRadius, range: range, step: step)
                 guard target != value else { return }
@@ -50,6 +54,21 @@ struct TapSeekSlider: View {
                     withAnimation(.easeInOut(duration: 0.15)) { onChange(target) }
                 }
             }
+    }
+
+    /// The x of the thumb's centre for `value`: the inverse of `value(atX:)`.
+    static func thumbCenterX(for value: Double, trackWidth: CGFloat, thumbRadius: CGFloat,
+                             range: ClosedRange<Double>) -> CGFloat {
+        let usable = max(1, trackWidth - thumbRadius * 2)
+        let span = range.upperBound - range.lowerBound
+        let fraction = span > 0 ? min(max((value - range.lowerBound) / span, 0), 1) : 0
+        return thumbRadius + CGFloat(fraction) * usable
+    }
+
+    /// Whether a tap at `x` lands on the thumb drawn for `value`.
+    static func isOnThumb(x: CGFloat, value: Double, trackWidth: CGFloat, thumbRadius: CGFloat,
+                          range: ClosedRange<Double>) -> Bool {
+        abs(x - thumbCenterX(for: value, trackWidth: trackWidth, thumbRadius: thumbRadius, range: range)) <= thumbRadius
     }
 
     /// The value a tap at `x` (in the slider's own coordinates) seeks to: the
