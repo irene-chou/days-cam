@@ -48,19 +48,21 @@ final class PanelCollapseButtonUITests: XCTestCase {
         }
     }
 
-    /// 99.3／99.4: the button sits 12pt in from the right edge and 12pt above
-    /// the home indicator (44×44 target, so its frame reaches 10pt from
-    /// each), and a tap collapses the panel.
+    /// 99.3／99.4 as amended 2026-10-11: the 48×48 button is centered where
+    /// the closed footer's「疊字設定」key was — `(W / 2 − 38) / 2 − 8` from
+    /// the right edge and 16 + 38 above the home indicator — and a tap
+    /// collapses the panel.
     func testButtonPositionAndTapCollapses() {
         let window = app.windows.firstMatch.frame
         let frame = collapseButton.frame
-        XCTAssertEqual(frame.width, 44, accuracy: 1, "99.3 tap target")
-        XCTAssertEqual(frame.height, 44, accuracy: 1, "99.3 tap target")
-        XCTAssertEqual(window.maxX - frame.maxX, 12 - 2, accuracy: 1.5, "99.3 12pt from the right edge (disc), 10pt (target)")
+        XCTAssertEqual(frame.width, 48, accuracy: 1, "99.3 tap target")
+        XCTAssertEqual(frame.height, 48, accuracy: 1, "99.3 tap target")
+        let sideButtonCenterInset = (window.width / 2 - 38) / 2 - 8
+        XCTAssertEqual(window.maxX - frame.midX, sideButtonCenterInset, accuracy: 1.5, "99.3 centered on the 疊字設定 key's x")
         // The band below the usable area is the bottom safe-area inset: 34
         // on a home-indicator phone, 0 on a 4.7-inch one.
         let bottomInset = window.height >= 700 ? 34.0 : 0.0
-        XCTAssertEqual(window.maxY - frame.maxY, bottomInset + 12 - 2, accuracy: 1.5, "99.3／99.10 12pt above footerBase")
+        XCTAssertEqual(window.maxY - frame.midY, bottomInset + 16 + 38, accuracy: 1.5, "99.3／99.10 centered 54pt above footerBase")
         attach("99.12_panel-open_style")
         collapseButton.tap()
         assertPanelClosed("99.4 the button collapses the panel")

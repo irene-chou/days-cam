@@ -53,13 +53,15 @@ struct StyleTabView: View {
 
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
-    /// Height of one sub-tab item: a 28pt icon, a 3pt gap and the 10pt
-    /// caption below it (TASK-110), inside the 52pt-wide tap target.
-    static let subTabItemHeight: CGFloat = 50
+    /// Height of one sub-tab item: a 24pt icon, a 2pt gap and the 10pt
+    /// caption below it (TASK-110; the user found the 28 + 3 + 10 in a 50pt
+    /// item too tall, 2026-10-11), inside the 52pt-wide tap target.
+    static let subTabItemHeight: CGFloat = 38
     /// Point size of the caption under each sub-tab icon (TASK-110, D-7 §5).
     static let subTabLabelFontSize: CGFloat = 10
-    /// Height of the pinned sub-tab row: 6 + 50 + 4.
-    static let subTabRowHeight: CGFloat = 6 + subTabItemHeight + 4
+    /// Height of the pinned sub-tab row: 4 + 38 + 4 — back to the 46pt the
+    /// row had before the captions (TASK-57).
+    static let subTabRowHeight: CGFloat = 4 + subTabItemHeight + 4
     /// Space kept under a vertically centered page (TASK-49 A).
     static let centeredBottomInset: CGFloat = 10
 
@@ -152,15 +154,17 @@ struct StyleTabView: View {
                     model.selectedSubTab = subTab
                 } label: {
                     // Icon plus a 10pt caption (TASK-110, #424): the icons
-                    // stay exactly as #409 fixed them; the caption only
+                    // are the ones #409 fixed, drawn at 20pt in a 24pt box
+                    // (22 in 28 before 2026-10-11) so the captioned row is
+                    // no taller than the icon-only one was; the caption only
                     // names them so 外框／陰影 need not be opened to be
                     // understood. Both take the same selected/unselected
                     // color. The caption is hidden from VoiceOver because the
                     // button's own label already carries the same word.
-                    VStack(spacing: 3) {
+                    VStack(spacing: 2) {
                         subTabIcon(subTab)
-                            .font(.system(size: 22, weight: .medium))
-                            .frame(width: 28, height: 28)
+                            .font(.system(size: 20, weight: .medium))
+                            .frame(width: 24, height: 24)
                         Text(subTab.title)
                             .font(.system(size: Self.subTabLabelFontSize, weight: .semibold))
                             .lineLimit(1)
@@ -176,8 +180,9 @@ struct StyleTabView: View {
             Spacer(minLength: 0)
         }
         // `.subA{padding:6px 4px 4px}` — the 4px horizontal half is folded
-        // into the body's own `.tabbody` padding already.
-        .padding(.top, 6)
+        // into the body's own `.tabbody` padding already; the top went 6 → 4
+        // with the shorter captioned items (2026-10-11).
+        .padding(.top, 4)
         .padding(.bottom, 4)
     }
 
@@ -626,14 +631,16 @@ struct StyleTabView: View {
         .disabled(isDisabled)
     }
 
-    /// Fixed opacity legend of the three opacity rows (TASK-83): a plain gray
-    /// and white checkerboard circle in the same 24pt column as the other
-    /// slider icons, so it never follows the selected color.
+    /// Fixed opacity legend of the three opacity rows (TASK-83): a half-dashed,
+    /// half-filled circle (`circle.righthalf.filled.inverse`, the user's pick
+    /// on 2026-10-11, replacing the checkerboard disc) in the same 24pt column
+    /// as the other slider icons, in `ink` so it never follows the selected
+    /// color.
     private var opacityLegend: some View {
-        CheckerboardView()
+        Image(systemName: "circle.righthalf.filled.inverse")
+            .font(.system(size: 20, weight: .regular))
+            .foregroundColor(CameraTheme.ink)
             .frame(width: 24, height: 24)
-            .clipShape(Circle())
-            .overlay(swatchEdge)
             .accessibilityHidden(true)
     }
 

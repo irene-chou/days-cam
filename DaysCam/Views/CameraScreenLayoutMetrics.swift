@@ -95,6 +95,12 @@ struct CameraScreenLayoutMetrics {
     /// Gap between the footer row and `footerBase` while the panel is closed.
     static let closedFooterBottomPadding: CGFloat = 16
 
+    /// How far above `footerBase` the closed footer's side buttons are
+    /// centered: the 16pt padding plus half the 76pt shutter row (54pt).
+    static var closedFooterButtonCenterAboveBase: CGFloat {
+        closedFooterBottomPadding + shutterRadius
+    }
+
     /// Where the closed footer's left button (the thumbnail) is centered —
     /// the landing spot for a capture flight (issue #148); the 76pt shutter
     /// sets the row height. There is no footer row while the panel is open
@@ -102,7 +108,16 @@ struct CameraScreenLayoutMetrics {
     /// (`CaptureFlightView.skipsFlightWhenPanelOpen`).
     var leftFooterButtonCenter: CGPoint {
         CGPoint(x: footerSideButtonCenterInset,
-                y: footerBase - Self.closedFooterBottomPadding - Self.shutterRadius)
+                y: footerBase - Self.closedFooterButtonCenterAboveBase)
+    }
+
+    /// Where the open panel's collapse button is centered (human decision
+    /// 2026-10-11): exactly where the closed footer's right「疊字設定」key
+    /// sits — `leftFooterButtonCenter` mirrored to the right edge — so the
+    /// thumb that opened the panel closes it without moving.
+    var panelCollapseButtonCenter: CGPoint {
+        CGPoint(x: screenSize.width - footerSideButtonCenterInset,
+                y: footerBase - Self.closedFooterButtonCenterAboveBase)
     }
 
     /// True for iPhone SE-class heights (< 700pt).
