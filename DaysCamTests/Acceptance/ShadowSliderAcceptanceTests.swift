@@ -76,8 +76,8 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
             model.selectShadow(.hard)
             XCTAssertEqual(model.profile.style.shadowPreset, .hard, "\(name): tapping restores it")
         }
-        model.setShadowOpacityPercent(40)
-        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 opacity keeps the preset")
+        model.applyCustomShadowColor(model.profile.style.shadowColor.withOpacity(0.4))
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 picker opacity keeps the preset")
         model.selectShadowColor(OverlayColor(hex: "#FF0000"))
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 color keeps the preset")
     }
@@ -111,11 +111,11 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
         model.setShadowOffsetX(5)
         model.setShadowOffsetY(-6)
         model.setShadowBlur(11)
-        model.setShadowOpacityPercent(35)
-        model.selectShadowColor(OverlayColor(hex: "#336699"))
+        // TASK-113: a swatch would reset the alpha to 60%; the picker sets both.
+        model.applyCustomShadowColor(try XCTUnwrap(OverlayColor(hex: "#336699")).withOpacity(0.35))
         var style = try XCTUnwrap(makeStore().load().first).style
         XCTAssertEqual([style.shadowOffsetX, style.shadowOffsetY, style.shadowBlur], [5, -6, 11])
-        XCTAssertEqual(model.shadowOpacityPercent, 35)
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.35, accuracy: 0.003)
         XCTAssertEqual(style.shadowColor, model.profile.style.shadowColor.quantized, "stored alpha is the 8-bit quantized value")
         XCTAssertEqual(Int((style.shadowColor.opacity * 100).rounded()), 35)
         XCTAssertNil(style.shadowPreset)
@@ -125,7 +125,9 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
             model.setShadowOffsetY(raw)
             model.setShadowBlur(raw)
         }
-        for percent in [-50, 0, 1, 4, 101, 9999] { model.setShadowOpacityPercent(percent) }
+        for alpha in [0.0, 0.01, 0.04, 1.0] {
+            model.applyCustomShadowColor(OverlayColor(red: 0.2, green: 0.4, blue: 0.6, opacity: alpha))
+        }
         style = try XCTUnwrap(makeStore().load().first).style
         XCTAssertTrue(style.hasValidOutlineParameters)
         XCTAssertTrue(OverlayStyle.shadowOffsetRange.contains(style.shadowOffsetX))

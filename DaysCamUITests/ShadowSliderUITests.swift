@@ -118,19 +118,19 @@ final class ShadowSliderUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'ED4956'")).firstMatch
     }
 
-    /// 86.1 and 86.2: picking a type keeps the chosen color and opacity, and
-    /// picking a color keeps the chosen type.
+    /// 86.1 and 86.2: picking a type keeps the chosen color, and picking a
+    /// color keeps the chosen type. The opacity row is gone (TASK-113, 113.1);
+    /// the opacity itself is covered by `StyleTabModelTests`.
     func testTypeAndColorAreIndependent() {
         XCTAssertTrue(red.waitForExistence(timeout: 3))
         red.tap()
         XCTAssertTrue(red.isSelected)
-        let opacity = app.sliders["陰影不透明度"].value as? String
+        XCTAssertFalse(app.sliders["陰影不透明度"].exists, "113.1")
         attach("shadow-red-soft")
         for name in ["硬陰影", "發光", "柔和"] {
             app.buttons[name].tap()
             XCTAssertTrue(app.buttons[name].isSelected, name)
             XCTAssertTrue(red.isSelected, "86.1 \(name) 顏色維持")
-            XCTAssertEqual(app.sliders["陰影不透明度"].value as? String, opacity, "86.1 \(name) 不透明度維持")
             attach("shadow-red-\(name)")
         }
         app.buttons["發光"].tap()
@@ -157,7 +157,6 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["無陰影"].isSelected)
         XCTAssertFalse(blur.isEnabled)
         XCTAssertFalse(offsetX.isEnabled)
-        XCTAssertFalse(app.sliders["陰影不透明度"].isEnabled)
         attach("shadow-none-disabled")
         app.buttons["柔和"].tap()
         XCTAssertTrue(blur.isEnabled)

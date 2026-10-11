@@ -466,14 +466,13 @@ final class StyleTabModelTests: XCTestCase {
         let model = makeModel()
         model.selectOutline(.box)
         model.setBoxPadding(18)
-        model.selectOutlineColor(try hex("#123456"))
-        model.setOutlineOpacityPercent(40)
+        model.applyCustomOutlineColor(try hex("#123456").withOpacity(0.4))
         let before = model.profile.style
         model.selectOutline(.squareBox)
         XCTAssertEqual(model.profile.style.outline, .squareBox)
         XCTAssertEqual(model.profile.style.boxPadding, 18, "81.3")
         XCTAssertEqual(model.profile.style.outlineColor, before.outlineColor, "81.3")
-        XCTAssertEqual(model.outlineOpacityPercent, 40, "81.3")
+        XCTAssertEqual(model.profile.style.outlineColor?.opacity ?? 0, 0.4, accuracy: 0.003, "81.3")
         model.selectOutline(.box)
         XCTAssertEqual(model.profile.style.boxPadding, 18, "81.3")
         XCTAssertEqual(model.profile.style.outlineColor, before.outlineColor, "81.3")
@@ -499,48 +498,49 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.profile.style.textColor, OverlayStyle.swatches[2])
     }
 
-    // MARK: - TASK-69 透明度（UI 半邊）
+    // MARK: - 透明度只從色盤設定（TASK-69 → TASK-113）
 
-    func testSetTextOpacityWritesThroughAndKeepsRGB() {
+    /// 113.3: a swatch or recent color is always fully opaque, whatever the
+    /// text's opacity was.
+    func testSwatchAndRecentSelectionResetTextOpacity() throws {
         let spy = Spy()
         let model = makeModel(spy: spy)
-        let before = model.profile.style.textColor
-
-        model.setTextOpacityPercent(50)
-
-        let stored = model.profile.style.textColor
-        XCTAssertTrue(StyleTabModel.hasSameRGB(stored, before), "69.2")
-        XCTAssertEqual(model.textOpacityPercent, 50, "69.2")
-        XCTAssertEqual(spy.updated.last?.style.textColor, stored, "即時寫入")
-        XCTAssertTrue(stored.isStorable)
-    }
-
-    func testOpacityPercentIsClampedToTheStorableRange() {
-        let model = makeModel()
-        model.setTextOpacityPercent(0)
-        XCTAssertEqual(model.textOpacityPercent, 5, "69.4")
-        XCTAssertTrue(model.profile.style.textColor.isStorable, "69.4")
-        model.setTextOpacityPercent(250)
-        XCTAssertEqual(model.textOpacityPercent, 100, "69.4")
-        XCTAssertEqual(model.profile.style.textColor.opacity, 1)
-    }
-
-    func testSwatchAndRecentSelectionKeepTheCurrentOpacity() throws {
-        let model = makeModel()
-        model.setTextOpacityPercent(40)
-        model.selectTextColor(OverlayStyle.swatches[3])
-        XCTAssertEqual(model.textOpacityPercent, 40)
-        XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.textColor, OverlayStyle.swatches[3]))
-
-        model.setOutlineOpacityPercent(30)
-        model.selectOutlineColor(try hex("#123456"))
-        XCTAssertEqual(model.outlineOpacityPercent, 30)
-    }
-
-    func testCustomPickerAlphaIsClampedToTheMinimumAndKept() throws {
-        let model = makeModel()
         model.applyCustomTextColor(try hex("#123456").withOpacity(0.5))
-        XCTAssertEqual(model.textOpacityPercent, 50, "69.2: 滑桿同步")
+        XCTAssertEqual(model.profile.style.textColor.opacity, 0.5, accuracy: 0.003)
+
+        model.selectTextColor(OverlayStyle.swatches[3])
+
+        XCTAssertEqual(model.profile.style.textColor, OverlayStyle.swatches[3].withOpacity(1), "113.3")
+        XCTAssertEqual(spy.updated.last?.style.textColor, OverlayStyle.swatches[3].withOpacity(1), "即時寫入")
+    }
+
+    /// 113.4: an outline swatch and "automatic" are fully opaque.
+    func testOutlineSwatchAndAutomaticResetOutlineOpacity() throws {
+        let model = makeModel()
+        model.selectOutline(.stroke)
+        model.applyCustomOutlineColor(try hex("#654321").withOpacity(0.4))
+        XCTAssertEqual(model.profile.style.outlineColor?.opacity ?? 0, 0.4, accuracy: 0.003)
+
+        model.selectOutlineColor(try hex("#123456"))
+        XCTAssertEqual(model.profile.style.outlineColor, try hex("#123456"), "113.4 色票")
+        XCTAssertEqual(model.profile.style.outlineColor?.opacity, 1, "113.4 色票")
+
+        model.applyCustomOutlineColor(try hex("#654321").withOpacity(0.4))
+        model.selectOutlineColor(nil)
+        XCTAssertNil(model.profile.style.outlineColor, "113.4 自動")
+        XCTAssertEqual(model.profile.style.resolvedOutlineColor.opacity, 1, "113.4 自動不透明")
+        XCTAssertEqual(model.profile.style.textColor.opacity, 1, "文字不受影響")
+    }
+
+    /// 113.2 / 69.4: the picker's alpha is kept, raised to the storable
+    /// minimum, and written through at once.
+    func testCustomPickerAlphaIsClampedToTheMinimumAndKept() throws {
+        let spy = Spy()
+        let model = makeModel(spy: spy)
+        model.applyCustomTextColor(try hex("#123456").withOpacity(0.5))
+        XCTAssertEqual(model.profile.style.textColor.opacity, 0.5, accuracy: 0.003, "113.2")
+        XCTAssertEqual(spy.updated.last?.style.textColor, model.profile.style.textColor, "即時寫入")
+        XCTAssertTrue(model.profile.style.textColor.isStorable)
         model.applyCustomTextColor(try hex("#123456").withOpacity(0.01))
         XCTAssertEqual(model.profile.style.textColor.opacity, OverlayColor.minimumStorableOpacity, "69.4")
         model.applyCustomOutlineColor(try hex("#654321").withOpacity(0))
@@ -554,26 +554,14 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.recentColors, [try hex("#123456")])
     }
 
-    func testOutlineOpacityOnAutomaticBecomesExplicitAutomaticColor() {
-        let model = makeModel()
-        let resolved = model.profile.style.resolvedOutlineColor
-        XCTAssertNil(model.profile.style.outlineColor)
-
-        model.setOutlineOpacityPercent(50)
-
-        let outline = model.profile.style.outlineColor
-        XCTAssertNotNil(outline, "69.5")
-        XCTAssertTrue(StyleTabModel.hasSameRGB(outline ?? .white, resolved), "69.5")
-        XCTAssertEqual(model.outlineOpacityPercent, 50, "69.5")
-        XCTAssertEqual(model.profile.style.textColor.opacity, 1, "文字不受影響")
-    }
-
+    /// 69.3 / 113.7: a picker opacity survives the profile file and is not
+    /// changed by merely loading it.
     func testOpacityRoundTripsThroughTheProfileFile() throws {
         let model = makeModel()
-        model.setTextOpacityPercent(50)
+        model.applyCustomTextColor(try hex("#123456").withOpacity(0.5))
         let encoded = try JSONEncoder().encode(model.profile)
         let decoded = try JSONDecoder().decode(CameraProfile.self, from: encoded)
-        XCTAssertEqual(StyleTabModel.opacityPercent(of: decoded.style.textColor), 50, "69.3")
+        XCTAssertEqual(decoded.style.textColor.opacity, 0.5, accuracy: 0.003, "69.3")
     }
 
     // MARK: - TASK-70 外框粗細／留白
@@ -646,26 +634,49 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertTrue(model.profile.style.hasValidShadowParameters)
     }
 
-    func testShadowOpacityIsClampedAndKeepsTheColor() {
+    func testShadowPickerOpacityIsClampedAndKeepsTheColor() {
         let model = makeModel()
         model.selectShadow(.soft)
-        model.setShadowOpacityPercent(0)
-        XCTAssertEqual(model.shadowOpacityPercent, 5)
-        model.setShadowOpacityPercent(40)
-        XCTAssertEqual(model.shadowOpacityPercent, 40)
+        model.applyCustomShadowColor(OverlayColor.black.withOpacity(0))
+        XCTAssertEqual(model.profile.style.shadowOpacity, OverlayColor.minimumStorableOpacity)
+        model.applyCustomShadowColor(OverlayColor.black.withOpacity(0.4))
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.4, accuracy: 0.003)
         XCTAssertEqual(model.profile.style.shadowColor.red, 0)
+    }
+
+    /// 113.5: a shadow swatch or "follow the text color" resets the opacity
+    /// to the default shadow's 60%; the picker alone sets another value.
+    func testShadowSwatchAndFollowTextResetOpacityToTheDefault() {
+        let model = makeModel()
+        model.selectShadow(.soft)
+        model.applyCustomShadowColor(OverlayStyle.swatches[2].withOpacity(0.3))
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.3, accuracy: 0.003)
+
+        model.selectShadowColor(OverlayStyle.swatches[5])
+        XCTAssertEqual(model.profile.style.shadowOpacity, 153.0 / 255, accuracy: 0.003, "113.5 色票")
+        XCTAssertEqual(StyleTabModel.swatchShadowOpacity, 153.0 / 255, accuracy: 0.003)
+        XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.shadowColor, OverlayStyle.swatches[5]))
+        XCTAssertEqual(model.profile.style.shadowColorSource, .custom)
+
+        model.applyCustomShadowColor(OverlayStyle.swatches[2].withOpacity(0.3))
+        model.selectShadowColor(nil)
+        XCTAssertEqual(model.profile.style.shadowColorSource, .textColor)
+        XCTAssertEqual(model.profile.style.shadowOpacity, 153.0 / 255, accuracy: 0.003, "113.5 跟隨文字顏色")
+
+        model.applyCustomShadowColor(OverlayStyle.swatches[2].withOpacity(0.3))
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.3, accuracy: 0.003, "113.5 色盤")
+        XCTAssertEqual(model.profile.style.shadowColorSource, .custom)
     }
 
     func testSelectingGlowKeepsTheChosenColorAndOpacity() {
         let model = makeModel()
         model.selectShadow(.soft)
-        model.selectShadowColor(OverlayStyle.swatches[5])
-        model.setShadowOpacityPercent(35)
+        model.applyCustomShadowColor(OverlayStyle.swatches[5].withOpacity(0.35))
         let before = model.profile.style
         model.selectShadow(.glow)
         XCTAssertEqual(model.profile.style.shadowColorSource, before.shadowColorSource, "86.1")
         XCTAssertEqual(model.profile.style.shadowColor, before.shadowColor, "86.1")
-        XCTAssertEqual(model.shadowOpacityPercent, 35, "86.1")
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.35, accuracy: 0.003, "86.1")
         model.selectShadowColor(nil)
         XCTAssertEqual(model.profile.style.shadowColorSource, .textColor)
         model.selectTextColor(OverlayStyle.swatches[3])
@@ -675,15 +686,14 @@ final class StyleTabModelTests: XCTestCase {
     func testSwitchingPresetsKeepsColorAndOpacityAndOnlyChangesShape() {
         let model = makeModel()
         model.selectShadow(.soft)
-        model.selectShadowColor(OverlayStyle.swatches[5])
-        model.setShadowOpacityPercent(40)
+        model.applyCustomShadowColor(OverlayStyle.swatches[5].withOpacity(0.4))
         let color = model.profile.style.shadowColor
         for preset in [OverlayShadowPreset.hard, .glow, .soft] {
             model.selectShadow(preset)
             XCTAssertEqual(model.profile.style.shadowPreset, preset, "86.1")
             XCTAssertEqual(model.profile.style.shadowColor, color, "86.1")
             XCTAssertEqual(model.profile.style.shadowColorSource, .custom, "86.1")
-            XCTAssertEqual(model.shadowOpacityPercent, 40, "86.1")
+            XCTAssertEqual(model.profile.style.shadowOpacity, 0.4, accuracy: 0.003, "86.1 / 113.8")
         }
     }
 
@@ -696,8 +706,8 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 自訂")
         model.selectShadowColor(nil)
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 跟隨文字色")
-        model.setShadowOpacityPercent(20)
-        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 不透明度")
+        model.applyCustomShadowColor(OverlayStyle.swatches[2].withOpacity(0.2))
+        XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 色盤不透明度")
     }
 
     func testNoneKeepsColorAndShapeAndNextPresetReusesTheColor() {
@@ -738,10 +748,10 @@ final class StyleTabModelTests: XCTestCase {
         model.selectShadow(.soft)
         model.setShadowOffsetX(-3)
         model.setShadowBlur(9)
-        model.setShadowOpacityPercent(35)
+        model.applyCustomShadowColor(OverlayColor.black.withOpacity(0.35))
         let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(model.profile))
         XCTAssertEqual(decoded.style.shadowOffsetX, -3, "71.5")
         XCTAssertEqual(decoded.style.shadowBlur, 9, "71.5")
-        XCTAssertEqual(StyleTabModel.opacityPercent(of: decoded.style.shadowColor), 35, "71.5")
+        XCTAssertEqual(decoded.style.shadowOpacity, 0.35, accuracy: 0.003, "71.5")
     }
 }
