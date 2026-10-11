@@ -108,6 +108,9 @@ final class StyleTabModel: ObservableObject {
         fontList.applyWeight = { [weak self] fontID, weightID in
             self?.applyFontWeight(weightID, for: fontID) ?? false
         }
+        fontList.applyFontWithWeight = { [weak self] fontID, weightID in
+            self?.applyFont(fontID, weightID: weightID) ?? false
+        }
 
         // Forward the store's changes so a view observing only this model
         // (not the store separately) still redraws when the recent-colors
@@ -199,6 +202,29 @@ extension StyleTabModel {
         guard profile.style.resolvedFontWeight.id != weightID else { return true }
         let previous = profile
         guard mutate({ $0.fontWeight = weightID }) else {
+            profile = previous
+            return false
+        }
+        return true
+    }
+
+    /// Writes `fontID` and `weightID` together with one save (TASK-115): the
+    /// path of tapping a weight of a font that is not selected yet. Only a
+    /// face the library can already draw reaches here. For the profile's own
+    /// font this is `applyFontWeight`; an unknown weight is ignored.
+    ///
+    /// - Returns: whether the profile now has both. When saving fails the old
+    ///   font and weight are both put back (and `lastError` is set).
+    @discardableResult
+    func applyFont(_ fontID: OverlayFontID, weightID: String) -> Bool {
+        guard FontCatalog.entry(for: fontID).weights.contains(where: { $0.id == weightID }) else { return false }
+        if fontID == profile.style.fontID { return applyFontWeight(weightID, for: fontID) }
+        let previous = profile
+        guard mutate({
+            // Changing `fontID` resets the weight, so the weight comes after.
+            $0.fontID = fontID
+            $0.fontWeight = weightID
+        }) else {
             profile = previous
             return false
         }

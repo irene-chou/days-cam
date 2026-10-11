@@ -410,7 +410,7 @@ final class FontLibraryModelTests: XCTestCase {
         let cell = try cell(.pingFang, in: model)
         XCTAssertTrue(cell.canExpand, "112.1 can expand")
         XCTAssertFalse(cell.isExpanded, "112.1 collapsed by default")
-        XCTAssertFalse(model.isWeightsExpanded)
+        XCTAssertFalse((model.expandedFontID != nil))
         XCTAssertEqual(cell.currentWeightName, "粗", "112.1 the stored weight")
         XCTAssertNil(cell.pendingWeightStatus)
         XCTAssertEqual(cell.accessibilityLabel, "蘋方-繁", "112.9 label is the name")
@@ -423,11 +423,11 @@ final class FontLibraryModelTests: XCTestCase {
         let calls = Calls()
         let model = makeModel(library: FakeFontLibrary(), calls: calls)
         model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded, "112.2 expanded")
+        XCTAssertTrue((model.expandedFontID != nil), "112.2 expanded")
         XCTAssertTrue(try cell(.pingFang, in: model).isExpanded)
         XCTAssertEqual(try cell(.pingFang, in: model).accessibilityHint, "點兩下收合字重", "112.9")
         model.didTap(.pingFang)
-        XCTAssertFalse(model.isWeightsExpanded, "112.2 collapsed again")
+        XCTAssertFalse((model.expandedFontID != nil), "112.2 collapsed again")
         XCTAssertTrue(calls.applied.isEmpty, "112.2 no applyFont")
     }
 
@@ -436,12 +436,12 @@ final class FontLibraryModelTests: XCTestCase {
         let calls = Calls()
         let model = makeModel(library: FakeFontLibrary([.songti: .available]), calls: calls)
         model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded)
+        XCTAssertTrue((model.expandedFontID != nil))
         model.didTap(.songti)
         XCTAssertEqual(calls.applied.map(\.fontID), [.songti], "112.4 applied")
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 collapsed")
+        XCTAssertFalse((model.expandedFontID != nil), "112.4 collapsed")
         model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 still collapsed once selected")
+        XCTAssertFalse((model.expandedFontID != nil), "112.4 still collapsed once selected")
         XCTAssertTrue(try cell(.songti, in: model).canExpand)
         XCTAssertFalse(try cell(.songti, in: model).isExpanded)
     }
@@ -451,14 +451,14 @@ final class FontLibraryModelTests: XCTestCase {
     func testFontChangeAndAppearanceCollapse() throws {
         let model = makeModel(library: FakeFontLibrary([.songti: .available]))
         model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded)
+        XCTAssertTrue((model.expandedFontID != nil))
         model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 reset on font change")
+        XCTAssertFalse((model.expandedFontID != nil), "112.4 reset on font change")
         model.didTap(.songti)
-        XCTAssertTrue(model.isWeightsExpanded)
+        XCTAssertTrue((model.expandedFontID != nil))
         model.listDidDisappear()
         model.listDidAppear()
-        XCTAssertFalse(model.isWeightsExpanded, "112.5 reset on appearance")
+        XCTAssertFalse((model.expandedFontID != nil), "112.5 reset on appearance")
     }
 
     /// 112.7: a single-weight font keeps the old tap behaviour and never expands.
@@ -466,7 +466,7 @@ final class FontLibraryModelTests: XCTestCase {
         let calls = Calls()
         let model = makeModel(library: FakeFontLibrary([.huninn: .available]), current: .huninn, calls: calls)
         model.didTap(.huninn)
-        XCTAssertFalse(model.isWeightsExpanded, "112.7")
+        XCTAssertFalse((model.expandedFontID != nil), "112.7")
         XCTAssertEqual(calls.applied.map(\.fontID), [.huninn], "112.7 applied as before")
         let cell = try cell(.huninn, in: model)
         XCTAssertFalse(cell.canExpand)
@@ -484,6 +484,9 @@ final class FontWeightListTests: XCTestCase {
     private final class Calls {
         var weights: [String] = []
         var fonts: [OverlayFontID] = []
+        /// `applyFontWithWeight` calls (TASK-115).
+        var fontWeights: [FontDownloadID] = []
+        var fontWeightResult = true
     }
 
     private func makeModel(library: FakeFontLibrary, current: OverlayFontID = .notoSerifTC,
@@ -494,7 +497,11 @@ final class FontWeightListTests: XCTestCase {
                                      library: library,
                                      profiles: { [] },
                                      applyFont: { id, _ in calls.fonts.append(id) },
-                                     applyWeight: { _, weightID in calls.weights.append(weightID); return true })
+                                     applyWeight: { _, weightID in calls.weights.append(weightID); return true },
+                                     applyFontWithWeight: { fontID, weightID in
+                                         calls.fontWeights.append(FontDownloadID(fontID: fontID, weightID: weightID))
+                                         return calls.fontWeightResult
+                                     })
         model.listDidAppear()
         return model
     }
@@ -768,11 +775,11 @@ final class FontWeightListTests: XCTestCase {
         model.didTap(.pingFang)
         model.didTapWeight("light")
         XCTAssertEqual(calls.weights, ["light"], "112.3 applied")
-        XCTAssertTrue(model.isWeightsExpanded, "112.3 stays expanded")
+        XCTAssertTrue((model.expandedFontID != nil), "112.3 stays expanded")
         model.update(profileID: profileID, currentFontID: .pingFang, currentWeightID: "light")
-        XCTAssertTrue(model.isWeightsExpanded, "a weight change is not a font change")
+        XCTAssertTrue((model.expandedFontID != nil), "a weight change is not a font change")
         model.didTap(.pingFang)
-        XCTAssertFalse(model.isWeightsExpanded)
+        XCTAssertFalse((model.expandedFontID != nil))
         XCTAssertEqual(try cell(.pingFang, in: model).currentWeightName, "細", "112.3 the row shows the new weight")
     }
 
@@ -794,6 +801,171 @@ final class FontWeightListTests: XCTestCase {
         } else {
             XCTFail("112.8 expected a downloading ring, got \(String(describing: cell.pendingWeightStatus))")
         }
+    }
+
+    // MARK: - TASK-115 (#446) chevron on every multi-weight row
+
+    private func songti(_ weightID: String) -> FontDownloadID {
+        FontDownloadID(fontID: .songti, weightID: weightID)
+    }
+
+    /// 115.1: every multi-weight row can expand (chevron); single-weight can not.
+    func testEveryMultiWeightRowCanExpand() throws {
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .huninn: .available]))
+        for entry in FontCatalog.entries {
+            XCTAssertEqual(try cell(entry.fontID, in: model).canExpand, entry.weights.count > 1, "\(entry.fontID)")
+        }
+        XCTAssertFalse(try cell(.songti, in: model).isSelected)
+        XCTAssertEqual(try cell(.songti, in: model).expandActionName, "展開字重", "115.9")
+    }
+
+    /// 115.2: an unselected row expands with no framed weight, changes nothing.
+    func testUnselectedRowExpandsWithoutAFrame() throws {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .songti: .available]), calls: calls)
+        model.toggleExpansion(of: .songti)
+        let cell = try cell(.songti, in: model)
+        XCTAssertTrue(cell.isExpanded)
+        XCTAssertEqual(cell.weights.count, 3)
+        XCTAssertTrue(cell.weights.allSatisfy { !$0.isSelected }, "115.2 no yellow frame")
+        XCTAssertNil(cell.currentWeightName, "unselected collapsed row shows no weight")
+        XCTAssertNil(cell.accessibilityValue, "115.9 value does not read a weight")
+        XCTAssertEqual(cell.expandActionName, "收合字重")
+        XCTAssertTrue(calls.fonts.isEmpty && calls.fontWeights.isEmpty && calls.weights.isEmpty, "115.2 nothing applied")
+        XCTAssertEqual(model.currentFontID, .notoSerifTC)
+        model.toggleExpansion(of: .songti)
+        XCTAssertNil(model.expandedFontID, "the chevron toggles back")
+    }
+
+    /// 115.4: at most one row is expanded.
+    func testOnlyOneRowIsExpandedAtATime() throws {
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .songti: .available]))
+        model.toggleExpansion(of: .songti)
+        model.toggleExpansion(of: .pingFang)
+        XCTAssertEqual(model.expandedFontID, .pingFang)
+        XCTAssertFalse(try cell(.songti, in: model).isExpanded)
+        XCTAssertTrue(try cell(.pingFang, in: model).isExpanded)
+        model.toggleExpansion(of: .huninn)
+        XCTAssertEqual(model.expandedFontID, .pingFang, "a single-weight font has no chevron")
+    }
+
+    /// 115.5: the name area of an unselected row applies the font and collapses all.
+    func testTappingAnUnselectedRowBodyAppliesAndCollapsesEverything() {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .songti: .available]), calls: calls)
+        model.toggleExpansion(of: .songti)
+        model.didTap(.songti)
+        XCTAssertEqual(calls.fonts, [.songti])
+        XCTAssertTrue(calls.fontWeights.isEmpty)
+        XCTAssertNil(model.expandedFontID, "115.5")
+    }
+
+    /// 115.3: a usable weight of an unselected font is applied with the font in one call.
+    func testTappingAUsableWeightOfAnotherFontAppliesBothAtOnce() {
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available])
+        library.weightStates[songti("light")] = .available
+        let calls = Calls()
+        let model = makeModel(library: library, calls: calls)
+        model.toggleExpansion(of: .songti)
+        model.didTapWeight("light", of: .songti)
+        XCTAssertEqual(calls.fontWeights, [songti("light")], "115.3 one combined write")
+        XCTAssertTrue(calls.fonts.isEmpty, "never the font on its own")
+        XCTAssertTrue(calls.weights.isEmpty, "never the weight on its own")
+        XCTAssertTrue(library.weightDownloads.isEmpty)
+        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: "light")
+        XCTAssertEqual(model.expandedFontID, .songti, "115.3 stays expanded")
+        let cell = try? cell(.songti, in: model)
+        XCTAssertEqual(cell?.weights.map(\.isSelected), [true, false, false], "115.3 the frame lands on the weight")
+        XCTAssertEqual(cell?.currentWeightName, "細")
+    }
+
+    /// A failed combined save is reported and nothing is pending.
+    func testFailedCombinedSaveIsReported() {
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available])
+        library.weightStates[songti("light")] = .available
+        let calls = Calls()
+        calls.fontWeightResult = false
+        let model = makeModel(library: library, calls: calls)
+        model.didTapWeight("light", of: .songti)
+        XCTAssertEqual(model.toast?.text, FontLibraryModel.weightSaveFailedMessage)
+        XCTAssertNil(model.pendingWeight)
+    }
+
+    /// 115.7: a missing weight of an unselected font downloads first and applies
+    /// font and weight together only when that exact face finishes.
+    func testMissingWeightOfAnotherFontDownloadsThenAppliesBoth() {
+        let library = FakeFontLibrary([.pingFang: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .pingFang, calls: calls)
+        model.toggleExpansion(of: .notoSerifTC)
+        model.didTapWeight("black", of: .notoSerifTC)
+        XCTAssertEqual(library.weightDownloads, [noto("black")])
+        XCTAssertEqual(model.pendingWeight, noto("black"))
+        XCTAssertTrue(calls.fontWeights.isEmpty, "115.7 nothing applied while downloading")
+        XCTAssertEqual(model.currentFontID, .pingFang)
+        // A different face finishing does not apply it.
+        library.weightStates[noto("regular")] = .available
+        library.weightDownloadDidFinish.send(noto("regular"))
+        XCTAssertTrue(calls.fontWeights.isEmpty)
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertEqual(calls.fontWeights, [noto("black")], "applied once, together")
+        XCTAssertNil(model.pendingWeight)
+        XCTAssertEqual(model.toast?.text, "已套用「思源宋體　特粗」")
+    }
+
+    /// 115.7: a failed download keeps the old setting and shows the message.
+    func testFailedDownloadOfAnotherFontsWeightKeepsEverything() {
+        let library = FakeFontLibrary([.pingFang: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .pingFang, calls: calls)
+        model.didTapWeight("black", of: .notoSerifTC)
+        library.weightStates[noto("black")] = .failed(.noNetwork)
+        model.libraryDidChange()
+        XCTAssertNil(model.pendingWeight)
+        XCTAssertEqual(model.toast?.text, FontStateText.offlineMessage)
+        XCTAssertTrue(calls.fontWeights.isEmpty)
+        XCTAssertEqual(model.currentFontID, .pingFang)
+    }
+
+    /// Mid-download the user taps another font: the old request is dropped.
+    func testTappingAnotherFontMidDownloadDropsThePendingFontWeight() {
+        let library = FakeFontLibrary([.pingFang: .available, .songti: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .pingFang, calls: calls)
+        model.didTapWeight("black", of: .notoSerifTC)
+        model.didTap(.songti)
+        XCTAssertNil(model.pendingWeight)
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertTrue(calls.fontWeights.isEmpty, "a stale request is never applied")
+    }
+
+    /// A newer weight tap replaces the older pending one, even across fonts.
+    func testANewerWeightTapReplacesThePendingOne() {
+        let library = FakeFontLibrary([.pingFang: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .pingFang, calls: calls)
+        model.didTapWeight("black", of: .notoSerifTC)
+        model.didTapWeight("light", of: .songti)
+        XCTAssertEqual(model.pendingWeight, songti("light"))
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertTrue(calls.fontWeights.isEmpty)
+        library.weightStates[songti("light")] = .available
+        library.weightDownloadDidFinish.send(songti("light"))
+        XCTAssertEqual(calls.fontWeights, [songti("light")])
+    }
+
+    /// 115.7: a not-downloaded font keeps its chevron and shows download icons.
+    func testNotDownloadedFontStillShowsAChevronAndDownloadIcons() throws {
+        let model = makeModel(library: FakeFontLibrary(), current: .pingFang)
+        let cell = try cell(.notoSerifTC, in: model)
+        XCTAssertTrue(cell.canExpand, "115.7 chevron on a not-downloaded font")
+        XCTAssertEqual(cell.status, .notDownloaded)
+        model.toggleExpansion(of: .notoSerifTC)
+        let expanded = try self.cell(.notoSerifTC, in: model)
+        XCTAssertEqual(expanded.weights.map(\.status), [.notDownloaded, .notDownloaded, .notDownloaded], "115.7 每個字重有下載圖示")
     }
 }
 
