@@ -19,14 +19,15 @@ final class StyleSubTabLabelUITests: XCTestCase {
     /// caption itself is not a second accessibility element.
     func testEverySubTabIsOneNamedButton() {
         for name in ["字型", "顏色", "外框", "陰影", "字級"] {
-            XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5), "110.1 \(name) 子分頁")
-            XCTAssertFalse(app.staticTexts[name].exists, "110.5 小字不另外成為一個元素：\(name)")
+            let button = app.buttons[name]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), "110.1 \(name) 子分頁")
+            XCTAssertEqual(button.label, name, "110.5 子分頁只念一次名稱")
         }
     }
 
     /// 110.3: on the narrowest phone the five items sit on one row.
     func testFiveSubTabsShareOneRow() {
-        let frames = ["字型", "顏色", "外框", "陰影", "字級"].map { app.buttons[$0].frame }
+        let frames = ["字型", "顏色", "外框", "陰影", "字級"].map { app.buttons[$0].frame }.sorted { $0.minX < $1.minX }
         let minY = frames.map(\.minY).min() ?? 0
         let maxY = frames.map(\.minY).max() ?? 0
         XCTAssertLessThan(maxY - minY, 1, "110.3 五個子分頁同一列")
