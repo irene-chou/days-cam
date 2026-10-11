@@ -95,8 +95,7 @@ final class SquareBoxAcceptanceTests: XCTestCase {
                                   updateProfile: { try? store.update($0) })
         model.selectOutline(.box)
         model.setBoxPadding(19)
-        model.selectOutlineColor(OverlayColor(hex: "#336699"))
-        model.setOutlineOpacityPercent(40)
+        model.applyCustomOutlineColor(try XCTUnwrap(OverlayColor(hex: "#336699")).withOpacity(0.4))
         let before = model.profile.style
         for outline in [OverlayOutline.squareBox, .box, .squareBox] {
             model.selectOutline(outline)
