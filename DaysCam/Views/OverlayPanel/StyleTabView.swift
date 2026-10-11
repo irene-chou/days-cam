@@ -349,7 +349,7 @@ struct StyleTabView: View {
             }
             .frame(width: 24, height: 24, alignment: iconName == nil ? .leading : .center)
             .accessibilityHidden(true)
-            Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
+            TapSeekSlider(value: value, range: range, step: step, isDisabled: isDisabled, onChange: onChange)
                 .tint(CameraTheme.accentControl)
                 .accessibilityLabel(accessibilityName)
                 .accessibilityValue("\(valueText) 點")
@@ -436,13 +436,13 @@ struct StyleTabView: View {
             // `.zrow{gap:8px}` (#106) — was 12.
             HStack(spacing: 8) {
                 Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-                Slider(
-                    value: Binding(
-                        get: { Double(model.profile.style.sizeScale) },
-                        set: { model.setSizeScale(Int($0.rounded())) }
-                    ),
-                    in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
-                    step: Double(StyleTabModel.sizeScaleStep)
+                // Tapping the track seeks (TASK-114); the double tap below
+                // still resets, so the first tap of a double tap seeks first.
+                TapSeekSlider(
+                    value: Double(model.profile.style.sizeScale),
+                    range: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
+                    step: Double(StyleTabModel.sizeScaleStep),
+                    onChange: { model.setSizeScale(Int($0.rounded())) }
                 )
                 .tint(CameraTheme.accentControl)
                 .accessibilityLabel("字級")
@@ -451,7 +451,7 @@ struct StyleTabView: View {
             }
             // Simultaneous, so the slider's own drag still works.
             .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
-            Text("拖曳調整，點兩下回到預設大小")
+            Text("點或拖曳調整，點兩下回到預設大小")
                 .font(.system(size: 12))
                 .foregroundColor(CameraTheme.inkSecondary)
                 .frame(maxWidth: .infinity)
