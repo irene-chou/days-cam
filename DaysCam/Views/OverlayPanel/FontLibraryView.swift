@@ -198,12 +198,6 @@ struct FontListView: View {
         HStack(spacing: 8) {
             nameView(cell)
             Spacer(minLength: 8)
-            if let countText = cell.weightCountText {
-                Text(countText)
-                    .font(.system(size: sizeTextSize))
-                    .foregroundColor(CameraTheme.inkTertiary)
-                    .fixedSize()
-            }
             if case .notDownloaded = cell.status,
                let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
                 Text(size)

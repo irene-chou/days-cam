@@ -93,7 +93,7 @@ final class FontCatalogTests: XCTestCase {
             .baoli: "報隸-繁 標準體",
             .wawa: "娃娃體-繁 標準體",
             .yuppy: "雅痞-繁 標準體",
-            .huninn: "jf open 粉圓 2.1",
+            .huninn: "jf open 粉圓",
             .notoSerifTC: "Noto Serif TC Bold",
             .iansui: "芫荽 Regular",
             .chenyuluoyan: "辰宇落雁體 2.0 細體",
@@ -154,7 +154,7 @@ final class FontCatalogTests: XCTestCase {
     /// grouped contiguously in that order.
     func testSectionsAreInListOrderAndContiguous() {
         XCTAssertEqual(FontSection.allCases.map(\.title),
-                       ["內建", "開源", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"])
+                       ["內建", "可下載", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"])
         var seen: [FontSection] = []
         for entry in FontCatalog.entries where seen.last != entry.section {
             seen.append(entry.section)

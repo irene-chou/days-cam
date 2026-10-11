@@ -335,7 +335,8 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
     // MARK: 89.7
 
     /// 89.7: for every font as the selection, only that font expands, only if
-    /// it has several weights; every other multi-weight row shows "N 種字重".
+    /// it has several weights; every other row stays collapsed (the collapsed
+    /// "N 種字重" text was removed by TASK-111).
     func testOnlyTheSelectedMultiWeightRowExpandsForEveryFont() throws {
         for selected in OverlayFontID.allCases {
             let library = StandInLibrary()
@@ -347,12 +348,8 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
             let count = FontCatalog.entry(for: selected).weights.count
             XCTAssertEqual(expanded, count > 1 ? [selected] : [], "\(selected)")
             for cell in cells where cell.fontID != selected {
-                let n = FontCatalog.entry(for: cell.fontID).weights.count
-                XCTAssertEqual(cell.weightCountText, n > 1 ? "\(n) 種字重" : nil, "\(cell.fontID)")
+                XCTAssertEqual(cell.weightCount, FontCatalog.entry(for: cell.fontID).weights.count, "\(cell.fontID)")
                 XCTAssertTrue(cell.weights.isEmpty)
-            }
-            if count == 1 {
-                XCTAssertNil(try cell(selected, in: list).weightCountText, "單一字重不顯示 N 種字重")
             }
         }
     }

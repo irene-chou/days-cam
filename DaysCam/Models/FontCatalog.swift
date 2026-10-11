@@ -27,7 +27,9 @@ enum FontSection: String, CaseIterable, Equatable, Hashable, Sendable {
     var title: String {
         switch self {
         case .builtIn: return "內建"
-        case .openSource: return "開源"
+        // "可下載", not "開源": the heading is for the person choosing a font,
+        // not a license term (TASK-111, #425). The license page keeps 開源.
+        case .openSource: return "可下載"
         case .hei: return "黑"
         case .yuan: return "圓"
         case .song: return "宋"
@@ -132,11 +134,14 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     }
 
     /// The localized full face name shown in the font list and VoiceOver.
-    /// Verified against CoreText localized names and the font name table (TASK-78).
+    /// Verified against CoreText localized names and the font name table
+    /// (TASK-78), except that a version number in the name table is dropped
+    /// (TASK-111, #425): 粉圓's "jf open 粉圓 2.1" is listed as "jf open 粉圓";
+    /// its version stays on the license page (FR-16.13).
     var fullName: String {
         switch fontID {
         case .pingFang: return "蘋方-繁 中粗體"
-        case .huninn: return "jf open 粉圓 2.1"
+        case .huninn: return "jf open 粉圓"
         case .notoSerifTC: return "Noto Serif TC Bold"
         case .iansui: return "芫荽 Regular"
         case .chenyuluoyan: return "辰宇落雁體 2.0 細體"
