@@ -19,9 +19,9 @@ final class RulesTabViewLayoutTests: XCTestCase {
 
     /// 43.7: at 375pt the three rows are never truncated, so the page is at
     /// least the floor of three 48pt rows plus the preview sentence.
-    func testGroupedBlockIsAtLeastThreeMinimumRows() {
+    func testGroupedBlockIsAtLeastFourMinimumRows() {
         let height = contentSize().height
-        XCTAssertGreaterThanOrEqual(height, 12 + 48 * 3 + 12 + 12)
+        XCTAssertGreaterThanOrEqual(height, 12 + 48 * 4 + 12 + 12, "109.7 four rows since TASK-109")
         XCTAssertLessThanOrEqual(height, 260, "整頁高度過高，量到 \(height)")
     }
 

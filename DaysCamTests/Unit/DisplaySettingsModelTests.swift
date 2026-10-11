@@ -269,4 +269,21 @@ final class DisplaySettingsModelTests: XCTestCase {
         // model — there is no server-authoritative copy to roll back to here.
         XCTAssertTrue(model.profile.showName)
     }
+
+    // MARK: - TASK-109 (#423) the edit page's 寫在照片上 is this tab's 名稱
+
+    /// 109.3: a `showName` written elsewhere shows up here without a write.
+    func testExternalShowNameChangeIsTakenOverWithoutWriting() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        var latest = model.profile
+        latest.showName = true
+        model.applyExternalChanges(from: latest)
+        XCTAssertTrue(model.profile.showName, "109.3")
+        XCTAssertTrue(spy.updated.isEmpty, "109.3 nothing written back")
+        var other = baselineProfile(name: "別人")
+        other.showName = false
+        model.applyExternalChanges(from: other)
+        XCTAssertTrue(model.profile.showName, "another profile's record is ignored")
+    }
 }

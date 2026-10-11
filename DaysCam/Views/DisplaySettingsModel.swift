@@ -61,6 +61,14 @@ final class DisplaySettingsModel: ObservableObject {
             lastError = error
         }
     }
+
+    /// Takes over the store's current record for the same profile when it
+    /// changed elsewhere — the edit page's 寫在照片上 switch writes the same
+    /// `showName` this tab shows (TASK-109, #423, 109.3). Writes nothing.
+    func applyExternalChanges(from latest: CameraProfile) {
+        guard latest.id == profile.id, latest != profile else { return }
+        profile = latest
+    }
 }
 
 // MARK: - Display content (0.4 R-13: 日期、名稱)

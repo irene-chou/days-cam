@@ -420,6 +420,12 @@ final class CameraScreenModel: ObservableObject {
                    let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
                     styleTabModel.applyExternalChanges(from: latest)
                 }
+                // The content tab's 名稱 switch is the edit page's 寫在照片上
+                // (TASK-109): whichever wrote last, the other shows it.
+                if let formatTabModel = self.formatTabModel,
+                   let latest = profiles.first(where: { $0.id == formatTabModel.displaySettings.profile.id }) {
+                    formatTabModel.displaySettings.applyExternalChanges(from: latest)
+                }
             }
             .store(in: &cancellables)
         profileStore.$selectedProfileID

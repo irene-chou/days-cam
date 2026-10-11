@@ -118,11 +118,11 @@ final class RulesTabModelTests: XCTestCase {
             model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 13)))
             XCTAssertEqual(model.profile.startDate, DateFixture.components(2026, 1, 11), "94.1 tomorrow")
             XCTAssertEqual(spy.updated.last?.startDate, DateFixture.components(2026, 1, 11), "94.2 saved")
-            XCTAssertEqual(model.dayCountPreviewText, "還有 1 天", "94.4 \(rule)")
+            XCTAssertEqual(model.overlayPreviewText, "還有 1 天", "94.4 \(rule)")
 
             model.setStartDate(try XCTUnwrap(DateFixture.date(2027, 1, 10, hour: 9)))
             XCTAssertEqual(spy.updated.last?.startDate, DateFixture.components(2027, 1, 10), "94.2 a year out")
-            XCTAssertEqual(model.dayCountPreviewText, "還有 365 天", "94.4 \(rule)")
+            XCTAssertEqual(model.overlayPreviewText, "還有 365 天", "94.4 \(rule)")
         }
     }
 
@@ -131,9 +131,9 @@ final class RulesTabModelTests: XCTestCase {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 2, 1)))
-        XCTAssertEqual(model.dayCountPreviewText, "還有 22 天")
+        XCTAssertEqual(model.overlayPreviewText, "還有 22 天")
         model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 10)))
-        XCTAssertEqual(model.dayCountPreviewText, "第 1 天", "94.5")
+        XCTAssertEqual(model.overlayPreviewText, "第 1 天", "94.5")
     }
 
     func testSetStartDateKeepsOnlyYearMonthDay() throws {
@@ -152,12 +152,12 @@ final class RulesTabModelTests: XCTestCase {
     func testSwitchingToDayZeroRendersOneFewerDay() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(countingRule: .dayOne), now: try fixedNow(), spy: spy)
-        XCTAssertEqual(model.dayCountPreviewText, "第 10 天")
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
 
         model.setCountingRule(.dayZero)
 
         XCTAssertEqual(model.profile.countingRule, .dayZero, "25.4")
-        XCTAssertEqual(model.dayCountPreviewText, "第 9 天", "25.4")
+        XCTAssertEqual(model.overlayPreviewText, "第 9 天", "25.4")
     }
 
     func testSetCountingRuleNoOpsWhenUnchanged() throws {
@@ -167,16 +167,44 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertTrue(spy.updated.isEmpty)
     }
 
-    // MARK: - 43.1／43.1b 預覽句只顯示天數（#227）
+    // MARK: - 43.1／43.1b 預覽句（#227 → TASK-109 改為實際疊字）
 
-    func testPreviewIsAlwaysDaysOnlyRegardlessOfUnitsDateAndName() throws {
+    /// 109.2／109.5: the preview is the actual overlay — date, name and the
+    /// chosen units — not a days-only count (#227 reversed by TASK-109).
+    func testPreviewIsTheActualOverlayText() throws {
         var profile = baselineProfile(showDayCount: true)
-        profile.displayUnits = [.year, .month]
         profile.showDate = true
         profile.showName = true
-        profile.useAgeWording = true
         let model = makeModel(profile: profile, now: try fixedNow(), spy: Spy())
-        XCTAssertEqual(model.dayCountPreviewText, "第 10 天", "43.1b")
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 小寶 第 10 天", "109.2")
+        profile.displayUnits = [.week, .day]
+        let weekly = makeModel(profile: profile, now: try fixedNow(), spy: Spy())
+        XCTAssertEqual(weekly.overlayPreviewText, "2026.01.10 小寶 1 週又 3 天", "109.5")
+    }
+
+    /// 109.1／109.2: the 寫在照片上 switch is `showName`; turning it on puts
+    /// the name into the preview and writes through.
+    func testNameOnPhotoSwitchWritesShowNameAndShowsInThePreview() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(name: "寶寶"), now: try fixedNow(), spy: spy)
+        XCTAssertFalse(model.profile.showName, "109.1 follows the profile")
+        XCTAssertEqual(model.overlayPreviewText, "第 10 天")
+        model.setShowName(true)
+        XCTAssertEqual(model.overlayPreviewText, "寶寶 第 10 天", "109.2")
+        XCTAssertEqual(spy.updated.map(\.showName), [true], "109.3 persisted for the content tab")
+        model.setShowName(true)
+        XCTAssertEqual(spy.updated.count, 1, "no-op when unchanged")
+    }
+
+    /// 109.4: clearing the name and leaving restores it (A-5) and leaves the
+    /// switch as it was.
+    func testClearingTheNameKeepsTheSwitch() throws {
+        let model = makeModel(profile: baselineProfile(name: "寶寶"), now: try fixedNow(), spy: Spy())
+        model.setShowName(true)
+        model.setName("")
+        model.endEditingName()
+        XCTAssertEqual(model.nameDraft, "寶寶", "A-5")
+        XCTAssertTrue(model.profile.showName, "109.4")
     }
 
     func testFieldsStayWritableWhateverTheDayCountFlag() throws {
@@ -185,7 +213,7 @@ final class RulesTabModelTests: XCTestCase {
         model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 2)))
         model.setCountingRule(.dayZero)
         XCTAssertEqual(spy.updated.count, 2, "43.2／43.6")
-        XCTAssertEqual(model.dayCountPreviewText, "第 8 天")
+        XCTAssertEqual(model.overlayPreviewText, "第 8 天")
     }
 
     // MARK: - 25.6 起算分段控制的兩個選項文字
