@@ -92,7 +92,9 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let gone = NSPredicate(format: "label != '先打開天數'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
         // 年改成歲 without the year ticked: still answered with the hint.
-        toggle("年改成歲").tap()
+        // The combined row is wide; tap near its switch end so the tap lands
+        // on the switch rather than the label (same as a finger would).
+        toggle("年改成歲").coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 年改成歲 hints too")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
         toggle("天數").tap()
