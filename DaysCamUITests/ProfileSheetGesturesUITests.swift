@@ -47,6 +47,20 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         }
     }
 
+    /// Dismisses the delete confirmation without deleting: its cancel button,
+    /// or a tap outside the action sheet when the button is not exposed.
+    private func cancelDeleteDialog() {
+        let cancel = app.buttons.matching(NSPredicate(format: "label == '取消' OR label == 'Cancel'")).firstMatch
+        if cancel.waitForExistence(timeout: 2) {
+            cancel.tap()
+        } else {
+            let labels = app.buttons.allElementsBoundByIndex.map(\.label).joined(separator: "|")
+            snap("dialog-buttons", note: labels)
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+        }
+        XCTAssertFalse(deleteDialogButton.waitForExistence(timeout: 1.5), "the confirmation closed")
+    }
+
     private func openSheet() {
         XCTAssertTrue(profileChip.waitForExistence(timeout: 10))
         profileChip.tap()
@@ -111,8 +125,7 @@ final class ProfileSheetGesturesUITests: XCTestCase {
             snap("104.1_after-full-swipe-\(attempt)")
             if deleteDialogButton.waitForExistence(timeout: 3) {
                 reached += 1
-                app.buttons["取消"].tap()
-                XCTAssertFalse(deleteDialogButton.waitForExistence(timeout: 1))
+                cancelDeleteDialog()
             }
             XCTAssertTrue(sheetBar.exists, "103.3 the sheet never came down")
         }
@@ -139,7 +152,7 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 3), "104.3 the 刪除 button is revealed")
         delete.tap()
         XCTAssertTrue(deleteDialogButton.waitForExistence(timeout: 3), "104.3 it asks to confirm")
-        app.buttons["取消"].tap()
+        cancelDeleteDialog()
     }
 
     /// 104.4: the last remaining profile cannot be swiped away.
