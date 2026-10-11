@@ -43,7 +43,19 @@ final class DisplaySettingsModel: ObservableObject {
     /// The most recent refusal; `nil` until one happens.
     @Published private(set) var lastRejection: Rejection?
 
+    /// Refusals of the same kind closer together than this are one event:
+    /// a switch that springs back can report its refusal more than once,
+    /// and the feedback (haptic, bounce, hint) should play once per tap.
+    static let rejectionDebounce: TimeInterval = 0.3
+    private var lastRejectionTime: Date?
+
     private func reject(_ kind: Rejection.Kind) {
+        let now = Date()
+        if let last = lastRejection, last.kind == kind,
+           let lastTime = lastRejectionTime, now.timeIntervalSince(lastTime) < Self.rejectionDebounce {
+            return
+        }
+        lastRejectionTime = now
         lastRejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
     }
     /// The most recent `updateProfile` failure, if any, for the view to surface.

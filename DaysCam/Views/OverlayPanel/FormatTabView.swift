@@ -89,17 +89,12 @@ struct FormatTabView: View {
                 bouncingSwitch = nil
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hintDuration) {
-            withAnimation(.easeOut(duration: 0.3)) {
-                if unitHint == rejection { unitHint = nil }
-                if contentHint == rejection { contentHint = nil }
-            }
-        }
     }
 
     /// The reserved hint line under a row: its text is only visible while
     /// `rejection` is set, and the line keeps its height either way (108.2).
-    private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String) -> some View {
+    private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String,
+                         clear: @escaping () -> Void) -> some View {
         Text(rejection?.hint ?? " ")
             .font(.system(size: 11.5))
             .foregroundColor(CameraTheme.active)
@@ -110,6 +105,14 @@ struct FormatTabView: View {
             .opacity(rejection == nil ? 0 : 1)
             .accessibilityHidden(rejection == nil)
             .accessibilityIdentifier(identifier)
+            // Fades after `hintDuration`; a newer refusal restarts the clock
+            // (the task is cancelled and re-created when `serial` changes).
+            .task(id: rejection?.serial) {
+                guard rejection != nil else { return }
+                try? await Task.sleep(for: .seconds(Self.hintDuration))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.3)) { clear() }
+            }
     }
 
     /// Small heading above the 天數單位 and 顯示內容 sections (13pt, secondary ink).
@@ -165,7 +168,7 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
-            hintRow(contentHint, identifier: "contentSwitchHint")
+            hintRow(contentHint, identifier: "contentSwitchHint") { contentHint = nil }
         }
     }
 
@@ -224,7 +227,7 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
-            hintRow(unitHint, identifier: "unitHint")
+            hintRow(unitHint, identifier: "unitHint") { unitHint = nil }
             HStack {
                 Spacer(minLength: 0)
                 ageWordingToggle

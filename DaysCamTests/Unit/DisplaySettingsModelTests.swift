@@ -337,11 +337,15 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.profile.displayUnits, [.day])
         let serial = model.lastRejection?.serial
         model.toggleUnit(.day)
-        XCTAssertNotEqual(model.lastRejection?.serial, serial, "a repeated refusal is a new event")
+        XCTAssertEqual(model.lastRejection?.serial, serial, "a refusal repeated within 0.3 s is the same event")
+        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
+        model.toggleUnit(.day)
+        XCTAssertNotEqual(model.lastRejection?.serial, serial, "a later repeated refusal is a new event")
         model.toggleUnit(.week)
         model.toggleUnit(.day)
         XCTAssertEqual(model.profile.displayUnits, [.week], "108.3 allowed")
         XCTAssertEqual(model.lastRejection?.serial, (serial ?? 0) + 1, "108.3 no new rejection")
+        XCTAssertEqual(model.lastRejection?.kind, .lastUnit(.day))
     }
 
     /// 108.4: refusing to turn off the last of 天數／日期 is reported too.
