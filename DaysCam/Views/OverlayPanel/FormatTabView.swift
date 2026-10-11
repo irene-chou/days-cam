@@ -37,6 +37,9 @@ struct FormatTabView: View {
     @State private var bouncingUnit: DisplayUnit?
     /// The content switch bouncing right now (TASK-108).
     @State private var bouncingSwitch: DisplaySettingsModel.Rejection.ContentSwitch?
+    /// Whether the whole unit section is nudging (108.8: tapped while the
+    /// day count is off).
+    @State private var bouncingUnits = false
     /// The refusal whose hint is showing under the unit row, if any.
     @State private var unitHint: DisplaySettingsModel.Rejection?
     /// The refusal whose hint is showing under the display-content row, if any.
@@ -81,12 +84,18 @@ struct FormatTabView: View {
         case .lastContentSwitch(let contentSwitch):
             withAnimation(bounce) { bouncingSwitch = contentSwitch }
             withAnimation(.easeOut(duration: 0.2)) { contentHint = rejection }
+        case .dayCountOff:
+            // The whole unit row nudges (108.8): the tap could have been any
+            // checkbox or the age-wording switch.
+            withAnimation(bounce) { bouncingUnits = true }
+            withAnimation(.easeOut(duration: 0.2)) { unitHint = rejection }
         }
         UIAccessibility.post(notification: .announcement, argument: rejection.hint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             withAnimation(.easeOut(duration: 0.15)) {
                 bouncingUnit = nil
                 bouncingSwitch = nil
+                bouncingUnits = false
             }
         }
     }
@@ -238,6 +247,7 @@ struct FormatTabView: View {
         // not dimmed, not hidden, no text (107.4; the user's 2026-10-12
         // call: dimming reads as "half broken", hiding moves the rows). The
         // model refuses the taps; TASK-108 answers them with feedback.
+        .scaleEffect(bouncingUnits ? 1.03 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dayCountUnits")
     }

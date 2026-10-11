@@ -360,4 +360,24 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.date), "108.4 the other way")
         XCTAssertTrue(model.profile.showDate)
     }
+
+    /// 108.8: a unit or 年改成歲 tapped while the day count is off changes
+    /// nothing and is reported with its own hint; after turning the day
+    /// count on the same taps work.
+    func testTapsWhileTheDayCountIsOffAreReportedAsDayCountOff() throws {
+        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: Spy())
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8")
+        XCTAssertEqual(model.lastRejection?.hint, "先打開天數")
+        XCTAssertEqual(model.profile.displayUnits, [.year, .day])
+        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
+        model.setUseAgeWording(true)
+        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8 age wording too")
+        XCTAssertFalse(model.profile.useAgeWording)
+        model.setShowDayCount(true)
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "108.8 live again")
+    }
 }

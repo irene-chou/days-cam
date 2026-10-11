@@ -27,6 +27,8 @@ final class DisplaySettingsModel: ObservableObject {
         enum Kind: Equatable {
             case lastUnit(DisplayUnit)
             case lastContentSwitch(ContentSwitch)
+            /// A unit or 年改成歲 tapped while the day count is off (108.8).
+            case dayCountOff
         }
         enum ContentSwitch: Equatable { case dayCount, date }
         let kind: Kind
@@ -37,6 +39,7 @@ final class DisplaySettingsModel: ObservableObject {
             switch kind {
             case .lastUnit: return "至少保留一個單位"
             case .lastContentSwitch: return "至少顯示天數或日期"
+            case .dayCountOff: return "先打開天數"
             }
         }
     }
@@ -161,7 +164,10 @@ extension DisplaySettingsModel {
     func toggleUnit(_ unit: DisplayUnit) {
         // With the day count off the units have nothing to format: the tap
         // changes nothing (107.4; the feedback is TASK-108's 108.8).
-        guard !areUnitsInert else { return }
+        guard !areUnitsInert else {
+            reject(.dayCountOff)
+            return
+        }
         if profile.displayUnits.contains(unit) {
             guard profile.displayUnits.count > 1 else {
                 reject(.lastUnit(unit))
@@ -197,7 +203,10 @@ extension DisplaySettingsModel {
     /// the defensive backstop (FR-2.9).
     func setUseAgeWording(_ newValue: Bool) {
         guard newValue != profile.useAgeWording else { return }
-        guard !areUnitsInert else { return }
+        guard !areUnitsInert else {
+            reject(.dayCountOff)
+            return
+        }
         guard profile.displayUnits.contains(.year) else { return }
         mutate { $0.useAgeWording = newValue }
     }
