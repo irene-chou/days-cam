@@ -137,17 +137,24 @@ extension RulesTabModel {
 // MARK: - 預覽 (FR-13.1, #227)
 
 extension RulesTabModel {
-    /// The day count this profile shows today, e.g. 「第 280 天」: always days
-    /// only, whatever the display units, date, name or day-count toggles say
-    /// (#227, the human's 2026-10-07 call). Exists so a counting-rule change
-    /// (25.4) can be checked end-to-end rather than only as a stored enum value.
-    var dayCountPreviewText: String {
-        var daysOnly = profile
-        daysOnly.showDayCount = true
-        daysOnly.showDate = false
-        daysOnly.showName = false
-        daysOnly.displayUnits = [.day]
-        daysOnly.useAgeWording = false
-        return renderer.render(profile: daysOnly, capturedAt: calculator.now(), calendar: calendar)
+    /// The overlay text this profile prints today, e.g. 「2026.10.11 寶寶
+    /// 5 週又 6 天」 — exactly what the viewfinder shows, with the profile's
+    /// own date／name switches and units (TASK-109, #423; the user's
+    /// 2026-10-11 decision reverses #227's days-only preview). A
+    /// counting-rule change (25.4) still shows in it end-to-end.
+    var overlayPreviewText: String {
+        renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar)
+    }
+}
+
+// MARK: - 寫在照片上 (FR-13.1, TASK-109)
+
+extension RulesTabModel {
+    /// Sets `showName` — the same setting as the content tab's 名稱 switch
+    /// (TASK-109, #423): whether the name goes onto the photo, decided right
+    /// where the name is typed.
+    func setShowName(_ newValue: Bool) {
+        guard newValue != profile.showName else { return }
+        mutate { $0.showName = newValue }
     }
 }

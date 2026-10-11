@@ -38,6 +38,8 @@ struct RulesTabView: View {
             VStack(spacing: 0) {
                 nameRow
                 rowDivider
+                nameOnPhotoRow
+                rowDivider
                 startDateRow
                 rowDivider
                 countingRuleRow
@@ -88,10 +90,11 @@ struct RulesTabView: View {
         Divider().padding(.leading, Self.rowHorizontalPadding)
     }
 
-    /// 「今天會顯示為 」＋ bold `dayCountPreviewText`; wraps, at most 3 lines.
+    /// 「今天會顯示為 」＋ bold `overlayPreviewText` (the actual overlay,
+    /// TASK-109); wraps, at most 3 lines.
     private var previewSentence: some View {
         (Text("今天會顯示為 ").foregroundColor(CameraTheme.inkSecondary)
-            + Text(model.dayCountPreviewText).bold().foregroundColor(CameraTheme.ink))
+            + Text(model.overlayPreviewText).bold().foregroundColor(CameraTheme.ink))
             .font(.subheadline)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -118,6 +121,31 @@ struct RulesTabView: View {
         }
         .padding(.horizontal, Self.rowHorizontalPadding)
         .frame(minHeight: Self.rowMinHeight)
+    }
+
+    // MARK: - 寫在照片上 (FR-13.1, TASK-109)
+
+    /// Indent of the 寫在照片上 row's label, one level under 名稱, so it reads
+    /// as "the name → whether it goes onto the photo" (D-7 proposal 4).
+    static let subRowIndent: CGFloat = 16
+
+    /// The 名稱 switch of the content tab, repeated right under the name
+    /// (TASK-109, #423): the two are the same `showName` and stay in sync.
+    private var nameOnPhotoRow: some View {
+        HStack {
+            Text("寫在照片上").foregroundColor(CameraTheme.inkSecondary)
+                .padding(.leading, Self.subRowIndent)
+            Spacer(minLength: 10)
+            Toggle("", isOn: Binding(get: { model.profile.showName },
+                                     set: { model.setShowName($0) }))
+                .tint(CameraTheme.accentControl)
+                .labelsHidden()
+        }
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .frame(minHeight: Self.rowMinHeight)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("寫在照片上")
+        .accessibilityIdentifier("nameOnPhotoToggle")
     }
 
     // MARK: - 起始日 (FR-13.3)

@@ -155,6 +155,9 @@ final class CameraScreenModel: ObservableObject {
     /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
     /// Rebuilt alongside `styleTabModel`.
     @Published private(set) var formatTabModel: FormatTabModel?
+    /// The content tab's writer, kept so its baseline can follow the store
+    /// when the tab takes over an external change (TASK-109).
+    private var formatWriter: TabProfileWriter?
 
     /// The 位置 tab's model (PRD 0.2 FR-12, TASK-24's `PositionTabView`).
     /// Rebuilt alongside `styleTabModel`; `panelModel.overlayDragHandler` is
@@ -424,6 +427,13 @@ final class CameraScreenModel: ObservableObject {
                    let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
                     styleTabModel.applyExternalChanges(from: latest)
                 }
+                // The content tab's 名稱 switch is the edit page's 寫在照片上
+                // (TASK-109): whichever wrote last, the other shows it.
+                if let formatTabModel = self.formatTabModel,
+                   let latest = profiles.first(where: { $0.id == formatTabModel.displaySettings.profile.id }) {
+                    self.formatWriter?.adopt(latest)
+                    formatTabModel.displaySettings.applyExternalChanges(from: latest)
+                }
             }
             .store(in: &cancellables)
         profileStore.$selectedProfileID
@@ -481,6 +491,7 @@ final class CameraScreenModel: ObservableObject {
             updateProfile: styleWriter.write)
 
         let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
+        self.formatWriter = formatWriter
         let displaySettings = DisplaySettingsModel(profile: selectedProfile,
                                                    calendar: calendar,
                                                    calculator: calculator,
@@ -1578,6 +1589,15 @@ final class TabProfileWriter {
         }
         try profileStore.update(Self.merging(updated, from: baseline, onto: latest))
         baseline = updated
+    }
+
+    /// Advances `baseline` to the store's current record when the tab's own
+    /// model took that record over (`applyExternalChanges`, TASK-109): the
+    /// next write then diffs against what the tab now shows, so a field it
+    /// changes back to the baseline's old value is still seen as changed.
+    func adopt(_ latest: CameraProfile) {
+        guard latest.id == baseline.id else { return }
+        baseline = latest
     }
 
     /// `latest` with every field that differs between `baseline` and
