@@ -44,12 +44,16 @@ struct StyleTabView: View {
         return (0..<colorColumnCount).map { swatchDiameter / 2 + CGFloat($0) * pitch }
     }
 
-    /// Left/right inset of a page's scroll content (TASK-84): 14 puts sliders
-    /// and swatches 16pt from the panel edge. The font list keeps 10 because
-    /// its rows carry their own inset (#309).
+    /// Left/right inset of a page's scroll content (TASK-84, +4 by TASK-117):
+    /// 18 puts sliders and swatches 20pt from the panel edge. The font list
+    /// keeps 10 because its rows carry their own inset (#309).
     static func contentHorizontalInset(for subTab: StyleTabModel.SubTab) -> CGFloat {
-        subTab == .font ? 10 : 14
+        subTab == .font ? 10 : 18
     }
+
+    /// Space above and below each slider row (TASK-117), on top of the page's
+    /// 12pt stack spacing. Kept on the row, outside the slider itself.
+    static let sliderVerticalPadding: CGFloat = 4
 
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
@@ -362,6 +366,7 @@ struct StyleTabView: View {
         }
         .opacity(isDisabled ? 0.35 : 1)
         .disabled(isDisabled)
+        .padding(.vertical, Self.sliderVerticalPadding)
     }
 
     // MARK: - 陰影 (FR-10.8, FR-10.10)
@@ -439,6 +444,7 @@ struct StyleTabView: View {
             }
             // Simultaneous, so the slider's own drag still works.
             .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
+            .padding(.vertical, Self.sliderVerticalPadding)
             Text("點或拖曳調整，點兩下回到預設大小")
                 .font(.system(size: 12))
                 .foregroundColor(CameraTheme.inkSecondary)
