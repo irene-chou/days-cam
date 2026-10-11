@@ -72,6 +72,15 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(model.rows.last?.subtitle, "2026/01/01 起・今天第 10 天")
     }
 
+    /// 107.5: a date-only profile's subtitle says so; the others keep the count.
+    func testSubtitleOfADateOnlyProfileSaysDateOnly() throws {
+        let store = try makeStore()
+        try addProfile("只看日期", to: store, showDayCount: false)
+        let model = try makeModel(store: store)
+
+        XCTAssertEqual(model.rows.map(\.subtitle), ["2026/01/10 起・今天第 1 天", "2026/01/01 起・只顯示日期"], "107.5")
+    }
+
     func testCurrentRowIsMarkedAndRowsFollowStoreOrder() throws {
         let store = try makeStore()
         let second = try addProfile("小寶", to: store)

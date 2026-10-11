@@ -10,7 +10,8 @@ import SwiftUI
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
 /// sections now sit on one page. TASK-48 (0.4 R-13): 天數單位 heading on top
-/// of the unit row, 顯示內容 (日期、名稱 only) below under its own heading;
+/// of the unit row, 顯示內容 below under its own heading (天數、日期、名稱
+/// since TASK-107 brought the day-count switch back);
 /// the day count is always shown, so nothing here is ever disabled for it.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
@@ -25,6 +26,33 @@ struct FormatTabView: View {
     /// checkboxes, age-wording toggle), the same 44pt tap target the rules
     /// tab uses (#116, Z.8).
     static let rowMinHeight: CGFloat = 44
+    /// Height reserved under the unit row and under the display-content row
+    /// for the refusal hint (TASK-108): always laid out, normally invisible,
+    /// so showing the hint never moves the rows below it (108.2).
+    static let hintRowHeight: CGFloat = 20
+
+    /// The unit whose checkbox is bouncing right now (TASK-108).
+    @State private var bouncingUnit: DisplayUnit?
+    /// The content switch bouncing right now (TASK-108).
+    @State private var bouncingSwitch: DisplaySettingsModel.Rejection.ContentSwitch?
+    /// Whether the whole unit section is nudging (108.8: tapped while the
+    /// day count is off).
+    @State private var bouncingUnits = false
+    /// The refusal whose hint is showing under the unit row, if any (the
+    /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
+    private var unitHint: DisplaySettingsModel.Rejection? {
+        guard let hint = model.displaySettings.visibleHint else { return nil }
+        switch hint.kind {
+        case .lastUnit, .dayCountOff: return hint
+        case .lastContentSwitch: return nil
+        }
+    }
+    /// The refusal whose hint is showing under the display-content row, if any.
+    private var contentHint: DisplaySettingsModel.Rejection? {
+        guard let hint = model.displaySettings.visibleHint else { return nil }
+        if case .lastContentSwitch = hint.kind { return hint }
+        return nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,12 +66,60 @@ struct FormatTabView: View {
         // #106 R2): each tab owns its own padding rather than a generic one.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
+        // A refused change (the last unit, the last of 天數／日期) bounces
+        // the control, taps the haptic engine and floats a hint for 1.5 s
+        // (TASK-108, #422; FR-11.2／FR-11.3). On the simulator the haptic is
+        // simply absent (108.6).
+        .onChange(of: model.displaySettings.lastRejection) { _, rejection in
+            guard let rejection else { return }
+            react(to: rejection)
+        }
+        .sensoryFeedback(.warning, trigger: model.displaySettings.lastRejection)
         .alert("無法儲存", isPresented: Binding(get: { model.displaySettings.lastError != nil },
                                              set: { if !$0 { model.displaySettings.lastError = nil } })) {
             Button("好") { model.displaySettings.lastError = nil }
         } message: {
             Text("請再試一次。")
         }
+    }
+
+    /// Bounce, hint and VoiceOver announcement for one refusal (TASK-108).
+    private func react(to rejection: DisplaySettingsModel.Rejection) {
+        let bounce = Animation.spring(response: 0.3, dampingFraction: 0.35)
+        switch rejection.kind {
+        case .lastUnit(let unit):
+            withAnimation(bounce) { bouncingUnit = unit }
+        case .lastContentSwitch(let contentSwitch):
+            withAnimation(bounce) { bouncingSwitch = contentSwitch }
+        case .dayCountOff:
+            // The whole unit row nudges (108.8): the tap could have been any
+            // checkbox or the age-wording switch.
+            withAnimation(bounce) { bouncingUnits = true }
+        }
+        UIAccessibility.post(notification: .announcement, argument: rejection.hint)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation(.easeOut(duration: 0.15)) {
+                bouncingUnit = nil
+                bouncingSwitch = nil
+                bouncingUnits = false
+            }
+        }
+    }
+
+    /// The reserved hint line under a row: its text is only visible while
+    /// `rejection` is set, and the line keeps its height either way (108.2).
+    private func hintRow(_ rejection: DisplaySettingsModel.Rejection?, identifier: String) -> some View {
+        Text(rejection?.hint ?? " ")
+            .font(.system(size: 13))
+            .foregroundColor(CameraTheme.active)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: Self.hintRowHeight)
+            .padding(.leading, 8)
+            .opacity(rejection == nil ? 0 : 1)
+            .animation(.easeOut(duration: rejection == nil ? 0.3 : 0.2), value: rejection?.serial)
+            .accessibilityHidden(rejection == nil)
+            .accessibilityIdentifier(identifier)
     }
 
     /// Small heading above the 天數單位 and 顯示內容 sections (13pt, secondary ink).
@@ -71,7 +147,18 @@ struct FormatTabView: View {
             // together always claim N times what one does) — precisely
             // `space-around`'s "full gap between items, half a gap at each
             // edge" rhythm, not an approximation.
+            // Three switches again — 天數｜日期｜名稱 (TASK-107, #426 brings
+            // the day-count switch back; FR-11.1). None is ever disabled:
+            // the last of 天數／日期 refuses to turn off in the model, so
+            // the switch springs back (107.3; TASK-108 adds the feedback).
             HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                displayToggle(label: "天數",
+                             isOn: model.displaySettings.profile.showDayCount,
+                             isDisabled: false) {
+                    model.displaySettings.setShowDayCount($0)
+                }
+                Spacer(minLength: 0)
                 Spacer(minLength: 0)
                 displayToggle(label: "日期",
                              isOn: model.displaySettings.profile.showDate,
@@ -88,6 +175,7 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
+            hintRow(contentHint, identifier: "contentSwitchHint")
         }
     }
 
@@ -95,6 +183,15 @@ struct FormatTabView: View {
                                isOn: Bool,
                                isDisabled: Bool,
                                onChange: @escaping (Bool) -> Void) -> some View {
+        let isBouncing = (label == "天數" && bouncingSwitch == .dayCount) || (label == "日期" && bouncingSwitch == .date)
+        return displayToggleBody(label: label, isOn: isOn, isDisabled: isDisabled, onChange: onChange)
+            .scaleEffect(isBouncing ? 1.12 : 1)
+    }
+
+    private func displayToggleBody(label: String,
+                                   isOn: Bool,
+                                   isDisabled: Bool,
+                                   onChange: @escaping (Bool) -> Void) -> some View {
         // Label beside the switch, not above it (`.swr{display:flex;
         // align-items:center;gap:6px}`, #106 — was a `VStack` with the
         // label stacked on top and a 4pt gap). Label size/gap: #116 方案②
@@ -137,17 +234,27 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
+            hintRow(unitHint, identifier: "unitHint")
             HStack {
                 Spacer(minLength: 0)
                 ageWordingToggle
             }
             .frame(minHeight: Self.rowMinHeight)
         }
+        // With the day count off the unit section looks exactly as usual —
+        // not dimmed, not hidden, no text (107.4; the user's 2026-10-12
+        // call: dimming reads as "half broken", hiding moves the rows). The
+        // model refuses the taps; TASK-108 answers them with feedback.
+        .scaleEffect(bouncingUnits ? 1.03 : 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dayCountUnits")
     }
 
     private func unitCheckbox(_ unit: DisplayUnit) -> some View {
         let isChecked = model.displaySettings.profile.displayUnits.contains(unit)
-        let isDisabled = model.displaySettings.isUnitToggleDisabled(unit)
+        // The last checked unit looks exactly like the others (TASK-108,
+        // #422): tapping it is refused by the model and answered with a
+        // bounce, a haptic and a hint, instead of a dimmed, dead checkbox.
         return Button {
             model.displaySettings.toggleUnit(unit)
         } label: {
@@ -161,13 +268,12 @@ struct FormatTabView: View {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 20))
                     .foregroundColor(isChecked ? CameraTheme.accentControl : CameraTheme.inkTertiary)
+                    .scaleEffect(bouncingUnit == unit ? 1.3 : 1)
                 Text(unitName(unit)).font(.subheadline).foregroundColor(CameraTheme.ink)
             }
             .frame(minHeight: Self.rowMinHeight)
             .contentShape(Rectangle())
         }
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.5 : 1)
         .accessibilityAddTraits(isChecked ? [.isSelected] : [])
     }
 
@@ -180,9 +286,17 @@ struct FormatTabView: View {
                                      set: { model.displaySettings.setUseAgeWording($0) }))
                 .tint(CameraTheme.accentControl)
                 .labelsHidden()
-                .disabled(model.displaySettings.isAgeWordingToggleDisabled)
+                // Stays tappable while the day count is off even without
+                // the year ticked, so the tap reaches the model and gets
+                // the 先打開天數 feedback (108.8); the dimmed look for "no
+                // year" is kept below.
+                .disabled(model.displaySettings.isAgeWordingToggleDisabled && !model.displaySettings.areUnitsInert)
         }
         .opacity(model.displaySettings.isAgeWordingToggleDisabled ? 0.4 : 1)
+        // One element, like the display switches, so VoiceOver reads the
+        // label with the switch and a tap anywhere on the row is the switch.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("年改成歲")
     }
 
     private func unitName(_ unit: DisplayUnit) -> String {
