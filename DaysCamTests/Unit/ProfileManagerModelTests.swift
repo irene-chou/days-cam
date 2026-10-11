@@ -135,6 +135,137 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertTrue(model.focusesName(of: model.path[0]))
     }
 
+    // MARK: - TASK-106 (#421) new profile: untouched is not kept
+
+    /// 106.1: adding and leaving by the back button (path emptied) with
+    /// nothing changed removes the profile and restores the previous one.
+    func testUntouchedNewProfileIsDiscardedOnBack() throws {
+        let store = try makeStore()
+        let model = try makeModel(store: store)
+        let original = try XCTUnwrap(store.selectedProfileID)
+
+        model.addProfile()
+        XCTAssertEqual(store.profiles.count, 2)
+        model.path = []
+
+        XCTAssertEqual(store.profiles.map(\.name), ["預設"], "106.1 nothing left behind")
+        XCTAssertEqual(store.selectedProfileID, original, "106.1 back on the original profile")
+        XCTAssertEqual(model.selectedProfileID, original)
+    }
+
+    /// 106.2: the sheet going away (swipe down / tap outside) does the same.
+    func testUntouchedNewProfileIsDiscardedWhenTheSheetDismisses() throws {
+        let store = try makeStore()
+        let model = try makeModel(store: store)
+        let original = try XCTUnwrap(store.selectedProfileID)
+
+        model.addProfile()
+        model.sheetDidDismiss()
+
+        XCTAssertEqual(store.profiles.count, 1, "106.2")
+        XCTAssertEqual(store.selectedProfileID, original)
+        XCTAssertTrue(model.path.isEmpty)
+    }
+
+    /// 106.4: a typed name keeps the profile, selected, with the current
+    /// profile's style and content settings and today's start date.
+    func testNamedNewProfileIsKeptAndInheritsTheCurrentSettings() throws {
+        let store = try makeStore()
+        var template = store.profiles[0]
+        template.showDate = true
+        template.showName = true
+        template.displayUnits = [.year, .day]
+        template.useAgeWording = true
+        template.position = .custom(x: 0.2, y: 0.3)
+        template.style.textColor = OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56)
+        template.style.sizeScale = 140
+        template.countingRule = .dayZero
+        try store.update(template)
+        let model = try makeModel(store: store)
+
+        model.addProfile()
+        let added = try XCTUnwrap(store.profiles.last)
+        XCTAssertTrue(model.isUntitledDraft(added.id), "106.3 the name field starts as a placeholder")
+        model.rulesModel(for: added).setName("小寶")
+        model.path = []
+
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶"], "106.4 kept")
+        XCTAssertEqual(store.selectedProfileID, added.id, "106.4 switched to it")
+        let kept = try XCTUnwrap(store.profiles.last)
+        XCTAssertEqual(kept.startDate, DateFixture.components(2026, 1, 10), "106.4 start date is today")
+        XCTAssertEqual(kept.countingRule, .dayOne, "counting rule is reset, not copied")
+        XCTAssertEqual(kept.showDate, true)
+        XCTAssertEqual(kept.showName, true)
+        XCTAssertEqual(kept.displayUnits, [.year, .day])
+        XCTAssertEqual(kept.useAgeWording, true)
+        XCTAssertEqual(kept.position, .custom(x: 0.2, y: 0.3))
+        XCTAssertEqual(kept.style, template.style, "106.4 same colors, size, font, outline, shadow")
+        XCTAssertFalse(model.isUntitledDraft(added.id))
+    }
+
+    /// 106.5: only the counting rule changed, no name typed: kept under the
+    /// automatic name.
+    func testChangedRuleWithoutANameKeepsTheAutomaticName() throws {
+        let store = try makeStore()
+        let model = try makeModel(store: store)
+
+        model.addProfile()
+        let added = try XCTUnwrap(store.profiles.last)
+        model.rulesModel(for: added).setCountingRule(.dayZero)
+        model.path = []
+
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔"], "106.5")
+        XCTAssertEqual(store.profiles.last?.countingRule, .dayZero)
+    }
+
+    /// 106.5: the automatic name is numbered when a kept new profile would clash.
+    func testChangedStartDateWithoutANameIsNumbered() throws {
+        let store = try makeStore()
+        try addProfile("新設定檔", to: store)
+        let model = try makeModel(store: store)
+
+        model.addProfile()
+        let added = try XCTUnwrap(store.profiles.last)
+        model.rulesModel(for: added).setStartDate(try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8)))
+        model.path = []
+
+        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔", "新設定檔 2"], "106.5")
+    }
+
+    /// 106.3: the draft's rules model shows an empty name with the automatic
+    /// name as placeholder; leaving it empty does not restore anything (A-5
+    /// is for existing profiles); the first typed name turns it into a
+    /// normal field.
+    func testDraftRulesModelShowsThePlaceholderUntilNamed() throws {
+        let store = try makeStore()
+        let model = try makeModel(store: store)
+
+        model.addProfile()
+        let added = try XCTUnwrap(store.profiles.last)
+        let rules = model.rulesModel(for: added)
+        XCTAssertEqual(rules.nameDraft, "", "106.3 empty field")
+        XCTAssertEqual(rules.namePlaceholder, "新設定檔", "106.3 placeholder")
+        rules.endEditingName()
+        XCTAssertEqual(rules.nameDraft, "", "106.3 stays empty, no A-5 restore")
+        XCTAssertEqual(store.profiles.last?.name, "新設定檔", "the store keeps the automatic name meanwhile")
+        rules.setName("小寶")
+        XCTAssertEqual(rules.namePlaceholder, "名稱")
+        rules.setName("")
+        rules.endEditingName()
+        XCTAssertEqual(rules.nameDraft, "小寶", "A-5 applies once named")
+        XCTAssertEqual(model.rulesModel(for: store.profiles[0]).nameDraft, "預設", "existing profiles are unaffected")
+    }
+
+    /// 106.7: the limit still applies; nothing is drafted at twenty.
+    func testAddAtTheLimitDraftsNothing() throws {
+        let store = try makeStore()
+        for index in 1..<ProfileManagerModel.profileLimit { try addProfile("P\(index)", to: store) }
+        let model = try makeModel(store: store)
+        model.addProfile()
+        XCTAssertEqual(store.profiles.count, ProfileManagerModel.profileLimit)
+        XCTAssertTrue(model.path.isEmpty)
+    }
+
     func testEditPushesThePageWithoutSwitchingProfiles() throws {
         let store = try makeStore()
         let second = try addProfile("小寶", to: store)

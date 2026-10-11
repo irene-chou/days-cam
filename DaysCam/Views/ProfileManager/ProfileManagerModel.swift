@@ -35,10 +35,27 @@ final class ProfileManagerModel: ObservableObject {
     @Published var lastError: Error?
     /// The profile ids pushed onto the sheet's navigation stack: empty on the
     /// list, one id on that profile's edit page (R-4, R-7).
-    @Published var path: [UUID] = []
+    @Published var path: [UUID] = [] {
+        // Leaving the new profile's edit page by the back button pops the
+        // stack; the sheet's own dismissal comes through `sheetDidDismiss()`.
+        didSet { if path.isEmpty { discardUntouchedDraft() } }
+    }
     /// The profile just created by "新增設定檔", whose edit page focuses and
     /// selects the name field (R-7). Cleared by `resetNavigation()`.
     @Published private(set) var newlyAddedProfileID: UUID?
+
+    /// The profile `addProfile()` just created, while its edit page is still
+    /// open (TASK-106, #421): what it looked like when created and which
+    /// profile was current before. Leaving the page with the name, start
+    /// date and counting rule all untouched deletes it again and restores
+    /// the previous selection — the Notes rule that an empty note is not
+    /// kept, with no cancel key.
+    private struct Draft {
+        let id: UUID
+        let baseline: CameraProfile
+        let previousSelectedID: UUID?
+    }
+    private var draft: Draft?
 
     private let store: ProfileStore
     private let calculator: DayCountCalculator
@@ -121,9 +138,12 @@ final class ProfileManagerModel: ObservableObject {
         id == newlyAddedProfileID
     }
 
-    /// A fresh rules model for `profile`'s edit page.
+    /// A fresh rules model for `profile`'s edit page; the just-added
+    /// profile's starts with an empty name field (TASK-106, 106.3).
     func rulesModel(for profile: CameraProfile) -> RulesTabModel {
-        makeRulesModel(profile)
+        let model = makeRulesModel(profile)
+        if isUntitledDraft(profile.id) { model.beginUntitled(placeholder: "新設定檔") }
+        return model
     }
 
     /// Opens `id`'s edit page without switching to it (R-4).
@@ -212,16 +232,76 @@ final class ProfileManagerModel: ObservableObject {
     /// the name field focused (R-7; creation rules FR-9.8 first half, FR-9.9).
     func addProfile() {
         guard canAdd else { return }
-        let profile = CameraProfile(name: store.uniqueName(base: "新設定檔"),
+        // The new profile inherits the current one's look and content
+        // settings (TASK-106, #421; FR-1.9): the same words in the same
+        // style, with only the name, start date (today) and counting rule
+        // reset. The store still needs a non-empty name (PRD §4.1 invariant
+        // 1); the edit page shows it as an empty field with a placeholder
+        // until something is typed (`isUntitledDraft`).
+        var profile = CameraProfile(name: store.uniqueName(base: "新設定檔"),
                                     startDate: calculator.currentDateComponents())
+        if let template = profiles.first(where: { $0.id == selectedProfileID }) {
+            profile.showDayCount = template.showDayCount
+            profile.showDate = template.showDate
+            profile.showName = template.showName
+            profile.displayUnits = template.displayUnits
+            profile.useAgeWording = template.useAgeWording
+            profile.position = template.position
+            profile.style = template.style
+        }
+        let previousSelectedID = selectedProfileID
+        let added: CameraProfile
         do {
-            try store.add(profile)
+            added = try store.add(profile)
         } catch {
             lastError = error
             return
         }
-        newlyAddedProfileID = profile.id
-        path = [profile.id]
+        draft = Draft(id: added.id, baseline: added, previousSelectedID: previousSelectedID)
+        newlyAddedProfileID = added.id
+        path = [added.id]
+    }
+
+    /// Whether `id` is the just-added profile nobody has named yet, whose
+    /// name field shows a placeholder instead of the automatic name (106.3).
+    func isUntitledDraft(_ id: UUID) -> Bool {
+        draft?.id == id
+    }
+
+    /// The fields that decide whether a new profile was "touched" (TASK-106):
+    /// its name, start date and counting rule — the three things the edit
+    /// page can change. Style and content live in the overlay panel and
+    /// cannot change while the edit page is up.
+    static func isUntouched(_ profile: CameraProfile, since baseline: CameraProfile) -> Bool {
+        profile.name == baseline.name
+            && profile.startDate == baseline.startDate
+            && profile.countingRule == baseline.countingRule
+    }
+
+    /// The sheet went away (swiped down or tapped outside) with whatever
+    /// page it was on; the view wires this from the sheet's `onDismiss`.
+    func sheetDidDismiss() {
+        discardUntouchedDraft()
+        path = []
+    }
+
+    /// Drops the just-added profile again if it is still exactly as created
+    /// (106.1／106.2) and goes back to the profile that was current before;
+    /// a no-op once anything on it changed, or when there is no draft.
+    private func discardUntouchedDraft() {
+        guard let draft else { return }
+        self.draft = nil
+        guard let current = profiles.first(where: { $0.id == draft.id }),
+              Self.isUntouched(current, since: draft.baseline) else { return }
+        do {
+            try store.delete(id: draft.id)
+        } catch {
+            lastError = error
+            return
+        }
+        if let previous = draft.previousSelectedID, profiles.contains(where: { $0.id == previous }) {
+            store.select(id: previous)
+        }
     }
 
     /// Arms the delete confirmation; a no-op with one profile left.
