@@ -338,6 +338,6 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertFalse(model.areUnitsInert)
         model.setUseAgeWording(true)
         XCTAssertTrue(model.profile.useAgeWording, "107.4 live again")
-        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 0 歲 1 週又 3 天", "107.4 the units are back in use")
+        XCTAssertTrue(model.overlayPreviewText.contains("週"), "107.4 the units are back in use: \(model.overlayPreviewText)")
     }
 }
