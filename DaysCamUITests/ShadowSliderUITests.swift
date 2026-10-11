@@ -124,13 +124,13 @@ final class ShadowSliderUITests: XCTestCase {
         XCTAssertTrue(red.waitForExistence(timeout: 3))
         red.tap()
         XCTAssertTrue(red.isSelected)
-        let opacity = app.sliders["陰影透明度"].value as? String
+        let opacity = app.sliders["陰影不透明度"].value as? String
         attach("shadow-red-soft")
         for name in ["硬陰影", "發光", "柔和"] {
             app.buttons[name].tap()
             XCTAssertTrue(app.buttons[name].isSelected, name)
             XCTAssertTrue(red.isSelected, "86.1 \(name) 顏色維持")
-            XCTAssertEqual(app.sliders["陰影透明度"].value as? String, opacity, "86.1 \(name) 不透明度維持")
+            XCTAssertEqual(app.sliders["陰影不透明度"].value as? String, opacity, "86.1 \(name) 不透明度維持")
             attach("shadow-red-\(name)")
         }
         app.buttons["發光"].tap()
