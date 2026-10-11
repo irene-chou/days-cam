@@ -72,7 +72,10 @@ struct CameraScreen: View {
                 if isOpen { model.focusModel.hideReticle() }
             }
             .onDisappear { model.onDisappear() }
-            .sheet(isPresented: $model.isProfileManagerPresented) {
+            // TASK-101 (#410): no close key — swiping the sheet down or tapping
+            // outside it is the way out, so the model's dismiss runs from
+            // `onDismiss` (the same thing the key used to call).
+            .sheet(isPresented: $model.isProfileManagerPresented, onDismiss: { model.dismissProfileManagement() }) {
                 ProfileManagerView(model: model.profileManagerModel) {
                     model.dismissProfileManagement()
                 }
