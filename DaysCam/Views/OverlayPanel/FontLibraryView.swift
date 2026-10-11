@@ -12,6 +12,7 @@ struct FontListView: View {
     /// The name and size text follow Dynamic Type, so a row grows with them.
     @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
     @ScaledMetric(relativeTo: .caption) private var sizeTextSize: CGFloat = 12
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .subheadline) private var weightTextSize: CGFloat = FontListView.weightTextSize
 
     /// Row metrics (TASK-77): a row is at least 52pt and grows with the name.
@@ -75,12 +76,20 @@ struct FontListView: View {
     @ViewBuilder
     private func cellView(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
         let button = Button {
-            model.didTap(cell.fontID)
+            // Expanding／collapsing the weight buttons animates (TASK-112),
+            // unless the system asks for reduced motion.
+            if cell.canExpand, !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.25)) { model.didTap(cell.fontID) }
+            } else {
+                model.didTap(cell.fontID)
+            }
         } label: {
-            cell.isExpanded ? AnyView(cardTitle(cell)) : AnyView(cellLabel(cell, showsSeparator: showsSeparator))
+            cell.canExpand ? AnyView(weightsTitle(cell)) : AnyView(cellLabel(cell, showsSeparator: showsSeparator))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(cell.accessibilityLabel)
+        .accessibilityValue(cell.accessibilityValue ?? "")
+        .accessibilityHint(cell.accessibilityHint ?? "")
         .accessibilityAddTraits(cell.isSelected ? .isSelected : [])
         let row = Group {
             if cell.canDelete {
@@ -101,30 +110,53 @@ struct FontListView: View {
                 button
             }
         }
-        if cell.isExpanded {
+        if cell.canExpand {
+            // The selected multi-weight font: its title row, plus the weight
+            // buttons while expanded (TASK-89 design A, collapsible since
+            // TASK-112 #437). Same tint and leading bar as any selected row.
             VStack(spacing: 0) {
                 row
-                weightButtons(cell)
+                if cell.isExpanded {
+                    weightButtons(cell)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
+            .clipped()
             .background(RoundedRectangle(cornerRadius: Self.cardCornerRadius)
                 .fill(CameraTheme.active.opacity(0.12)))
+            .overlay(alignment: .topLeading) {
+                Capsule()
+                    .fill(CameraTheme.active)
+                    .frame(width: Self.selectionBarWidth, height: Self.rowMinHeight - 24)
+                    .padding(.top, 12)
+                    .padding(.leading, 4)
+            }
             .padding(.vertical, 6)
         } else {
             row
         }
     }
-
-    // MARK: - Expanded card (TASK-89, design A)
-
-    /// The selected multi-weight font's name row inside its card: the name in
-    /// the chosen weight and a check at the trailing edge.
-    private func cardTitle(_ cell: FontLibraryModel.Cell) -> some View {
+    // MARK: - Selected multi-weight font (TASK-89 design A, TASK-112 collapse)
+    /// The selected multi-weight font's title row: the name in the chosen
+    /// weight, the weight's name, a download ring while a face is still
+    /// coming in (112.8), and a chevron for the expand／collapse state. No
+    /// check mark (112.6): the leading bar and tint already say "selected".
+    private func weightsTitle(_ cell: FontLibraryModel.Cell) -> some View {
         HStack(spacing: 8) {
             nameView(cell)
             Spacer(minLength: 8)
-            Image(systemName: "checkmark")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(CameraTheme.active)
+            if let status = cell.pendingWeightStatus {
+                weightStatusIcon(status)
+            }
+            if let weightName = cell.currentWeightName {
+                Text(weightName)
+                    .font(.system(size: 13))
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .fixedSize()
+            }
+            Image(systemName: cell.isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(CameraTheme.inkTertiary)
                 .frame(minWidth: Self.statusIconSize)
                 .accessibilityHidden(true)
         }

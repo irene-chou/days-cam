@@ -23,6 +23,13 @@ final class FontWeightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
+        expandSelectedFont()
+    }
+    /// TASK-112: the selected font's weights show only after a tap on its row.
+    private func expandSelectedFont() {
+        let row = app.buttons["蘋方-繁"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        if !weight("light").exists { row.tap() }
     }
 
     private func weight(_ id: String) -> XCUIElement { app.buttons["fontWeight.\(id)"] }
@@ -53,6 +60,7 @@ final class FontWeightUITests: XCTestCase {
         XCTAssertFalse(weight("semibold").isSelected)
         app.buttons["外框"].tap()
         app.buttons["字型"].tap()
+        expandSelectedFont()
         XCTAssertTrue(weight("light").waitForExistence(timeout: 3))
         XCTAssertTrue(weight("light").isSelected, "kept after leaving the page")
         attach("font-weights-light-selected")
