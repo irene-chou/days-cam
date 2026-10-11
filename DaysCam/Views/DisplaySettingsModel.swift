@@ -100,8 +100,10 @@ extension DisplaySettingsModel {
     var isDateTheLastContentSwitch: Bool { profile.showDate && !profile.showDayCount }
 
     /// Whether the 天數單位 controls are inert: the day count is off, so the
-    /// units have nothing to format (107.4; FR-11.5 as revised by TASK-107 —
-    /// dimmed, not hidden, and without any explanatory text).
+    /// units have nothing to format and `toggleUnit`／`setUseAgeWording`
+    /// refuse (107.4; FR-11.5 as revised by TASK-107 — the controls look as
+    /// usual, neither dimmed nor hidden, with no explanatory text; TASK-108
+    /// answers the refused tap with feedback).
     var areUnitsInert: Bool { !profile.showDayCount }
 
     func setShowName(_ newValue: Bool) {
@@ -119,6 +121,9 @@ extension DisplaySettingsModel {
     /// never be empty. Unchecking the year also turns `useAgeWording` off
     /// (FR-11.4).
     func toggleUnit(_ unit: DisplayUnit) {
+        // With the day count off the units have nothing to format: the tap
+        // changes nothing (107.4; the feedback is TASK-108's 108.8).
+        guard !areUnitsInert else { return }
         if profile.displayUnits.contains(unit) {
             guard profile.displayUnits.count > 1 else { return }
             mutate { profile in
@@ -151,6 +156,7 @@ extension DisplaySettingsModel {
     /// the defensive backstop (FR-2.9).
     func setUseAgeWording(_ newValue: Bool) {
         guard newValue != profile.useAgeWording else { return }
+        guard !areUnitsInert else { return }
         guard profile.displayUnits.contains(.year) else { return }
         mutate { $0.useAgeWording = newValue }
     }
