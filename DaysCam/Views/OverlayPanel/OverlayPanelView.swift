@@ -124,13 +124,41 @@ struct OverlayPanelView: View {
         // Pinned top-aligned so the segmented control's y position stays
         // identical across every tab (#75, T.7).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // No surface of its own (PRD FR-8.8 as restored by TASK-99): the
-        // panel sits straight on the camera background — no shadow, corner
-        // or border — and runs off the bottom of the screen.
-        .background(CameraTheme.background.ignoresSafeArea(edges: .bottom))
+        // Same-color surface with an upward shadow along its top edge
+        // (restored on PR #451 at the user's request); it runs off the
+        // bottom of the screen.
+        .background(panelBackground)
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }
+    }
+
+    // MARK: - Panel surface (FR-8.8, design option 2)
+
+    /// The panel's own surface: the camera background color, top corners
+    /// rounded, with a soft shadow along the top edge only. The shadow is
+    /// masked to a 100pt band at the top so it never shows at the sides or
+    /// below; the fill is drawn again on top without the shadow. No border.
+    private var panelBackground: some View {
+        let cornerRadius = CameraScreenLayoutMetrics.panelTopCornerRadius
+        let shape = UnevenRoundedRectangle(topLeadingRadius: cornerRadius, bottomLeadingRadius: 0,
+                                           bottomTrailingRadius: 0, topTrailingRadius: cornerRadius,
+                                           style: .continuous)
+        return ZStack {
+            shape
+                .fill(CameraTheme.background)
+                .shadow(color: CameraTheme.popoverShadow,
+                        radius: CameraScreenLayoutMetrics.panelShadowRadius,
+                        x: 0, y: CameraScreenLayoutMetrics.panelShadowYOffset)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .offset(y: cornerRadius - 100)
+                }
+            shape.fill(CameraTheme.background)
+        }
+        .ignoresSafeArea(edges: .bottom)
     }
 
     // MARK: - Collapse button (TASK-116, #447, design option A)

@@ -89,6 +89,16 @@ struct CameraScreenLayoutMetrics {
     /// The segmented control's height at the default Dynamic Type size.
     static let defaultPanelTabBarHeight: CGFloat = 32
 
+    /// Top corner radius of the open panel's shape (PRD FR-8.8, design option
+    /// 2 "同色底加陰影", restored by the user's request on PR #451); the bottom
+    /// corners are square since the panel runs off the screen's bottom edge.
+    static let panelTopCornerRadius: CGFloat = 18
+
+    /// Blur radius and vertical offset of the upward shadow along the
+    /// panel's top edge (`CameraTheme.popoverShadow`); negative y = up.
+    static let panelShadowRadius: CGFloat = 18
+    static let panelShadowYOffset: CGFloat = -6
+
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
 
