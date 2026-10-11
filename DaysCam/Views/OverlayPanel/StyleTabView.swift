@@ -53,8 +53,13 @@ struct StyleTabView: View {
 
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
-    /// Height of the pinned sub-tab row: 6 + 36 + 4.
-    static let subTabRowHeight: CGFloat = 46
+    /// Height of one sub-tab item: a 28pt icon, a 3pt gap and the 10pt
+    /// caption below it (TASK-110), inside the 52pt-wide tap target.
+    static let subTabItemHeight: CGFloat = 50
+    /// Point size of the caption under each sub-tab icon (TASK-110, D-7 §5).
+    static let subTabLabelFontSize: CGFloat = 10
+    /// Height of the pinned sub-tab row: 6 + 50 + 4.
+    static let subTabRowHeight: CGFloat = 6 + subTabItemHeight + 4
     /// Space kept under a vertically centered page (TASK-49 A).
     static let centeredBottomInset: CGFloat = 10
 
@@ -133,8 +138,9 @@ struct StyleTabView: View {
         // lone one (`HStack` gives every flexible child an equal share of
         // the leftover space, so N spacer instances together always claim N
         // times what one does), which is exactly that 2:1 ratio; a single
-        // `Spacer` at each end supplies the half-width edge gap. Each icon's
-        // own tap target is 52×36 (TASK-57, enlarged from the design's 44×30).
+        // `Spacer` at each end supplies the half-width edge gap. Each item's
+        // own tap target is 52×50 (TASK-57 widened it to 52; TASK-110 added
+        // the caption under the icon).
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             ForEach(Array(StyleTabModel.SubTab.allCases.enumerated()), id: \.offset) { index, subTab in
@@ -145,11 +151,24 @@ struct StyleTabView: View {
                 Button {
                     model.selectedSubTab = subTab
                 } label: {
-                    subTabIcon(subTab)
-                        .font(.system(size: 22, weight: .medium))
-                        .frame(width: 28, height: 28)
-                        .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
-                        .frame(width: 52, height: 36)
+                    // Icon plus a 10pt caption (TASK-110, #424): the icons
+                    // stay exactly as #409 fixed them; the caption only
+                    // names them so 外框／陰影 need not be opened to be
+                    // understood. Both take the same selected/unselected
+                    // color. The caption is hidden from VoiceOver because the
+                    // button's own label already carries the same word.
+                    VStack(spacing: 3) {
+                        subTabIcon(subTab)
+                            .font(.system(size: 22, weight: .medium))
+                            .frame(width: 28, height: 28)
+                        Text(subTab.title)
+                            .font(.system(size: Self.subTabLabelFontSize, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundColor(model.selectedSubTab == subTab ? CameraTheme.active : CameraTheme.inkTertiary)
+                    .frame(width: 52, height: Self.subTabItemHeight)
                 }
                 .accessibilityLabel(subTab.accessibilityLabel)
                 .accessibilityAddTraits(model.selectedSubTab == subTab ? .isSelected : [])
