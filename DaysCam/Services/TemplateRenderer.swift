@@ -22,8 +22,8 @@ struct TemplateRenderer {
     /// Renders the overlay text for `profile` as of `capturedAt`.
     ///
     /// With the elapsed amount shown, the order is date, then name, then
-    /// elapsed amount (#249); without it, name then date. Parts are joined
-    /// by a single half-width space.
+    /// elapsed amount (#249); without the day count, date then name (TASK-107).
+    /// Parts are joined by a single half-width space.
     func render(profile: CameraProfile,
                 capturedAt: Date,
                 calendar: Calendar = .autoupdatingCurrent) -> String {
@@ -37,13 +37,11 @@ struct TemplateRenderer {
         let name: String? = profile.showName && !trimmedName.isEmpty ? trimmedName : nil
         let date: String? = profile.showDate ? dateText(calculator: calculator) : nil
 
-        let parts: [String?]
-        if profile.showDayCount {
-            parts = [date, name, elapsedText(profile: profile, calculator: calculator)]
-        } else {
-            parts = [name, date]
-        }
-        return parts.compactMap { $0 }.joined(separator: Self.partSeparator)
+        // Date, name, then the elapsed amount; with the day count off the
+        // same order minus the last part — "日期 名稱", not the old "名稱
+        // 日期" (TASK-107, #426, unified on purpose).
+        let elapsed: String? = profile.showDayCount ? elapsedText(profile: profile, calculator: calculator) : nil
+        return [date, name, elapsed].compactMap { $0 }.joined(separator: Self.partSeparator)
     }
 }
 

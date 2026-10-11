@@ -63,15 +63,38 @@ final class DisplaySettingsModel: ObservableObject {
     }
 }
 
-// MARK: - Display content (0.4 R-13: 日期、名稱)
+// MARK: - Display content (天數、日期、名稱; TASK-107 restores the day-count switch)
 
 extension DisplaySettingsModel {
-    /// Sets `showDate`. Either display switch may be off, so this never
-    /// refuses: the day count is always shown (0.4 R-13, TASK-48).
+    /// Sets `showDayCount` (TASK-107, #426; FR-11.1). Turning it off while
+    /// the date is off too is refused — the two may not both be off (PRD
+    /// §4.1 invariant 3) — and the view's switch springs back (107.3).
+    func setShowDayCount(_ newValue: Bool) {
+        guard newValue != profile.showDayCount else { return }
+        guard newValue || profile.showDate else { return }
+        mutate { $0.showDayCount = newValue }
+    }
+
+    /// Sets `showDate`; symmetric with `setShowDayCount` — turning it off
+    /// while the day count is off is refused (107.3).
     func setShowDate(_ newValue: Bool) {
         guard newValue != profile.showDate else { return }
+        guard newValue || profile.showDayCount else { return }
         mutate { $0.showDate = newValue }
     }
+
+    /// Whether the day-count switch is the last of 天數／日期 still on, so
+    /// turning it off would be refused (107.3; TASK-108 reads this for its
+    /// bounce-and-hint feedback).
+    var isDayCountTheLastContentSwitch: Bool { profile.showDayCount && !profile.showDate }
+
+    /// Whether the date switch is the last of 天數／日期 still on.
+    var isDateTheLastContentSwitch: Bool { profile.showDate && !profile.showDayCount }
+
+    /// Whether the 天數單位 controls are inert: the day count is off, so the
+    /// units have nothing to format (107.4; FR-11.5 as revised by TASK-107 —
+    /// dimmed, not hidden, and without any explanatory text).
+    var areUnitsInert: Bool { !profile.showDayCount }
 
     func setShowName(_ newValue: Bool) {
         guard newValue != profile.showName else { return }

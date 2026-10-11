@@ -10,7 +10,8 @@ import SwiftUI
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
 /// sections now sit on one page. TASK-48 (0.4 R-13): 天數單位 heading on top
-/// of the unit row, 顯示內容 (日期、名稱 only) below under its own heading;
+/// of the unit row, 顯示內容 below under its own heading (天數、日期、名稱
+/// since TASK-107 brought the day-count switch back);
 /// the day count is always shown, so nothing here is ever disabled for it.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
@@ -71,7 +72,18 @@ struct FormatTabView: View {
             // together always claim N times what one does) — precisely
             // `space-around`'s "full gap between items, half a gap at each
             // edge" rhythm, not an approximation.
+            // Three switches again — 天數｜日期｜名稱 (TASK-107, #426 brings
+            // the day-count switch back; FR-11.1). None is ever disabled:
+            // the last of 天數／日期 refuses to turn off in the model, so
+            // the switch springs back (107.3; TASK-108 adds the feedback).
             HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                displayToggle(label: "天數",
+                             isOn: model.displaySettings.profile.showDayCount,
+                             isDisabled: false) {
+                    model.displaySettings.setShowDayCount($0)
+                }
+                Spacer(minLength: 0)
                 Spacer(minLength: 0)
                 displayToggle(label: "日期",
                              isOn: model.displaySettings.profile.showDate,
@@ -143,6 +155,13 @@ struct FormatTabView: View {
             }
             .frame(minHeight: Self.rowMinHeight)
         }
+        // With the day count off the whole unit section goes dim and inert,
+        // in place — no text, nothing moves (107.4; FR-11.5 as revised by
+        // TASK-107). Turning the day count back on restores it as it was.
+        .opacity(model.displaySettings.areUnitsInert ? 0.4 : 1)
+        .allowsHitTesting(!model.displaySettings.areUnitsInert)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dayCountUnits")
     }
 
     private func unitCheckbox(_ unit: DisplayUnit) -> some View {

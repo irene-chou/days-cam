@@ -90,12 +90,14 @@ final class ProfileManagerModel: ObservableObject {
 
     /// R-2's subtitle: the start date and today's day count under the
     /// profile's own counting rule, formatted like the overlay with only 天
-    /// ticked (R-13: the count is always shown).
+    /// ticked; a date-only profile says so instead of a count it never
+    /// prints (FR-9.2, reachable again since TASK-107 #426).
     func subtitle(for profile: CameraProfile) -> String {
         let year = profile.startDate.year ?? 0
         let month = profile.startDate.month ?? 0
         let day = profile.startDate.day ?? 0
         let date = String(format: "%04d/%02d/%02d", year, month, day)
+        guard profile.showDayCount else { return "\(date) 起・只顯示日期" }
         return "\(date) 起・今天\(dayCountText(for: profile))"
     }
 
