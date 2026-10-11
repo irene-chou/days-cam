@@ -209,7 +209,9 @@ final class RulesTabModelTests: XCTestCase {
 
     func testFieldsStayWritableWhateverTheDayCountFlag() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
+        var dateOnly = baselineProfile(showDayCount: false)
+        dateOnly.showDate = true
+        let model = makeModel(profile: dateOnly, now: try fixedNow(), spy: spy)
         model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 2)))
         model.setCountingRule(.dayZero)
         XCTAssertEqual(spy.updated.count, 2, "43.2／43.6")
