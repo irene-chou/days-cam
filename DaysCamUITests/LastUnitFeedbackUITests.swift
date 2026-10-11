@@ -35,15 +35,17 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(day.isSelected, "108.1 checked")
         let ageRowBefore = app.staticTexts["年改成歲"].frame
         let contentHeadingBefore = app.staticTexts["顯示內容"].frame
-        XCTAssertFalse(unitHint.exists, "108.1 no text beforehand")
+        // The hint line is always laid out (108.2); it carries the text only
+        // while showing, so the checks read its label.
+        XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
 
         day.tap()
         XCTAssertTrue(day.isSelected, "108.1 still checked")
-        XCTAssertTrue(unitHint.waitForExistence(timeout: 2), "108.1 the hint appeared")
-        XCTAssertEqual(unitHint.label, "至少保留一個單位")
+        let shown = NSPredicate(format: "label == '至少保留一個單位'")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 the age-wording row did not move")
         XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
-        let gone = NSPredicate(format: "exists == false")
+        let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
         XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 4), .completed, "108.1 the hint went away")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 still in place after the hint")
@@ -55,7 +57,8 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(app.buttons["週"].isSelected)
         app.buttons["天"].tap()
         XCTAssertFalse(app.buttons["天"].isSelected, "108.3 unchecked")
-        XCTAssertFalse(unitHint.waitForExistence(timeout: 1), "108.3 no hint")
+        sleep(1)
+        XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.3 no hint")
     }
 
     /// 108.4: turning off the only one of 天數／日期 springs back with its
@@ -63,9 +66,9 @@ final class LastUnitFeedbackUITests: XCTestCase {
     func testLastContentSwitchSpringsBackWithAHint() {
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
-        XCTAssertTrue(contentHint.waitForExistence(timeout: 2), "108.4 the hint appeared")
-        XCTAssertEqual(contentHint.label, "至少顯示天數或日期")
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: contentHint)
+        let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != '至少顯示天數或日期'"), object: contentHint)
         XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 4), .completed)
 
         toggle("日期").tap()
@@ -73,6 +76,6 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertFalse(isOn(toggle("天數")))
         toggle("日期").tap()
         XCTAssertTrue(isOn(toggle("日期")), "108.4 the date springs back")
-        XCTAssertTrue(contentHint.waitForExistence(timeout: 2), "108.4 the same hint")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the same hint")
     }
 }
