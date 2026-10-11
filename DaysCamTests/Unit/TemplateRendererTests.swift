@@ -100,10 +100,8 @@ final class TemplateRendererTests: XCTestCase {
 
     // MARK: - A-2 (4.9 ... 4.14) date and ordering
 
-    /// TASK-47: a stored profile always has `showDayCount == true` now, so
-    /// this (and the date-only cases in A-8 ... A-11) render an unpersisted
-    /// profile to isolate the date branch. The renderer's rule is unchanged;
-    /// the migrated output is pinned by 47.4 in `CameraProfileDayCountMigrationTests`.
+    /// A date-only profile is storable again since TASK-107 (#426); this and
+    /// the date-only cases in A-8 ... A-11 isolate the date branch.
     func testDateOnlyProfileRendersTheDateAlone() throws {
         let output = render(profile(showDayCount: false, showDate: true), at: try referenceCapture())
         XCTAssertEqual(output, "2026.03.20", "4.9")
@@ -411,13 +409,15 @@ final class TemplateRendererTests: XCTestCase {
 extension TemplateRendererTests {
 
     /// 51.2: every other combination keeps its order; nothing uses U+3000.
+    /// With the day count off the order is 日期 名稱 (TASK-107, 107.8), the
+    /// same as with it on minus the count — not the old 名稱 日期.
     func testOtherCombinationsKeepTheirOrderWithHalfWidthSpaces() throws {
         let capturedAt = try referenceCapture()
         let cases: [(CameraProfile, String)] = [
             (profile(), "第 430 天"),
             (profile(showDate: true), "2026.03.20 第 430 天"),
             (profile(showName: true), "小寶 第 430 天"),
-            (profile(showDayCount: false, showDate: true, showName: true), "小寶 2026.03.20")
+            (profile(showDayCount: false, showDate: true, showName: true), "2026.03.20 小寶")
         ]
         for (subject, expected) in cases {
             let output = render(subject, at: capturedAt)

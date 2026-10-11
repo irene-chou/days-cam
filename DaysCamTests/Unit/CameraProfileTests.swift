@@ -212,40 +212,40 @@ final class CameraProfileTests: XCTestCase {
             .validatedForPersistence(calendar: DateFixture.taipei))
     }
 
-    // MARK: - Invariant 3: display switches (TASK-47: the day count is always on)
+    // MARK: - Invariant 3: display switches (TASK-107 brings the day-count switch back)
 
-    /// TASK-47 rewrites the old "both off is rejected" case: persistence now
-    /// turns the day count on instead, so the profile is kept, not dropped.
+    /// 107.7: both off should not exist; persistence turns the day count on
+    /// instead of dropping the profile.
     func testBothSwitchesOffIsRepairedByTurningTheDayCountOn() throws {
         let stored = try profile(showDayCount: false, showDate: false)
             .validatedForPersistence(calendar: DateFixture.taipei)
-        XCTAssertTrue(stored.showDayCount, "TASK-47")
-        XCTAssertFalse(stored.showDate, "TASK-47: showDate untouched")
+        XCTAssertTrue(stored.showDayCount, "107.7")
+        XCTAssertFalse(stored.showDate, "107.7: showDate untouched")
+        XCTAssertThrowsError(try profile(showDayCount: false, showDate: false).validate(calendar: DateFixture.taipei)) {
+            XCTAssertEqual($0 as? CameraProfileValidationError, .displaySwitchesAllOff, "invariant 3 itself still holds")
+        }
     }
 
-    /// TASK-47 rewrites the old "either switch alone is enough" case: a
-    /// date-only profile is accepted, with the day count turned on.
-    func testDateOnlyProfileIsStoredWithTheDayCountOn() throws {
+    /// 107.2: a date-only profile is stored as it is — TASK-107 (#426)
+    /// reverses TASK-47's forcing of the day count on.
+    func testDateOnlyProfileIsStoredWithTheDayCountOff() throws {
         let stored = try profile(showDayCount: false, showDate: true)
             .validatedForPersistence(calendar: DateFixture.taipei)
-        XCTAssertTrue(stored.showDayCount, "TASK-47")
-        XCTAssertTrue(stored.showDate, "TASK-47")
+        XCTAssertFalse(stored.showDayCount, "107.2")
+        XCTAssertTrue(stored.showDate, "107.2")
         XCTAssertNoThrow(try profile(showDayCount: true, showDate: false)
             .validatedForPersistence(calendar: DateFixture.taipei))
     }
 
-    /// TASK-47: `normalized()` changes `showDayCount` and nothing else.
-    func testNormalizingChangesOnlyTheDayCountSwitch() {
+    /// TASK-107: `normalized()` leaves a date-only profile's switches alone.
+    func testNormalizingKeepsADateOnlyProfile() {
         var original = profile(showDayCount: false, showDate: true,
                                displayUnits: [.year, .week], useAgeWording: true)
         original.showName = true
         original.countingRule = .dayZero
         original.position = .custom(x: 0.25, y: 0.75)
         original.style = OverlayStyle(legacyTheme: .softPink)
-
-        var expected = original
-        expected.showDayCount = true
-        XCTAssertEqual(original.normalized(), expected, "TASK-47")
+        XCTAssertEqual(original.normalized(), original, "107.2 nothing changes")
     }
 
     // MARK: - Units (PRD 0.2 §4.1, replacing 0.1 invariants 4 and 5)
@@ -761,8 +761,9 @@ final class CameraProfileColorOpacityTests: XCTestCase {
     }
 }
 
-/// Covers TASK-47 47.1 ... 47.4: the day count is always shown (#226 R-13),
-/// so every stored profile ends up with `showDayCount == true`.
+/// TASK-47's 47.1 ... 47.4 reversed by TASK-107 (#426, 107.6／107.7): a
+/// date-only record is kept as it is; only a record with both switches off
+/// is repaired, and no profile is ever dropped for either.
 final class CameraProfileDayCountMigrationTests: XCTestCase {
 
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -799,10 +800,10 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
 
     /// One 0.3 record with a non-default value in every field, so a field
     /// changed by the migration shows up.
-    private func record(id: String, name: String, showDayCount: Bool) -> String {
+    private func record(id: String, name: String, showDayCount: Bool, showDate: Bool = true) -> String {
         """
         {"id":"\(id)","name":"\(name)","startDate":{"year":2025,"month":1,"day":15},\
-        "countingRule":"dayZero","showDayCount":\(showDayCount),"showDate":true,"showName":true,\
+        "countingRule":"dayZero","showDayCount":\(showDayCount),"showDate":\(showDate),"showName":true,\
         "displayUnits":["month","day"],"useAgeWording":false,\
         "position":{"x":0.25,"y":0.75},\
         "style":{"fontID":"pingFang","textColor":"#123456","outline":"thickStroke",\
@@ -822,22 +823,32 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
         try JSONDecoder().decode([CameraProfile].self, from: Data(contentsOf: fileURL))
     }
 
-    /// 47.1: a `showDayCount: false` record turns on, every other field stays,
-    /// the file is rewritten and a fresh load still reads `true`.
-    func testDateOnlyRecordIsMigratedAndWrittenBack() throws {
+    /// 107.7: a `showDayCount: false` record (date only) is kept exactly as
+    /// it is — the file is not rewritten and a fresh load reads it unchanged.
+    func testDateOnlyRecordIsKeptAsItIs() throws {
         try writeFixture([record(id: Self.dateOnlyID, name: "只看日期", showDayCount: false),
                           record(id: Self.countingID, name: "小寶", showDayCount: true)])
         let before = try rawProfiles()
-
+        let bytesBefore = try Data(contentsOf: fileURL)
         let loaded = try makeStore().load()
+        XCTAssertEqual(loaded.count, 2, "107.7: no profile lost")
+        XCTAssertEqual(loaded, before, "107.7: nothing changes")
+        XCTAssertFalse(loaded[0].showDayCount, "107.2: still date only")
+        XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "107.7: no write-back")
+    }
 
-        XCTAssertEqual(loaded.count, 2, "47.1: no profile lost")
+    /// 107.7: a hand-made record with both switches off has the day count
+    /// turned on, is written back, and the profile is kept.
+    func testBothOffRecordIsRepairedAndKept() throws {
+        try writeFixture([record(id: Self.dateOnlyID, name: "都關", showDayCount: false, showDate: false),
+                          record(id: Self.countingID, name: "小寶", showDayCount: true)])
+        let before = try rawProfiles()
+        let loaded = try makeStore().load()
+        XCTAssertEqual(loaded.count, 2, "107.7: no profile lost")
         var expected = before
         expected[0].showDayCount = true
-        XCTAssertEqual(loaded, expected, "47.1: only showDayCount changes")
-
-        XCTAssertEqual(try rawProfiles(), expected, "47.1: written back")
-        XCTAssertEqual(try makeStore().load(), expected, "47.1: still true after reload")
+        XCTAssertEqual(loaded, expected, "107.7: only showDayCount changes")
+        XCTAssertEqual(try rawProfiles(), expected, "107.7: written back")
     }
 
     /// 47.2: a file where every record already shows the day count is left
@@ -854,47 +865,40 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "47.2: no write-back")
     }
 
-    /// 47.3: adding or duplicating a profile always stores `showDayCount == true`.
-    func testAddedAndDuplicatedProfilesShowTheDayCount() throws {
+    /// 107.2: adding or duplicating a date-only profile keeps it date only.
+    func testAddedAndDuplicatedDateOnlyProfilesStayDateOnly() throws {
         let store = try makeStore()
         store.load()
-
         let added = try store.add(CameraProfile(name: "只看日期",
                                                 startDate: DateFixture.components(2025, 1, 15),
                                                 showDayCount: false,
                                                 showDate: true))
-        XCTAssertTrue(added.showDayCount, "47.3 add")
-
+        XCTAssertFalse(added.showDayCount, "107.2 add")
         let copy = try store.duplicate(id: added.id)
-        XCTAssertTrue(copy.showDayCount, "47.3 duplicate")
-
-        XCTAssertTrue(try rawProfiles().allSatisfy(\.showDayCount), "47.3 persisted")
+        XCTAssertFalse(copy.showDayCount, "107.2 duplicate")
+        XCTAssertEqual(try rawProfiles().map(\.showDayCount), [true, false, false], "107.2 persisted")
     }
 
-    /// 47.3: an edit that turns the day count off is stored with it on.
-    func testUpdateCannotTurnTheDayCountOff() throws {
+    /// 107.2: an edit that turns the day count off (with the date on) is stored.
+    func testUpdateCanTurnTheDayCountOff() throws {
         let store = try makeStore()
         var current = try XCTUnwrap(store.load().first)
         current.showDayCount = false
         current.showDate = true
-
         let stored = try store.update(current)
-
-        XCTAssertTrue(stored.showDayCount, "47.3 update")
-        XCTAssertTrue(stored.showDate, "47.3 update keeps showDate")
+        XCTAssertFalse(stored.showDayCount, "107.2 update")
+        XCTAssertTrue(stored.showDate, "107.2 update keeps showDate")
     }
 
-    /// 47.4: a profile that used to print only the date prints the date and
-    /// the day count once migrated.
-    func testMigratedDateOnlyProfileRendersDateAndDayCount() throws {
+    /// 107.6: a date-only profile prints the date (and the name), never a
+    /// count, in the date-then-name order.
+    func testDateOnlyProfileRendersDateAndName() throws {
         try writeFixture([record(id: Self.dateOnlyID, name: "只看日期", showDayCount: false)])
-        let migrated = try XCTUnwrap(makeStore().load().first)
-
-        let output = TemplateRenderer().render(profile: migrated,
+        let loaded = try XCTUnwrap(makeStore().load().first)
+        let output = TemplateRenderer().render(profile: loaded,
                                                capturedAt: try referenceInstant(),
                                                calendar: DateFixture.taipei)
-
-        XCTAssertEqual(output, "2026.03.20 只看日期 14 個月又 5 天", "47.4")
+        XCTAssertEqual(output, "2026.03.20 只看日期", "107.6／107.8")
     }
 }
 

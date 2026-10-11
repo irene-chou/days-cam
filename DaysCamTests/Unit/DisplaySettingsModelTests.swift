@@ -286,4 +286,51 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.applyExternalChanges(from: other)
         XCTAssertTrue(model.profile.showName, "another profile's record is ignored")
     }
+
+    // MARK: - TASK-107 (#426) the day-count switch
+
+    /// 107.1／107.2: the day count can be turned off once the date is on,
+    /// and the overlay then prints the date (and name) alone.
+    func testDayCountCanBeTurnedOffWhenTheDateIsOn() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        XCTAssertFalse(model.profile.showDayCount, "107.2")
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10", "107.2 date only")
+        model.setShowName(true)
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 小寶", "107.2 date then name")
+        XCTAssertEqual(spy.updated.last?.showDayCount, false, "persisted")
+    }
+
+    /// 107.3: the last of 天數／日期 refuses to turn off, both ways.
+    func testTheLastOfDayCountAndDateRefusesToTurnOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        XCTAssertTrue(model.isDayCountTheLastContentSwitch)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.profile.showDayCount, "107.3 springs back")
+        XCTAssertTrue(spy.updated.isEmpty, "107.3 nothing written")
+
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.isDateTheLastContentSwitch)
+        model.setShowDate(false)
+        XCTAssertTrue(model.profile.showDate, "107.3 the date springs back too")
+        XCTAssertFalse(model.profile.showDayCount)
+    }
+
+    /// 107.4: with the day count off the unit controls are inert and keep
+    /// their ticks; turning it on restores them.
+    func testUnitsAreInertWhileTheDayCountIsOff() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        model.toggleUnit(.week)
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.areUnitsInert, "107.4")
+        XCTAssertEqual(model.profile.displayUnits, [.week, .day], "107.4 ticks kept")
+        model.setShowDayCount(true)
+        XCTAssertFalse(model.areUnitsInert)
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10 1 週又 3 天", "107.4 the units are back in use")
+    }
 }
