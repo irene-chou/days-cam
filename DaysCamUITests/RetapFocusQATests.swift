@@ -10,7 +10,7 @@ final class RetapFocusQATests: XCTestCase {
     private func launch() {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestFocus", "-UITestZoomPresets"]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestZoomPresets"]
         app.launch()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
     }

@@ -9,7 +9,7 @@ final class ZoomPresetBarUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestZoomPresets"]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestZoomPresets"]
         app.launch()
     }
 

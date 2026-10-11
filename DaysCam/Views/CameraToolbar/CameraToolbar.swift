@@ -95,6 +95,8 @@ struct CameraToolbar: View {
             .padding(.vertical, 7)
         }
         .accessibilityLabel("設定檔：\(model.currentProfileName)")
+        // TASK-96: the first-launch tour's step 1 points here.
+        .onboardingTarget(.profileChip)
     }
 
     // MARK: - Right: ratio, flip
