@@ -49,10 +49,10 @@ final class FormatTabModelTests: XCTestCase {
         let settings = model.displaySettings
 
         XCTAssertTrue(settings.profile.displayUnits.contains(.day), "24.2")
-        XCTAssertTrue(settings.isUnitToggleDisabled(.day), "24.2: 只剩一個，天 disabled")
+        XCTAssertTrue(settings.isLastCheckedUnit(.day), "108.7: 只剩一個，天不可取消")
         for unit: DisplayUnit in [.year, .month, .week] {
             XCTAssertFalse(settings.profile.displayUnits.contains(unit), "24.2")
-            XCTAssertFalse(settings.isUnitToggleDisabled(unit), "24.2")
+            XCTAssertFalse(settings.isLastCheckedUnit(unit), "24.2")
         }
     }
 
