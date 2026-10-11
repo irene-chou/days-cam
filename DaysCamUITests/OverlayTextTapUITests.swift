@@ -51,11 +51,9 @@ final class OverlayTextTapUITests: XCTestCase {
         XCTAssertTrue(contentTab.exists)
         contentTab.tap()
         XCTAssertTrue(contentTab.isSelected)
-        app.buttons["panelCollapseButton"].firstMatch.exists
-            ? app.buttons["panelCollapseButton"].firstMatch.tap()
-            : app.buttons["快門"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -4)).tap()
+        // Close the panel by tapping the viewfinder beside the text (FR-8.7).
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5))
-        if styleTab.exists { app.buttons["疊字設定"].tap() }
         XCTAssertFalse(styleTab.waitForExistence(timeout: 2), "the panel is closed again")
         tapOverlayText()
         XCTAssertTrue(contentTab.waitForExistence(timeout: 5), "105.1 reopened")
