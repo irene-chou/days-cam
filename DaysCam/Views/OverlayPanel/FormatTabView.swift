@@ -293,6 +293,10 @@ struct FormatTabView: View {
                 .disabled(model.displaySettings.isAgeWordingToggleDisabled && !model.displaySettings.areUnitsInert)
         }
         .opacity(model.displaySettings.isAgeWordingToggleDisabled ? 0.4 : 1)
+        // One element, like the display switches, so VoiceOver reads the
+        // label with the switch and a tap anywhere on the row is the switch.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("年改成歲")
     }
 
     private func unitName(_ unit: DisplayUnit) -> String {

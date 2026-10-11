@@ -62,7 +62,6 @@ final class DisplaySettingsModel: ObservableObject {
     }
     private var hintTask: Task<Void, Never>?
 
-
     /// Refusals of the same kind closer together than this are one event:
     /// a switch that springs back can report its refusal more than once,
     /// and the feedback (haptic, bounce, hint) should play once per tap.
