@@ -108,7 +108,7 @@ final class FontLibraryModelTests: XCTestCase {
     func testNotDownloadedFontsFollowByCategoryWithTitles() throws {
         let model = makeModel(library: FakeFontLibrary())
         let titles = model.sections.dropFirst().compactMap(\.title)
-        XCTAssertEqual(titles, ["開源", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"], "56.1")
+        XCTAssertEqual(titles, ["可下載", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"], "56.1／111.1")
         let all = model.sections.flatMap(\.cells).map(\.fontID)
         XCTAssertEqual(Set(all), Set(OverlayFontID.allCases), "56.1: 每款字型恰好出現一次")
         XCTAssertEqual(all.count, OverlayFontID.allCases.count, "56.1")
@@ -440,14 +440,10 @@ final class FontWeightListTests: XCTestCase {
         let selected = try cell(.notoSerifTC, in: model)
         XCTAssertEqual(selected.weights.map(\.name), ["標準", "粗", "特粗"], "89.7")
         XCTAssertEqual(selected.weights.map(\.isSelected), [false, true, false], "89.7 預設字重為粗")
-        XCTAssertNil(selected.weightCountText, "展開時不顯示 N 種字重")
         let songti = try cell(.songti, in: model)
         XCTAssertTrue(songti.weights.isEmpty, "89.7 同時只展開選中的一列")
-        XCTAssertEqual(songti.weightCountText, "3 種字重", "89.7")
-        XCTAssertEqual(try cell(.hiraginoSans, in: model).weightCountText, "2 種字重", "89.7")
-        let single = try cell(.huninn, in: model)
-        XCTAssertNil(single.weightCountText, "89.7 單一字重不標示")
-        XCTAssertNil(try cell(.chenyuluoyan, in: model).weightCountText, "89.7 辰宇落雁體只有細體")
+        XCTAssertTrue(try cell(.hiraginoSans, in: model).weights.isEmpty, "89.7")
+        XCTAssertEqual(songti.weightCount, 3, "111.2 收合列不再顯示「N 種字重」，字重數只留給展開後的按鈕")
     }
 
     func testMultiWeightRowsShowOnlyTheFamilyName() throws {
@@ -460,7 +456,7 @@ final class FontWeightListTests: XCTestCase {
             XCTAssertEqual(try cell(fontID, in: model).name, name, "展開與收合都不帶字重字樣")
         }
         XCTAssertEqual(expected.count, FontCatalog.entries.filter { $0.weights.count > 1 }.count, "名單涵蓋所有多字重字型")
-        XCTAssertEqual(try cell(.huninn, in: model).name, "jf open 粉圓 2.1", "單一字重維持 fullName")
+        XCTAssertEqual(try cell(.huninn, in: model).name, "jf open 粉圓", "單一字重維持 fullName；111.2 不含版本號")
         XCTAssertEqual(try cell(.chenyuluoyan, in: model).name, "辰宇落雁體 2.0 細體")
         XCTAssertEqual(try cell(.notoSerifTC, in: model).accessibilityLabel, "Noto Serif TC")
     }

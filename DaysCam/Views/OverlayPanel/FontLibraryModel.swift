@@ -153,11 +153,6 @@ final class FontLibraryModel: ObservableObject {
         /// Whether the row is the expanded card.
         var isExpanded: Bool { !weights.isEmpty }
 
-        /// "N 種字重" on a collapsed row of a multi-weight font.
-        var weightCountText: String? {
-            weightCount > 1 && !isExpanded ? "\(weightCount) 種字重" : nil
-        }
-
         /// Whether the name is drawn with the font itself; otherwise with its
         /// preview image.
         var usesRealFont: Bool { state.isAvailable }
@@ -333,7 +328,8 @@ final class FontLibraryModel: ObservableObject {
 
     /// The row title: the full face name, except that a font with several
     /// weights shows the family name alone, since the weight is read from the
-    /// buttons below it and the "N 種字重" text (TASK-89, design A).
+    /// buttons below it once the row is expanded (TASK-89, design A; the
+    /// collapsed "N 種字重" text was dropped by TASK-111, #425).
     static func listName(of entry: FontCatalogEntry) -> String {
         guard entry.weights.count > 1 else { return entry.fullName }
         switch entry.fontID {

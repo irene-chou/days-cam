@@ -110,9 +110,9 @@
 | `fontID` | 顯示名稱 | 分段 | 來源 | 取得方式（PostScript 名稱） | 下載大小 |
 |---|---|---|---|---|---|
 | `pingFang` | 蘋方 | 內建 | 內建 | `PingFangTC-Semibold` | — |
-| `huninn` | 粉圓 | 開源 | 開源 | `jf-openhuninn-2.1` | 4.9 MB |
-| `notoSerifTC` | 思源宋體 | 開源 | 開源 | `NotoSerifTC-Bold` | 8.3 MB |
-| `iansui` | 芫荽 | 開源 | 開源 | `Iansui-Regular` | 9.4 MB |
+| `huninn` | 粉圓 | 可下載 | 開源 | `jf-openhuninn-2.1` | 4.9 MB |
+| `notoSerifTC` | 思源宋體 | 可下載 | 開源 | `NotoSerifTC-Bold` | 8.3 MB |
+| `iansui` | 芫荽 | 可下載 | 開源 | `Iansui-Regular` | 9.4 MB |
 | `lantinghei` | 蘭亭黑 | 黑 | 系統 | `FZLTZHB--B51-0` | 25.2 MB |
 | `liHei` | 儷黑 | 黑 | 系統 | `LiHeiPro` | 4.2 MB |
 | `hiraginoSans` | 冬青黑體 | 黑 | 系統 | `HiraginoSansTC-W6` | 14.1 MB |
@@ -186,9 +186,9 @@
 | # | 需求 |
 |---|---|
 | FR-16.1 | 全螢幕清單，外觀與「管理設定檔」一致：標題「字型」靠左、右上打勾圖示關閉、白底、無框線 |
-| FR-16.2 | 依 §4.1 分段：內建、開源、黑、圓、宋、楷、手寫、書法、可愛。分段小標用 `inkTertiary` 小字 |
+| FR-16.2 | 依 §4.1 分段：內建、可下載、黑、圓、宋、楷、手寫、書法、可愛。分段小標用 `inkTertiary` 小字。「可下載」分段原名「開源」，TASK-111（#425）改字；授權頁與文件仍稱開源 |
 | FR-16.3 | 每列高 44：左側選中打勾（只有目前字型有）、字型名稱（用該字型的**預覽圖**畫出，見 FR-16.4）、右側狀態 |
-| FR-16.4 | **TASK-78（#321）**：字型頁列表與 VoiceOver 使用完整名稱（系統在地化家族／字重、開源 name table 全名）；其他提示與授權頁維持簡稱。SE 375pt 可兩行，不能縮字或截斷。**預覽圖**：每套字型的完整名稱事先用真字型畫成圖片放在 App 內（模板圖，可上色）。未下載時也能顯示原本的字形。格子（FR-10.2′）在字型 `available` 時用真字型畫，其他情況用預覽圖 |
+| FR-16.4 | **TASK-78（#321）**：字型頁列表與 VoiceOver 使用完整名稱（系統在地化家族／字重、開源 name table 全名）；其他提示與授權頁維持簡稱。清單名稱不含版本號（粉圓顯示「jf open 粉圓」，版本只在 FR-16.13 授權頁；TASK-111 #425），收合列也不顯示「N 種字重」。SE 375pt 可兩行，不能縮字或截斷。**預覽圖**：每套字型的完整名稱事先用真字型畫成圖片放在 App 內（模板圖，可上色）。未下載時也能顯示原本的字形。格子（FR-10.2′）在字型 `available` 時用真字型畫，其他情況用預覽圖 |
 | FR-16.5 | 右側狀態：`notDownloaded` → 大小（例如「43.7 MB」）＋`arrow.down.circle`（`active` 色）；`downloading` → 百分比＋進度圈；`preparing` → 進度圈不顯示百分比；`failed` → 「重試」＋`exclamationmark.arrow.circlepath`（`danger` 色）；`available` 的開源字型 → `ellipsis` 按鈕；`available` 的蘋方與系統字型 → 不顯示 |
 | FR-16.6 | 點 `notDownloaded` 或 `failed` 的列 → 開始下載。下載完成**自動套用**到開始下載時的設定檔（A-8），提示「已套用「<名稱>」」，留在清單。同一設定檔在下載期間又點了別的字型，以最後一次點的為準 |
 | FR-16.7 | 點 `downloading` 的列 → 取消下載，回到 `notDownloaded`，提示「已取消下載」 |

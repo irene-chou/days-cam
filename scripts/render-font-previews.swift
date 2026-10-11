@@ -25,7 +25,7 @@ struct Entry {
 
 let entries: [Entry] = [
     Entry(fontID: "pingFang", name: "蘋方-繁 中粗體", postScriptName: "PingFangTC-Semibold", file: nil),
-    Entry(fontID: "huninn", name: "jf open 粉圓 2.1", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
+    Entry(fontID: "huninn", name: "jf open 粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
           sha256: "9d5bf4932d31fe94c18cd8cfddc98bc1b14ce10f4e354c682179db290a99c825"),
     Entry(fontID: "notoSerifTC", name: "Noto Serif TC Bold", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
           sha256: "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d"),
@@ -61,10 +61,13 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard CommandLine.arguments.count == 2 else {
-    fail("usage: swift scripts/render-font-previews.swift <open-source font dir>")
+guard CommandLine.arguments.count >= 2 else {
+    fail("usage: swift scripts/render-font-previews.swift <open-source font dir> [fontID ...]")
 }
 let fontDir = URL(fileURLWithPath: CommandLine.arguments[1])
+/// Optional font IDs after the directory limit the run to those entries, so
+/// one preview can be redrawn without every Apple font being installed.
+let onlyFontIDs = Set(CommandLine.arguments.dropFirst(2))
 
 /// Returns the font to draw with. Open-source fonts are built straight from
 /// the manifest file (hash-checked), so a same-named font installed on this
@@ -143,7 +146,7 @@ try! """
 
 """.write(to: outputDir.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
 
-for entry in entries {
+for entry in entries where onlyFontIDs.isEmpty || onlyFontIDs.contains(entry.fontID) {
     let font = resolve(entry)
     guard font.fontName == entry.postScriptName else {
         fail("\(entry.fontID): resolved to \(font.fontName), expected \(entry.postScriptName)")
