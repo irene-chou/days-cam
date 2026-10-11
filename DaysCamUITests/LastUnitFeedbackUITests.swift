@@ -63,32 +63,8 @@ final class LastUnitFeedbackUITests: XCTestCase {
 
     /// 108.4: turning off the only one of 天數／日期 springs back with its
     /// own hint, both ways.
-    /// Samples the hint rows and the 天數 switch for a while into
-    /// `hints.log` under `DAYSCAM_UI_SHOT_DIR` (diagnostics for a failed run).
-    private func sample(_ name: String, seconds: Double) {
-        guard let path = ProcessInfo.processInfo.environment["DAYSCAM_UI_SHOT_DIR"], !path.isEmpty else { return }
-        let directory = URL(fileURLWithPath: path, isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var lines: [String] = []
-        let start = Date()
-        while Date().timeIntervalSince(start) < seconds {
-            lines.append(String(format: "%@ +%.2f content='%@' unit='%@' 天數=%@", name, Date().timeIntervalSince(start),
-                                contentHint.label, unitHint.label, String(describing: toggle("天數").value)))
-            Thread.sleep(forTimeInterval: 0.2)
-        }
-        let text = lines.joined(separator: "\n") + "\n"
-        let url = directory.appendingPathComponent("hints.log")
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile(); handle.write(Data(text.utf8)); try? handle.close()
-        } else {
-            try? text.write(to: url, atomically: true, encoding: .utf8)
-        }
-        try? app.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("\(name).png"))
-    }
-
     func testLastContentSwitchSpringsBackWithAHint() {
         toggle("天數").tap()
-        sample("108.4_after-tap", seconds: 2.4)
         XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
         let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
