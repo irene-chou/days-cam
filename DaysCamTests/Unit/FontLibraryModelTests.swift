@@ -400,6 +400,79 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertGreaterThan(fired, 0)
         cancellable.cancel()
     }
+
+    // MARK: - TASK-112 (#437) the selected multi-weight font collapses
+
+    /// 112.1: the selected multi-weight font starts collapsed, showing its
+    /// current weight; the buttons exist but are not expanded.
+    func testSelectedMultiWeightFontStartsCollapsed() throws {
+        let model = makeModel(library: FakeFontLibrary())
+        let cell = try cell(.pingFang, in: model)
+        XCTAssertTrue(cell.canExpand, "112.1 can expand")
+        XCTAssertFalse(cell.isExpanded, "112.1 collapsed by default")
+        XCTAssertFalse(model.isWeightsExpanded)
+        XCTAssertEqual(cell.currentWeightName, "粗", "112.1 the stored weight")
+        XCTAssertNil(cell.pendingWeightStatus)
+        XCTAssertEqual(cell.accessibilityLabel, "蘋方-繁", "112.9 label is the name")
+        XCTAssertEqual(cell.accessibilityValue, "粗", "112.9 value is the weight")
+        XCTAssertEqual(cell.accessibilityHint, "點兩下展開字重", "112.9")
+    }
+
+    /// 112.2: tapping the selected row toggles, never re-applies.
+    func testTappingTheSelectedRowTogglesWithoutApplying() throws {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary(), calls: calls)
+        model.didTap(.pingFang)
+        XCTAssertTrue(model.isWeightsExpanded, "112.2 expanded")
+        XCTAssertTrue(try cell(.pingFang, in: model).isExpanded)
+        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityHint, "點兩下收合字重", "112.9")
+        model.didTap(.pingFang)
+        XCTAssertFalse(model.isWeightsExpanded, "112.2 collapsed again")
+        XCTAssertTrue(calls.applied.isEmpty, "112.2 no applyFont")
+    }
+
+    /// 112.4: tapping another font applies it and shows it collapsed.
+    func testTappingAnotherFontAppliesAndStaysCollapsed() throws {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary([.songti: .available]), calls: calls)
+        model.didTap(.pingFang)
+        XCTAssertTrue(model.isWeightsExpanded)
+        model.didTap(.songti)
+        XCTAssertEqual(calls.applied.map(\.fontID), [.songti], "112.4 applied")
+        XCTAssertFalse(model.isWeightsExpanded, "112.4 collapsed")
+        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
+        XCTAssertFalse(model.isWeightsExpanded, "112.4 still collapsed once selected")
+        XCTAssertTrue(try cell(.songti, in: model).canExpand)
+        XCTAssertFalse(try cell(.songti, in: model).isExpanded)
+    }
+
+    /// 112.4／112.5: a font change from outside and every appearance reset
+    /// the expansion.
+    func testFontChangeAndAppearanceCollapse() throws {
+        let model = makeModel(library: FakeFontLibrary([.songti: .available]))
+        model.didTap(.pingFang)
+        XCTAssertTrue(model.isWeightsExpanded)
+        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
+        XCTAssertFalse(model.isWeightsExpanded, "112.4 reset on font change")
+        model.didTap(.songti)
+        XCTAssertTrue(model.isWeightsExpanded)
+        model.listDidDisappear()
+        model.listDidAppear()
+        XCTAssertFalse(model.isWeightsExpanded, "112.5 reset on appearance")
+    }
+
+    /// 112.7: a single-weight font keeps the old tap behaviour and never expands.
+    func testSingleWeightFontDoesNotToggle() throws {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary([.huninn: .available]), current: .huninn, calls: calls)
+        model.didTap(.huninn)
+        XCTAssertFalse(model.isWeightsExpanded, "112.7")
+        XCTAssertEqual(calls.applied.map(\.fontID), [.huninn], "112.7 applied as before")
+        let cell = try cell(.huninn, in: model)
+        XCTAssertFalse(cell.canExpand)
+        XCTAssertNil(cell.currentWeightName)
+        XCTAssertNil(cell.accessibilityHint)
+    }
 }
 
 /// TASK-89 acceptance 89.3 to 89.5 and 89.7 at the font list: the expanded
@@ -684,6 +757,44 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[2].accessibilityLabel, "特粗，未下載，點兩下下載")
         XCTAssertEqual(try cell(.notoSerifTC, in: model).weights[1].accessibilityLabel, "粗")
     }
+
+    // MARK: - TASK-112 (#437) collapse with weights
+
+    /// 112.3: choosing a weight keeps the card expanded and the row's weight
+    /// name follows the stored weight.
+    func testChoosingAWeightKeepsItExpandedAndUpdatesTheName() throws {
+        let calls = Calls()
+        let model = makeModel(library: FakeFontLibrary(), current: .pingFang, calls: calls)
+        model.didTap(.pingFang)
+        model.didTapWeight("light")
+        XCTAssertEqual(calls.weights, ["light"], "112.3 applied")
+        XCTAssertTrue(model.isWeightsExpanded, "112.3 stays expanded")
+        model.update(profileID: profileID, currentFontID: .pingFang, currentWeightID: "light")
+        XCTAssertTrue(model.isWeightsExpanded, "a weight change is not a font change")
+        model.didTap(.pingFang)
+        XCTAssertFalse(model.isWeightsExpanded)
+        XCTAssertEqual(try cell(.pingFang, in: model).currentWeightName, "細", "112.3 the row shows the new weight")
+    }
+
+    /// 112.8: a face downloading for the selected font shows on the collapsed
+    /// row as a ring while the row keeps the stored weight's name.
+    func testCollapsedRowShowsThePendingDownload() throws {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let model = makeModel(library: library)
+        model.didTap(.notoSerifTC)
+        model.didTapWeight("regular")
+        XCTAssertEqual(library.weightDownloads, [noto("regular")])
+        library.weightStates[noto("regular")] = .downloading(progress: 0.4)
+        model.didTap(.notoSerifTC)
+        let cell = try cell(.notoSerifTC, in: model)
+        XCTAssertFalse(cell.isExpanded, "collapsed")
+        XCTAssertEqual(cell.currentWeightName, "粗", "112.8 the stored weight until the download finishes")
+        if case .downloading(let progress)? = cell.pendingWeightStatus {
+            XCTAssertEqual(progress, 0.4, accuracy: 0.001, "112.8 the ring")
+        } else {
+            XCTFail("112.8 expected a downloading ring, got \(String(describing: cell.pendingWeightStatus))")
+        }
+    }
 }
 
 /// TASK-34 acceptance 34.10 and 34.11: the license page.
@@ -736,116 +847,5 @@ final class FontLicenseViewTests: XCTestCase {
 
     func testSystemFontsAreCreditedToApple() {
         XCTAssertTrue(FontLicenseModel.systemFontNote.contains("Apple"), "34.10")
-    }
-
-    // MARK: - TASK-112 (#437) the selected multi-weight font collapses
-
-    /// 112.1: the selected multi-weight font starts collapsed, showing its
-    /// current weight; the buttons exist but are not expanded.
-    func testSelectedMultiWeightFontStartsCollapsed() throws {
-        let model = makeModel(library: FakeFontLibrary())
-        let cell = try cell(.pingFang, in: model)
-        XCTAssertTrue(cell.canExpand, "112.1 can expand")
-        XCTAssertFalse(cell.isExpanded, "112.1 collapsed by default")
-        XCTAssertFalse(model.isWeightsExpanded)
-        XCTAssertEqual(cell.currentWeightName, "粗", "112.1 the stored weight")
-        XCTAssertNil(cell.pendingWeightStatus)
-        XCTAssertEqual(cell.accessibilityLabel, "蘋方-繁", "112.9 label is the name")
-        XCTAssertEqual(cell.accessibilityValue, "粗", "112.9 value is the weight")
-        XCTAssertEqual(cell.accessibilityHint, "點兩下展開字重", "112.9")
-    }
-
-    /// 112.2: tapping the selected row toggles, never re-applies.
-    func testTappingTheSelectedRowTogglesWithoutApplying() throws {
-        let calls = Calls()
-        let model = makeModel(library: FakeFontLibrary(), calls: calls)
-        model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded, "112.2 expanded")
-        XCTAssertTrue(try cell(.pingFang, in: model).isExpanded)
-        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityHint, "點兩下收合字重", "112.9")
-        model.didTap(.pingFang)
-        XCTAssertFalse(model.isWeightsExpanded, "112.2 collapsed again")
-        XCTAssertTrue(calls.applied.isEmpty, "112.2 no applyFont")
-    }
-
-    /// 112.4: tapping another font applies it and shows it collapsed.
-    func testTappingAnotherFontAppliesAndStaysCollapsed() throws {
-        let calls = Calls()
-        let model = makeModel(library: FakeFontLibrary([.songti: .available]), calls: calls)
-        model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded)
-        model.didTap(.songti)
-        XCTAssertEqual(calls.applied.map(\.fontID), [.songti], "112.4 applied")
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 collapsed")
-        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 still collapsed once selected")
-        XCTAssertTrue(try cell(.songti, in: model).canExpand)
-        XCTAssertFalse(try cell(.songti, in: model).isExpanded)
-    }
-
-    /// 112.4／112.5: a font change from outside and every appearance reset
-    /// the expansion.
-    func testFontChangeAndAppearanceCollapse() throws {
-        let model = makeModel(library: FakeFontLibrary([.songti: .available]))
-        model.didTap(.pingFang)
-        XCTAssertTrue(model.isWeightsExpanded)
-        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
-        XCTAssertFalse(model.isWeightsExpanded, "112.4 reset on font change")
-        model.didTap(.songti)
-        XCTAssertTrue(model.isWeightsExpanded)
-        model.listDidDisappear()
-        model.listDidAppear()
-        XCTAssertFalse(model.isWeightsExpanded, "112.5 reset on appearance")
-    }
-
-    /// 112.7: a single-weight font keeps the old tap behaviour and never expands.
-    func testSingleWeightFontDoesNotToggle() throws {
-        let calls = Calls()
-        let model = makeModel(library: FakeFontLibrary([.huninn: .available]), current: .huninn, calls: calls)
-        model.didTap(.huninn)
-        XCTAssertFalse(model.isWeightsExpanded, "112.7")
-        XCTAssertEqual(calls.applied.map(\.fontID), [.huninn], "112.7 applied as before")
-        let cell = try cell(.huninn, in: model)
-        XCTAssertFalse(cell.canExpand)
-        XCTAssertNil(cell.currentWeightName)
-        XCTAssertNil(cell.accessibilityHint)
-    }
-
-    // MARK: - TASK-112 (#437) collapse with weights
-
-    /// 112.3: choosing a weight keeps the card expanded and the row's weight
-    /// name follows the stored weight.
-    func testChoosingAWeightKeepsItExpandedAndUpdatesTheName() throws {
-        let calls = Calls()
-        let model = makeModel(library: FakeFontLibrary(), current: .pingFang, calls: calls)
-        model.didTap(.pingFang)
-        model.didTapWeight("light")
-        XCTAssertEqual(calls.weights, ["light"], "112.3 applied")
-        XCTAssertTrue(model.isWeightsExpanded, "112.3 stays expanded")
-        model.update(profileID: profileID, currentFontID: .pingFang, currentWeightID: "light")
-        XCTAssertTrue(model.isWeightsExpanded, "a weight change is not a font change")
-        model.didTap(.pingFang)
-        XCTAssertFalse(model.isWeightsExpanded)
-        XCTAssertEqual(try cell(.pingFang, in: model).currentWeightName, "細", "112.3 the row shows the new weight")
-    }
-
-    /// 112.8: a face downloading for the selected font shows on the collapsed
-    /// row as a ring while the row keeps the stored weight's name.
-    func testCollapsedRowShowsThePendingDownload() throws {
-        let library = FakeFontLibrary([.notoSerifTC: .available])
-        let model = makeModel(library: library)
-        model.didTap(.notoSerifTC)
-        model.didTapWeight("regular")
-        XCTAssertEqual(library.weightDownloads, [noto("regular")])
-        library.weightStates[noto("regular")] = .downloading(progress: 0.4)
-        model.didTap(.notoSerifTC)
-        let cell = try cell(.notoSerifTC, in: model)
-        XCTAssertFalse(cell.isExpanded, "collapsed")
-        XCTAssertEqual(cell.currentWeightName, "粗", "112.8 the stored weight until the download finishes")
-        if case .downloading(let progress)? = cell.pendingWeightStatus {
-            XCTAssertEqual(progress, 0.4, accuracy: 0.001, "112.8 the ring")
-        } else {
-            XCTFail("112.8 expected a downloading ring, got \(String(describing: cell.pendingWeightStatus))")
-        }
     }
 }
