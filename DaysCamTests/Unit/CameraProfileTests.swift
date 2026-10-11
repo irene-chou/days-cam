@@ -696,13 +696,19 @@ final class CameraProfileColorOpacityTests: XCTestCase {
         XCTAssertTrue(profile.showDate && profile.showName && profile.showDayCount)
         XCTAssertEqual(profile.displayUnits, [.month, .day])
         XCTAssertEqual(profile.position, .custom(x: 0.25, y: 0.75))
-        XCTAssertEqual(profile.style, OverlayStyle(fontID: .songti,
-                                                   textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
-                                                   outline: .stroke,
-                                                   outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
-                                                   strokeWidth: 4,
-                                                   shadow: .glow,
-                                                   sizeScale: 120), "69.1")
+        // A pre-0.5 "glow" keeps its own colour (text colour at 230/255, the
+        // TASK-86 migration table); presets applied to a new style no longer
+        // carry a colour, so the expectation sets it explicitly.
+        var expected = OverlayStyle(fontID: .songti,
+                                    textColor: OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56),
+                                    outline: .stroke,
+                                    outlineColor: OverlayColor(red8: 0x0A, green8: 0x84, blue8: 0xFF),
+                                    strokeWidth: 4,
+                                    shadow: .glow,
+                                    sizeScale: 120)
+        expected.shadowColorSource = .textColor
+        expected.shadowOpacity = 230.0 / 255
+        XCTAssertEqual(profile.style, expected, "69.1")
         XCTAssertEqual(profile.style.textColor.opacity, 1, "69.1: alpha 100%")
         XCTAssertEqual(profile.style.outlineColor?.opacity, 1, "69.1: alpha 100%")
         XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "69.1: no write-back")
@@ -959,8 +965,13 @@ final class CameraProfileOutlineTests: XCTestCase {
         let half = 128.0 / 255
         func style(_ outline: OverlayOutline, _ outlineColor: OverlayColor?, auto: Double = 1,
                    width: Double = 2) -> OverlayStyle {
-            OverlayStyle(fontID: .songti, textColor: pink, outline: outline, outlineColor: outlineColor,
-                         autoOutlineOpacity: auto, strokeWidth: width, boxPadding: 12, shadow: .glow, sizeScale: 120)
+            var style = OverlayStyle(fontID: .songti, textColor: pink, outline: outline, outlineColor: outlineColor,
+                                     autoOutlineOpacity: auto, strokeWidth: width, boxPadding: 12, shadow: .glow,
+                                     sizeScale: 120)
+            // The pre-0.5 glow keeps its text-colour source at 230/255 (TASK-86).
+            style.shadowColorSource = .textColor
+            style.shadowOpacity = 230.0 / 255
+            return style
         }
         return [
             (record(index: 0, outline: "thinStroke", outlineColor: nil), style(.stroke, nil, width: 2)),

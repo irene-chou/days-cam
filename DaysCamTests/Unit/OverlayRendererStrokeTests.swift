@@ -55,6 +55,19 @@ final class OverlayRendererStrokeTests: XCTestCase {
         return image { _ in overlay.image.draw(in: overlay.imageFrame(forBlockOrigin: origin)) }
     }
 
+    /// Whether Core Text has an outline path for any glyph `text` shapes to
+    /// in `font` (after font fallback); bitmap emoji have none.
+    private func hasOutlineGlyph(_ text: String, font: UIFont) -> Bool {
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+            let runFont = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+            var glyphs = [CGGlyph](repeating: 0, count: CTRunGetGlyphCount(run))
+            CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+            if glyphs.contains(where: { CTFontCreatePathForGlyph(runFont, $0, nil) != nil }) { return true }
+        }
+        return false
+    }
+
     private func attach(_ image: UIImage, name: String) {
         let attachment = XCTAttachment(image: image)
         attachment.name = name
@@ -195,6 +208,12 @@ final class OverlayRendererStrokeTests: XCTestCase {
     func test80_4EmojiRetainsOriginalBitmapFill() throws {
         let font = try XCTUnwrap(UIFont(name: "PingFangTC-Semibold", size: fontSize))
         let text = "👨‍👩‍👧‍👦"
+        // The renderer leaves a glyph alone when Core Text has no outline for
+        // it. Some simulator runtimes (rinclaw's iOS 26.3 Intel one) ship an
+        // Apple Color Emoji without the pictures: every emoji falls back to
+        // one outlined placeholder glyph, which is not a bitmap and gets a
+        // stroke like any other outline. Skip there (#427).
+        try XCTSkipIf(hasOutlineGlyph(text, font: font), "this simulator's emoji font has no bitmap for \(text)")
         let plain = image { _ in
             (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: UIColor.white])
         }

@@ -176,12 +176,15 @@ final class OverlayThemeStyleTests: XCTestCase {
         XCTAssertEqual(opaqueAuto.decorations, [.stroke(color: dark, width: 2)], "automatic stays opaque by default")
     }
 
+    /// TASK-86: a preset applied to a new style sets only the geometry; every
+    /// preset shares the default black at 60%, and none follows the text colour
+    /// unless the source is chosen explicitly.
     func testEveryShadowMatchesTheConstantTable() {
         let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
         let expected: [OverlayShadowPreset: OverlayDecoration] = [
             .soft: softShadow,
-            .hard: .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 191.0 / 255, color: .black),
-            .glow: .shadow(offset: .zero, blur: 8, opacity: 230.0 / 255, color: pink)
+            .hard: .shadow(offset: CGSize(width: 2, height: 2), blur: 0, opacity: 153.0 / 255, color: .black),
+            .glow: .shadow(offset: .zero, blur: 8, opacity: 153.0 / 255, color: .black)
         ]
         for shadow in OverlayShadowPreset.allCases {
             let theme = OverlayTheme(style: OverlayStyle(textColor: pink, outline: .none, shadow: shadow))
@@ -194,7 +197,10 @@ final class OverlayThemeStyleTests: XCTestCase {
     /// applied once, not squared. Outline colors keep their alpha.
     func testTranslucentColorsReachTheDecorations() {
         let pink = OverlayColor(red8: 0xFF, green8: 0x6B, blue8: 0x9D)
-        let glow = OverlayTheme(style: OverlayStyle(textColor: pink.withOpacity(0.5), outline: .none, shadow: .glow))
+        var glowStyle = OverlayStyle(textColor: pink.withOpacity(0.5), outline: .none, shadow: .glow)
+        glowStyle.shadowColorSource = .textColor // TASK-86: following the text is an explicit choice
+        glowStyle.shadowOpacity = 230.0 / 255
+        let glow = OverlayTheme(style: glowStyle)
         XCTAssertEqual(glow.textColor.opacity, 0.5)
         XCTAssertEqual(glow.decorations, [.shadow(offset: .zero, blur: 8, opacity: 230.0 / 255, color: pink)], "69.2")
 
