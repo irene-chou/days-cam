@@ -14,11 +14,16 @@ struct ProfileManagerView: View {
     /// finger has moved, and where the row would land.
     @State private var draggingID: UUID?
     @State private var dragTranslation: CGFloat = 0
+    /// True from the release until the dragged row has settled (TASK-102,
+    /// #411): the old sequenced long-press-then-drag could deliver one more
+    /// change with the finger's full translation *after* its end, which
+    /// overwrote the residual and parked the row one slot past its new
+    /// place for a frame — the "fly-away". Any late update is ignored.
+    @State private var isReleasing = false
     @State private var dragTarget = 0
     /// Each realized row's top edge in the list's space; the row pitch (row
     /// plus the list's own spacing) is read from these, not guessed.
     @State private var rowOrigins: [Int: CGFloat] = [:]
-    @State private var suppressTap = false
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -58,7 +63,7 @@ struct ProfileManagerView: View {
     private var list: some View {
         List {
             ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
-                profileRow(row)
+                profileRow(row, index: index)
                     .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.listSpace)).minY }) {
                         // Not while dragging: the lift/slide offsets would skew the pitch.
                         if draggingID == nil { rowOrigins[index] = $0 }
@@ -70,12 +75,13 @@ struct ProfileManagerView: View {
                     .scaleEffect(draggingID == row.id ? 1.03 : 1)
                     .shadow(color: .black.opacity(draggingID == row.id ? 0.18 : 0), radius: 8, y: 3)
                     .zIndex(draggingID == row.id ? 1 : 0)
-                    .simultaneousGesture(reorderGesture(row: row, index: index))
                     // List-row traits last: wrapping modifiers above would
                     // otherwise hide them from the list (insets, separator).
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    // A full swipe asks to delete straight away (TASK-104,
+                    // #413); the confirmation dialog stays either way.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         if model.canDelete {
                             Button(role: .destructive) {
                                 model.requestDeletion(of: row.id)
@@ -113,76 +119,75 @@ struct ProfileManagerView: View {
         return 0
     }
 
-    private func reorderGesture(row: ProfileManagerModel.Row, index: Int) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
-            .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
-                if draggingID == nil {
-                    // Start from this row's own slot without animating a stale
-                    // `dragTarget` left over from the previous drag (TASK-76).
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        dragTarget = index
-                        draggingID = row.id
-                    }
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                }
-                dragTranslation = drag?.translation.height ?? 0
-                let target = ProfileManagerModel.dragTargetIndex(from: index, translation: dragTranslation,
-                                                                 rowHeight: rowHeight, count: model.rows.count)
-                // Animate only the neighbors' slide. A value-bound `.animation`
-                // on the row also animated the List's row move at release (TASK-76).
-                if target != dragTarget {
-                    withAnimation(.easeOut(duration: 0.15)) { dragTarget = target }
-                }
-            }
-            .onEnded { value in
-                guard case .second(true, _) = value, draggingID == row.id else { return }
-                let target = dragTarget
-                // Reorder and re-base the offsets with animations disabled:
-                // the rows jump to their new slots while the dragged row
-                // keeps its on-screen position (the finger's distance from
-                // the new slot) and neighbors need no offset. Only that
-                // residual then eases to 0, stepped by hand: any ambient
-                // animation (`withAnimation`) during the reorder would also
-                // animate the List's own row move from the old slots, the
-                // jump TASK-76 fixes.
-                let residual = ProfileManagerModel.releaseResidual(translation: dragTranslation, from: index,
-                                                                   to: target, rowHeight: rowHeight)
-                var instant = Transaction()
-                instant.disablesAnimations = true
-                withTransaction(instant) {
-                    model.move(id: row.id, toFinalIndex: target)
-                    dragTranslation = residual
-                }
-                Task { @MainActor in
-                    let steps = 9
-                    for step in 1...steps {
-                        try? await Task.sleep(nanoseconds: 16_000_000)
-                        let progress = Double(step) / Double(steps)
-                        let remaining = CGFloat((1 - progress) * (1 - progress)) // ease-out
-                        withTransaction(instant) { dragTranslation = residual * remaining }
-                    }
-                    withAnimation(.easeOut(duration: 0.15)) { draggingID = nil }
-                }
-                // The release that ends a long press must not also count as a tap.
-                suppressTap = true
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    suppressTap = false
-                }
-            }
+    /// The finger has rested on `row` (UIKit long press, TASK-103): lift it.
+    private func liftRow(_ row: ProfileManagerModel.Row, index: Int) {
+        guard draggingID == nil else { return }
+        // Start from this row's own slot without animating a stale
+        // `dragTarget` left over from the previous drag (TASK-76).
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            dragTarget = index
+            draggingID = row.id
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
-    private func profileRow(_ row: ProfileManagerModel.Row) -> some View {
+    /// The lifted row follows the finger; neighbors slide when it crosses
+    /// half a row (TASK-58).
+    private func dragRow(_ row: ProfileManagerModel.Row, index: Int, translation: CGFloat) {
+        guard draggingID == row.id, !isReleasing else { return }
+        dragTranslation = translation
+        let target = ProfileManagerModel.dragTargetIndex(from: index, translation: dragTranslation,
+                                                         rowHeight: rowHeight, count: model.rows.count)
+        // Animate only the neighbors' slide. A value-bound `.animation`
+        // on the row also animated the List's row move at release (TASK-76).
+        if target != dragTarget {
+            withAnimation(.easeOut(duration: 0.15)) { dragTarget = target }
+        }
+    }
+
+    /// Release: reorder and let the row settle (TASK-76, TASK-102).
+    private func releaseRow(_ row: ProfileManagerModel.Row, index: Int) {
+        guard draggingID == row.id, !isReleasing else { return }
+        let target = dragTarget
+        // Reorder and re-base the offsets with animations disabled:
+        // the rows jump to their new slots while the dragged row
+        // keeps its on-screen position (the finger's distance from
+        // the new slot) and neighbors need no offset. Only that
+        // residual then eases to 0, stepped by hand: any ambient
+        // animation (`withAnimation`) during the reorder would also
+        // animate the List's own row move from the old slots, the
+        // jump TASK-76 fixes.
+        let residual = ProfileManagerModel.releaseResidual(translation: dragTranslation, from: index,
+                                                           to: target, rowHeight: rowHeight)
+        isReleasing = true
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            model.move(id: row.id, toFinalIndex: target)
+            dragTranslation = residual
+        }
+        Task { @MainActor in
+            let steps = 9
+            for step in 1...steps {
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                let progress = Double(step) / Double(steps)
+                let remaining = CGFloat((1 - progress) * (1 - progress)) // ease-out
+                withTransaction(instant) { dragTranslation = residual * remaining }
+            }
+            withAnimation(.easeOut(duration: 0.15)) { draggingID = nil }
+            isReleasing = false
+        }
+    }
+
+    private func profileRow(_ row: ProfileManagerModel.Row, index: Int) -> some View {
         HStack(spacing: 0) {
-            Button {
-                guard !suppressTap else { return }
-                model.select(id: row.id)
-                onClose()
-            } label: {
+            // A tap gesture rather than a `Button` (TASK-103, #412): with the
+            // reorder gesture on the row, a `Button` fired on release even
+            // after a horizontal drag, which selected the profile and closed
+            // the sheet instead of revealing the swipe action.
+            Group {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
@@ -203,10 +208,25 @@ struct ProfileManagerView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // Tap, long-press-to-lift and drag all come from one UIKit
+            // recognizer pair (TASK-103): see `RowLongPressDrag`.
+            .overlay(
+                RowLongPressDrag(onBegan: { liftRow(row, index: index) },
+                                 onChanged: { dragRow(row, index: index, translation: $0) },
+                                 onEnded: { releaseRow(row, index: index) },
+                                 onTap: {
+                                     model.select(id: row.id)
+                                     onClose()
+                                 })
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(row.name)，\(row.subtitle)")
-            .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
+            .accessibilityIdentifier("profileRow")
+            .accessibilityAddTraits(row.isCurrent ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction {
+                model.select(id: row.id)
+                onClose()
+            }
 
             Button {
                 model.edit(id: row.id)
