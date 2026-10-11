@@ -9,7 +9,9 @@ final class OverlayTextTapUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        // `-UITestFocus` swaps in the fake focus backend the simulator needs
+        // for the reticle to appear at all (see `FocusExposureUITests`).
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -65,8 +67,8 @@ final class OverlayTextTapUITests: XCTestCase {
     func testTapBesideTheTextStillFocuses() {
         XCTAssertTrue(overlayText.waitForExistence(timeout: 10))
         let textFrame = overlayText.frame
-        let point = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: textFrame.minX - 60, dy: textFrame.midY - 120))
+        let point = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        XCTAssertFalse(textFrame.contains(point.screenPoint), "the probe point is beside the text")
         point.tap()
         XCTAssertTrue(focusReticle.firstMatch.waitForExistence(timeout: 3), "a tap on the picture beside the text focuses")
         XCTAssertFalse(styleTab.exists, "105.3 and does not open the panel")
