@@ -59,7 +59,8 @@ final class StyleTabViewLayoutTests: XCTestCase {
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
         XCTAssertGreaterThanOrEqual(colorHeight, 38 + 6 + 38)
-        XCTAssertLessThanOrEqual(colorHeight, 190, "顏色頁 \(colorHeight)pt")
+        // TASK-110 adds the 14pt caption row under the sub-tab icons: 190 → 204.
+        XCTAssertLessThanOrEqual(colorHeight, 204, "顏色頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
         let outlineHeight = pageHeight(model)
@@ -71,7 +72,8 @@ final class StyleTabViewLayoutTests: XCTestCase {
         // pages: color is capped at 190; the outline page may exceed the 224pt
         // content area and then scrolls under the pinned sub-tab row (TASK-66).
         // TASK-70 adds a 粗細／留白 slider row for 描邊／底框: cap 300.
-        XCTAssertLessThanOrEqual(outlineHeight, 300, "外框頁 \(outlineHeight)pt")
+        // TASK-110's caption row adds 14pt: cap 314.
+        XCTAssertLessThanOrEqual(outlineHeight, 314, "外框頁 \(outlineHeight)pt")
     }
 
     /// TASK-71: the shadow page is presets, color palette, opacity and three
