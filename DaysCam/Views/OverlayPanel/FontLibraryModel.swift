@@ -141,17 +141,26 @@ final class FontLibraryModel: ObservableObject {
         /// Whether the long-press menu offers "刪除字型": a downloaded
         /// open-source font (PingFang and system fonts cannot be deleted).
         let canDelete: Bool
-        /// The weight buttons of the selected font's expanded card (TASK-89,
+        /// The weight buttons of the selected multi-weight font (TASK-89,
         /// design A); empty for every other row and for single-weight fonts.
+        /// Shown only while `isExpanded` (TASK-112).
         let weights: [WeightCell]
         /// How many faces the font has.
         let weightCount: Int
         /// The weight the row's name is drawn in (the profile's, when selected).
         let nameWeightID: String
+        /// The stored weight's name, shown on the selected multi-weight row
+        /// (TASK-112, #437); `nil` for every other row.
+        let currentWeightName: String?
+        /// Whether the row's weight buttons are showing (TASK-112): only the
+        /// selected multi-weight font can expand, and it starts collapsed.
+        let isExpanded: Bool
+        /// A weight download in progress for this row while it is collapsed
+        /// (TASK-112, 112.8): the ring beside the weight name.
+        let pendingWeightStatus: Status?
         var id: OverlayFontID { fontID }
-
-        /// Whether the row is the expanded card.
-        var isExpanded: Bool { !weights.isEmpty }
+        /// Whether the row can expand: the selected font with several weights.
+        var canExpand: Bool { !weights.isEmpty }
 
         /// Whether the name is drawn with the font itself; otherwise with its
         /// preview image.
@@ -168,8 +177,15 @@ final class FontLibraryModel: ObservableObject {
             case .none: return name
             }
         }
+        /// VoiceOver value of the selected multi-weight row: the current
+        /// weight (TASK-112, 112.9).
+        var accessibilityValue: String? { canExpand ? currentWeightName : nil }
+        /// VoiceOver hint of the selected multi-weight row (112.9).
+        var accessibilityHint: String? {
+            guard canExpand else { return nil }
+            return isExpanded ? "點兩下收合字重" : "點兩下展開字重"
+        }
     }
-
     /// One weight button of the expanded card.
     struct WeightCell: Identifiable, Equatable {
         let fontID: OverlayFontID
@@ -250,6 +266,10 @@ final class FontLibraryModel: ObservableObject {
     /// The face the user chose that is still downloading; applied only when
     /// `weightDownloadDidFinish` reports exactly this face (TASK-89).
     private(set) var pendingWeight: FontDownloadID?
+    /// Whether the selected multi-weight font's weight buttons are showing
+    /// (TASK-112, #437). In memory only: collapsed whenever the list appears
+    /// and whenever the selected font changes; toggled by tapping that row.
+    @Published private(set) var isWeightsExpanded = false
     private var weightCancellable: AnyCancellable?
     /// Fonts that went from `downloading` to `preparing` and are not yet
     /// available, so the check shows when they are.
@@ -348,15 +368,26 @@ final class FontLibraryModel: ObservableObject {
         let state = library.state(for: entry.fontID)
         let isSelected = entry.fontID == currentFontID
         let selectedWeight = entry.weight(for: isSelected ? currentWeightID : nil)
+        let isMultiWeightSelected = isSelected && entry.weights.count > 1
+        let pendingStatus: Status? = {
+            guard isMultiWeightSelected, let unit = pendingWeight, unit.fontID == entry.fontID else { return nil }
+            let status = weightStatus(library.state(for: unit.fontID, weightID: unit.weightID))
+            if case .downloading = status { return status }
+            if case .preparing = status { return status }
+            return nil
+        }()
         return Cell(fontID: entry.fontID,
                     name: Self.listName(of: entry),
                     state: state,
                     isSelected: isSelected,
                     status: status(of: entry.fontID, state: state),
                     canDelete: entry.source == .openSource && hasDownloadedFace(entry),
-                    weights: isSelected && entry.weights.count > 1 ? weightCells(of: entry, selected: selectedWeight) : [],
+                    weights: isMultiWeightSelected ? weightCells(of: entry, selected: selectedWeight) : [],
                     weightCount: entry.weights.count,
-                    nameWeightID: selectedWeight.id)
+                    nameWeightID: selectedWeight.id,
+                    currentWeightName: isMultiWeightSelected ? selectedWeight.displayName : nil,
+                    isExpanded: isMultiWeightSelected && isWeightsExpanded,
+                    pendingWeightStatus: pendingStatus)
     }
 
     /// Whether any face of the font is on the device: deleting removes them all.
@@ -399,6 +430,8 @@ final class FontLibraryModel: ObservableObject {
     /// The list came on screen: re-sorts it and starts announcing in it.
     func listDidAppear() {
         isVisible = true
+        // Every visit starts collapsed (TASK-112, 112.5).
+        isWeightsExpanded = false
         knownStates = Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, library.state(for: $0)) })
         dropStalePendingWeight()
         refreshLayout()
@@ -417,6 +450,8 @@ final class FontLibraryModel: ObservableObject {
         self.profileID = profileID
         if self.currentFontID != currentFontID {
             self.currentFontID = currentFontID
+            // A newly applied font shows collapsed (TASK-112, 112.4).
+            isWeightsExpanded = false
         }
         if self.currentWeightID != currentWeightID {
             self.currentWeightID = currentWeightID
@@ -429,9 +464,19 @@ final class FontLibraryModel: ObservableObject {
     /// `applyFont` (which downloads when needed); a download in progress is
     /// never cancelled, and a font still preparing does nothing.
     func didTap(_ fontID: OverlayFontID) {
+        // The selected multi-weight font's row toggles its weight buttons
+        // instead of re-applying the font (TASK-112, 112.2); a single-weight
+        // font keeps the old behaviour (112.7).
+        if fontID == currentFontID, FontCatalog.entry(for: fontID).weights.count > 1 {
+            isWeightsExpanded.toggle()
+            return
+        }
         // Choosing another font is the newer intent: a face still downloading
         // for the current font must not be applied after it (TASK-89).
-        if fontID != currentFontID { pendingWeight = nil }
+        if fontID != currentFontID {
+            pendingWeight = nil
+            isWeightsExpanded = false
+        }
         switch library.state(for: fontID) {
         case .available, .notDownloaded, .failed:
             applyFont(fontID, profileID)
