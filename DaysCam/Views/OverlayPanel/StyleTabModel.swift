@@ -20,9 +20,10 @@ final class StyleTabModel: ObservableObject {
     enum SubTab: CaseIterable {
         case color, size, outline, shadow, font
 
-        /// The only user-visible name — these are icon-only buttons, so this
-        /// is surfaced purely through the accessibility label (FR-10.1).
-        var accessibilityLabel: String {
+        /// The user-visible name, shown as the 10pt caption under the icon
+        /// (FR-10.1 as revised by TASK-110) and used as the accessibility
+        /// label, so VoiceOver reads each sub-tab exactly once.
+        var title: String {
             switch self {
             case .font: return "字型"
             case .color: return "顏色"
@@ -31,6 +32,9 @@ final class StyleTabModel: ObservableObject {
             case .size: return "字級"
             }
         }
+
+        /// Same word as `title`; kept so call sites and tests read naturally.
+        var accessibilityLabel: String { title }
     }
 
     /// The profile as currently configured. Read-only from outside: every

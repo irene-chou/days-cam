@@ -86,15 +86,18 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(height, 400, "陰影頁 \(height)pt")
     }
 
-    /// 57.6: the sub-tab row is 6 + 36 + 4.
-    func testSubTabRowHeightIs46() {
-        XCTAssertEqual(StyleTabView.subTabRowHeight, 46)
+    /// 57.6 → 110.1: the sub-tab row is 6 + (28 icon + 3 + 10pt caption, in
+    /// a 50pt item) + 4; the caption is 10pt (TASK-110).
+    func testSubTabRowHeightIs60() {
+        XCTAssertEqual(StyleTabView.subTabItemHeight, 50)
+        XCTAssertEqual(StyleTabView.subTabLabelFontSize, 10)
+        XCTAssertEqual(StyleTabView.subTabRowHeight, 60)
     }
 
     /// 49.1: a centered page fills what is left below the sub-tab row (224pt
-    /// panel: 224 - 4 - 46 - 10), and never goes negative on a tiny panel.
+    /// panel: 224 - 4 - 60 - 10), and never goes negative on a tiny panel.
     func testCenteredContentMinHeightFillsPanelBelowSubTabRow() {
-        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 224), 164)
+        XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 224), 150)
         XCTAssertEqual(StyleTabView.centeredContentMinHeight(availableHeight: 20), 0)
     }
 
