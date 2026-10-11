@@ -941,6 +941,32 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertTrue(calls.fontWeights.isEmpty, "a stale request is never applied")
     }
 
+    /// An update that leaves the profile and font as they were (another
+    /// setting changed) keeps a pending face of an unselected font.
+    func testUnrelatedProfileUpdateKeepsThePendingFontWeight() {
+        let library = FakeFontLibrary([.pingFang: .available])
+        let calls = Calls()
+        let model = makeModel(library: library, current: .pingFang, calls: calls)
+        model.didTapWeight("black", of: .notoSerifTC)
+        model.update(profileID: profileID, currentFontID: .pingFang, currentWeightID: nil)
+        XCTAssertEqual(model.pendingWeight, noto("black"), "字型沒變就保留 pending")
+        library.weightStates[noto("black")] = .available
+        library.weightDownloadDidFinish.send(noto("black"))
+        XCTAssertEqual(calls.fontWeights, [noto("black")])
+    }
+
+    /// A real font change to another font, or a profile switch, still drops it.
+    func testFontOrProfileChangeDropsThePendingFontWeight() {
+        let library = FakeFontLibrary([.pingFang: .available, .songti: .available])
+        let model = makeModel(library: library, current: .pingFang)
+        model.didTapWeight("black", of: .notoSerifTC)
+        model.update(profileID: profileID, currentFontID: .songti, currentWeightID: nil)
+        XCTAssertNil(model.pendingWeight)
+        model.didTapWeight("black", of: .notoSerifTC)
+        model.update(profileID: UUID(), currentFontID: .songti, currentWeightID: nil)
+        XCTAssertNil(model.pendingWeight)
+    }
+
     /// A newer weight tap replaces the older pending one, even across fonts.
     func testANewerWeightTapReplacesThePendingOne() {
         let library = FakeFontLibrary([.pingFang: .available])

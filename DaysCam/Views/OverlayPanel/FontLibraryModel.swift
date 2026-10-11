@@ -467,9 +467,14 @@ final class FontLibraryModel: ObservableObject {
     /// Called when the panel's profile copy changes (a font was applied), so
     /// the selection follows.
     func update(profileID: UUID, currentFontID: OverlayFontID, currentWeightID: String? = nil) {
-        // A pending face belongs to one profile; it survives a font change
-        // only when that change is to the pending face's own font.
-        if self.profileID != profileID || pendingWeight.map({ $0.fontID != currentFontID }) == true {
+        // A pending face belongs to one profile. It is dropped when the
+        // profile changes, or when the current font really changed to
+        // something other than the pending face's own font. An update that
+        // leaves the font as it was (a color or position edit) keeps it, so a
+        // download for an unselected font still applies (TASK-115).
+        let fontChanged = self.currentFontID != currentFontID
+        if self.profileID != profileID
+            || (fontChanged && pendingWeight.map({ $0.fontID != currentFontID }) == true) {
             pendingWeight = nil
         }
         self.profileID = profileID
