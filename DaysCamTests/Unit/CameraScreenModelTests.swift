@@ -418,10 +418,10 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.overlayText, "第 2 天")
     }
 
-    func testDateOnlyConfigurationShowsTheDateAndTheDayCount() throws {
-        // TASK-47 rewrites 8.3: the day count is always on (#226 R-13), so a
-        // "date only" edit is stored with it on. The date part must still be
-        // the capture date, never "第 N 天" (PRD FR-2.17).
+    func testDateOnlyConfigurationShowsTheDateAlone() throws {
+        // 8.3 again (TASK-107 #426 reverses TASK-47): a date-only profile is
+        // stored as such and prints the capture date alone the next day —
+        // never "第 2 天" (PRD FR-2.17, 107.6).
         let seedDay = try fixedNow() // 2026-01-10
         let store = makeProfileStore(now: seedDay)
         var dateOnly = try XCTUnwrap(store.profiles.first)
@@ -431,7 +431,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
         let (model, _, _, _) = makeModel(profileStore: store, now: nextDay)
-        XCTAssertEqual(model.overlayText, "2026.01.11 第 2 天")
+        XCTAssertEqual(model.overlayText, "2026.01.11", "107.6")
     }
 
     func testOverlayTextPrefixesTheNameWhenShowNameIsOn() throws {
@@ -859,10 +859,9 @@ final class CameraScreenModelTests: XCTestCase {
         }
     }
 
-    func testDateOnlyConfigurationShowsTheDateAlongsideNotStarted() throws {
-        // TASK-47 rewrites 15.4: the day count is always on (#226 R-13), so
-        // "尚未開始" is printed too — but only for the elapsed amount; the
-        // date part must still be the date.
+    func testDateOnlyConfigurationShowsTheDateAloneBeforeTheStart() throws {
+        // 15.4 again (TASK-107 reverses TASK-47): with the day count off a
+        // future start date prints nothing about it — the date part alone.
         let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
         let store = makeProfileStore(now: now)
         var future = try makeFutureProfile(store: store)
@@ -872,7 +871,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
-        XCTAssertEqual(model.overlayText, "2025.12.01 還有 31 天")
+        XCTAssertEqual(model.overlayText, "2025.12.01", "107.2")
     }
 
     func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {
