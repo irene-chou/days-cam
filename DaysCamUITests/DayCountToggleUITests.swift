@@ -19,7 +19,7 @@ final class DayCountToggleUITests: XCTestCase {
         return switches.exists ? switches : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
     }
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 ' OR label BEGINSWITH '20'")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 ' OR label BEGINSWITH '20'")).firstMatch
     }
     private var units: XCUIElement { app.descendants(matching: .any).matching(identifier: "dayCountUnits").firstMatch }
 
@@ -43,7 +43,7 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(toggle("日期").exists && toggle("名稱").exists, "107.1 three switches")
         XCTAssertTrue(isOn(toggle("天數")), "107.1 day count on by default")
         XCTAssertFalse(isOn(toggle("日期")), "107.1 date off by default")
-        XCTAssertFalse(isOn(toggle("名稱")), "107.1 name off by default")
+        XCTAssertTrue(isOn(toggle("名稱")), "107.1 name on by default (TASK-119)")
         XCTAssertTrue(app.buttons["週"].isEnabled, "units are live while the day count is on")
 
         toggle("日期").tap()
@@ -51,14 +51,16 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertFalse(isOn(toggle("天數")), "107.2 day count off")
         let text = overlayText
         XCTAssertTrue(text.waitForExistence(timeout: 3))
-        XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(text.label)")
+        XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
+        toggle("名稱").tap()
+        XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(overlayText.label)")
         // Inert: tapping a unit changes nothing (XCUITest still reports the
         // dimmed buttons as hittable, so the check is behavioural).
         app.buttons["週"].tap()
         XCTAssertFalse(app.buttons["週"].isSelected, "107.4 the units are inert")
 
         toggle("名稱").tap()
-        XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 預設$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
+        XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
 
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "107.4 back on")

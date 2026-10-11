@@ -72,7 +72,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
     private var bubbleFrame: CGRect { app.descendants(matching: .any)["onboardingBubble"].frame }
     /// The day-count text on the viewfinder (第 1 天 on a fresh profile).
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 '")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
     }
 
     private func assertTourGone(_ note: String) {

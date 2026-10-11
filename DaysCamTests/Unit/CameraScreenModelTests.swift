@@ -95,10 +95,16 @@ final class CameraScreenModelTests: XCTestCase {
         try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
     }
 
-    private func makeProfileStore(now: Date, seed: [CameraProfile] = []) -> ProfileStore {
+    /// `seedShowsName` keeps the TASK-119 default (name on) for the seeded
+    /// profile; most tests predate it and assert text without the name.
+    private func makeProfileStore(now: Date, seed: [CameraProfile] = [], seedShowsName: Bool = false) -> ProfileStore {
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
         if seed.isEmpty {
             store.load() // seeds the one default profile
+            if !seedShowsName, var seeded = store.profiles.first {
+                seeded.showName = false
+                try? store.update(seeded)
+            }
         } else {
             for profile in seed {
                 _ = try? store.add(profile)
@@ -392,10 +398,11 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testOverlayTextForFreshInstallIsDayOne() throws {
         // 8.1: a fresh install seeds one default profile with startDate ==
-        // today, so the overlay reads "第 1 天" with no further setup.
+        // today, so the overlay reads "我的紀錄 第 1 天" (TASK-119) with no further setup.
         let now = try fixedNow() // 2026-01-10
-        let (model, _, _, _) = makeModel(now: now)
-        XCTAssertEqual(model.overlayText, "第 1 天")
+        let store = makeProfileStore(now: now, seedShowsName: true)
+        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+        XCTAssertEqual(model.overlayText, "\(ProfileStore.defaultProfileName) 第 1 天")
     }
 
     func testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment() throws {
@@ -438,12 +445,12 @@ final class CameraScreenModelTests: XCTestCase {
         // 8.4/8.5: name on prepends "{name} ", name off leaves no stray space.
         let now = try fixedNow()
         let store = makeProfileStore(now: now)
-        var withName = try XCTUnwrap(store.profiles.first) // name defaults to "預設"
+        var withName = try XCTUnwrap(store.profiles.first) // name defaults to the seed name
         withName.showName = true
         try store.update(withName)
 
         let (shown, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(shown.overlayText, "預設 第 1 天")
+        XCTAssertEqual(shown.overlayText, "\(ProfileStore.defaultProfileName) 第 1 天")
 
         withName.showName = false
         try store.update(withName)
@@ -488,7 +495,7 @@ final class CameraScreenModelTests: XCTestCase {
         DispatchQueue.main.async { expectation.fulfill() }
         wait(for: [expectation], timeout: 1)
 
-        XCTAssertEqual(model.profiles.map(\.name), ["預設", "小寶"])
+        XCTAssertEqual(model.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶"])
         XCTAssertEqual(model.selectedProfileID, store.selectedProfileID)
     }
 
@@ -497,7 +504,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testCurrentProfileNameReflectsTheSelectedProfile() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now)
-        XCTAssertEqual(model.currentProfileName, "預設")
+        XCTAssertEqual(model.currentProfileName, ProfileStore.defaultProfileName)
     }
 
     func testSelectProfileForwardsToTheStoreAndUpdatesTheOverlay() throws {
@@ -515,7 +522,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertEqual(store.selectedProfileID, defaultProfile.id)
         XCTAssertEqual(store.lastUsedProfileID, defaultProfile.id)
-        waitUntil { model.currentProfileName == "預設" }
+        waitUntil { model.currentProfileName == ProfileStore.defaultProfileName }
         // Default profile was seeded with startDate == `now` itself, so under
         // `.dayOne` this is day 1.
         XCTAssertEqual(model.overlayText, "第 1 天")
