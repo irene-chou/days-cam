@@ -174,7 +174,7 @@ final class ProfileManagerModelTests: XCTestCase {
         var template = store.profiles[0]
         template.showDate = true
         template.showName = true
-        template.displayUnits = [.week, .day]
+        template.displayUnits = [.year, .day]
         template.useAgeWording = true
         template.position = .custom(x: 0.2, y: 0.3)
         template.style.textColor = OverlayColor(red8: 0x12, green8: 0x34, blue8: 0x56)
@@ -196,7 +196,7 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(kept.countingRule, .dayOne, "counting rule is reset, not copied")
         XCTAssertEqual(kept.showDate, true)
         XCTAssertEqual(kept.showName, true)
-        XCTAssertEqual(kept.displayUnits, [.week, .day])
+        XCTAssertEqual(kept.displayUnits, [.year, .day])
         XCTAssertEqual(kept.useAgeWording, true)
         XCTAssertEqual(kept.position, .custom(x: 0.2, y: 0.3))
         XCTAssertEqual(kept.style, template.style, "106.4 same colors, size, font, outline, shadow")
