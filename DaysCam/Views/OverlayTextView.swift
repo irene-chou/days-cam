@@ -48,6 +48,12 @@ struct OverlayTextView: View {
     /// Called once when the drag ends, with the same two values as
     /// `onDragChanged`'s final call.
     var onDragEnded: ((CGPoint, CGSize) -> Void)?
+    /// Called for a tap on the block while it is not draggable (TASK-105,
+    /// #420): the camera screen opens the overlay panel with it. While
+    /// non-nil the block also swallows taps that would otherwise fall through
+    /// to the viewfinder (focus, FR-8.7 collapse), so pass an empty closure
+    /// to keep the block tappable-but-inert.
+    var onTap: (() -> Void)?
 
     @Environment(\.displayScale) private var displayScale
     /// Memoizes pixels independently of placement and gesture state.
@@ -82,7 +88,8 @@ struct OverlayTextView: View {
          frameSize: CGSize,
          font: ResolvedOverlayFont = .pingFang,
          onDragChanged: ((CGPoint, CGSize) -> Void)? = nil,
-         onDragEnded: ((CGPoint, CGSize) -> Void)? = nil) {
+         onDragEnded: ((CGPoint, CGSize) -> Void)? = nil,
+         onTap: (() -> Void)? = nil) {
         self.text = text
         self.style = style
         self.placement = placement
@@ -90,7 +97,13 @@ struct OverlayTextView: View {
         self.font = font
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
+        self.onTap = onTap
     }
+
+    /// How far a touch may travel and still count as a tap on the block
+    /// (TASK-105); anything longer is a drag, which does nothing while the
+    /// block is not draggable.
+    static let tapTranslationLimit: CGFloat = 10
 
     /// Whether this instance should accept drags at all. `CameraScreen` is
     /// expected to only ever pass non-nil closures while
@@ -139,19 +152,31 @@ struct OverlayTextView: View {
                 // block up where it actually is — a look-only cut-out.
                 .onboardingTarget(.overlayText)
                 .position(x: displayOrigin.x + blockSize.width / 2, y: displayOrigin.y + blockSize.height / 2)
-                .allowsHitTesting(isInteractive)
+                // Where the block sits, in the viewfinder's coordinates, for
+                // the camera screen to keep tap-to-focus off it (TASK-105).
+                .preference(key: OverlayTextBlockFrameKey.self,
+                            value: CGRect(origin: settledOrigin, size: blockSize))
+                .allowsHitTesting(isInteractive || onTap != nil)
                 .gesture(
                     // Always attached, never conditionally — `allowsHitTesting`
                     // above is the single switch that decides whether this can
                     // ever actually receive a touch, so there is no second place
-                    // "draggable or not" has to stay in sync.
+                    // "draggable or not" has to stay in sync. The same
+                    // zero-distance drag is also the tap (TASK-105): while the
+                    // block is not draggable, a touch that ends within
+                    // `tapTranslationLimit` of where it began is `onTap`.
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
+                            guard isInteractive else { return }
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             liveDragCenter = center
                             onDragChanged?(center, frameSize)
                         }
                         .onEnded { value in
+                            guard isInteractive else {
+                                if Self.isTap(translation: value.translation) { onTap?() }
+                                return
+                            }
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             onDragEnded?(center, frameSize)
                             // Hands display back to `placement` — by the time
@@ -165,6 +190,11 @@ struct OverlayTextView: View {
                         }
                 )
         }
+    }
+
+    /// Whether a finished touch moved little enough to be a tap (TASK-105).
+    static func isTap(translation: CGSize) -> Bool {
+        hypot(translation.width, translation.height) <= tapTranslationLimit
     }
 
     /// `Self.clampedDragCenter`, filling in this gesture's start center —
@@ -375,4 +405,14 @@ final class OverlayTextRenderCache {
                          frameSize: CGSize(width: 300, height: 400))
     }
     .frame(width: 300, height: 400)
+}
+
+/// The overlay text block's frame in the viewfinder's coordinates
+/// (TASK-105, #420), `.null` while nothing is drawn.
+struct OverlayTextBlockFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .null
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isNull { value = next }
+    }
 }

@@ -463,7 +463,12 @@ struct CameraScreen: View {
                             } : nil,
                             onDragEnded: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
                                 model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
-                            } : nil)
+                            } : nil,
+                            // A tap on the text opens the panel while it is
+                            // closed and does nothing while it is open — in
+                            // particular it never collapses it (TASK-105,
+                            // #420; PRD 0.2 FR-8.7).
+                            onTap: { model.handleOverlayTextTap() })
 
             if let countdownRemaining = model.countdownRemaining {
                 Text("\(countdownRemaining)")
@@ -495,11 +500,12 @@ struct CameraScreen: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .contentShape(Rectangle())
+        .onPreferenceChange(OverlayTextBlockFrameKey.self) { model.overlayTextFrame = $0 }
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
         // collapses the panel, only while it is open. `OverlayTextView`
-        // itself claims its own hit-testing area only while draggable
-        // (position tab), so a tap that starts there reaches its drag
-        // gesture instead of this one — never both.
+        // claims its own hit-testing area (always tappable since TASK-105,
+        // draggable on the position tab), so a tap that starts there
+        // reaches its gesture instead of this one — never both.
         .onTapGesture {
             model.handleViewfinderTap()
         }
