@@ -1,0 +1,39 @@
+category	label	postScript	resolved	sampleRuns	overlayRuns	glyphRuns	fallback
+黑	思源黑體 Noto Sans TC（Black）	NotoSansTC-Black	NotoSansTC-Black	NotoSansTC-Black	NotoSansTC-Black	NotoSansTC-Black	ok
+黑	台北黑體（Bold）	TaipeiSansTCBeta-Bold	TaipeiSansTCBeta-Bold	TaipeiSansTCBeta-Bold	TaipeiSansTCBeta-Bold	TaipeiSansTCBeta-Bold	ok
+黑	源石黑體（H）	GenSekiGothic2TW-H	GenSekiGothic2TW-H	GenSekiGothic2TW-H	GenSekiGothic2TW-H	GenSekiGothic2TW-H	ok
+黑	昭源黑體（Heavy）	ChironHeiHK-Heavy	ChironHeiHK-Heavy	ChironHeiHK-Heavy	ChironHeiHK-Heavy	ChironHeiHK-Heavy	ok
+黑	朱古力黑體（Regular）	ChocolateClassicalSans-Regular	ChocolateClassicalSans-Regular	ChocolateClassicalSans-Regular	ChocolateClassicalSans-Regular	ChocolateClassicalSans-Regular	ok
+黑	未來熒黑 TC（Heavy）	GlowSansTC-Normal-Heavy	GlowSansTC-Normal-Heavy	GlowSansTC-Normal-Heavy	GlowSansTC-Normal-Heavy	GlowSansTC-Normal-Heavy,PingFangTC-Semibold,GlowSansTC-Normal-Heavy	FALLBACK
+圓	源泉圓體（H）	GenSenRounded2TW-H	GenSenRounded2TW-H	GenSenRounded2TW-H	GenSenRounded2TW-H	GenSenRounded2TW-H	ok
+圓	獅尾圓體（Black）	SweiGothicCJKtc-Black	SweiGothicCJKtc-Black	SweiGothicCJKtc-Black	SweiGothicCJKtc-Black	SweiGothicCJKtc-Black	ok
+圓	昭源環方（Heavy）	ChironGoRoundTC-Heavy	ChironGoRoundTC-Heavy	ChironGoRoundTC-Heavy	ChironGoRoundTC-Heavy	ChironGoRoundTC-Heavy	ok
+宋	源雲明體（SB）	GenWanMin2TW-SB	GenWanMin2TW-SB	GenWanMin2TW-SB	GenWanMin2TW-SB	GenWanMin2TW-SB	ok
+宋	源流明體（H）	GenRyuMin2TW-H	GenRyuMin2TW-H	GenRyuMin2TW-H	GenRyuMin2TW-H	GenRyuMin2TW-H	ok
+宋	獅尾四季春（Black）	SweiSpringCJKtc-Black	SweiSpringCJKtc-Black	SweiSpringCJKtc-Black	SweiSpringCJKtc-Black	SweiSpringCJKtc-Black	ok
+宋	獅尾加糖宋體（Black）	SweiSugarCJKtc-Black	SweiSugarCJKtc-Black	SweiSugarCJKtc-Black	SweiSugarCJKtc-Black	SweiSugarCJKtc-Black	ok
+宋	昭源宋體（Heavy）	ChironSungHK-Heavy	ChironSungHK-Heavy	ChironSungHK-Heavy	ChironSungHK-Heavy	ChironSungHK-Heavy	ok
+宋	仙人掌明體（Regular）	CactusClassicalSerif-Regular	CactusClassicalSerif-Regular	CactusClassicalSerif-Regular	CactusClassicalSerif-Regular,PingFangTC-Regular,CactusClassicalSerif-Regular	CactusClassicalSerif-Regular	FALLBACK
+宋	全字庫正宋體	TW-Sung-98_1	TW-Sung-98_1	TW-Sung-98_1	TW-Sung-98_1	TW-Sung-98_1	ok
+宋	宇文天穹（Regular）	UoqMunThenKhung-Regular	UoqMunThenKhung-Regular	UoqMunThenKhung-Regular	UoqMunThenKhung-Regular	UoqMunThenKhung-Regular	ok
+楷	霞鶩文楷 TC（Medium）	LXGWWenKaiTC-Medium	LXGWWenKaiTC-Medium	LXGWWenKaiTC-Medium	LXGWWenKaiTC-Medium	LXGWWenKaiTC-Medium	ok
+楷	全字庫正楷體	TW-Kai-98_1	TW-Kai-98_1	TW-Kai-98_1	TW-Kai-98_1	TW-Kai-98_1	ok
+楷	教育部標準楷書	TW-MOE-Std-Kai	TW-MOE-Std-Kai	TW-MOE-Std-Kai	TW-MOE-Std-Kai	TW-MOE-Std-Kai	ok
+楷	文鼎 PL 中楷 UKai TW	UKaiTW	UKaiTW	UKaiTW	UKaiTW	UKaiTW	ok
+手寫	清松手寫體 1	JasonHandwriting1-Regular	JasonHandwriting1-Regular	JasonHandwriting1-Regular	JasonHandwriting1-Regular,PingFangTC-Regular,JasonHandwriting1-Regular	JasonHandwriting1-Regular	FALLBACK
+手寫	清松手寫體 3	JasonHandwriting3	JasonHandwriting3	JasonHandwriting3	JasonHandwriting3,PingFangTC-Regular,JasonHandwriting3	JasonHandwriting3	FALLBACK
+手寫	清松手寫體 5p	JasonHandwriting5p	JasonHandwriting5p	JasonHandwriting5p	JasonHandwriting5p,PingFangTC-Regular,JasonHandwriting5p	JasonHandwriting5p	FALLBACK
+手寫	清松手寫體 7p	JasonHandwriting7p-Regular	JasonHandwriting7p-Regular	JasonHandwriting7p-Regular	JasonHandwriting7p-Regular,PingFangTC-Regular,JasonHandwriting7p-Regular	JasonHandwriting7p-Regular	FALLBACK
+手寫	清松手寫體 9p	JasonHandwriting9p	JasonHandwriting9p	JasonHandwriting9p	JasonHandwriting9p,PingFangTC-Regular,JasonHandwriting9p	JasonHandwriting9p	FALLBACK
+手寫	內海字體（Bold）	NaikaiFont-Bold	NaikaiFont-Bold	NaikaiFont-Bold	NaikaiFont-Bold	NaikaiFont-Bold	ok
+手寫	小賴字體	Xiaolai	Xiaolai	Xiaolai	Xiaolai	Xiaolai	ok
+手寫	悠哉字體（Medium）	Yozai-Medium	Yozai-Medium	Yozai-Medium	Yozai-Medium	Yozai-Medium	ok
+手寫	何某手寫體（Bold）	NaniFont-Bold	NaniFont-Bold	NaniFont-Bold	NaniFont-Bold	NaniFont-Bold	ok
+手寫	霞鶩漫黑	LXGWMarkerGothic-Regular	LXGWMarkerGothic-Regular	LXGWMarkerGothic-Regular	LXGWMarkerGothic-Regular	LXGWMarkerGothic-Regular	ok
+手寫	苦累蛙圓體（Bold）	KurewaGothicCjkTc-Bold	KurewaGothicCjkTc-Bold	KurewaGothicCjkTc-Bold	KurewaGothicCjkTc-Bold	KurewaGothicCjkTc-Bold	ok
+書法	莫大毛筆（Bold，授權未確認）	Bakudai-Bold	Bakudai-Bold	Bakudai-Bold	Bakudai-Bold	Bakudai-Bold	ok
+書法	正風毛筆（Bold，授權未確認）	MasaFont-Bold	MasaFont-Bold	MasaFont-Bold	MasaFont-Bold	MasaFont-Bold	ok
+可愛	大波浪圓體（Bold）	PopGothicCjkTc-Bold	PopGothicCjkTc-Bold	PopGothicCjkTc-Bold	PopGothicCjkTc-Bold	PopGothicCjkTc-Bold	ok
+可愛	WD-XL 滑油字 TC	WD-XLLubrifontTC-Regular	WD-XLLubrifontTC-Regular	WD-XLLubrifontTC-Regular	WD-XLLubrifontTC-Regular	WD-XLLubrifontTC-Regular	ok
+可愛	俐方體 11 號	Cubic_11	Cubic_11	Cubic_11	Cubic_11	Cubic_11	ok
+可愛	縫合像素 12px zh-TW	Fusion-Pixel-12px-Prop-zh-TW-Regular	Fusion-Pixel-12px-Prop-zh-TW-Regular	Fusion-Pixel-12px-Prop-zh-TW-Regular	Fusion-Pixel-12px-Prop-zh-TW-Regular	Fusion-Pixel-12px-Prop-zh-TW-Regular	ok
