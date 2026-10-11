@@ -18,6 +18,34 @@ final class DisplaySettingsModel: ObservableObject {
     /// change goes through one of this model's setters so the FR-2.4/2.8/2.9
     /// invariants stay enforced and every change is persisted.
     @Published private(set) var profile: CameraProfile
+
+    /// A change the model refused because it would leave nothing to show
+    /// (TASK-108, #422): the last checked unit, or the last of 天數／日期.
+    /// The view answers each one with a bounce, a light haptic and a short
+    /// hint (FR-11.2／FR-11.3); `serial` makes a repeated refusal a new event.
+    struct Rejection: Equatable {
+        enum Kind: Equatable {
+            case lastUnit(DisplayUnit)
+            case lastContentSwitch(ContentSwitch)
+        }
+        enum ContentSwitch: Equatable { case dayCount, date }
+        let kind: Kind
+        let serial: Int
+
+        /// The hint the view floats for this refusal (D-7 proposal 3 wording).
+        var hint: String {
+            switch kind {
+            case .lastUnit: return "至少保留一個單位"
+            case .lastContentSwitch: return "至少顯示天數或日期"
+            }
+        }
+    }
+    /// The most recent refusal; `nil` until one happens.
+    @Published private(set) var lastRejection: Rejection?
+
+    private func reject(_ kind: Rejection.Kind) {
+        lastRejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
+    }
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
@@ -71,7 +99,10 @@ extension DisplaySettingsModel {
     /// §4.1 invariant 3) — and the view's switch springs back (107.3).
     func setShowDayCount(_ newValue: Bool) {
         guard newValue != profile.showDayCount else { return }
-        guard newValue || profile.showDate else { return }
+        guard newValue || profile.showDate else {
+            reject(.lastContentSwitch(.dayCount))
+            return
+        }
         mutate { $0.showDayCount = newValue }
     }
 
@@ -79,7 +110,10 @@ extension DisplaySettingsModel {
     /// while the day count is off is refused (107.3).
     func setShowDate(_ newValue: Bool) {
         guard newValue != profile.showDate else { return }
-        guard newValue || profile.showDayCount else { return }
+        guard newValue || profile.showDayCount else {
+            reject(.lastContentSwitch(.date))
+            return
+        }
         mutate { $0.showDate = newValue }
     }
 
@@ -109,15 +143,18 @@ extension DisplaySettingsModel {
 extension DisplaySettingsModel {
     /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, TASK-27).
     ///
-    /// Unchecking the last remaining unit is a no-op: `displayUnits` may
-    /// never be empty. Unchecking the year also turns `useAgeWording` off
-    /// (FR-11.4).
+    /// Unchecking the last remaining unit is refused (`lastRejection`,
+    /// TASK-108): `displayUnits` may never be empty. Unchecking the year also
+    /// turns `useAgeWording` off (FR-11.4).
     func toggleUnit(_ unit: DisplayUnit) {
         // With the day count off the units have nothing to format: the tap
         // changes nothing (107.4; the feedback is TASK-108's 108.8).
         guard !areUnitsInert else { return }
         if profile.displayUnits.contains(unit) {
-            guard profile.displayUnits.count > 1 else { return }
+            guard profile.displayUnits.count > 1 else {
+                reject(.lastUnit(unit))
+                return
+            }
             mutate { profile in
                 profile.displayUnits.remove(unit)
                 if unit == .year {
@@ -129,11 +166,11 @@ extension DisplaySettingsModel {
         }
     }
 
-    /// Whether `unit`'s checkbox should be disabled: it is the last unit
-    /// still checked, so unchecking it would leave `displayUnits` empty
-    /// (FR-11.3) — mirrors `toggleUnit`'s own no-op guard, so the view can
-    /// show the same rule it enforces.
-    func isUnitToggleDisabled(_ unit: DisplayUnit) -> Bool {
+    /// Whether `unit` is the last unit still checked, so unchecking it is
+    /// refused (FR-11.3) — mirrors `toggleUnit`'s guard. Since TASK-108 the
+    /// checkbox is not disabled or dimmed for it; the refusal is answered
+    /// with feedback instead (was `isUnitToggleDisabled`).
+    func isLastCheckedUnit(_ unit: DisplayUnit) -> Bool {
         profile.displayUnits.contains(unit) && profile.displayUnits.count == 1
     }
 

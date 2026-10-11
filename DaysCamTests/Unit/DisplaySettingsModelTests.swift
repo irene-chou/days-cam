@@ -169,22 +169,22 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.count, 3)
     }
 
-    // MARK: - isUnitToggleDisabled (24.2, mirrors toggleUnit's no-op guard)
+    // MARK: - isLastCheckedUnit (24.2 → 108.7: the last unit cannot be unchecked; not disabled)
 
-    func testOnlyTheLastCheckedUnitIsDisabled() throws {
+    func testOnlyTheLastCheckedUnitCannotBeUnchecked() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(displayUnits: [.day]), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isUnitToggleDisabled(.day), "24.2: 只剩天，天 disabled")
-        XCTAssertFalse(model.isUnitToggleDisabled(.year), "24.2: 未勾的年不 disabled")
-        XCTAssertFalse(model.isUnitToggleDisabled(.month))
-        XCTAssertFalse(model.isUnitToggleDisabled(.week))
+        XCTAssertTrue(model.isLastCheckedUnit(.day), "108.7: 只剩天，天不可取消")
+        XCTAssertFalse(model.isLastCheckedUnit(.year), "108.7: 未勾的年可以勾")
+        XCTAssertFalse(model.isLastCheckedUnit(.month))
+        XCTAssertFalse(model.isLastCheckedUnit(.week))
     }
 
-    func testNoUnitIsDisabledOnceMoreThanOneIsChecked() throws {
+    func testAnyUnitCanBeUncheckedOnceMoreThanOneIsChecked() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.isUnitToggleDisabled(.year))
-        XCTAssertFalse(model.isUnitToggleDisabled(.day))
+        XCTAssertFalse(model.isLastCheckedUnit(.year))
+        XCTAssertFalse(model.isLastCheckedUnit(.day))
     }
 
     // MARK: - A-5 歲措辭 (11.28–11.31)
@@ -322,5 +322,38 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setUseAgeWording(true)
         XCTAssertTrue(model.profile.useAgeWording, "107.4 live again")
         XCTAssertTrue(model.overlayPreviewText.contains("週"), "107.4 the units are back in use: \(model.overlayPreviewText)")
+    }
+
+    // MARK: - TASK-108 (#422) refusals are reported for feedback
+
+    /// 108.1／108.3: unchecking the last unit is refused and reported; a
+    /// later uncheck that is allowed reports nothing new.
+    func testUncheckingTheLastUnitIsReportedAsARejection() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        XCTAssertNil(model.lastRejection)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.lastRejection?.kind, .lastUnit(.day), "108.1")
+        XCTAssertEqual(model.lastRejection?.hint, "至少保留一個單位")
+        XCTAssertEqual(model.profile.displayUnits, [.day])
+        let serial = model.lastRejection?.serial
+        model.toggleUnit(.day)
+        XCTAssertNotEqual(model.lastRejection?.serial, serial, "a repeated refusal is a new event")
+        model.toggleUnit(.week)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.week], "108.3 allowed")
+        XCTAssertEqual(model.lastRejection?.serial, (serial ?? 0) + 1, "108.3 no new rejection")
+    }
+
+    /// 108.4: refusing to turn off the last of 天數／日期 is reported too.
+    func testTurningOffTheLastContentSwitchIsReportedAsARejection() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        model.setShowDayCount(false)
+        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.dayCount), "108.4")
+        XCTAssertEqual(model.lastRejection?.hint, "至少顯示天數或日期")
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        model.setShowDate(false)
+        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.date), "108.4 the other way")
+        XCTAssertTrue(model.profile.showDate)
     }
 }
