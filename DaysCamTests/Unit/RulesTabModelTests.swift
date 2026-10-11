@@ -209,11 +209,13 @@ final class RulesTabModelTests: XCTestCase {
 
     func testFieldsStayWritableWhateverTheDayCountFlag() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(showDayCount: false), now: try fixedNow(), spy: spy)
+        let model = makeModel(profile: baselineProfile(showDayCount: false, showDate: true), now: try fixedNow(), spy: spy)
         model.setStartDate(try XCTUnwrap(DateFixture.date(2026, 1, 2)))
         model.setCountingRule(.dayZero)
         XCTAssertEqual(spy.updated.count, 2, "43.2／43.6")
-        XCTAssertEqual(model.overlayPreviewText, "第 8 天")
+        // The preview is the actual overlay (TASK-109): a date-only profile
+        // previews the date, not a count it never prints.
+        XCTAssertEqual(model.overlayPreviewText, "2026.01.10")
     }
 
     // MARK: - 25.6 起算分段控制的兩個選項文字
