@@ -193,6 +193,28 @@ final class CameraScreenModel: ObservableObject {
         isCapturing || inFlightSaveCount >= Self.maxInFlightSaves
     }
 
+    /// How long a photo may wait for its save to call back before it is given
+    /// up on (TASK-151, #529).
+    static let defaultSaveTimeout: TimeInterval = 30
+    private let saveTimeout: TimeInterval
+
+    /// One photo's place among the in-flight ones. Settled exactly once: by
+    /// the save's callback, or by the timeout if that never comes.
+    final class SaveSlot {
+        private(set) var isSettled = false
+        /// The pending timeout. Its closure captures the slot, so `settle()`
+        /// must drop it or the two keep each other alive.
+        var timeout: DispatchWorkItem?
+
+        /// Marks the slot answered, cancels the timeout and breaks the
+        /// slot ↔ timeout cycle. Every path that ends a save calls this.
+        func settle() {
+            isSettled = true
+            timeout?.cancel()
+            timeout = nil
+        }
+    }
+
     /// Bakes one photo at a time, in capture order.
     private let pipelineQueue = DispatchQueue(label: "dayscam.capture-pipeline", qos: .userInitiated)
 
@@ -362,10 +384,12 @@ final class CameraScreenModel: ObservableObject {
          fontLibrary: (any FontShellControlling)? = nil,
          onboarding: OnboardingSpotlightModel = OnboardingSpotlightModel(),
          fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
+         saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
          resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
              OverlayMetrics.resolvedFont(for: $0, availability: $1)
          }) {
         self.resolveFont = resolveFont
+        self.saveTimeout = saveTimeout
         self.onboarding = onboarding
         self.fontLibrary = fontLibrary ?? InertFontLibrary()
         self.fontPreparationTimeout = fontPreparationTimeout
@@ -1328,6 +1352,9 @@ extension CameraScreenModel {
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
+        // Only the identity is kept for the timing log, so a pending save
+        // timeout does not hold the full-resolution photo in memory.
+        let imageKey = ObjectIdentifier(image)
         pipelineQueue.async {
             // core-dev's reminder: a 12MP photo in a wide-gamut color space
             // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
@@ -1346,6 +1373,7 @@ extension CameraScreenModel {
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
+                CaptureTiming.discard(imageKey)
                 DispatchQueue.main.async { [weak self] in
                     self?.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
                     self?.inFlightSaveCount -= 1
@@ -1356,7 +1384,7 @@ extension CameraScreenModel {
             // it depends on: a 12MP `UIImage` is not something the thumbnail
             // (88px) or the flight animation (~600px) should hold on to.
             let thumbnail = Self.thumbnail(of: baked)
-            CaptureTiming.mark(.baked)
+            CaptureTiming.mark(.baked, for: imageKey)
             let flightImage = Self.thumbnail(of: baked, maxDimension: Self.flightImageMaxDimension)
             let flightID = UUID()
 
@@ -1367,13 +1395,38 @@ extension CameraScreenModel {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail))
+                let slot = SaveSlot()
+                let timeout = DispatchWorkItem { [weak self] in
+                    guard let self, !slot.isSettled else { return }
+                    // The save never called back: give the place up and say
+                    // so, rather than report a save nobody confirmed.
+                    slot.settle()
+                    CaptureTiming.discard(imageKey)
+                    self.markFlightFailed(id: flightID)
+                    self.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
+                                            showsSettingsAction: false)
+                    self.inFlightSaveCount -= 1
+                }
+                slot.timeout = timeout
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.saveTimeout, execute: timeout)
                 save(baked) { [weak self] result in
                     guard let self else { return }
                     // `PhotoSaver.saveReturningIdentifier`'s completion
                     // already guarantees main.
+                    guard !slot.isSettled else {
+                        // Answered after the timeout already reported this
+                        // photo and freed its place: nothing is reported or
+                        // counted twice, but a photo that did reach the
+                        // library is still recorded for the gallery.
+                        if case let .success(assetID) = result {
+                            self.capturedPhotoStore.recordCapturedAsset(assetID)
+                        }
+                        return
+                    }
+                    slot.settle()
                     switch result {
                     case let .success(assetID):
-                        CaptureTiming.mark(.saved)
+                        CaptureTiming.mark(.saved, for: imageKey)
                         // PRD 0.2 FR-15.1/FR-15.2: record the new asset so
                         // the gallery (TASK-29) can find it later.
                         self.capturedPhotoStore.recordCapturedAsset(assetID)
@@ -1382,6 +1435,7 @@ extension CameraScreenModel {
                         // VoiceOver users hear it instead (issue #148).
                         self.announce("已儲存")
                     case let .failure(error):
+                        CaptureTiming.discard(imageKey)
                         self.markFlightFailed(id: flightID)
                         self.reportPhotoFailure(message: error.displayMessage,
                                                 showsSettingsAction: error.showsSettingsAction)

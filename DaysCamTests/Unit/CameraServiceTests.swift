@@ -1251,6 +1251,29 @@ final class CameraServiceLowLatencyCaptureTests: XCTestCase {
                        "shutterToWillCapture=n/a shutterToDidFinishCapture=500ms", "143.2 no willCapture")
     }
 
+    /// 151.3: two captures overlapping each log their own begin → baked →
+    /// saved, with their own times and sizes.
+    func testOverlappingCapturesKeepTheirOwnTiming() {
+        let recorder = CaptureTimingRecorder()
+        let firstID = UUID(), secondID = UUID()
+        let first = NSObject(), second = NSObject()
+        let firstKey = ObjectIdentifier(first), secondKey = ObjectIdentifier(second)
+
+        recorder.begin(id: firstID, at: 0)
+        recorder.markProcessed(id: firstID, photo: firstKey, size: CGSize(width: 4000, height: 3000), at: 0.5)
+        recorder.begin(id: secondID, at: 1.0) // pressed while the first is still baking
+        recorder.markProcessed(id: secondID, photo: secondKey, size: CGSize(width: 3000, height: 3000), at: 1.5)
+        XCTAssertNil(recorder.mark(.baked, photo: firstKey, at: 1.5))
+        XCTAssertNil(recorder.mark(.baked, photo: secondKey, at: 2.0))
+
+        let secondLine = recorder.mark(.saved, photo: secondKey, at: 2.5)
+        let firstLine = recorder.mark(.saved, photo: firstKey, at: 3.0)
+
+        XCTAssertEqual(firstLine, "processed=500ms baked=1000ms saved=1500ms shutterToBaked=1500ms total=3000ms size=4000x3000", "151.3")
+        XCTAssertEqual(secondLine, "processed=500ms baked=500ms saved=500ms shutterToBaked=1000ms total=1500ms size=3000x3000", "151.3")
+        XCTAssertNil(recorder.mark(.saved, photo: firstKey, at: 4.0), "151.3 a finished capture is forgotten")
+    }
+
     /// 145.1: with slow work already queued, the shutter's start time is
     /// read on the press, before that work finishes — not when the queue
     /// reaches the capture.
