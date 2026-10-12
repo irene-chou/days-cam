@@ -44,7 +44,14 @@ final class TapSeekSliderUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '字級 '")).firstMatch.label
     }
 
-    private var offsetX: XCUIElement { app.sliders["shadowOffsetXSlider"] }
+    /// The stroke-width slider on the 外框 page (the shadow page has no
+    /// slider since TASK-118).
+    private var strokeWidth: XCUIElement { app.sliders["outlineStrokeWidthSlider"] }
+
+    private func openStrokePage() {
+        app.buttons["外框"].tap()
+        app.buttons["描邊"].tap()
+    }
 
     /// Waits for `element`, then scrolls the page (slowly, from the left
     /// margin) until the row sits above the floating collapse button, which
@@ -92,41 +99,24 @@ final class TapSeekSliderUITests: XCTestCase {
 
     /// 114.2 / 114.6: a parameter slider seeks and the value is saved once;
     /// a relaunch shows the tapped value.
-    func testShadowOffsetSeeksAndPersists() {
-        app.buttons["陰影"].tap()
-        settle(offsetX)
-        XCTAssertEqual(offsetX.value as? String, "0 點")
+    func testStrokeWidthSeeksAndPersists() {
+        openStrokePage()
+        settle(strokeWidth)
 
-        tapTrack(offsetX, at: 0.9)
-        let seeked = offsetX.value as? String
-        XCTAssertTrue(["5 點", "6 點", "7 點"].contains(seeked ?? ""), "114.2 near the right end: \(seeked ?? "nil")")
-        tapTrack(offsetX, at: 0.02)
-        XCTAssertEqual(offsetX.value as? String, "-8 點", "114.2 left end")
-        tapTrack(offsetX, at: 0.98)
-        XCTAssertEqual(offsetX.value as? String, "8 點", "114.2 right end")
-        tapTrack(offsetX, at: 0.25)
-        let quarter = offsetX.value as? String
-        XCTAssertTrue(["-5 點", "-4 點", "-3 點"].contains(quarter ?? ""), "114.2 a quarter: \(quarter ?? "nil")")
-        attach("114.2_shadow-offset-seek")
+        tapTrack(strokeWidth, at: 0.02)
+        XCTAssertEqual(strokeWidth.value as? String, "1 點", "114.2 left end")
+        tapTrack(strokeWidth, at: 0.98)
+        XCTAssertEqual(strokeWidth.value as? String, "6 點", "114.2 right end")
+        tapTrack(strokeWidth, at: 0.5)
+        let middle = strokeWidth.value as? String
+        XCTAssertTrue(["3.5 點", "4 點", "3 點"].contains(middle ?? ""), "114.2 the middle: \(middle ?? "nil")")
+        attach("114.2_stroke-width-seek")
 
         app.terminate()
         app.launch()
         openStyleTab()
-        app.buttons["陰影"].tap()
-        settle(offsetX)
-        XCTAssertEqual(offsetX.value as? String, quarter, "114.6 the tapped value was saved")
-    }
-
-    /// 114.5: a disabled slider (shadow 無) ignores taps.
-    func testDisabledSliderIgnoresTaps() {
-        app.buttons["陰影"].tap()
-        settle(offsetX)
-        app.buttons["無陰影"].tap()
-        XCTAssertTrue(app.buttons["無陰影"].isSelected)
-        // Clear of the floating collapse button at the row's right end.
-        offsetX.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5)).tap()
-        app.buttons["柔和"].tap()
-        settle(offsetX)
-        XCTAssertEqual(offsetX.value as? String, "0 點", "114.5 nothing changed while disabled")
+        openStrokePage()
+        settle(strokeWidth)
+        XCTAssertEqual(strokeWidth.value as? String, middle, "114.6 the tapped value was saved")
     }
 }

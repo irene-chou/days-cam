@@ -1,10 +1,11 @@
 import XCTest
 @testable import DaysCam
 
-/// TASK-71 ui-panel independent QA (71.3, 71.4, 71.5 UI part): the shadow
-/// presets fill the parameters, a changed parameter drops the preset, glow
-/// follows the text color, and values go through a real `ProfileStore` and
-/// back without ever leaving their ranges.
+/// TASK-71 ui-panel independent QA (71.3, 71.4, 71.5 UI part), updated by
+/// TASK-118 (the offset and blur sliders are gone): the shadow presets fill
+/// the parameters, a profile with custom parameters shows no preset and any
+/// preset replaces them, glow follows the text color, and values go through a
+/// real `ProfileStore` and back without ever leaving their ranges.
 @MainActor
 final class ShadowSliderAcceptanceTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -31,9 +32,16 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
         return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
     }
 
-    private func makeModel(store: ProfileStore) throws -> StyleTabModel {
+    /// `customize` edits the stored style first, standing in for a profile
+    /// whose parameters an older build's sliders had set (118.5).
+    private func makeModel(store: ProfileStore,
+                           customize: ((inout OverlayStyle) -> Void)? = nil) throws -> StyleTabModel {
         store.load()
-        let profile = try XCTUnwrap(store.profiles.first)
+        var profile = try XCTUnwrap(store.profiles.first)
+        if let customize {
+            customize(&profile.style)
+            try store.update(profile)
+        }
         return StyleTabModel(profile: profile,
                              recentColorsStore: RecentColorsStore(defaults: defaults),
                              applyFont: { _, _ in },
@@ -52,30 +60,33 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
             let style = model.profile.style
             XCTAssertEqual(style.shadowPreset, preset)
             XCTAssertEqual([style.shadowOffsetX, style.shadowOffsetY, style.shadowBlur], [x, y, blur], "\(preset)")
-            XCTAssertFalse(model.isShadowParametersDisabled)
+            XCTAssertFalse(model.isShadowColorDisabled)
         }
         model.selectShadow(.none)
         XCTAssertEqual(model.profile.style.shadowPreset, OverlayShadowPreset.none)
-        XCTAssertTrue(model.isShadowParametersDisabled, "無 disables the rows")
+        XCTAssertTrue(model.isShadowColorDisabled, "無 disables the color section")
     }
 
-    /// 71.3, updated by TASK-86 (86.2/86.3): only a shape change (offsets, blur)
-    /// leaves no preset selected; opacity and color changes keep it.
-    func testAnyParameterChangeDropsThePreset() throws {
-        let model = try makeModel(store: makeStore())
-        let changes: [(String, (StyleTabModel) -> Void)] = [
-            ("x", { $0.setShadowOffsetX(3) }), ("y", { $0.setShadowOffsetY(-3) }),
-            ("blur", { $0.setShadowBlur(9) })
+    /// 118.5: custom parameters (set by an older build's sliders) leave no
+    /// preset selected and keep their look; tapping a preset replaces them.
+    /// Opacity and color changes keep the selection (86.2).
+    func testCustomParametersShowNoPresetAndAPresetReplacesThem() throws {
+        let customs: [(String, (inout OverlayStyle) -> Void)] = [
+            ("x", { $0.shadowOffsetX = 3 }), ("y", { $0.shadowOffsetY = -3 }),
+            ("blur", { $0.shadowBlur = 9 })
         ]
-        for (name, change) in changes {
-            model.selectShadow(.hard)
-            XCTAssertEqual(model.profile.style.shadowPreset, .hard, name)
-            change(model)
-            XCTAssertNil(model.profile.style.shadowPreset, "\(name) should deselect the preset")
-            XCTAssertTrue(model.profile.style.showsShadow, name)
-            model.selectShadow(.hard)
-            XCTAssertEqual(model.profile.style.shadowPreset, .hard, "\(name): tapping restores it")
+        for (name, customize) in customs {
+            let model = try makeModel(store: makeStore(), customize: customize)
+            let before = model.profile.style
+            XCTAssertNil(before.shadowPreset, "\(name): no preset selected")
+            XCTAssertTrue(before.showsShadow, name)
+            model.selectShadow(.soft)
+            XCTAssertEqual(model.profile.style.shadowPreset, .soft, "\(name): tapping selects it")
+            XCTAssertEqual([model.profile.style.shadowOffsetX, model.profile.style.shadowOffsetY,
+                            model.profile.style.shadowBlur], [0, 2, 4], name)
         }
+        let model = try makeModel(store: makeStore())
+        model.selectShadow(.hard)
         model.applyCustomShadowColor(model.profile.style.shadowColor.withOpacity(0.4))
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2 picker opacity keeps the preset")
         model.selectShadowColor(OverlayColor(hex: "#FF0000"))
@@ -104,13 +115,11 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
         XCTAssertEqual(model.profile.style.resolvedShadowColor.hexString.prefix(7), "#FFFFFF", "back to following")
     }
 
-    /// 71.5: values reach disk at once, a fresh store reads them, and nothing out of range is stored.
+    /// 71.5: custom parameters and colors reach disk at once, a fresh store
+    /// reads them, and nothing out of range is stored.
     func testParametersSurviveAFreshStoreAndExtremesAreClamped() throws {
         let store = try makeStore()
-        let model = try makeModel(store: store)
-        model.setShadowOffsetX(5)
-        model.setShadowOffsetY(-6)
-        model.setShadowBlur(11)
+        let model = try makeModel(store: store) { $0.shadowOffsetX = 5; $0.shadowOffsetY = -6; $0.shadowBlur = 11 }
         // TASK-113: a swatch would reset the alpha to 60%; the picker sets both.
         model.applyCustomShadowColor(try XCTUnwrap(OverlayColor(hex: "#336699")).withOpacity(0.35))
         var style = try XCTUnwrap(makeStore().load().first).style
@@ -120,19 +129,12 @@ final class ShadowSliderAcceptanceTests: XCTestCase {
         XCTAssertEqual(Int((style.shadowColor.opacity * 100).rounded()), 35)
         XCTAssertNil(style.shadowPreset)
 
-        for raw in [-1e9, -9, -8.4, 0.49, 8.6, 17, 1e9, .infinity, -.infinity] {
-            model.setShadowOffsetX(raw)
-            model.setShadowOffsetY(raw)
-            model.setShadowBlur(raw)
-        }
         for alpha in [0.0, 0.01, 0.04, 1.0] {
             model.applyCustomShadowColor(OverlayColor(red: 0.2, green: 0.4, blue: 0.6, opacity: alpha))
         }
         style = try XCTUnwrap(makeStore().load().first).style
         XCTAssertTrue(style.hasValidOutlineParameters)
-        XCTAssertTrue(OverlayStyle.shadowOffsetRange.contains(style.shadowOffsetX))
-        XCTAssertTrue(OverlayStyle.shadowOffsetRange.contains(style.shadowOffsetY))
-        XCTAssertTrue(OverlayStyle.shadowBlurRange.contains(style.shadowBlur))
+        XCTAssertEqual([style.shadowOffsetX, style.shadowOffsetY, style.shadowBlur], [5, -6, 11], "color edits keep the shape")
         XCTAssertTrue(style.shadowColor.isStorable)
         XCTAssertGreaterThanOrEqual(style.shadowColor.opacity, 0.05 - 0.005)
         XCTAssertEqual(OverlayStyle.shadowOffsetRange, -8.0...8.0)

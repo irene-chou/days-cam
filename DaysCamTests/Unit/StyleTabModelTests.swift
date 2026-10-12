@@ -607,30 +607,36 @@ final class StyleTabModelTests: XCTestCase {
 
     // MARK: - TASK-71 陰影參數
 
-    func testPresetFillsParametersAndAdjustingClearsTheSelection() {
+    private func customShadowProfile() -> CameraProfile {
+        var profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        profile.style.shadowOffsetX = -3
+        profile.style.shadowOffsetY = 3
+        profile.style.shadowBlur = 3
+        return profile
+    }
+
+    func testPresetFillsParametersAndCustomParametersShowNoSelection() {
         let model = makeModel()
         model.selectShadow(.hard)
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "71.3")
         XCTAssertEqual(model.profile.style.shadowOffsetX, 2, "71.3")
         XCTAssertEqual(model.profile.style.shadowBlur, 0, "71.3")
-        model.setShadowBlur(3)
-        XCTAssertNil(model.profile.style.shadowPreset, "71.3: 改參數後預設不再選中")
-        model.selectShadow(.hard)
-        XCTAssertEqual(model.profile.style.shadowPreset, .hard)
-        XCTAssertEqual(model.profile.style.shadowBlur, 0)
+        let custom = makeModel(profile: customShadowProfile())
+        XCTAssertNil(custom.profile.style.shadowPreset, "118.5: 自訂參數不顯示選中")
+        custom.selectShadow(.hard)
+        XCTAssertEqual(custom.profile.style.shadowPreset, .hard, "118.5")
+        XCTAssertEqual(custom.profile.style.shadowBlur, 0, "118.5")
     }
 
-    func testShadowParametersSnapClampAndWriteThrough() {
+    func testCustomShadowParametersAreKeptUntilAPresetIsTapped() {
         let spy = Spy()
-        let model = makeModel(spy: spy)
-        model.selectShadow(.soft)
-        model.setShadowOffsetX(-20)
-        model.setShadowOffsetY(3.4)
-        model.setShadowBlur(99)
-        XCTAssertEqual(model.profile.style.shadowOffsetX, -8, "71.5")
-        XCTAssertEqual(model.profile.style.shadowOffsetY, 3, "71.5")
-        XCTAssertEqual(model.profile.style.shadowBlur, 16, "71.5")
-        XCTAssertEqual(spy.updated.last?.style.shadowBlur, 16)
+        let profile = customShadowProfile()
+        let model = makeModel(profile: profile, spy: spy)
+        model.selectShadowColor(OverlayStyle.swatches[2])
+        XCTAssertEqual(model.profile.style.shadowOffsetX, profile.style.shadowOffsetX, "118.5")
+        XCTAssertEqual(model.profile.style.shadowOffsetY, profile.style.shadowOffsetY, "118.5")
+        XCTAssertEqual(model.profile.style.shadowBlur, profile.style.shadowBlur, "118.5")
+        XCTAssertEqual(spy.updated.last?.style.shadowBlur, profile.style.shadowBlur)
         XCTAssertTrue(model.profile.style.hasValidShadowParameters)
     }
 
@@ -725,33 +731,20 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.profile.style.shadowColorSource, .custom, "86.4")
     }
 
-    func testPresetSelectionDisappearsOffShapeAndReturnsWhenRestored() {
-        let model = makeModel()
-        model.selectShadow(.soft)
-        model.selectShadowColor(OverlayStyle.swatches[5])
-        model.setShadowOffsetY(5)
-        XCTAssertNil(model.profile.style.shadowPreset, "86.3")
-        model.setShadowOffsetY(2)
-        XCTAssertEqual(model.profile.style.shadowPreset, .soft, "86.3")
-    }
-
-    func testShadowParametersAreDisabledOnlyWhileTheShadowIsOff() {
+    func testShadowColorIsDisabledOnlyWhileTheShadowIsOff() {
         let model = makeModel()
         model.selectShadow(.none)
-        XCTAssertTrue(model.isShadowParametersDisabled)
+        XCTAssertTrue(model.isShadowColorDisabled)
         model.selectShadow(.soft)
-        XCTAssertFalse(model.isShadowParametersDisabled)
+        XCTAssertFalse(model.isShadowColorDisabled)
     }
 
     func testShadowParametersRoundTrip() throws {
-        let model = makeModel()
-        model.selectShadow(.soft)
-        model.setShadowOffsetX(-3)
-        model.setShadowBlur(9)
+        let model = makeModel(profile: customShadowProfile())
         model.applyCustomShadowColor(OverlayColor.black.withOpacity(0.35))
         let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(model.profile))
         XCTAssertEqual(decoded.style.shadowOffsetX, -3, "71.5")
-        XCTAssertEqual(decoded.style.shadowBlur, 9, "71.5")
+        XCTAssertEqual(decoded.style.shadowBlur, 3, "71.5")
         XCTAssertEqual(decoded.style.shadowOpacity, 0.35, accuracy: 0.003, "71.5")
     }
 }
