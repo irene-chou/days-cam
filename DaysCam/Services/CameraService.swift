@@ -1353,7 +1353,7 @@ private extension CameraService {
 final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
     private let finish: (Result<UIImage, CameraCaptureError>, PhotoCaptureDelegate) -> Void
-    private var hasFinished = false
+    private let hasFinished = OSAllocatedUnfairLock(initialState: false)
 
     /// - Parameter finish: called at most once, with the result and this
     ///   delegate so the caller can release it.
@@ -1404,8 +1404,15 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         // successful capture, and `cancel` can race either of them. Without
         // this guard a success is immediately followed by a `.noImageData`
         // failure, and TASK-10's shutter acts on the wrong one.
-        guard hasFinished == false else { return }
-        hasFinished = true
+        // Check-and-set is one atomic step: `cancel` runs on the session queue
+        // while the callbacks run on AVFoundation's queue (#465). `finish`
+        // is called outside the lock.
+        let isFirst = hasFinished.withLock { finished -> Bool in
+            if finished { return false }
+            finished = true
+            return true
+        }
+        guard isFirst else { return }
         finish(result, self)
     }
 }
