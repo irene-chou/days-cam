@@ -176,11 +176,13 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertTrue(model.path.isEmpty)
     }
 
-    /// 106.4: a typed name keeps the profile, selected, with the current
-    /// profile's style and content settings and today's start date.
-    func testNamedNewProfileIsKeptAndInheritsTheCurrentSettings() throws {
+    /// 106.4 / 138.1 / 138.4: a typed name keeps the profile, selected, with
+    /// the current profile's style and position only; content settings are
+    /// back to the defaults and the start date is today.
+    func testNamedNewProfileIsKeptAndInheritsOnlyStyleAndPosition() throws {
         let store = try makeStore()
         var template = store.profiles[0]
+        template.showDayCount = false
         template.showDate = true
         template.showName = true
         template.displayUnits = [.year, .day]
@@ -203,10 +205,11 @@ final class ProfileManagerModelTests: XCTestCase {
         let kept = try XCTUnwrap(store.profiles.last)
         XCTAssertEqual(kept.startDate, DateFixture.components(2026, 1, 10), "106.4 start date is today")
         XCTAssertEqual(kept.countingRule, .dayOne, "counting rule is reset, not copied")
-        XCTAssertEqual(kept.showDate, true)
+        XCTAssertEqual(kept.showDayCount, true, "138.1 content settings back to defaults")
+        XCTAssertEqual(kept.showDate, false)
         XCTAssertEqual(kept.showName, true)
-        XCTAssertEqual(kept.displayUnits, [.year, .day])
-        XCTAssertEqual(kept.useAgeWording, true)
+        XCTAssertEqual(kept.displayUnits, [.day])
+        XCTAssertEqual(kept.useAgeWording, false)
         XCTAssertEqual(kept.position, .custom(x: 0.2, y: 0.3))
         XCTAssertEqual(kept.style, template.style, "106.4 same colors, size, font, outline, shadow")
         XCTAssertFalse(model.isUntitledDraft(added.id))

@@ -234,20 +234,19 @@ final class ProfileManagerModel: ObservableObject {
     /// the name field focused (R-7; creation rules FR-9.8 first half, FR-9.9).
     func addProfile() {
         guard canAdd else { return }
-        // The new profile inherits the current one's look and content
-        // settings (TASK-106, #421; FR-1.9): the same words in the same
-        // style, with only the name, start date (today) and counting rule
-        // reset. The store still needs a non-empty name (PRD §4.1 invariant
-        // 1); the edit page shows it as an empty field with a placeholder
-        // until something is typed (`isUntitledDraft`).
+        // The new profile inherits only the current one's style and
+        // position (TASK-138, #484; FR-1.9): content settings (day count,
+        // date, name, units, age wording) start from the defaults so a
+        // "date only" or "age" profile never leaks into the next one, and
+        // the name, start date (today) and counting rule are reset. The
+        // name switch is on like the first profile's (TASK-119). The store
+        // still needs a non-empty name (PRD §4.1 invariant 1); the edit page
+        // shows it as an empty field with a placeholder until something is
+        // typed (`isUntitledDraft`).
         var profile = CameraProfile(name: store.uniqueName(base: "新設定檔"),
-                                    startDate: calculator.currentDateComponents())
+                                    startDate: calculator.currentDateComponents(),
+                                    showName: true)
         if let template = profiles.first(where: { $0.id == selectedProfileID }) {
-            profile.showDayCount = template.showDayCount
-            profile.showDate = template.showDate
-            profile.showName = template.showName
-            profile.displayUnits = template.displayUnits
-            profile.useAgeWording = template.useAgeWording
             profile.position = template.position
             profile.style = template.style
         }
