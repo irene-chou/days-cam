@@ -285,4 +285,15 @@ final class FontCatalogTests: XCTestCase {
             XCTAssertEqual(entry.downloadSizeText, String(format: "%.1f MB", Double(asset.byteCount) / 1_000_000))
         }
     }
+
+    // MARK: - 133.1
+
+    /// The cached table returns exactly what a fresh build does, for every font.
+    func testCachedEntriesMatchFreshlyBuiltEntries() {
+        for fontID in OverlayFontID.allCases {
+            XCTAssertEqual(FontCatalog.entry(for: fontID), FontCatalog.makeEntry(for: fontID), "133.1 \(fontID)")
+        }
+        XCTAssertEqual(FontCatalog.entriesByID.count, OverlayFontID.allCases.count)
+        XCTAssertEqual(FontCatalog.entries, OverlayFontID.allCases.map(FontCatalog.makeEntry(for:)))
+    }
 }

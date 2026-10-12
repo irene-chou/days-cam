@@ -301,4 +301,55 @@ final class OverlayFontResolutionTests: XCTestCase {
     func testAvailableButUnloadableResolvesToPingFang() {
         XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: "NoSuchFont-Bold"), .pingFang)
     }
+
+    // MARK: - 133.2
+
+    private final class CountingLoader: @unchecked Sendable {
+        private let lock = NSLock()
+        private var counts: [String: Int] = [:]
+        var loadable: Set<String>
+
+        init(loadable: Set<String>) { self.loadable = loadable }
+
+        func count(_ name: String) -> Int { lock.withLock { counts[name, default: 0] } }
+
+        func load(_ name: String) -> UIFont? {
+            lock.withLock { counts[name, default: 0] += 1 }
+            return loadable.contains(name) ? UIFont(name: FontCatalog.pingFangPostScriptName, size: OverlayMetrics.referenceFontSize) : nil
+        }
+    }
+
+    func testFontFaceCache_hitsDoNotReload_andInvalidateQueriesAgain() {
+        let loader = CountingLoader(loadable: [])
+        let cache = FontFaceCache(load: loader.load)
+        XCTAssertNil(cache.baseFont(named: "LateFont"))
+        XCTAssertNil(cache.baseFont(named: "LateFont"))
+        XCTAssertEqual(loader.count("LateFont"), 1, "133.2 failure is cached too")
+
+        // The font gets registered; only invalidate makes it visible.
+        loader.loadable = ["LateFont"]
+        XCTAssertNil(cache.baseFont(named: "LateFont"))
+        cache.invalidate()
+        XCTAssertNotNil(cache.baseFont(named: "LateFont"), "133.2 re-queried after invalidate")
+        XCTAssertNotNil(cache.baseFont(named: "LateFont"))
+        XCTAssertEqual(loader.count("LateFont"), 2)
+    }
+
+    func testResolvedFont_cachedAndUncachedAgree() {
+        let names = [FontCatalog.pingFangPostScriptName, "PingFangTC-Light", "NoSuchFont-Regular"]
+        for name in names {
+            OverlayMetrics.invalidateFontCache()
+            let cold = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
+            let warm = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
+            XCTAssertEqual(cold, warm, "133.2 \(name)")
+            for size in [12, 34.5, 200] as [CGFloat] {
+                let cached = warm.font(ofSize: size)
+                let direct = UIFont(name: warm.postScriptName, size: size)
+                XCTAssertEqual(cached.fontName, direct?.fontName, "133.2 \(name) @\(size)")
+                XCTAssertEqual(cached.pointSize, size, accuracy: 0.001)
+                XCTAssertEqual(cached.lineHeight, direct?.lineHeight ?? -1, accuracy: 0.001)
+            }
+        }
+        XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: "NoSuchFont-Regular"), .pingFang)
+    }
 }

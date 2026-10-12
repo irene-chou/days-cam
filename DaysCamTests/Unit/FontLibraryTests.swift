@@ -637,6 +637,24 @@ final class FontLibraryTests: XCTestCase {
         XCTAssertEqual(registrar.mainThreadRegistrations, 0, "132.3")
     }
 
+    /// 133.2 wiring: a state change drops cached font lookups (including a cached
+    /// "does not load"), so a font that was missing before registration resolves afresh.
+    func test_stateChange_invalidatesFontCache() async {
+        let name = "NotYetRegistered-Regular"
+        OverlayMetrics.invalidateFontCache()
+        XCTAssertEqual(OverlayMetrics.resolvedFont(state: .available, postScriptName: name), .pingFang)
+        XCTAssertGreaterThan(FontFaceCache.shared.cachedCount, 0, "negative result cached")
+
+        let library = makeLibrary()
+        library.download(.huninn)
+        await waitUntil("available") { library.state(for: .huninn) == .available }
+
+        XCTAssertEqual(FontFaceCache.shared.cachedCount, 0, "cache dropped when registration completed")
+        XCTAssertTrue(library.delete(.huninn))
+        _ = OverlayMetrics.resolvedFont(state: .available, postScriptName: name)
+        XCTAssertGreaterThan(FontFaceCache.shared.cachedCount, 0)
+    }
+
     /// Leftover temporary files from a killed download are cleaned at launch.
     func test_prepareAtLaunch_removesStaleTemporaryFiles() async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

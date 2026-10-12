@@ -188,8 +188,21 @@ enum FontCatalog {
     /// Every font in list order, which is `OverlayFontID.allCases` order.
     static var entries: [FontCatalogEntry] { OverlayFontID.allCases.map(entry(for:)) }
 
+    /// Every entry, built once on first use. The catalog is fixed (A-2), so
+    /// callers on hot paths (`encode`, font resolution) look entries up here
+    /// instead of rebuilding them.
+    static let entriesByID: [OverlayFontID: FontCatalogEntry] =
+        Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, makeEntry(for: $0)) })
+
     /// The catalog entry for `fontID`.
     static func entry(for fontID: OverlayFontID) -> FontCatalogEntry {
+        guard let entry = entriesByID[fontID] else { return makeEntry(for: fontID) }
+        return entry
+    }
+
+    /// Builds the entry from scratch, without the cache. Internal so tests can
+    /// check the cached table against it.
+    static func makeEntry(for fontID: OverlayFontID) -> FontCatalogEntry {
         switch fontID {
         case .pingFang:
             return FontCatalogEntry(fontID: fontID, displayName: "蘋方", section: .builtIn, source: .builtIn,
