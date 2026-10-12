@@ -15,7 +15,7 @@ final class FontLargeTextUITests: XCTestCase {
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
-        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '蘋方-繁'")).firstMatch
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '蘋方'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.isSelected)
         let screenshot = app.screenshot()

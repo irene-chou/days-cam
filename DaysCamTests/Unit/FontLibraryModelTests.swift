@@ -211,9 +211,9 @@ final class FontLibraryModelTests: XCTestCase {
     func testVoiceOverLabelsCarryTheStateButCellsShowNoText() throws {
         let library = FakeFontLibrary([.songti: .notDownloaded, .kaiti: .downloading(progress: 0.38)])
         let model = makeModel(library: library)
-        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體-繁，未下載，點兩下下載", "56.14")
-        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體-繁，下載中，38%", "56.14")
-        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方-繁", "56.14")
+        XCTAssertEqual(try cell(.songti, in: model).accessibilityLabel, "宋體，未下載，點兩下下載", "56.14")
+        XCTAssertEqual(try cell(.kaiti, in: model).accessibilityLabel, "楷體，下載中，38%", "56.14")
+        XCTAssertEqual(try cell(.pingFang, in: model).accessibilityLabel, "蘋方", "56.14")
     }
 
     // MARK: - 56.5 到 56.6 點擊
@@ -457,7 +457,7 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertFalse((model.expandedFontID != nil))
         XCTAssertEqual(cell.currentWeightName, "粗", "112.1 the stored weight")
         XCTAssertNil(cell.pendingWeightStatus)
-        XCTAssertEqual(cell.accessibilityLabel, "蘋方-繁", "112.9 label is the name")
+        XCTAssertEqual(cell.accessibilityLabel, "蘋方", "112.9 label is the name")
         XCTAssertEqual(cell.accessibilityValue, "粗", "112.9 value is the weight")
         XCTAssertEqual(cell.accessibilityHint, "點兩下展開字重", "112.9")
     }

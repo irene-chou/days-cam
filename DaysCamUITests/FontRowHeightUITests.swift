@@ -25,9 +25,9 @@ final class FontRowHeightUITests: XCTestCase {
     }
 
     // The row holds an inner button with the same label, so take the first (outer) match.
-    private var pingFang: XCUIElement { app.buttons.matching(NSPredicate(format: "label BEGINSWITH '蘋方-繁'")).firstMatch }
+    private var pingFang: XCUIElement { app.buttons.matching(NSPredicate(format: "label BEGINSWITH '蘋方'")).firstMatch }
     private var noto: XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Noto Serif TC'")).firstMatch
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH '思源宋體'")).firstMatch
     }
     private var heading: XCUIElement {
         app.staticTexts.matching(NSPredicate(format: "label == '開源字型'")).firstMatch

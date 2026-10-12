@@ -18,7 +18,7 @@ final class FontWeightCollapseUITests: XCTestCase {
         app.buttons["字型"].tap()
     }
 
-    private var row: XCUIElement { app.buttons["蘋方-繁"] }
+    private var row: XCUIElement { app.buttons["蘋方"] }
     private func weight(_ id: String) -> XCUIElement { app.buttons["fontWeight.\(id)"] }
 
     /// 112.1／112.2／112.9: collapsed on arrival with the weight as the value;

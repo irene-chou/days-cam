@@ -476,7 +476,7 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
         library.weightStates[black()] = .available
         let panel = makePanel(library: library)
         panel.fontList.didTapWeight("black")
-        XCTAssertEqual(try cell(.notoSerifTC, in: panel.fontList).name, "Noto Serif TC")
+        XCTAssertEqual(try cell(.notoSerifTC, in: panel.fontList).name, "思源宋體")
     }
 
     /// A pending face that settles by preparing (no finish event) is applied
