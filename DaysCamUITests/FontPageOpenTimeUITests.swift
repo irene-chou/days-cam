@@ -14,7 +14,7 @@ final class FontPageOpenTimeUITests: XCTestCase {
         if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
-        let first = app.buttons["蘋方-繁"]
+        let first = app.buttons["蘋方"]
         var samples: [Double] = []
         for _ in 0..<11 {
             app.buttons["顏色"].tap()
