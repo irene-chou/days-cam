@@ -35,6 +35,9 @@ struct FontLicenseModel {
         let files: [FileNotice]
         /// Each license text once, even when several files share it.
         let licenses: [License]
+        /// Where the font comes from and who must be named, for fonts whose
+        /// license asks for it (TASK-142); `nil` for the rest.
+        let sourceNote: String?
         var id: OverlayFontID { fontID }
     }
 
@@ -70,12 +73,20 @@ struct FontLicenseModel {
                          files: files,
                          licenses: licenseNames.map { fileName in
                              License(title: Self.licenseTitle(forFileName: fileName), text: loadText(fileName) ?? "")
-                         })
+                         },
+                         sourceNote: FontCatalog.downloadFamiliesByID[entry.fontID]?.sourceNote)
         }
     }
 
+    /// The heading of a license file, from the suffix its name carries
+    /// (`<fontID>-OFL.txt`, `-MIT`, `-OGDL`, `-CCBYND`, `-APL`).
     static func licenseTitle(forFileName fileName: String) -> String {
-        fileName.contains("Apache") ? "Apache License 2.0" : "SIL Open Font License 1.1"
+        if fileName.contains("Apache") { return "Apache License 2.0" }
+        if fileName.hasSuffix("-MIT.txt") { return "MIT License" }
+        if fileName.hasSuffix("-OGDL.txt") { return "政府資料開放授權條款－第1版" }
+        if fileName.hasSuffix("-CCBYND.txt") { return "創用 CC 姓名標示─禁止改作 3.0 台灣（CC BY-ND 3.0 TW）" }
+        if fileName.hasSuffix("-APL.txt") { return "Arphic Public License" }
+        return "SIL Open Font License 1.1"
     }
 
     /// Reads a license file from the App bundle.
@@ -103,7 +114,8 @@ struct FontLicenseView: View {
         VStack(spacing: 0) {
             header
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                // Lazy: 34 fonts, each with a full license text.
+                LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(model.entries) { entry in
                         entryView(entry)
                     }
@@ -137,12 +149,23 @@ struct FontLicenseView: View {
         .padding(.top, 14)
     }
 
+    @ViewBuilder
+    private func sourceNoteView(_ note: String?) -> some View {
+        if let note {
+            Text(note)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(CameraTheme.ink)
+                .textSelection(.enabled)
+        }
+    }
+
     private func entryView(_ entry: FontLicenseModel.Entry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if !entry.files.isEmpty {
                 Text(entry.name)
                     .font(CameraTheme.toolFont(.subheadline))
                     .foregroundColor(CameraTheme.ink)
+                sourceNoteView(entry.sourceNote)
                 ForEach(entry.files) { file in
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(file.fileName)　\(file.weightName)　版本 \(file.version)")
@@ -158,6 +181,7 @@ struct FontLicenseView: View {
                 Text("\(entry.name)　版本 \(entry.version)")
                     .font(CameraTheme.toolFont(.subheadline))
                     .foregroundColor(CameraTheme.ink)
+                sourceNoteView(entry.sourceNote)
                 Text(entry.copyright)
                     .font(.footnote)
                     .foregroundColor(CameraTheme.inkSecondary)

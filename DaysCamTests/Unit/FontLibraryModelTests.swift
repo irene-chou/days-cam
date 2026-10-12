@@ -1045,8 +1045,11 @@ final class FontLicenseViewTests: XCTestCase {
     func testReadsEachFileTheCatalogNames() {
         var requested: [String] = []
         _ = FontLicenseModel(loadText: { requested.append($0); return "text" })
-        XCTAssertEqual(requested, ["huninn-OFL.txt", "huninn-Apache-2.0.txt",
-                                   "notoSerifTC-OFL.txt", "iansui-OFL.txt", "chenyuluoyan-OFL.txt"])
+        XCTAssertEqual(Array(requested.prefix(5)), ["huninn-OFL.txt", "huninn-Apache-2.0.txt",
+                                                    "notoSerifTC-OFL.txt", "iansui-OFL.txt", "chenyuluoyan-OFL.txt"])
+        XCTAssertEqual(Array(requested.dropFirst(5)), FontCatalog.downloadFamilies.flatMap { family in
+            family.faces.flatMap(\.asset.licenseFileNames).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        }, "142.5 每套的授權檔各讀一次")
     }
 
     func testListsEveryWeightFileWithItsOwnNotice() throws {

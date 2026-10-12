@@ -52,17 +52,18 @@ final class FontCatalogTests: XCTestCase {
         }
     }
 
-    /// 91.1 / 91.2: every weight's open-source asset, including Noto Regular
-    /// and Black, downloads from `dayscam-fonts@v3`; no upstream URL remains.
-    func testEveryWeightAssetDownloadsFromTheV3Tag() {
+    /// 91.1 / 91.2 / 142.2: every weight's open-source asset, including Noto
+    /// Regular and Black and the 63 TASK-142 faces, downloads from
+    /// `dayscam-fonts@v4`; no upstream URL remains.
+    func testEveryWeightAssetDownloadsFromTheV4Tag() {
         let assets = FontCatalog.entries.flatMap { $0.weights.compactMap(\.openSource) }
-        XCTAssertEqual(assets.count, 6, "91.1")
+        XCTAssertEqual(assets.count, 69, "91.1 / 142.2")
         for asset in assets {
             XCTAssertEqual(asset.primaryURL.absoluteString,
-                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/\(asset.repositoryPath)",
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v4/\(asset.repositoryPath)",
                            "91.1 \(asset.fileName)")
             XCTAssertEqual(asset.fallbackURL.absoluteString,
-                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/\(asset.repositoryPath)",
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v4/\(asset.repositoryPath)",
                            "91.1 \(asset.fileName)")
             XCTAssertFalse(asset.primaryURL.absoluteString.contains("notofonts"), "91.1 \(asset.fileName)")
             XCTAssertFalse(asset.fallbackURL.absoluteString.contains("notofonts"), "91.1 \(asset.fileName)")
@@ -97,6 +98,36 @@ final class FontCatalogTests: XCTestCase {
             .notoSerifTC: "Noto Serif TC Bold",
             .iansui: "芫荽 Regular",
             .chenyuluoyan: "辰宇落雁體 2.0 細體",
+            .notoSansTC: "思源黑體",
+            .taipeiSans: "台北黑體",
+            .genSeki: "源石黑體",
+            .chironHei: "昭源黑體",
+            .chocolateSans: "朱古力黑體",
+            .glowSans: "未來熒黑",
+            .genSen: "源泉圓體",
+            .sweiGothic: "獅尾圓體",
+            .chironGoRound: "昭源環方",
+            .genWan: "源雲明體",
+            .genRyu: "源流明體",
+            .sweiSpring: "獅尾四季春",
+            .sweiSugar: "獅尾加糖宋體",
+            .chironSung: "昭源宋體",
+            .cactusSerif: "仙人掌明體",
+            .twSung: "全字庫正宋體",
+            .thenKhung: "宇文天穹",
+            .lxgwWenKai: "霞鶩文楷 TC",
+            .twKai: "全字庫正楷體",
+            .eduKai: "教育部標準楷書",
+            .arphicUKai: "文鼎 PL 中楷",
+            .naikai: "內海字體",
+            .xiaolai: "小賴字體",
+            .yozai: "悠哉字體",
+            .nani: "何某手寫體",
+            .lxgwMarker: "霞鶩漫黑",
+            .kurewa: "苦累蛙圓體",
+            .popGothic: "大波浪圓體",
+            .wdxl: "WD-XL 滑油字",
+            .cubic11: "俐方體 11 號",
         ]
         XCTAssertEqual(names.count, FontCatalog.entries.count)
         for entry in FontCatalog.entries {
@@ -111,6 +142,36 @@ final class FontCatalogTests: XCTestCase {
         (.notoSerifTC, "思源宋體", .openSource, .openSource, "NotoSerifTC-Bold", "8.3 MB"),
         (.iansui, "芫荽", .openSource, .openSource, "Iansui-Regular", "9.4 MB"),
         (.chenyuluoyan, "辰宇落雁體", .openSource, .openSource, "ChenYuluoyan-2.0-Thin", "9.5 MB"),
+        (.notoSansTC, "思源黑體", .openSource, .openSource, "NotoSansTC-Bold", "5.8 MB"),
+        (.taipeiSans, "台北黑體", .openSource, .openSource, "TaipeiSansTCBeta-Bold", "21.7 MB"),
+        (.genSeki, "源石黑體", .openSource, .openSource, "GenSekiGothic2TW-B", "15.0 MB"),
+        (.chironHei, "昭源黑體", .openSource, .openSource, "ChironHeiHK-Bold", "17.1 MB"),
+        (.chocolateSans, "朱古力黑體", .openSource, .openSource, "ChocolateClassicalSans-Regular", "12.2 MB"),
+        (.glowSans, "未來熒黑", .openSource, .openSource, "GlowSansTC-Normal-Bold", "9.0 MB"),
+        (.genSen, "源泉圓體", .openSource, .openSource, "GenSenRounded2TW-B", "15.8 MB"),
+        (.sweiGothic, "獅尾圓體", .openSource, .openSource, "SweiGothicCJKtc-Bold", "15.8 MB"),
+        (.chironGoRound, "昭源環方", .openSource, .openSource, "ChironGoRoundTC-Bold", "20.5 MB"),
+        (.genWan, "源雲明體", .openSource, .openSource, "GenWanMin2TW-SB", "22.6 MB"),
+        (.genRyu, "源流明體", .openSource, .openSource, "GenRyuMin2TW-B", "16.2 MB"),
+        (.sweiSpring, "獅尾四季春", .openSource, .openSource, "SweiSpringCJKtc-Bold", "17.3 MB"),
+        (.sweiSugar, "獅尾加糖宋體", .openSource, .openSource, "SweiSugarCJKtc-Bold", "29.0 MB"),
+        (.chironSung, "昭源宋體", .openSource, .openSource, "ChironSungHK-Bold", "26.6 MB"),
+        (.cactusSerif, "仙人掌明體", .openSource, .openSource, "CactusClassicalSerif-Regular", "28.5 MB"),
+        (.twSung, "全字庫正宋體", .openSource, .openSource, "TW-Sung-98_1", "35.3 MB"),
+        (.thenKhung, "宇文天穹", .openSource, .openSource, "UoqMunThenKhung-Regular", "4.9 MB"),
+        (.lxgwWenKai, "霞鶩文楷 TC", .openSource, .openSource, "LXGWWenKaiTC-Medium", "15.0 MB"),
+        (.twKai, "全字庫正楷體", .openSource, .openSource, "TW-Kai-98_1", "36.9 MB"),
+        (.eduKai, "教育部標準楷書", .openSource, .openSource, "TW-MOE-Std-Kai", "15.8 MB"),
+        (.arphicUKai, "文鼎 PL 中楷", .openSource, .openSource, "UKaiTW", "17.2 MB"),
+        (.naikai, "內海字體", .openSource, .openSource, "NaikaiFont-Bold", "38.6 MB"),
+        (.xiaolai, "小賴字體", .openSource, .openSource, "Xiaolai", "22.2 MB"),
+        (.yozai, "悠哉字體", .openSource, .openSource, "Yozai-Medium", "15.2 MB"),
+        (.nani, "何某手寫體", .openSource, .openSource, "NaniFont-Bold", "18.5 MB"),
+        (.lxgwMarker, "霞鶩漫黑", .openSource, .openSource, "LXGWMarkerGothic-Regular", "3.2 MB"),
+        (.kurewa, "苦累蛙圓體", .openSource, .openSource, "KurewaGothicCjkTc-Bold", "36.5 MB"),
+        (.popGothic, "大波浪圓體", .openSource, .openSource, "PopGothicCjkTc-Bold", "10.3 MB"),
+        (.wdxl, "WD-XL 滑油字", .openSource, .openSource, "WD-XLLubrifontTC-Regular", "6.2 MB"),
+        (.cubic11, "俐方體 11 號", .openSource, .openSource, "Cubic_11", "2.8 MB"),
         (.lantinghei, "蘭亭黑", .hei, .system, "FZLTZHB--B51-0", "25.2 MB"),
         (.liHei, "儷黑", .hei, .system, "LiHeiPro", "4.2 MB"),
         (.hiraginoSans, "冬青黑體", .hei, .system, "HiraginoSansTC-W6", "14.1 MB"),
@@ -130,10 +191,11 @@ final class FontCatalogTests: XCTestCase {
         (.yuppy, "雅痞", .cute, .system, "YuppyTC-Regular", "12.9 MB")
     ]
 
-    /// 32.1 / 40.1: 22 fonts; order, names, sections, sources, PostScript
-    /// names and sizes as in PRD 0.3 §4.1 with TASK-40's 辰宇落雁體 after 芫荽.
+    /// 32.1 / 40.1 / 142.1: 52 fonts; order, names, sections, sources,
+    /// PostScript names and sizes as in PRD 0.3 §4.1 with TASK-40's 辰宇落雁體
+    /// after 芫荽 and TASK-142's 30 families after it, in type order.
     func testCatalogMatchesPRDTableInOrder() {
-        XCTAssertEqual(OverlayFontID.allCases.count, 22, "40.1")
+        XCTAssertEqual(OverlayFontID.allCases.count, 52, "40.1 / 142.1")
         XCTAssertEqual(OverlayFontID.allCases, table.map(\.0), "32.1 order")
         XCTAssertEqual(FontCatalog.entries.map(\.fontID), table.map(\.0), "32.1 catalog order")
         for (fontID, name, section, source, postScriptName, size) in table {
@@ -162,13 +224,16 @@ final class FontCatalogTests: XCTestCase {
         XCTAssertEqual(seen, FontSection.allCases)
     }
 
-    /// 40.1: the open-source section is four fonts, contiguous, 辰宇落雁體 last.
-    func testOpenSourceSectionIsFourContiguousFonts() {
+    /// 40.1 / 142.1: the open-source section is the four original fonts and
+    /// the 30 TASK-142 families, contiguous, right after 蘋方.
+    func testOpenSourceSectionIsThirtyFourContiguousFonts() {
         let ids = FontCatalog.entries.map(\.fontID)
         let openSource = FontCatalog.entries.filter { $0.section == .openSource }.map(\.fontID)
-        XCTAssertEqual(openSource, [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "40.1")
-        XCTAssertEqual(Array(ids[1...4]), openSource, "40.1 contiguous, right after 蘋方")
-        XCTAssertEqual(ids[5], .lantinghei, "40.1 蘭亭黑 follows 辰宇落雁體")
+        XCTAssertEqual(openSource.count, 34, "142.1")
+        XCTAssertEqual(Array(openSource.prefix(4)), [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "40.1")
+        XCTAssertEqual(Array(openSource.dropFirst(4)), FontCatalog.downloadFamilies.map(\.fontID), "142.1")
+        XCTAssertEqual(Array(ids[1...34]), openSource, "40.1 contiguous, right after 蘋方")
+        XCTAssertEqual(ids[35], .lantinghei, "40.1 蘭亭黑 follows the open-source fonts")
     }
 
     /// 32.9: open-source sizes, SHA-256, versions and copyright notices as in
@@ -232,10 +297,10 @@ final class FontCatalogTests: XCTestCase {
                        "Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.\n(c) 2022 王立宇、劉韋辰 版權所有。", "40.2")
         XCTAssertEqual(asset.licenseFileNames, ["chenyuluoyan-OFL.txt"])
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v4/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v4/chenyuluoyan/ChenYuluoyan-2.0-Thin.ttf",
                        "40.2")
     }
 
@@ -260,22 +325,22 @@ final class FontCatalogTests: XCTestCase {
     }
 
     /// A-2: jsDelivr first, GitHub raw second, both on the fixed tag
-    /// (`v3` since TASK-91, 91.1).
+    /// (`v3` since TASK-91, `v4` since TASK-142; `v4` holds every `v3` file).
     func testOpenSourceURLsPointAtTheFixedTag() throws {
         let asset = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).openSource)
         XCTAssertEqual(asset.primaryURL.absoluteString,
-                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v4/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fallbackURL.absoluteString,
-                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/noto-serif-tc/NotoSerifTC-Bold.otf")
+                       "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v4/noto-serif-tc/NotoSerifTC-Bold.otf")
         XCTAssertEqual(asset.fileExtension, "otf")
-        XCTAssertEqual(FontCatalog.entries.compactMap(\.openSource).count, 4, "40.2")
+        XCTAssertEqual(FontCatalog.entries.compactMap(\.openSource).count, 34, "40.2 / 142.1")
         for entry in FontCatalog.entries {
             guard let asset = entry.openSource else { continue }
             XCTAssertEqual(asset.primaryURL.absoluteString,
-                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v3/\(asset.repositoryPath)",
+                           "https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v4/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertEqual(asset.fallbackURL.absoluteString,
-                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v3/\(asset.repositoryPath)",
+                           "https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v4/\(asset.repositoryPath)",
                            "40.2 \(entry.fontID)")
             XCTAssertTrue(asset.primaryURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")
             XCTAssertTrue(asset.fallbackURL.absoluteString.hasSuffix(asset.repositoryPath), "\(entry.fontID)")

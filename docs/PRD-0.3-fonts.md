@@ -113,6 +113,36 @@
 | `huninn` | 粉圓 | 可下載 | 開源 | `jf-openhuninn-2.1` | 4.9 MB |
 | `notoSerifTC` | 思源宋體 | 可下載 | 開源 | `NotoSerifTC-Bold` | 8.3 MB |
 | `iansui` | 芫荽 | 可下載 | 開源 | `Iansui-Regular` | 9.4 MB |
+| `notoSansTC` | 思源黑體 | 可下載（黑） | 開源 | `NotoSansTC-Bold` | 5.8 MB |
+| `taipeiSans` | 台北黑體 | 可下載（黑） | 開源 | `TaipeiSansTCBeta-Bold` | 21.7 MB |
+| `genSeki` | 源石黑體 | 可下載（黑） | 開源 | `GenSekiGothic2TW-B` | 15.0 MB |
+| `chironHei` | 昭源黑體 | 可下載（黑） | 開源 | `ChironHeiHK-Bold` | 17.1 MB |
+| `chocolateSans` | 朱古力黑體 | 可下載（黑） | 開源 | `ChocolateClassicalSans-Regular` | 12.2 MB |
+| `glowSans` | 未來熒黑 | 可下載（黑） | 開源 | `GlowSansTC-Normal-Bold` | 9.0 MB |
+| `genSen` | 源泉圓體 | 可下載（圓） | 開源 | `GenSenRounded2TW-B` | 15.8 MB |
+| `sweiGothic` | 獅尾圓體 | 可下載（圓） | 開源 | `SweiGothicCJKtc-Bold` | 15.8 MB |
+| `chironGoRound` | 昭源環方 | 可下載（圓） | 開源 | `ChironGoRoundTC-Bold` | 20.5 MB |
+| `genWan` | 源雲明體 | 可下載（宋） | 開源 | `GenWanMin2TW-SB` | 22.6 MB |
+| `genRyu` | 源流明體 | 可下載（宋） | 開源 | `GenRyuMin2TW-B` | 16.2 MB |
+| `sweiSpring` | 獅尾四季春 | 可下載（宋） | 開源 | `SweiSpringCJKtc-Bold` | 17.3 MB |
+| `sweiSugar` | 獅尾加糖宋體 | 可下載（宋） | 開源 | `SweiSugarCJKtc-Bold` | 29.0 MB |
+| `chironSung` | 昭源宋體 | 可下載（宋） | 開源 | `ChironSungHK-Bold` | 26.6 MB |
+| `cactusSerif` | 仙人掌明體 | 可下載（宋） | 開源 | `CactusClassicalSerif-Regular` | 28.5 MB |
+| `twSung` | 全字庫正宋體 | 可下載（宋） | 開源 | `TW-Sung-98_1` | 35.3 MB |
+| `thenKhung` | 宇文天穹 | 可下載（宋） | 開源 | `UoqMunThenKhung-Regular` | 4.9 MB |
+| `lxgwWenKai` | 霞鶩文楷 TC | 可下載（楷） | 開源 | `LXGWWenKaiTC-Medium` | 15.0 MB |
+| `twKai` | 全字庫正楷體 | 可下載（楷） | 開源 | `TW-Kai-98_1` | 36.9 MB |
+| `eduKai` | 教育部標準楷書 | 可下載（楷） | 開源 | `TW-MOE-Std-Kai` | 15.8 MB |
+| `arphicUKai` | 文鼎 PL 中楷 | 可下載（楷） | 開源 | `UKaiTW` | 17.2 MB |
+| `naikai` | 內海字體 | 可下載（手寫） | 開源 | `NaikaiFont-Bold` | 38.6 MB |
+| `xiaolai` | 小賴字體 | 可下載（手寫） | 開源 | `Xiaolai` | 22.2 MB |
+| `yozai` | 悠哉字體 | 可下載（手寫） | 開源 | `Yozai-Medium` | 15.2 MB |
+| `nani` | 何某手寫體 | 可下載（手寫） | 開源 | `NaniFont-Bold` | 18.5 MB |
+| `lxgwMarker` | 霞鶩漫黑 | 可下載（手寫） | 開源 | `LXGWMarkerGothic-Regular` | 3.2 MB |
+| `kurewa` | 苦累蛙圓體 | 可下載（手寫） | 開源 | `KurewaGothicCjkTc-Bold` | 36.5 MB |
+| `popGothic` | 大波浪圓體 | 可下載（可愛） | 開源 | `PopGothicCjkTc-Bold` | 10.3 MB |
+| `wdxl` | WD-XL 滑油字 | 可下載（可愛） | 開源 | `WD-XLLubrifontTC-Regular` | 6.2 MB |
+| `cubic11` | 俐方體 11 號 | 可下載（可愛） | 開源 | `Cubic_11` | 2.8 MB |
 | `lantinghei` | 蘭亭黑 | 黑 | 系統 | `FZLTZHB--B51-0` | 25.2 MB |
 | `liHei` | 儷黑 | 黑 | 系統 | `LiHeiPro` | 4.2 MB |
 | `hiraginoSans` | 冬青黑體 | 黑 | 系統 | `HiraginoSansTC-W6` | 14.1 MB |
@@ -131,8 +161,8 @@
 | `wawa` | 娃娃體 | 可愛 | 系統 | `DFWaWaTC-W5` | 11.6 MB |
 | `yuppy` | 雅痞 | 可愛 | 系統 | `YuppyTC-Regular` | 12.9 MB |
 
-- 表格順序就是清單與格子的順序，不因下載狀態改變。
-- 系統字型大小取自調查報告的實測下載量（iOS 18.3 模擬器）；開源字型為 `irene-chou/dayscam-fonts@v1` 原檔大小（位元組數與 SHA-256 見 TASK-31 的 manifest）。
+- 表格順序就是清單與格子的順序，不因下載狀態改變。TASK-142（#494）在芫荽後加入 30 套開源字型（來自 [`research/fonts-tc-2.md`](research/fonts-tc-2.md) §2），順序為黑 6、圓 3、宋 8、楷 4、手寫 6、可愛 3；括號內是類型，分段仍是「可下載」。辰宇落雁體（TASK-40）不在此表，見 TASKS 0.3 TASK-40。「下載大小」是預設字重的檔案大小，各字重大小與 SHA-256 見 [`fonts-manifest.md`](fonts-manifest.md)。
+- 系統字型大小取自調查報告的實測下載量（iOS 18.3 模擬器）；開源字型為 `irene-chou/dayscam-fonts` 原檔大小（v1 的 3 套，TASK-142 起 `v4`）（位元組數與 SHA-256 見 TASK-31 的 manifest）。
 - 讀檔遇到未知 `fontID`（包含 0.2 的 10 種）一律轉成 `pingFang`，採用該筆、不丟棄（沿用 0.2 §4.1 的原則，fallback 由 `sfRounded` 改為 `pingFang`）。
 - `OverlayStyle.fontID` 預設值改為 `pingFang`。
 
@@ -141,11 +171,11 @@
 | 項目 | 規格 |
 |---|---|
 | 檔案 | 上游官方 release 的**原檔**，不子集化、不改名（A-1）。思源宋體取 Bold 單一字重 |
-| 下載點 | 公開 repo `irene-chou/dayscam-fonts` 的固定 tag；主要網址 jsDelivr，備援 GitHub raw（A-2） |
+| 下載點 | 公開 repo `irene-chou/dayscam-fonts` 的固定 tag（TASK-142 起 `v4`，含 `v1`～`v3` 全部檔案）；主要網址 jsDelivr，備援 GitHub raw（A-2）。jsDelivr 對大檔可能不服務，App 在非 2xx 時自動改用備援，30 MB 以上的檔案實測見 `fonts-manifest.md` |
 | 完整性 | App 內寫死每個檔案的大小與 SHA-256；下載後比對，不符就刪檔並視為失敗 |
 | 存放 | `Application Support/Fonts/<fontID>.<副檔名>`，設為不備份到 iCloud（可重新下載） |
 | 註冊 | 下載完成、以及每次啟動時，用 `CTFontManagerRegisterFontURLs`（`.process` 範圍）註冊 |
-| 授權 | 每套附 OFL 1.1 全文；粉圓另附 Apache-2.0 全文（漢字衍生自 Kosugi Maru） |
+| 授權 | 每套附授權全文：多數為 OFL 1.1；粉圓另附 Apache-2.0（漢字衍生自 Kosugi Maru）。TASK-142 的特殊授權：全字庫正宋體／正楷體（政府資料開放授權條款第 1 版或 OFL 1.1，註明來源）、教育部標準楷書（CC BY-ND 3.0 TW，標示「中華民國教育部」）、文鼎 PL 中楷（Arphic Public License）、未來熒黑（OFL＋MIT） |
 
 ### 4.3 舊檔轉換
 
@@ -197,7 +227,7 @@
 | FR-16.10 | 可同時下載多套。沒網路時立刻變 `failed`，提示「沒有網路，連上後再點一次」；其他失敗提示「「<名稱>」下載失敗，點一下重試」 |
 | FR-16.11 | 下載中關閉清單：下載繼續，完成後照 FR-16.6 自動套用。App 退到背景時取消所有下載中的字型，狀態變 `failed(.other)`、暫存檔清除；回到前景後可在清單點「重試」 |
 | FR-16.12 | 「⋯」（只有開源字型）→ 選單：標題列「<名稱>　<大小>」與使用情況（「「<設定檔>」等 N 個設定檔正在使用，刪除後改回蘋方」或「沒有設定檔在用這套字型」）、紅字「刪除字型」（`trash`）、「取消」。確認後**先**把用到它的設定檔改成 `pingFang` 並存檔，**再**刪檔與取消註冊（期間不顯示 FR-16.14 的提示），提示「已刪除「<名稱>」，釋放 <大小>」（A-3）。**0.4 TASK-56（#257 驗收 56.13）改為**：刪除字型不改寫設定檔，設定檔保留原 `fontID`，觀景窗與烘焙改以蘋方顯示；該格留在已下載段並保持選中、顯示灰色 ↓，重新下載後自動恢復原字型 |
-| FR-16.13 | 清單最下方「字型授權」列（`chevron.right`），進入唯讀頁：列出 3 套開源字型的名稱、版本（粉圓 2.1、芫荽 1.012、思源宋體 2.003，見 `docs/fonts-manifest.md`）、著作權聲明（取自各授權檔首段）與授權全文（OFL 1.1；粉圓另附 Apache-2.0）；並註明系統字型由 Apple 提供（A-5） |
+| FR-16.13 | 清單最下方「字型授權」列（`chevron.right`），進入唯讀頁（TASK-142 起列出 34 套開源字型，每個字重檔各有版權與版本，授權全文每套一份；全字庫註明來源、教育部標準楷書標示「中華民國教育部」、文鼎 PL 中楷附 Arphic Public License）：列出 3 套開源字型的名稱、版本（粉圓 2.1、芫荽 1.012、思源宋體 2.003，見 `docs/fonts-manifest.md`）、著作權聲明（取自各授權檔首段）與授權全文（OFL 1.1；粉圓另附 Apache-2.0）；並註明系統字型由 Apple 提供（A-5） |
 | FR-16.14 | 設定檔用的字型不是 `available` 也不是 `preparing`（被系統清掉、檔案驗證失敗）時，觀景窗與照片**都**用蘋方畫，並在開面板或切到該設定檔時提示一次「「<名稱>」需要重新下載，暫時用蘋方」；`fontID` 不改（A-4） |
 | FR-16.15 | **TASK-112（#437）／TASK-115（#446）**：多字重字型列列尾顯示 `chevron.down`（`inkTertiary`，展開時 `chevron.up`）：選中的，或列上沒有任何下載 icon（預設字重已在裝置上）的；**列上顯示下載 icon（箭頭、進度環、重試）的字型不顯示 chevron、不能展開，chevron 與下載 icon 不同時出現**（人類裁決，TASK-115 二輪；只下載了非預設字重的字型仍只顯示下載 icon），單一字重字型也沒有。**字型列一律不顯示下載大小（xx MB）**（目錄資料欄位保留，刪除確認對話框與長按選單的「釋放 xx MB」不變）。若列上還有大小文字或下載／狀態圖示，放在 chevron 左邊。chevron 點擊區至少 44×44pt，只展開／收合該列字重、不套用字型；同一時間最多一列展開，展開另一列時原本那列收合。點列的其他部分：未選中列套用字型並收合所有列；選中列切換自己的展開。選中的多字重列平時**收合**：名稱（以目前字重畫）、目前字重名稱（13pt `inkSecondary`）、chevron；未選中的收合列不顯示字重名稱。展開狀態只在記憶體：每次字型頁出現與改選字型都重設為收合（使用者展開某字型並在其中選字重而成為選中時除外，維持展開）。展開未選中字型時字重按鈕沿用 TASK-89 樣式但**沒有黃框**、卡片用一般底色且無黃色標記；點其中字重＝同時套用該字型與該字重，**只存一次設定檔**；字型已在裝置上但該字重未下載時先下載該字重，下載完才一起套用（下載中目前字型與字重不變，失敗保留原設定並提示；下載中點別的字型或別的字重，舊請求作廢）；存檔失敗字型與字重都回復。選中列不論收合或展開都只靠行首黃色標記與淡黃底表示，**不顯示打勾**。字重下載中收合：列上顯示已存字重與 14pt 進度環，下載完才套用。VoiceOver：chevron 不獨立成元素，列上有自訂動作「展開字重」／「收合字重」；label 名稱、選中列 value 目前字重（未選中列不念字重）、選中列 hint「點兩下展開／收合字重」 |
 

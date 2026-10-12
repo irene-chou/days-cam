@@ -162,6 +162,9 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
         case .baoli: return "報隸-繁 標準體"
         case .wawa: return "娃娃體-繁 標準體"
         case .yuppy: return "雅痞-繁 標準體"
+        // TASK-142 families: the short Chinese name; the weight is read from
+        // the buttons of the expanded row.
+        default: return displayName
         }
     }
 
@@ -171,8 +174,8 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     }
 }
 
-/// The fixed catalog of the 22 overlay fonts (PRD 0.3 §4.1, §4.2; TASK-40
-/// added 辰宇落雁體).
+/// The fixed catalog of the 52 overlay fonts (PRD 0.3 §4.1, §4.2; TASK-40
+/// added 辰宇落雁體, TASK-142 the 30 families of `downloadFamilies`).
 ///
 /// Hard-coded on purpose: there is no remote manifest (A-2). Open-source
 /// values must match `docs/fonts-manifest.md`; change both together.
@@ -183,7 +186,7 @@ enum FontCatalog {
     /// The public repository and tag the open-source fonts are served from.
     static let repository = "irene-chou/dayscam-fonts"
     /// The fixed tag the URLs point at.
-    static let repositoryTag = "v3"
+    static let repositoryTag = "v4"
 
     /// Every font in list order, which is `OverlayFontID.allCases` order.
     static var entries: [FontCatalogEntry] { OverlayFontID.allCases.map(entry(for:)) }
@@ -233,6 +236,7 @@ enum FontCatalog {
         case .baoli: return systemEntry(fontID, "報隸", .calligraphy, "STBaoliTC-Regular", 25.6)
         case .wawa: return systemEntry(fontID, "娃娃體", .cute, "DFWaWaTC-W5", 11.6)
         case .yuppy: return systemEntry(fontID, "雅痞", .cute, "YuppyTC-Regular", 12.9)
+        default: return downloadFamilyEntry(for: fontID)
         }
     }
 
@@ -355,7 +359,7 @@ enum FontCatalog {
                          postScriptName: postScriptName, downloadSizeMegabytes: megabytes, openSource: nil)
     }
 
-    private static func asset(path: String,
+    static func asset(path: String,
                               byteCount: Int,
                               sha256: String,
                               version: String,
