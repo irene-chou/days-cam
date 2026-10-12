@@ -27,7 +27,7 @@ final class ProfileManagerModelTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         store.load() // seeds ProfileStore.defaultProfileName
         return store
     }
@@ -366,7 +366,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.move(fromOffsets: IndexSet(integer: 2), toOffset: 0)
 
         XCTAssertEqual(model.rows.map(\.name), ["阿公", ProfileStore.defaultProfileName, "小寶"])
-        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
+        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         XCTAssertEqual(reloaded.load().map(\.name), ["阿公", ProfileStore.defaultProfileName, "小寶"])
     }
 
@@ -435,7 +435,7 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(before, after, "原位放手不寫入")
 
         model.move(id: model.profiles[0].id, toFinalIndex: 2) // 76.4: order survives a restart
-        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
+        let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         XCTAssertEqual(reloaded.load().map(\.name), ["小寶", "阿公", ProfileStore.defaultProfileName])
     }
 

@@ -64,7 +64,7 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
                              states: [OverlayFontID: FontState] = [:],
                              timeout: TimeInterval = 3) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         var profile = CameraProfile(name: "A", startDate: DateFixture.components(2026, 1, 1))
         profile.style.fontID = fontID
         if let weight { profile.style.fontWeight = weight }

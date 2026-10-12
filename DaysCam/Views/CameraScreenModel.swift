@@ -295,6 +295,9 @@ final class CameraScreenModel: ObservableObject {
     private let scheduleToastDismiss: (@escaping () -> Void) -> Void
 
     private var cancellables = Set<AnyCancellable>()
+    private var saveFailureToastPending = false
+    /// Whether the app is in the foreground and active; injectable for tests.
+    private let isApplicationActive: () -> Bool
 
     /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, not
     ///   `.current`. `.current` is a snapshot taken once, at call time — a
@@ -323,6 +326,7 @@ final class CameraScreenModel: ObservableObject {
          },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
+         isApplicationActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
@@ -402,6 +406,7 @@ final class CameraScreenModel: ObservableObject {
         self.prepareCapture = prepareCapture ?? { [cameraService] flashMode in
             cameraService.prepareCapture(flashMode: flashMode)
         }
+        self.isApplicationActive = isApplicationActive
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
@@ -426,6 +431,20 @@ final class CameraScreenModel: ObservableObject {
         }
     }
 
+    /// Shows the save-failed toast held back while the app was inactive, if
+    /// the failure is still unresolved. Internal so tests can call it.
+    func showPendingSaveFailureToast() {
+        guard saveFailureToastPending, profileStore.lastWriteError != nil else {
+            saveFailureToastPending = false
+            return
+        }
+        saveFailureToastPending = false
+        showToast(message: Self.profileSaveFailedMessage)
+    }
+
+    /// Shown when the profile file could not be written.
+    static let profileSaveFailedMessage = "無法儲存設定"
+
     private func bindToProfileStore() {
         profileStore.$profiles
             .receive(on: DispatchQueue.main)
@@ -446,6 +465,44 @@ final class CameraScreenModel: ObservableObject {
                     formatTabModel.displaySettings.applyExternalChanges(from: latest)
                 }
             }
+            .store(in: &cancellables)
+        // Profile writes are debounced (#464), so a failed save no longer
+        // surfaces as a throw from `update`; this is where the user hears of
+        // it. Only failing/not-failing is compared, not the error text (it
+        // carries a random temp file name): one failure shows once, however
+        // many retries fail again, and a successful retry re-arms it.
+        profileStore.$lastWriteError
+            .map { $0 != nil }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasError in
+                guard let self else { return }
+                guard hasError else {
+                    self.saveFailureToastPending = false
+                    return
+                }
+                // The 設定檔 sheet covers the screen's toast, and every
+                // add／duplicate／delete／reorder／edit there now looks
+                // successful to `ProfileManagerModel`: use the sheet's own
+                // alert, which stays until dismissed.
+                if self.isProfileManagerPresented {
+                    self.profileManagerModel.lastError = self.profileStore.lastWriteError
+                        ?? ProfileStoreError.writeFailed("")
+                    return
+                }
+                // A flush on the way to the background fails while nobody is
+                // looking, and the toast would time out before they return:
+                // hold it until the app is active again.
+                if self.isApplicationActive() {
+                    self.showToast(message: Self.profileSaveFailedMessage)
+                } else {
+                    self.saveFailureToastPending = true
+                }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.showPendingSaveFailureToast() }
             .store(in: &cancellables)
         profileStore.$selectedProfileID
             .receive(on: DispatchQueue.main)
@@ -1482,7 +1539,9 @@ extension CameraScreenModel {
         if latest.style.fontID != fontID {
             latest.style.fontID = fontID
             do {
-                try profileStore.update(latest)
+                // Waits for the disk: "applied" must not be announced for a
+                // save that then fails (#492).
+                try profileStore.updateAndWait(latest)
             } catch {
                 showToast(message: "無法儲存字型設定")
                 return false
@@ -1638,8 +1697,36 @@ final class TabProfileWriter {
             // `updateProfile` failure.
             throw ProfileStoreError.profileNotFound(id: updated.id)
         }
-        try profileStore.update(Self.merging(updated, from: baseline, onto: latest))
+        let merged = Self.merging(updated, from: baseline, onto: latest)
+        if Self.isContinuousAdjustment(from: baseline, to: updated) {
+            try profileStore.update(merged)
+        } else {
+            // An explicit choice (font, weight, name, switches...): written
+            // before the tab reports it as applied (#492, human decision
+            // 2026-10-12). A failure rolls the store back and reaches the tab.
+            try profileStore.updateAndWait(merged)
+        }
         baseline = updated
+    }
+
+    /// Whether the only changes from `baseline` to `updated` are slider, drag
+    /// or color-picker values, which arrive many times a second and are
+    /// written after a debounce (#464). Everything else is an explicit choice.
+    static func isContinuousAdjustment(from baseline: CameraProfile, to updated: CameraProfile) -> Bool {
+        var probe = baseline
+        probe.style.sizeScale = updated.style.sizeScale
+        probe.style.strokeWidth = updated.style.strokeWidth
+        probe.style.boxPadding = updated.style.boxPadding
+        probe.style.shadowOffsetX = updated.style.shadowOffsetX
+        probe.style.shadowOffsetY = updated.style.shadowOffsetY
+        probe.style.shadowBlur = updated.style.shadowBlur
+        probe.style.autoOutlineOpacity = updated.style.autoOutlineOpacity
+        probe.style.textColor = updated.style.textColor
+        probe.style.outlineColor = updated.style.outlineColor
+        probe.style.shadowColor = updated.style.shadowColor
+        if case .custom = updated.position { probe.position = updated.position }
+        probe.updatedAt = updated.updatedAt
+        return probe == updated
     }
 
     /// Advances `baseline` to the store's current record when the tab's own

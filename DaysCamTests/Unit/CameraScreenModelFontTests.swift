@@ -152,13 +152,14 @@ final class CameraScreenModelFontTests: XCTestCase {
 
     /// Two profiles, A selected.
     private func makeHarness(fontA: OverlayFontID = .pingFang,
+                             isApplicationActive: @escaping () -> Bool = { true },
                              fontB: OverlayFontID = .pingFang,
                              states: [OverlayFontID: FontState] = [:],
                              timeout: TimeInterval = 3,
                              bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
                              captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         let profileA = profile("A", font: fontA)
         let profileB = profile("B", font: fontB)
         _ = try store.add(profileA)
@@ -178,6 +179,7 @@ final class CameraScreenModelFontTests: XCTestCase {
             bake: bake,
             save: { _, completion in completion(.success("asset")) },
             captureImage: captureImage,
+            isApplicationActive: isApplicationActive,
             scheduleToastDismiss: { _ in },
             makeThumbnailLibrary: { _ in EmptyThumbnailLibrary() },
             fontLibrary: library,
@@ -472,16 +474,96 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(storedFont(harness.profileB.id, in: harness.store), .pingFang, "35.7")
     }
 
-    func testFailedSaveAfterTheDownloadKeepsTheErrorAndDoesNotAnnounceApplied() throws {
+    /// #492: font apply waits for the disk, so a failed save is reported as
+    /// such and never as applied.
+    func testFailedFileWriteOnFontApplyShowsTheFontSaveFailedToast() async throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
         harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
-        // Make the profile file unwritable so `ProfileStore.update` throws.
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
         harness.library.finishDownload(.xingkai)
+        await settle()
 
         XCTAssertEqual(harness.model.toastState?.message, "無法儲存字型設定", "寫入失敗不可報成已套用")
-        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .pingFang)
+        XCTAssertNil(harness.model.styleTabModel?.fontLibraryModel?.toast?.text)
+    }
+
+    /// A debounced write that fails shows the generic toast once; a later
+    /// success clears it without a new toast.
+    func testBackgroundWriteFailureShowsTheToastOnceAndRetryClearsIt() async throws {
+        let harness = try makeHarness()
+        var edited = harness.profileA
+        edited.name = "改名"
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        try harness.store.update(edited)
+        await settle()
+        XCTAssertEqual(harness.model.toastState?.message, CameraScreenModel.profileSaveFailedMessage)
+        let toastID = harness.model.toastState?.id
+
+        harness.store.flush()   // still failing: same error, no second toast
+        await settle()
+        XCTAssertEqual(harness.model.toastState?.id, toastID)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        harness.store.flush()
+        await settle()
+        XCTAssertNil(harness.store.lastWriteError)
+        XCTAssertEqual(harness.model.toastState?.id, toastID, "no toast for a successful retry")
+    }
+
+    /// #492 (Codex): with the 設定檔 sheet open the screen's toast is hidden
+    /// behind it, so the failure goes to the sheet's own alert instead.
+    func testSaveFailureWhileTheProfileSheetIsOpenShowsTheSheetAlert() async throws {
+        let harness = try makeHarness()
+        harness.model.presentProfileManagement()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        harness.model.profileManagerModel.duplicate(id: harness.profileA.id)
+        await settle()
+
+        XCTAssertEqual(harness.model.profileManagerModel.lastError as? ProfileStoreError == nil, false,
+                       "the sheet's alert has the error")
+        XCTAssertNil(harness.model.toastState, "no toast behind the sheet")
+    }
+
+    /// #492 (Codex): a failure that happens while the app is inactive is
+    /// held and shown when it becomes active again.
+    func testSaveFailureWhileInactiveIsShownWhenTheAppBecomesActive() async throws {
+        var active = false
+        let harness = try makeHarness(isApplicationActive: { active })
+        var edited = harness.profileA
+        edited.name = "改名"
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        try harness.store.update(edited)
+        await settle()
+        XCTAssertNil(harness.model.toastState, "nobody is looking yet")
+
+        active = true
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await settle()
+        XCTAssertEqual(harness.model.toastState?.message, CameraScreenModel.profileSaveFailedMessage)
+    }
+
+    /// A failure that was fixed while inactive is not shown afterwards.
+    func testResolvedSaveFailureIsNotShownOnReturn() async throws {
+        var active = false
+        let harness = try makeHarness(isApplicationActive: { active })
+        var edited = harness.profileA
+        edited.name = "改名"
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        try harness.store.update(edited)
+        await settle()
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        harness.store.flush()
+        await settle()
+
+        active = true
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await settle()
+        XCTAssertNil(harness.model.toastState)
     }
 
     func testDownloadFinishingForADeletedProfileWritesNothing() throws {

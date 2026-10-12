@@ -64,7 +64,7 @@ final class AutoupdatingCalendarTests: XCTestCase {
 
     func testProfileStoreSeedsTodayInTheZoneTheDeviceIsInNow() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        let store = ProfileStore(directory: directory, now: { self.instant }, defaults: defaults)
+        let store = ProfileStore(directory: directory, now: { self.instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
 
         try flyToNewYork()
         let seeded = store.load()

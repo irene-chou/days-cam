@@ -206,7 +206,7 @@ final class OnboardingSpotlightModelTests: XCTestCase {
     func testTheSeenFlagNeverReachesTheProfileFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         let before = try Data(contentsOf: store.fileURL)
 
@@ -220,7 +220,7 @@ final class OnboardingSpotlightModelTests: XCTestCase {
         XCTAssertEqual(before, after, "96.12 profiles.json is byte-for-byte unchanged")
         XCTAssertFalse(String(decoding: after, as: UTF8.self).contains(OnboardingSpotlightModel.stateKey))
         XCTAssertFalse(String(decoding: after, as: UTF8.self).contains("pending"))
-        let reloaded = ProfileStore(directory: directory)
+        let reloaded = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         XCTAssertEqual(reloaded.load().count, store.profiles.count)
     }
 }
@@ -364,7 +364,7 @@ final class CameraScreenModelOnboardingTests: XCTestCase {
     }
 
     private func makeModel() -> CameraScreenModel {
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         return CameraScreenModel(cameraService: CameraService(isCaptureSupported: false),
                                  profileStore: store,
@@ -387,7 +387,7 @@ final class CameraScreenModelOnboardingTests: XCTestCase {
     /// 96.16／96.17: a store that found profiles, or re-seeded after
     /// corruption, is not a fresh install — the record goes straight to done.
     func testExistingProfilesOrCorruptionNeverShowTheTour() throws {
-        let seeded = ProfileStore(directory: directory)
+        let seeded = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         seeded.load()
         let existing = makeModel()
         XCTAssertEqual(existing.onboarding.state, .done, "96.16 profiles already there")

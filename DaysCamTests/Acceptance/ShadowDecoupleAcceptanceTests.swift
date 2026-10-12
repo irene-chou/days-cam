@@ -135,7 +135,7 @@ final class ShadowDecoupleAcceptanceTests: XCTestCase {
         }
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
         func makeStore() -> ProfileStore {
-            ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+            ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         }
         let store = makeStore()
         store.load()

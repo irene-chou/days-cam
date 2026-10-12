@@ -98,7 +98,7 @@ final class CameraScreenModelTests: XCTestCase {
     /// `seedShowsName` keeps the TASK-119 default (name on) for the seeded
     /// profile; most tests predate it and assert text without the name.
     private func makeProfileStore(now: Date, seed: [CameraProfile] = [], seedShowsName: Bool = false) -> ProfileStore {
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         if seed.isEmpty {
             store.load() // seeds the one default profile
             if !seedShowsName, var seeded = store.profiles.first {
@@ -747,7 +747,7 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testShowsCorruptionRecoveredAlertTrueWhenTheStoreJustRecovered() throws {
         let now = try fixedNow()
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         try corrupt(store)
         store.load()
         XCTAssertTrue(store.didRecoverFromCorruption) // sanity check on the fixture
@@ -764,7 +764,7 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testDismissCorruptionRecoveredAlertClearsIt() throws {
         let now = try fixedNow()
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         try corrupt(store)
         store.load()
         let (model, _, _, _) = makeModel(profileStore: store, now: now)

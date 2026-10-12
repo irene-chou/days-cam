@@ -27,7 +27,7 @@ final class OutlineSliderAcceptanceTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     private func makeModel(store: ProfileStore) throws -> StyleTabModel {
