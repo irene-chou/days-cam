@@ -28,6 +28,12 @@ final class DateTimelineUITests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
     }
 
+    /// Drags the edit page's content up from the middle of the form.
+    private func scrollForm() {
+        let start = app.staticTexts["dateExplanation"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
+    }
+
     private func attach(_ name: String) {
         let screenshot = app.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -53,23 +59,22 @@ final class DateTimelineUITests: XCTestCase {
         let day = app.buttons.matching(NSPredicate(format: "label CONTAINS '15日' OR label CONTAINS ' 15'")).firstMatch
         XCTAssertTrue(day.waitForExistence(timeout: 3))
         day.tap()
-        // The calendar closes by itself after a pick on some systems; otherwise
-        // tap outside it.
-        let gone = NSPredicate(format: "exists == false")
-        let closed = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: nextMonth)], timeout: 2)
-        if closed != .completed {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)).tap()
-            wait(for: [XCTNSPredicateExpectation(predicate: gone, object: nextMonth)], timeout: 5)
-        }
+        // The calendar stays open after a pick; UIKit's invisible region behind a
+        // popover closes it (and leaves the sheet underneath alone).
+        let dismiss = app.otherElements["PopoverDismissRegion"].firstMatch
+        if dismiss.waitForExistence(timeout: 3) { dismiss.tap() }
 
         XCTAssertTrue(timeline.waitForExistence(timeout: 5), "137.2 a future date shows the timeline")
         XCTAssertTrue(timeline.label.hasPrefix("到了那天之後"), timeline.label)
         XCTAssertTrue(timeline.label.contains("當天"), timeline.label)
-        timeline.swipeUp()
+        // Scroll the edit page up from the middle of the form (137.8).
+        scrollForm()
         attach("137.2_137.8_date-future-timeline")
 
         app.buttons["第 0 天"].tap()
         XCTAssertTrue(timeline.label.contains("第 0 天"), "137.3 \(timeline.label)")
         attach("137.3_date-future-day-zero")
+        scrollForm()
+        attach("137.8_date-future-scrolled-to-delete")
     }
 }
