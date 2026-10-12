@@ -61,6 +61,12 @@ final class FakeShellFontLibrary: FontShellControlling {
         weightDownloadDidFinish.send(FontDownloadID(fontID: fontID, weightID: weightID))
     }
 
+    /// Starts one face's download and leaves it running until the test finishes it.
+    func download(_ fontID: OverlayFontID, weightID: String?) -> Bool {
+        set(.downloading(progress: 0), for: fontID, weightID: FontCatalog.entry(for: fontID).weight(for: weightID).id)
+        return true
+    }
+
     func cancel(_ fontID: OverlayFontID) { set(.notDownloaded, for: fontID) }
     func delete(_ fontID: OverlayFontID) -> Bool { false }
 
@@ -564,6 +570,73 @@ final class CameraScreenModelFontTests: XCTestCase {
         NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
         await settle()
         XCTAssertNil(harness.model.toastState)
+    }
+
+    // MARK: - TASK-122 (#458): a later font choice is never overwritten by an earlier download
+
+    private func storedStyle(_ id: UUID, in store: ProfileStore) -> (OverlayFontID, String)? {
+        store.profiles.first { $0.id == id }.map { ($0.style.fontID, $0.style.resolvedFontWeight.id) }
+    }
+
+    /// 122.1: A (not downloaded) is tapped, then a usable weight of B: B wins.
+    func testUsableWeightOfAnotherFontSupersedesAPendingDownload() throws {
+        let harness = try makeHarness(states: [.xingkai: .notDownloaded, .notoSerifTC: .available])
+        harness.library.set(.available, for: .notoSerifTC, weightID: "black")
+        harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+        harness.model.styleTabModel?.fontList.didTapWeight("black", of: .notoSerifTC)
+        XCTAssertEqual(storedStyle(harness.profileA.id, in: harness.store)?.0, .notoSerifTC)
+
+        harness.library.finishDownload(.xingkai)
+
+        let result = storedStyle(harness.profileA.id, in: harness.store)
+        XCTAssertEqual(result?.0, .notoSerifTC, "122.1")
+        XCTAssertEqual(result?.1, "black", "122.1")
+    }
+
+    /// 122.2: B's weight needs a download too; A finishing first or last never wins.
+    func testWeightDownloadOfAnotherFontIsNotOverwrittenByAEitherOrder() throws {
+        for aFinishesFirst in [true, false] {
+            let harness = try makeHarness(states: [.xingkai: .notDownloaded, .notoSerifTC: .available])
+            harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+            harness.model.styleTabModel?.fontList.didTapWeight("black", of: .notoSerifTC)
+
+            if aFinishesFirst {
+                harness.library.finishDownload(.xingkai)
+                XCTAssertEqual(storedStyle(harness.profileA.id, in: harness.store)?.0, .pingFang,
+                               "122.2 A is not applied over the newer pending choice")
+                harness.library.finishDownload(.notoSerifTC, weightID: "black")
+            } else {
+                harness.library.finishDownload(.notoSerifTC, weightID: "black")
+                harness.library.finishDownload(.xingkai)
+            }
+
+            let result = storedStyle(harness.profileA.id, in: harness.store)
+            XCTAssertEqual(result?.0, .notoSerifTC, "122.2 aFinishesFirst=\(aFinishesFirst)")
+            XCTAssertEqual(result?.1, "black", "122.2 aFinishesFirst=\(aFinishesFirst)")
+        }
+    }
+
+    /// 122.3: nothing newer: A lands as before.
+    func testLoneDownloadStillAppliesWhenNothingNewerWasChosen() throws {
+        let harness = try makeHarness(states: [.xingkai: .notDownloaded])
+        harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+        harness.library.finishDownload(.xingkai)
+        XCTAssertEqual(storedStyle(harness.profileA.id, in: harness.store)?.0, .xingkai, "122.3")
+    }
+
+    /// 122.4: the other profile's choice leaves this profile's pending alone (A-8).
+    func testAnotherProfilesWeightChoiceDoesNotCancelThisProfilesPending() async throws {
+        let harness = try makeHarness(states: [.xingkai: .notDownloaded, .notoSerifTC: .available])
+        harness.library.set(.available, for: .notoSerifTC, weightID: "black")
+        harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+        harness.model.selectProfile(id: harness.profileB.id)
+        await settle()   // the style tab is rebuilt for B
+        harness.model.styleTabModel?.fontList.didTapWeight("black", of: .notoSerifTC)
+
+        harness.library.finishDownload(.xingkai)
+
+        XCTAssertEqual(storedStyle(harness.profileB.id, in: harness.store)?.0, .notoSerifTC, "122.4")
+        XCTAssertEqual(storedStyle(harness.profileA.id, in: harness.store)?.0, .xingkai, "122.4")
     }
 
     func testDownloadFinishingForADeletedProfileWritesNothing() throws {
