@@ -675,46 +675,33 @@ final class OverlayStyleTests: XCTestCase {
 
     private func hexes(_ colors: [OverlayColor]) -> [String] { colors.map(\.hexString) }
 
-    /// 149.1: the light and dark rows, column for column with `swatches`.
-    func testLightAndDarkSwatchesAreLockedInOrder() {
+    /// 149.1: the light row, column for column with `swatches`.
+    func testLightSwatchesAreLockedInOrder() {
         XCTAssertEqual(hexes(OverlayStyle.lightSwatches),
                        ["#E5E5EA", "#48484A", "#92C6F7", "#B0DC9F", "#FEE2A5", "#FEC08E", "#F59BA2", "#E677AD", "#CC77D9"],
                        "149.1 light")
-        XCTAssertEqual(hexes(OverlayStyle.darkSwatches),
-                       ["#AEAEB2", "#1C1C1E", "#24629C", "#497D34", "#A4843C", "#A45C21", "#9A2F38", "#880544", "#6A0579"],
-                       "149.1 dark")
+        XCTAssertTrue(OverlayStyle.lightSwatches.allSatisfy { $0.opacity == 1 }, "presets are opaque")
     }
 
     /// 149.1: the colored columns follow the documented mix (45% white,
-    /// 35% black, rounded half up); white and black use system greys.
-    func testLightAndDarkSwatchesFollowTheMixRule() {
-        func component(_ value: Double) -> Int { Int((value * 255).rounded()) }
-        func mix(_ color: OverlayColor, _ transform: (Double) -> Double) -> String {
-            let parts = [color.red, color.green, color.blue].map { Int((transform(Double(component($0)))).rounded(.toNearestOrAwayFromZero)) }
-            return String(format: "#%02X%02X%02X", parts[0], parts[1], parts[2])
-        }
+    /// rounded half up); white and black use system greys.
+    func testLightSwatchesFollowTheMixRule() {
+        func component(_ value: Double) -> Double { (value * 255).rounded() }
         for column in 2..<OverlayStyle.swatches.count {
             let base = OverlayStyle.swatches[column]
-            XCTAssertEqual(OverlayStyle.lightSwatches[column].hexString, mix(base) { $0 + (255 - $0) * 0.45 }, "light \(column)")
-            XCTAssertEqual(OverlayStyle.darkSwatches[column].hexString, mix(base) { $0 * 0.65 }, "dark \(column)")
+            let parts = [base.red, base.green, base.blue].map {
+                Int((component($0) + (255 - component($0)) * 0.45).rounded(.toNearestOrAwayFromZero))
+            }
+            let expected = String(format: "#%02X%02X%02X", parts[0], parts[1], parts[2])
+            XCTAssertEqual(OverlayStyle.lightSwatches[column].hexString, expected, "light \(column)")
         }
     }
 
-    /// 149.1: the film colors, names and hex in order.
-    func testFilmSwatchesAreLockedInOrder() {
-        XCTAssertEqual(OverlayStyle.filmSwatches.map(\.name), ["底片橘", "日期紅", "琥珀黃", "復古綠", "褪色藍", "奶油白"], "149.1")
-        XCTAssertEqual(hexes(OverlayStyle.filmSwatches.map(\.color)),
-                       ["#FF8A1E", "#E23B2E", "#F5B700", "#8DB255", "#6E8FB5", "#F4EBD0"], "149.1")
-        XCTAssertTrue((OverlayStyle.lightSwatches + OverlayStyle.darkSwatches + OverlayStyle.filmSwatches.map(\.color))
-            .allSatisfy { $0.opacity == 1 }, "presets are opaque")
-    }
-
-    /// 149.2: 33 presets, no hex twice.
-    func testAllPresetColorsAreThirtyThreeDistinctHexes() {
+    /// 149.2: 18 presets — the swatches and the light row — no hex twice.
+    func testAllPresetColorsAreEighteenDistinctHexes() {
         let all = hexes(OverlayStyle.allPresetColors)
-        XCTAssertEqual(all.count, 33, "149.2")
-        XCTAssertEqual(Set(all).count, 33, "149.2 no duplicates")
-        XCTAssertEqual(all, hexes(OverlayStyle.swatches + OverlayStyle.lightSwatches + OverlayStyle.darkSwatches
-                                  + OverlayStyle.filmSwatches.map(\.color)))
+        XCTAssertEqual(all.count, 18, "149.2")
+        XCTAssertEqual(Set(all).count, 18, "149.2 no duplicates")
+        XCTAssertEqual(all, hexes(OverlayStyle.swatches + OverlayStyle.lightSwatches))
     }
 }

@@ -253,6 +253,7 @@ struct StyleTabView: View {
     private var textColorPalette: some View {
         colorPalette(current: model.profile.style.textColor,
                     swatches: model.textColorSwatches,
+                    showsPresetRows: true,
                     showAutoButton: false,
                     isDisabled: false,
                     onSelectSwatch: { model.selectTextColor($0) },
@@ -454,13 +455,15 @@ struct StyleTabView: View {
 
     // MARK: - 共用：兩排色票 (FR-10.4, FR-10.6, FR-10.7)
 
-    /// Renders the shared two-row color palette: a first row of swatches (plus
-    /// an optional leading "automatic" button and a trailing rainbow custom
-    /// picker), and a second "recent" row. Used for both text color and
-    /// outline color (FR-10.4, FR-10.6) so their behavior — including sharing
-    /// `RecentColorsStore` — cannot drift apart.
+    /// Renders the shared color palette: a first row of swatches, then (text
+    /// color only, `showsPresetRows`) the light row (TASK-149), then a row
+    /// with an optional leading "automatic" button,
+    /// the rainbow custom picker and the recent colors. Used for text,
+    /// outline and shadow color (FR-10.4, FR-10.6) so their behavior —
+    /// including sharing `RecentColorsStore` — cannot drift apart.
     private func colorPalette(current: OverlayColor?,
                               swatches: [OverlayColor],
+                              showsPresetRows: Bool = false,
                               showAutoButton: Bool,
                               autoLabel: String = "自動（黑或白）",
                               isDisabled: Bool,
@@ -468,15 +471,26 @@ struct StyleTabView: View {
                               onSelectAuto: @escaping () -> Void = {},
                               onApplyCustom: @escaping (OverlayColor) -> Void,
                               onCommitCustom: @escaping (OverlayColor) -> Void) -> some View {
-        // `.pal{gap:6px}` between the two rows (#106).
-        VStack(alignment: .leading, spacing: 6) {
+        // Every preset this palette shows; a color matching none of them is
+        // custom (the rainbow's ring).
+        let presets = showsPresetRows ? swatches + model.textColorLightSwatches : swatches
+        // `.pal{gap:6px}` between the rows (#106).
+        return VStack(alignment: .leading, spacing: 6) {
             // First row: nine swatches filling the content width, equal gaps.
             paletteRow {
                 ForEach(swatches, id: \.hexString) { swatch in
                     colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
                 }
             }
-            // Second row: (auto,) rainbow, then recent custom colors, each in
+            if showsPresetRows {
+                // Light tints, each under its swatch (TASK-149).
+                paletteRow {
+                    ForEach(model.textColorLightSwatches, id: \.hexString) { swatch in
+                        colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
+                    }
+                }
+            }
+            // Last row: (auto,) rainbow, then recent custom colors, each in
             // the same column as the first row's swatch above it, left-aligned.
             paletteRow {
                 if showAutoButton {
@@ -487,7 +501,7 @@ struct StyleTabView: View {
                 // those already show their own ring, so this only fires for
                 // an actually custom color (R.3).
                 let isCustomSelected = current != nil
-                    && !swatches.contains { isSame(current, $0) }
+                    && !presets.contains { isSame(current, $0) }
                     && !model.recentColors.contains { isSame(current, $0) }
                 customColorPicker(current: current, isSelected: isCustomSelected,
                                   onApply: onApplyCustom, onCommit: onCommitCustom)
@@ -580,6 +594,7 @@ struct StyleTabView: View {
                 .overlay(swatchSelectionRing(isSelected))
         }
         .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// Whether `color` is `swatch` ignoring opacity (a swatch stays selected

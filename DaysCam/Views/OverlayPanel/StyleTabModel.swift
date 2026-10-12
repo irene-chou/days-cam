@@ -240,6 +240,11 @@ extension StyleTabModel {
     /// ten items total.
     var textColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
+    /// The light row under the text-color swatches, column for column
+    /// (TASK-149, #518). Text color only; outline and shadow keep their one
+    /// swatch row.
+    var textColorLightSwatches: [OverlayColor] { OverlayStyle.lightSwatches }
+
     /// The first row of the outline-color palette: all nine swatches
     /// (FR-10.6). The view prepends its own "automatic" button (represented
     /// here by `outlineColor == nil`) and appends the rainbow `ColorPicker`,

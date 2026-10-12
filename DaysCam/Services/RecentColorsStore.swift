@@ -30,9 +30,8 @@ final class RecentColorsStore: ObservableObject {
     ///
     /// Moves it to the front, dropping any earlier copy; drops the oldest when
     /// more than `capacity` remain. A color equal to any preset — the
-    /// swatches, their light and dark rows or the film colors
-    /// (`OverlayStyle.allPresetColors`, TASK-149) — is ignored, since it is
-    /// already one tap away.
+    /// swatches or their light row (`OverlayStyle.allPresetColors`,
+    /// TASK-149) — is ignored, since it is already one tap away.
     func add(_ color: OverlayColor) {
         let hex = color.hexString
         guard !OverlayStyle.allPresetColors.contains(where: { $0.hexString == hex }),

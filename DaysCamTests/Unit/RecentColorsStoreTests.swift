@@ -56,7 +56,7 @@ final class RecentColorsStoreTests: XCTestCase {
         XCTAssertEqual(store.recentCustomColors, [])
     }
 
-    /// 149.3: no preset — light, dark or film included — goes into the list.
+    /// 149.3: no preset — the light row included — goes into the list.
     func testEveryPresetColorIsNotAdded() throws {
         let store = RecentColorsStore(defaults: defaults)
         for preset in OverlayStyle.allPresetColors {
@@ -65,6 +65,16 @@ final class RecentColorsStoreTests: XCTestCase {
         XCTAssertEqual(store.recentCustomColors, [], "149.3")
         store.add(try hex("#123456"))
         XCTAssertEqual(store.recentCustomColors, [try hex("#123456")], "a custom color still is")
+    }
+
+    /// The dark row and film colors of #523 are no longer presets (user
+    /// decision 2026-10-13, PR #527): picked with the rainbow, they go into
+    /// the list like any custom color.
+    func testDroppedDarkAndFilmColorsAreAddedAsCustom() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let dropped = try ["#24629C", "#1C1C1E", "#FF8A1E", "#F4EBD0"].map { try hex($0) }
+        for color in dropped { store.add(color) }
+        XCTAssertEqual(store.recentCustomColors, dropped.reversed(), "149.3 no longer excluded")
     }
 
     /// A picker color that rounds to the same 8-bit hex is the same color.
