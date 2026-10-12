@@ -37,7 +37,7 @@ final class OnboardingSpotlightModel: ObservableObject {
 
         var message: String {
             switch self {
-            case .startDate: return "點這裡設定要記錄的日子。寶寶生日會算第幾天，婚禮那天會倒數還有幾天。"
+            case .startDate: return "點這裡設定要記錄的日子。"
             case .overlayStyle: return "點這裡調整照片上的文字：字型、顏色、位置等等。"
             }
         }

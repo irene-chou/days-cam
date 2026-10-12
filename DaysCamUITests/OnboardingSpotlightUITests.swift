@@ -53,7 +53,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
         XCTAssertTrue(spotlight.waitForExistence(timeout: 10), note)
         XCTAssertEqual(stepLabel.label, "1 / 2", note)
         XCTAssertEqual(title.label, "設定日期", note)
-        XCTAssertEqual(message.label, "點這裡設定要記錄的日子。寶寶生日會算第幾天，婚禮那天會倒數還有幾天。", note)
+        XCTAssertEqual(message.label, "點這裡設定要記錄的日子。", note)
         XCTAssertEqual(advance.label, "下一步", note)
         XCTAssertTrue(target.label.hasPrefix("設定檔："), "\(note): the chip is the highlighted target")
     }
