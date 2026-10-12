@@ -216,13 +216,13 @@ final class FontLibraryModel: ObservableObject {
     }
 
     /// One section of the list: the downloaded fonts (no title) first, then
-    /// one per category that still has fonts to download.
+    /// one per source (開源字型, 系統字型) that still has fonts to download.
     struct Section: Identifiable, Equatable {
         /// `nil` for the downloaded section.
-        let category: FontSection?
+        let source: FontSource?
         let cells: [Cell]
-        var id: String { category?.rawValue ?? "downloaded" }
-        var title: String? { category?.title }
+        var id: String { source?.rawValue ?? "downloaded" }
+        var title: String? { source?.listTitle }
     }
 
     /// The long-press "刪除字型" confirmation.
@@ -261,6 +261,8 @@ final class FontLibraryModel: ObservableObject {
     private(set) var isVisible = false
 
     private let library: any FontListControlling
+    /// The fonts the list shows; tests inject extra ones.
+    private let catalogEntries: () -> [FontCatalogEntry]
     private let profiles: () -> [CameraProfile]
     private let applyFont: (OverlayFontID, UUID) -> Void
     /// Writes an already usable weight to the profile and returns whether it
@@ -308,7 +310,8 @@ final class FontLibraryModel: ObservableObject {
          profiles: @escaping () -> [CameraProfile],
          applyFont: @escaping (OverlayFontID, UUID) -> Void,
          applyWeight: @escaping (OverlayFontID, String) -> Bool = { _, _ in true },
-         applyFontWithWeight: @escaping (OverlayFontID, String) -> Bool = { _, _ in true }) {
+         applyFontWithWeight: @escaping (OverlayFontID, String) -> Bool = { _, _ in true },
+         catalogEntries: @escaping () -> [FontCatalogEntry] = { FontCatalog.entries }) {
         self.profileID = profileID
         self.currentFontID = currentFontID
         self.currentWeightID = currentWeightID
@@ -317,6 +320,7 @@ final class FontLibraryModel: ObservableObject {
         self.applyFont = applyFont
         self.applyWeight = applyWeight
         self.applyFontWithWeight = applyFontWithWeight
+        self.catalogEntries = catalogEntries
         self.knownStates = Dictionary(uniqueKeysWithValues: OverlayFontID.allCases.map { ($0, library.state(for: $0)) })
         refreshLayout()
 
@@ -344,19 +348,21 @@ final class FontLibraryModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// The downloaded section first (PingFang, then the catalog order), then
-    /// the fonts still to download by category; a category without any is
-    /// left out, title included.
+    /// The downloaded section first (no title), then the fonts still to
+    /// download under 開源字型 and 系統字型; a group without any is left out,
+    /// title included. Inside every section the order is source, then type,
+    /// then catalog order (`FontCatalog.listOrdered`), so it never depends on
+    /// how the catalog array is arranged (TASK-120).
     var sections: [Section] {
-        let entries = FontCatalog.entries
+        let entries = FontCatalog.listOrdered(catalogEntries())
         var result: [Section] = []
         let downloaded = entries.filter { downloadedLayout.contains($0.fontID) }.map(cell(for:))
-        if !downloaded.isEmpty { result.append(Section(category: nil, cells: downloaded)) }
-        for category in FontSection.allCases {
+        if !downloaded.isEmpty { result.append(Section(source: nil, cells: downloaded)) }
+        for source in [FontSource.openSource, .system] {
             let cells = entries
-                .filter { $0.section == category && !downloadedLayout.contains($0.fontID) }
+                .filter { $0.source == source && !downloadedLayout.contains($0.fontID) }
                 .map(cell(for:))
-            if !cells.isEmpty { result.append(Section(category: category, cells: cells)) }
+            if !cells.isEmpty { result.append(Section(source: source, cells: cells)) }
         }
         return result
     }

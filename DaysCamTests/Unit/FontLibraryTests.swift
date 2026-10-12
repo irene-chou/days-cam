@@ -276,11 +276,11 @@ final class FontLibraryTests: XCTestCase {
             let real = FontCatalog.entry(for: fontID)
             switch fontID {
             case .huninn:
-                return FontCatalogEntry(fontID: fontID, displayName: real.displayName, section: real.section,
+                return FontCatalogEntry(fontID: fontID, displayName: real.displayName, category: real.category,
                                         source: .openSource, postScriptName: real.postScriptName,
                                         downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: huninn)
             case .notoSerifTC:
-                return FontCatalogEntry(fontID: fontID, displayName: real.displayName, section: real.section,
+                return FontCatalogEntry(fontID: fontID, displayName: real.displayName, category: real.category,
                                         source: .openSource, postScriptName: real.postScriptName,
                                         downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: noto,
                                         weights: [FontWeightOption(id: "regular", displayName: "標準", postScriptName: "NotoSerifTC-Regular", downloadSizeMegabytes: 0.1, openSource: regular),

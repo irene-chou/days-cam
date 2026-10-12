@@ -136,42 +136,42 @@ final class FontCatalogTests: XCTestCase {
     }
 
     /// PRD 0.3 §4.1, row by row: ID, name, section, source, PostScript, size.
-    private let table: [(OverlayFontID, String, FontSection, FontSource, String, String?)] = [
-        (.pingFang, "蘋方", .builtIn, .builtIn, "PingFangTC-Semibold", nil),
-        (.huninn, "粉圓", .openSource, .openSource, "jf-openhuninn-2.1", "4.9 MB"),
-        (.notoSerifTC, "思源宋體", .openSource, .openSource, "NotoSerifTC-Bold", "8.3 MB"),
-        (.iansui, "芫荽", .openSource, .openSource, "Iansui-Regular", "9.4 MB"),
-        (.chenyuluoyan, "辰宇落雁體", .openSource, .openSource, "ChenYuluoyan-2.0-Thin", "9.5 MB"),
-        (.notoSansTC, "思源黑體", .openSource, .openSource, "NotoSansTC-Bold", "5.8 MB"),
-        (.taipeiSans, "台北黑體", .openSource, .openSource, "TaipeiSansTCBeta-Bold", "21.7 MB"),
-        (.genSeki, "源石黑體", .openSource, .openSource, "GenSekiGothic2TW-B", "15.0 MB"),
-        (.chironHei, "昭源黑體", .openSource, .openSource, "ChironHeiHK-Bold", "17.1 MB"),
-        (.chocolateSans, "朱古力黑體", .openSource, .openSource, "ChocolateClassicalSans-Regular", "12.2 MB"),
-        (.glowSans, "未來熒黑", .openSource, .openSource, "GlowSansTC-Normal-Bold", "9.0 MB"),
-        (.genSen, "源泉圓體", .openSource, .openSource, "GenSenRounded2TW-B", "15.8 MB"),
-        (.sweiGothic, "獅尾圓體", .openSource, .openSource, "SweiGothicCJKtc-Bold", "15.8 MB"),
-        (.chironGoRound, "昭源環方", .openSource, .openSource, "ChironGoRoundTC-Bold", "20.5 MB"),
-        (.genWan, "源雲明體", .openSource, .openSource, "GenWanMin2TW-SB", "22.6 MB"),
-        (.genRyu, "源流明體", .openSource, .openSource, "GenRyuMin2TW-B", "16.2 MB"),
-        (.sweiSpring, "獅尾四季春", .openSource, .openSource, "SweiSpringCJKtc-Bold", "17.3 MB"),
-        (.sweiSugar, "獅尾加糖宋體", .openSource, .openSource, "SweiSugarCJKtc-Bold", "29.0 MB"),
-        (.chironSung, "昭源宋體", .openSource, .openSource, "ChironSungHK-Bold", "26.6 MB"),
-        (.cactusSerif, "仙人掌明體", .openSource, .openSource, "CactusClassicalSerif-Regular", "28.5 MB"),
-        (.twSung, "全字庫正宋體", .openSource, .openSource, "TW-Sung-98_1", "35.3 MB"),
-        (.thenKhung, "宇文天穹", .openSource, .openSource, "UoqMunThenKhung-Regular", "4.9 MB"),
-        (.lxgwWenKai, "霞鶩文楷 TC", .openSource, .openSource, "LXGWWenKaiTC-Medium", "15.0 MB"),
-        (.twKai, "全字庫正楷體", .openSource, .openSource, "TW-Kai-98_1", "36.9 MB"),
-        (.eduKai, "教育部標準楷書", .openSource, .openSource, "TW-MOE-Std-Kai", "15.8 MB"),
-        (.arphicUKai, "文鼎 PL 中楷", .openSource, .openSource, "UKaiTW", "17.2 MB"),
-        (.naikai, "內海字體", .openSource, .openSource, "NaikaiFont-Bold", "38.6 MB"),
-        (.xiaolai, "小賴字體", .openSource, .openSource, "Xiaolai", "22.2 MB"),
-        (.yozai, "悠哉字體", .openSource, .openSource, "Yozai-Medium", "15.2 MB"),
-        (.nani, "何某手寫體", .openSource, .openSource, "NaniFont-Bold", "18.5 MB"),
-        (.lxgwMarker, "霞鶩漫黑", .openSource, .openSource, "LXGWMarkerGothic-Regular", "3.2 MB"),
-        (.kurewa, "苦累蛙圓體", .openSource, .openSource, "KurewaGothicCjkTc-Bold", "36.5 MB"),
-        (.popGothic, "大波浪圓體", .openSource, .openSource, "PopGothicCjkTc-Bold", "10.3 MB"),
-        (.wdxl, "WD-XL 滑油字", .openSource, .openSource, "WD-XLLubrifontTC-Regular", "6.2 MB"),
-        (.cubic11, "俐方體 11 號", .openSource, .openSource, "Cubic_11", "2.8 MB"),
+    private let table: [(OverlayFontID, String, FontStyleCategory, FontSource, String, String?)] = [
+        (.pingFang, "蘋方", .hei, .builtIn, "PingFangTC-Semibold", nil),
+        (.huninn, "粉圓", .yuan, .openSource, "jf-openhuninn-2.1", "4.9 MB"),
+        (.notoSerifTC, "思源宋體", .song, .openSource, "NotoSerifTC-Bold", "8.3 MB"),
+        (.iansui, "芫荽", .kai, .openSource, "Iansui-Regular", "9.4 MB"),
+        (.chenyuluoyan, "辰宇落雁體", .handwriting, .openSource, "ChenYuluoyan-2.0-Thin", "9.5 MB"),
+        (.notoSansTC, "思源黑體", .hei, .openSource, "NotoSansTC-Bold", "5.8 MB"),
+        (.taipeiSans, "台北黑體", .hei, .openSource, "TaipeiSansTCBeta-Bold", "21.7 MB"),
+        (.genSeki, "源石黑體", .hei, .openSource, "GenSekiGothic2TW-B", "15.0 MB"),
+        (.chironHei, "昭源黑體", .hei, .openSource, "ChironHeiHK-Bold", "17.1 MB"),
+        (.chocolateSans, "朱古力黑體", .hei, .openSource, "ChocolateClassicalSans-Regular", "12.2 MB"),
+        (.glowSans, "未來熒黑", .hei, .openSource, "GlowSansTC-Normal-Bold", "9.0 MB"),
+        (.genSen, "源泉圓體", .yuan, .openSource, "GenSenRounded2TW-B", "15.8 MB"),
+        (.sweiGothic, "獅尾圓體", .yuan, .openSource, "SweiGothicCJKtc-Bold", "15.8 MB"),
+        (.chironGoRound, "昭源環方", .yuan, .openSource, "ChironGoRoundTC-Bold", "20.5 MB"),
+        (.genWan, "源雲明體", .song, .openSource, "GenWanMin2TW-SB", "22.6 MB"),
+        (.genRyu, "源流明體", .song, .openSource, "GenRyuMin2TW-B", "16.2 MB"),
+        (.sweiSpring, "獅尾四季春", .song, .openSource, "SweiSpringCJKtc-Bold", "17.3 MB"),
+        (.sweiSugar, "獅尾加糖宋體", .song, .openSource, "SweiSugarCJKtc-Bold", "29.0 MB"),
+        (.chironSung, "昭源宋體", .song, .openSource, "ChironSungHK-Bold", "26.6 MB"),
+        (.cactusSerif, "仙人掌明體", .song, .openSource, "CactusClassicalSerif-Regular", "28.5 MB"),
+        (.twSung, "全字庫正宋體", .song, .openSource, "TW-Sung-98_1", "35.3 MB"),
+        (.thenKhung, "宇文天穹", .song, .openSource, "UoqMunThenKhung-Regular", "4.9 MB"),
+        (.lxgwWenKai, "霞鶩文楷 TC", .kai, .openSource, "LXGWWenKaiTC-Medium", "15.0 MB"),
+        (.twKai, "全字庫正楷體", .kai, .openSource, "TW-Kai-98_1", "36.9 MB"),
+        (.eduKai, "教育部標準楷書", .kai, .openSource, "TW-MOE-Std-Kai", "15.8 MB"),
+        (.arphicUKai, "文鼎 PL 中楷", .kai, .openSource, "UKaiTW", "17.2 MB"),
+        (.naikai, "內海字體", .handwriting, .openSource, "NaikaiFont-Bold", "38.6 MB"),
+        (.xiaolai, "小賴字體", .handwriting, .openSource, "Xiaolai", "22.2 MB"),
+        (.yozai, "悠哉字體", .handwriting, .openSource, "Yozai-Medium", "15.2 MB"),
+        (.nani, "何某手寫體", .handwriting, .openSource, "NaniFont-Bold", "18.5 MB"),
+        (.lxgwMarker, "霞鶩漫黑", .handwriting, .openSource, "LXGWMarkerGothic-Regular", "3.2 MB"),
+        (.kurewa, "苦累蛙圓體", .handwriting, .openSource, "KurewaGothicCjkTc-Bold", "36.5 MB"),
+        (.popGothic, "大波浪圓體", .cute, .openSource, "PopGothicCjkTc-Bold", "10.3 MB"),
+        (.wdxl, "WD-XL 滑油字", .cute, .openSource, "WD-XLLubrifontTC-Regular", "6.2 MB"),
+        (.cubic11, "俐方體 11 號", .cute, .openSource, "Cubic_11", "2.8 MB"),
         (.lantinghei, "蘭亭黑", .hei, .system, "FZLTZHB--B51-0", "25.2 MB"),
         (.liHei, "儷黑", .hei, .system, "LiHeiPro", "4.2 MB"),
         (.hiraginoSans, "冬青黑體", .hei, .system, "HiraginoSansTC-W6", "14.1 MB"),
@@ -198,12 +198,12 @@ final class FontCatalogTests: XCTestCase {
         XCTAssertEqual(OverlayFontID.allCases.count, 52, "40.1 / 142.1")
         XCTAssertEqual(OverlayFontID.allCases, table.map(\.0), "32.1 order")
         XCTAssertEqual(FontCatalog.entries.map(\.fontID), table.map(\.0), "32.1 catalog order")
-        for (fontID, name, section, source, postScriptName, size) in table {
+        for (fontID, name, category, source, postScriptName, size) in table {
             let entry = FontCatalog.entry(for: fontID)
             XCTAssertEqual(entry.fontID, fontID)
             XCTAssertEqual(entry.displayName, name, "32.1 \(fontID)")
             XCTAssertEqual(fontID.displayName, name, "32.1 \(fontID)")
-            XCTAssertEqual(entry.section, section, "32.1 \(fontID)")
+            XCTAssertEqual(entry.category, category, "120 \(fontID)")
             XCTAssertEqual(entry.source, source, "32.1 \(fontID)")
             XCTAssertEqual(entry.postScriptName, postScriptName, "32.1 \(fontID)")
             XCTAssertEqual(fontID.postScriptName, postScriptName, "32.1 \(fontID)")
@@ -212,28 +212,41 @@ final class FontCatalogTests: XCTestCase {
         }
     }
 
-    /// FR-16.2: sections in list order, each with its heading, and fonts
-    /// grouped contiguously in that order.
-    func testSectionsAreInListOrderAndContiguous() {
-        XCTAssertEqual(FontSection.allCases.map(\.title),
-                       ["內建", "可下載", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"])
-        var seen: [FontSection] = []
-        for entry in FontCatalog.entries where seen.last != entry.section {
-            seen.append(entry.section)
-        }
-        XCTAssertEqual(seen, FontSection.allCases)
+    /// TASK-120: the list headings come from the source, the type only orders.
+    func testHeadingsAndCategoryOrder() {
+        XCTAssertEqual([FontSource.builtIn, .openSource, .system].map(\.listTitle), [nil, "開源字型", "系統字型"], "120.1")
+        XCTAssertEqual(FontStyleCategory.allCases.map(\.title),
+                       ["黑", "圓", "宋", "楷", "手寫", "書法", "可愛"], "120 類型順序")
     }
 
-    /// 40.1 / 142.1: the open-source section is the four original fonts and
-    /// the 30 TASK-142 families, contiguous, right after 蘋方.
-    func testOpenSourceSectionIsThirtyFourContiguousFonts() {
-        let ids = FontCatalog.entries.map(\.fontID)
-        let openSource = FontCatalog.entries.filter { $0.section == .openSource }.map(\.fontID)
+    /// TASK-120: the list order is computed from source and type, not from
+    /// how the catalog array is arranged.
+    func testListOrderedSortsBySourceThenCategoryThenCatalogOrder() {
+        let entries = FontCatalog.entries
+        let expected = entries.sorted { lhs, rhs in
+            (lhs.source.listRank, FontStyleCategory.allCases.firstIndex(of: lhs.category)!)
+                < (rhs.source.listRank, FontStyleCategory.allCases.firstIndex(of: rhs.category)!)
+        }
+        XCTAssertEqual(FontCatalog.listOrdered(entries).map(\.fontID).first, .pingFang)
+        // Shuffling the input only changes the order of fonts of equal source and type.
+        let ordered = FontCatalog.listOrdered(entries.reversed())
+        XCTAssertEqual(ordered.map { [$0.source.listRank, FontStyleCategory.allCases.firstIndex(of: $0.category)!] },
+                       expected.map { [$0.source.listRank, FontStyleCategory.allCases.firstIndex(of: $0.category)!] })
+    }
+
+    /// 40.1 / 142.1 / 120: the open-source fonts are the four original ones
+    /// and the 30 TASK-142 families, each with a category.
+    func testOpenSourceFontsAreThirtyFourWithTheirCategories() {
+        let openSource = FontCatalog.entries.filter { $0.source == .openSource }.map(\.fontID)
         XCTAssertEqual(openSource.count, 34, "142.1")
         XCTAssertEqual(Array(openSource.prefix(4)), [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "40.1")
         XCTAssertEqual(Array(openSource.dropFirst(4)), FontCatalog.downloadFamilies.map(\.fontID), "142.1")
-        XCTAssertEqual(Array(ids[1...34]), openSource, "40.1 contiguous, right after 蘋方")
-        XCTAssertEqual(ids[35], .lantinghei, "40.1 蘭亭黑 follows the open-source fonts")
+        XCTAssertEqual(openSource.prefix(4).map { FontCatalog.entry(for: $0).category },
+                       [.yuan, .song, .kai, .handwriting], "120 四套原開源字型的類型")
+        for family in FontCatalog.downloadFamilies {
+            XCTAssertEqual(FontCatalog.entry(for: family.fontID).category, family.category, "\(family.fontID)")
+        }
+        XCTAssertEqual(FontCatalog.entries.count, 52)
     }
 
     /// 32.9: open-source sizes, SHA-256, versions and copyright notices as in

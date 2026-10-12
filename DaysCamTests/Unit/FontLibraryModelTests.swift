@@ -71,12 +71,14 @@ final class FontLibraryModelTests: XCTestCase {
                            current: OverlayFontID = .pingFang,
                            profiles: [CameraProfile] = [],
                            calls: Calls = Calls(),
-                           visible: Bool = true) -> FontLibraryModel {
+                           visible: Bool = true,
+                           entries: [FontCatalogEntry]? = nil) -> FontLibraryModel {
         let model = FontLibraryModel(profileID: profileID,
                                      currentFontID: current,
                                      library: library,
                                      profiles: { profiles },
-                                     applyFont: { calls.applied.append(Applied(fontID: $0, profileID: $1)) })
+                                     applyFont: { calls.applied.append(Applied(fontID: $0, profileID: $1)) },
+                                     catalogEntries: { entries ?? FontCatalog.entries })
         if visible { model.listDidAppear() }
         return model
     }
@@ -85,8 +87,8 @@ final class FontLibraryModelTests: XCTestCase {
         try XCTUnwrap(model.sections.flatMap(\.cells).first { $0.fontID == fontID })
     }
 
-    private func section(_ category: FontSection?, in model: FontLibraryModel) -> FontLibraryModel.Section? {
-        model.sections.first { $0.category == category }
+    private func section(_ source: FontSource?, in model: FontLibraryModel) -> FontLibraryModel.Section? {
+        model.sections.first { $0.source == source }
     }
 
     private func profile(named name: String, font: OverlayFontID) -> CameraProfile {
@@ -100,27 +102,61 @@ final class FontLibraryModelTests: XCTestCase {
     func testDownloadedSectionComesFirstWithoutTitleAndPingFangLeads() {
         let model = makeModel(library: FakeFontLibrary([.xingkai: .available, .huninn: .available]))
         let first = model.sections.first
-        XCTAssertNil(first?.category, "56.1: 已下載段沒有小標")
+        XCTAssertNil(first?.source, "56.1: 已下載段沒有小標")
         XCTAssertNil(first?.title, "56.1")
         XCTAssertEqual(first?.cells.map(\.fontID), [.pingFang, .huninn, .xingkai], "56.1: 蘋方第一格，其餘依 allCases 順序")
     }
 
-    func testNotDownloadedFontsFollowByCategoryWithTitles() throws {
+    /// 120.1: two headings only, 開源字型 then 系統字型, each ordered by type.
+    func testNotDownloadedFontsFollowInTwoSourceGroups() throws {
         let model = makeModel(library: FakeFontLibrary())
-        let titles = model.sections.dropFirst().compactMap(\.title)
-        XCTAssertEqual(titles, ["可下載", "黑", "圓", "宋", "楷", "手寫", "書法", "可愛"], "56.1／111.1")
+        XCTAssertEqual(model.sections.dropFirst().compactMap(\.title), ["開源字型", "系統字型"], "120.1")
+        XCTAssertEqual(try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID),
+                       [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "120.1 粉圓、思源宋體、芫荽、辰宇落雁體")
+        let system = try XCTUnwrap(section(.system, in: model)).cells.map(\.fontID)
+        let ranks = system.map { FontStyleCategory.allCases.firstIndex(of: FontCatalog.entry(for: $0).category)! }
+        XCTAssertEqual(ranks, ranks.sorted(), "120.1 系統字型依 黑→圓→宋→楷→手寫→書法→可愛")
+        XCTAssertEqual(Set(ranks).count, FontStyleCategory.allCases.count, "每種類型都有")
         let all = model.sections.flatMap(\.cells).map(\.fontID)
         XCTAssertEqual(Set(all), Set(OverlayFontID.allCases), "56.1: 每款字型恰好出現一次")
         XCTAssertEqual(all.count, OverlayFontID.allCases.count, "56.1")
     }
 
-    func testCategoryWithEveryFontDownloadedIsHiddenWithItsTitle() {
-        let openSource: [OverlayFontID] = FontCatalog.entries.filter { $0.section == .openSource }.map(\.fontID)
+    /// 120.2: downloaded fonts sort by source, then type.
+    func testDownloadedSectionIsOrderedBySourceThenCategory() throws {
+        let model = makeModel(library: FakeFontLibrary([.kaiti: .available, .notoSerifTC: .available,
+                                                         .huninn: .available, .songti: .available]))
+        XCTAssertEqual(model.sections[0].cells.map(\.fontID), [.pingFang, .huninn, .notoSerifTC, .songti, .kaiti], "120.2")
+        XCTAssertEqual(model.sections.compactMap(\.title), ["開源字型", "系統字型"])
+        XCTAssertEqual(try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID), [.iansui, .chenyuluoyan])
+    }
+
+    /// 120.5: a font filled in with a source and a category lands by type, not last.
+    func testANewFontLandsByItsCategory() throws {
+        var entries = FontCatalog.entries
+        let index = try XCTUnwrap(entries.firstIndex { $0.fontID == .liSong })
+        let real = entries[index]
+        // 儷宋 stands in for a new system font whose type is 楷.
+        entries[index] = FontCatalogEntry(fontID: real.fontID, displayName: real.displayName, category: .kai,
+                                          source: .system, postScriptName: real.postScriptName,
+                                          downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: nil)
+        let model = makeModel(library: FakeFontLibrary(), entries: entries)
+        let system = try XCTUnwrap(section(.system, in: model)).cells.map(\.fontID)
+        let kai = Set<OverlayFontID>([.liSong, .kaiti, .biauKai])
+        let positions = system.enumerated().filter { kai.contains($0.element) }.map(\.offset)
+        XCTAssertEqual(positions, Array(positions[0]...positions[0] + 2), "三個楷體類字型相連")
+        XCTAssertEqual(system.firstIndex(of: .songti).map { $0 < positions[0] }, true, "宋在楷前")
+        XCTAssertLessThan(positions[2], try XCTUnwrap(system.firstIndex(of: .hanziPen)), "楷在手寫前，不在最後")
+    }
+
+    /// 120.3: a group whose fonts are all downloaded loses its heading.
+    func testGroupWithEveryFontDownloadedIsHiddenWithItsTitle() {
+        let openSource: [OverlayFontID] = FontCatalog.entries.filter { $0.source == .openSource }.map(\.fontID)
         var states: [OverlayFontID: FontState] = [:]
         for fontID in openSource { states[fontID] = .available }
         let model = makeModel(library: FakeFontLibrary(states))
         XCTAssertNil(section(.openSource, in: model), "56.1/56.9: 整段（含小標）隱藏")
-        XCTAssertNotNil(section(.hei, in: model))
+        XCTAssertNotNil(section(.system, in: model), "120.3 系統字型照常")
     }
 
     func testCurrentFontThatIsNotDownloadedStaysInTheDownloadedSectionSelected() throws {
@@ -130,7 +166,7 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertTrue(cell.isSelected, "56.13")
         XCTAssertEqual(cell.status, .notDownloaded, "56.13: 灰色 ↓")
         XCTAssertFalse(cell.usesRealFont, "56.13")
-        XCTAssertNil(section(.kai, in: model)?.cells.first { $0.fontID == .xingkai })
+        XCTAssertNil(section(.system, in: model)?.cells.first { $0.fontID == .xingkai })
     }
 
     // MARK: - 56.4 到 56.5 格子狀態只有 icon
@@ -207,7 +243,7 @@ final class FontLibraryModelTests: XCTestCase {
     func testFinishedDownloadShowsACheckAndStaysInPlaceUntilTheNextAppearance() throws {
         let library = FakeFontLibrary([.songti: .downloading(progress: 0.9)])
         let model = makeModel(library: library)
-        XCTAssertNotNil(section(.song, in: model)?.cells.first { $0.fontID == .songti })
+        XCTAssertNotNil(section(.system, in: model)?.cells.first { $0.fontID == .songti })
 
         library.states[.songti] = .available
         model.update(profileID: profileID, currentFontID: .songti)   // auto-applied
@@ -217,12 +253,12 @@ final class FontLibraryModelTests: XCTestCase {
         XCTAssertEqual(finished.status, .justCompleted, "56.7")
         XCTAssertTrue(finished.usesRealFont, "56.7")
         XCTAssertTrue(finished.isSelected, "56.7")
-        XCTAssertNotNil(section(.song, in: model)?.cells.first { $0.fontID == .songti }, "56.7: 留在原位")
+        XCTAssertNotNil(section(.system, in: model)?.cells.first { $0.fontID == .songti }, "56.7: 留在原位")
         XCTAssertFalse(model.sections[0].cells.contains { $0.fontID == .songti })
 
         model.expireCompletionCheck(of: .songti)
         XCTAssertEqual(try cell(.songti, in: model).status, .none, "56.7: 勾消失後轉為已下載樣式")
-        XCTAssertNotNil(section(.song, in: model)?.cells.first { $0.fontID == .songti }, "56.7: 仍在原位")
+        XCTAssertNotNil(section(.system, in: model)?.cells.first { $0.fontID == .songti }, "56.7: 仍在原位")
 
         model.listDidAppear()
         XCTAssertTrue(model.sections[0].cells.contains { $0.fontID == .songti }, "56.9: 重新出現後歸入已下載段")

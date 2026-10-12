@@ -10,11 +10,33 @@ enum FontSource: String, Equatable, Hashable, Sendable {
     case system
 }
 
-/// The headed sections the font list is grouped into, in list order
-/// (PRD 0.3 §4.1, FR-16.2).
-enum FontSection: String, CaseIterable, Equatable, Hashable, Sendable {
-    case builtIn
-    case openSource
+extension FontSource {
+    /// The heading above this source's not-yet-downloaded fonts in the list
+    /// (TASK-120); `nil` for PingFang, which is never in that part of the list.
+    var listTitle: String? {
+        switch self {
+        case .builtIn: return nil
+        // Headings are for the person choosing a font: open-source fonts can
+        // be deleted, system fonts cannot (TASK-120, replacing TASK-111's 可下載).
+        case .openSource: return "開源字型"
+        case .system: return "系統字型"
+        }
+    }
+
+    /// Position of the source in list order: built-in, open source, system.
+    var listRank: Int {
+        switch self {
+        case .builtIn: return 0
+        case .openSource: return 1
+        case .system: return 2
+        }
+    }
+}
+
+/// The type of a font's letterforms (TASK-120). Not shown to the user: it
+/// only orders fonts inside their source group, in `allCases` order, so a new
+/// font needs just a `source` and a `category` to land in the right place.
+enum FontStyleCategory: String, CaseIterable, Equatable, Hashable, Sendable {
     case hei
     case yuan
     case song
@@ -23,13 +45,9 @@ enum FontSection: String, CaseIterable, Equatable, Hashable, Sendable {
     case calligraphy
     case cute
 
-    /// The section heading shown above its fonts.
+    /// The type's name, for tests and documentation.
     var title: String {
         switch self {
-        case .builtIn: return "內建"
-        // "可下載", not "開源": the heading is for the person choosing a font,
-        // not a license term (TASK-111, #425). The license page keeps 開源.
-        case .openSource: return "可下載"
         case .hei: return "黑"
         case .yuan: return "圓"
         case .song: return "宋"
@@ -93,7 +111,8 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     let fontID: OverlayFontID
     /// The short Chinese name used in the picker, messages and license page.
     let displayName: String
-    let section: FontSection
+    /// The letterform type; orders the font inside its source group (TASK-120).
+    let category: FontStyleCategory
     let source: FontSource
     /// The legacy default face; explicit weights resolve through `weight(for:)`.
     let postScriptName: String
@@ -105,12 +124,12 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
     /// At most three approved exact faces, in picker order.
     let weights: [FontWeightOption]
 
-    init(fontID: OverlayFontID, displayName: String, section: FontSection, source: FontSource,
+    init(fontID: OverlayFontID, displayName: String, category: FontStyleCategory, source: FontSource,
          postScriptName: String, downloadSizeMegabytes: Double?, openSource: OpenSourceFontAsset?,
          weights: [FontWeightOption]? = nil) {
         self.fontID = fontID
         self.displayName = displayName
-        self.section = section
+        self.category = category
         self.source = source
         self.postScriptName = postScriptName
         self.downloadSizeMegabytes = downloadSizeMegabytes
@@ -191,6 +210,21 @@ enum FontCatalog {
     /// Every font in list order, which is `OverlayFontID.allCases` order.
     static var entries: [FontCatalogEntry] { OverlayFontID.allCases.map(entry(for:)) }
 
+    /// `entries` in the order the font list shows them: by source
+    /// (built-in, open source, system), then by type, then by catalog order.
+    /// Computed, so the order does not depend on how `entries` is arranged
+    /// (TASK-120).
+    static func listOrdered(_ entries: [FontCatalogEntry]) -> [FontCatalogEntry] {
+        let categories = FontStyleCategory.allCases
+        return entries.enumerated().sorted { lhs, rhs in
+            let (l, r) = (lhs.element, rhs.element)
+            if l.source.listRank != r.source.listRank { return l.source.listRank < r.source.listRank }
+            let (lc, rc) = (categories.firstIndex(of: l.category) ?? 0, categories.firstIndex(of: r.category) ?? 0)
+            if lc != rc { return lc < rc }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
     /// Every entry, built once on first use. The catalog is fixed (A-2), so
     /// callers on hot paths (`encode`, font resolution) look entries up here
     /// instead of rebuilding them.
@@ -208,17 +242,17 @@ enum FontCatalog {
     static func makeEntry(for fontID: OverlayFontID) -> FontCatalogEntry {
         switch fontID {
         case .pingFang:
-            return FontCatalogEntry(fontID: fontID, displayName: "蘋方", section: .builtIn, source: .builtIn,
+            return FontCatalogEntry(fontID: fontID, displayName: "蘋方", category: .hei, source: .builtIn,
                                     postScriptName: pingFangPostScriptName, downloadSizeMegabytes: nil,
                                     openSource: nil)
         case .huninn:
-            return openSourceEntry(fontID, "粉圓", "jf-openhuninn-2.1", 4.9, asset: huninnAsset)
+            return openSourceEntry(fontID, "粉圓", "jf-openhuninn-2.1", .yuan, 4.9, asset: huninnAsset)
         case .notoSerifTC:
-            return openSourceEntry(fontID, "思源宋體", "NotoSerifTC-Bold", 8.3, asset: notoSerifTCAsset)
+            return openSourceEntry(fontID, "思源宋體", "NotoSerifTC-Bold", .song, 8.3, asset: notoSerifTCAsset)
         case .iansui:
-            return openSourceEntry(fontID, "芫荽", "Iansui-Regular", 9.4, asset: iansuiAsset)
+            return openSourceEntry(fontID, "芫荽", "Iansui-Regular", .kai, 9.4, asset: iansuiAsset)
         case .chenyuluoyan:
-            return openSourceEntry(fontID, "辰宇落雁體", "ChenYuluoyan-2.0-Thin", 9.5, asset: chenyuluoyanAsset)
+            return openSourceEntry(fontID, "辰宇落雁體", "ChenYuluoyan-2.0-Thin", .handwriting, 9.5, asset: chenyuluoyanAsset)
         case .lantinghei: return systemEntry(fontID, "蘭亭黑", .hei, "FZLTZHB--B51-0", 25.2)
         case .liHei: return systemEntry(fontID, "儷黑", .hei, "LiHeiPro", 4.2)
         case .hiraginoSans: return systemEntry(fontID, "冬青黑體", .hei, "HiraginoSansTC-W6", 14.1)
@@ -344,18 +378,19 @@ enum FontCatalog {
     private static func openSourceEntry(_ fontID: OverlayFontID,
                                         _ displayName: String,
                                         _ postScriptName: String,
+                                        _ category: FontStyleCategory,
                                         _ megabytes: Double,
                                         asset: OpenSourceFontAsset) -> FontCatalogEntry {
-        FontCatalogEntry(fontID: fontID, displayName: displayName, section: .openSource, source: .openSource,
+        FontCatalogEntry(fontID: fontID, displayName: displayName, category: category, source: .openSource,
                          postScriptName: postScriptName, downloadSizeMegabytes: megabytes, openSource: asset)
     }
 
     private static func systemEntry(_ fontID: OverlayFontID,
                                     _ displayName: String,
-                                    _ section: FontSection,
+                                    _ category: FontStyleCategory,
                                     _ postScriptName: String,
                                     _ megabytes: Double) -> FontCatalogEntry {
-        FontCatalogEntry(fontID: fontID, displayName: displayName, section: section, source: .system,
+        FontCatalogEntry(fontID: fontID, displayName: displayName, category: category, source: .system,
                          postScriptName: postScriptName, downloadSizeMegabytes: megabytes, openSource: nil)
     }
 

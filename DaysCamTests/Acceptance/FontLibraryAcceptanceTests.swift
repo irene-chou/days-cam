@@ -72,7 +72,7 @@ final class FontLibraryAcceptanceTests: XCTestCase {
                     defaults: defaults) { fontID in
             let real = FontCatalog.entry(for: fontID)
             guard fontID == .huninn else { return real }
-            return FontCatalogEntry(fontID: fontID, displayName: real.displayName, section: real.section,
+            return FontCatalogEntry(fontID: fontID, displayName: real.displayName, category: real.category,
                                     source: .openSource, postScriptName: real.postScriptName,
                                     downloadSizeMegabytes: real.downloadSizeMegabytes, openSource: asset)
         }
