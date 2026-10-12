@@ -2,13 +2,16 @@ import CoreGraphics
 import Foundation
 import UIKit
 
-/// Center-crops a captured 4:3 photo down to a `CaptureAspectRatio`, before
-/// the overlay is baked in (PRD 0.2 FR-5.7′: "先裁再烘焙").
+/// The center-crop of a captured 4:3 photo to a `CaptureAspectRatio` (PRD
+/// 0.2 FR-5.7′: "先裁再烘焙"). Only the window is computed here;
+/// `OverlayRenderer.bake(..., cropRect:)` applies it in the same single
+/// draw as the overlay (TASK-128; `crop(_:to:)` was removed in TASK-144
+/// #498 so there is one crop path only).
 ///
 /// Only ever crops, never upscales or pads: whichever side of the original
 /// already fits the target ratio is left untouched, and the other side is
-/// trimmed evenly from both edges. An image already at the target ratio is
-/// handed back unchanged.
+/// trimmed evenly from both edges. An image already at the target ratio
+/// gets the full rect.
 ///
 /// Agnostic about orientation: the crop is computed from pixel dimensions
 /// alone, so it works the same whether the input is the sensor's native
@@ -16,42 +19,10 @@ import UIKit
 struct ImageCropper {
     init() {}
 
-    /// Crops `image` to `aspectRatio`, centered.
-    ///
-    /// The result is always upright (`imageOrientation == .up`) and at
-    /// scale 1, the same normalisation `OverlayRenderer.bake` performs, so
-    /// feeding this straight into `bake` draws the image exactly once.
-    func crop(_ image: UIImage, to aspectRatio: CaptureAspectRatio) -> UIImage {
-        let pixelSize = CGSize(width: image.size.width * image.scale,
-                               height: image.size.height * image.scale)
-        guard pixelSize.width >= 1, pixelSize.height >= 1 else { return image }
-
-        let cropRect = Self.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
-        let cropSize = cropRect.size
-        let origin = cropRect.origin
-        guard cropSize.width < pixelSize.width || cropSize.height < pixelSize.height else {
-            // Already the target ratio (19.7): nothing to draw, hand the
-            // original back untouched.
-            return image
-        }
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let renderer = UIGraphicsImageRenderer(size: cropSize, format: format)
-        return renderer.image { _ in
-            // Draw the whole image at its normalized pixel size, shifted so
-            // the crop window lands at the context's origin — the same
-            // "draw into a pixel-sized rect" idiom `OverlayRenderer.bake`
-            // uses to normalize orientation and scale in one call.
-            image.draw(in: CGRect(x: -origin.x, y: -origin.y,
-                                  width: pixelSize.width, height: pixelSize.height))
-        }
-    }
-
     /// The centered crop window for an image of `pixelSize` at `ratio`.
     ///
     /// Coordinates are in orientation-normalized pixels (the upright image,
-    /// origin at the top-left), the same space `crop(_:to:)` draws in. The
+    /// origin at the top-left), the same space `bake(..., cropRect:)` draws in. The
     /// rect is `croppedSize(from:to:)` centered in `pixelSize`; an image
     /// already at the target ratio yields the full `pixelSize` rect.
     static func cropRect(forPixelSize pixelSize: CGSize, ratio aspectRatio: CaptureAspectRatio) -> CGRect {
