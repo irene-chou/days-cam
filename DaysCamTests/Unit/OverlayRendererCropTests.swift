@@ -124,35 +124,79 @@ final class OverlayRendererCropTests: XCTestCase {
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 
-    /// #502 review: a 9:16 window with a half-pixel origin (400×300 → y =
-    /// 37.5, the same odd trim as 5712×4284 → 535.5), landscape and
-    /// portrait. `bake`'s output is exactly the rect's whole-pixel size, and
-    /// its pixels are within one row's step of the whole-pixel window of
-    /// that size at `floor(origin)` (see `ImageCropperTests`): here at most
-    /// 1 level plus 1 for rounding.
-    func test_bakeWithHalfPixelCropRect_isWithinOneRowOfTheFlooredWindow() throws {
+    /// 146.3 (tightening #502's "within one row"): an odd trim (400×300 →
+    /// 9:16 trims 75 rows) no longer centres on a half pixel, so `bake` is
+    /// pixel for pixel the independent crop to the same rect.
+    func test_bakeWithOddTrimCropRect_matchesTheReferenceExactly() throws {
         for (width, height) in [(400, 300), (300, 400)] {
             let photo = try makeGradient(width: width, height: height)
             let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: width, height: height), ratio: .nineBySixteen)
             let label = "\(width)x\(height) \(rect)"
-            XCTAssertNotEqual(rect, rect.integral, "the fixture really has a half-pixel origin: \(label)")
+            XCTAssertEqual(rect, rect.integral, label)
 
             let baked = try XCTUnwrap(renderer.bake(image: photo, text: "", style: style,
                                                     placement: .anchor(.bottomTrailing), font: .pingFang,
                                                     cropRect: rect), label)
-            XCTAssertEqual(normalizedPixelSize(baked), rect.size, "no extra row: \(label)")
-
-            let floored = CGRect(origin: CGPoint(x: rect.minX.rounded(.down), y: rect.minY.rounded(.down)),
-                                 size: rect.size)
-            let reference = try referenceCrop(photo, to: floored)
+            XCTAssertEqual(normalizedPixelSize(baked), rect.size, label)
             let lhs = try XCTUnwrap(PixelGrid(baked), label)
-            let rhs = try XCTUnwrap(PixelGrid(reference), label)
-            XCTAssertEqual(lhs.bytes.count, rhs.bytes.count, label)
-            var maxDifference = 0
-            for index in 0..<min(lhs.bytes.count, rhs.bytes.count) where index % 4 != 3 {
-                maxDifference = max(maxDifference, abs(Int(lhs.bytes[index]) - Int(rhs.bytes[index])))
+            let rhs = try XCTUnwrap(PixelGrid(try referenceCrop(photo, to: rect)), label)
+            XCTAssertEqual(lhs.bytes, rhs.bytes, "146.3 \(label)")
+        }
+    }
+
+    /// One-pixel black and white stripes across the cropped axis: rows for a
+    /// landscape photo, columns for a portrait one.
+    private func makeStripes(width: Int, height: Int, alongRows: Bool) throws -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            UIColor.white.setFill()
+            for index in stride(from: 1, to: alongRows ? height : width, by: 2) {
+                context.fill(alongRows ? CGRect(x: 0, y: index, width: width, height: 1)
+                                       : CGRect(x: index, y: 0, width: 1, height: height))
             }
-            XCTAssertLessThanOrEqual(maxDifference, 2, "within one row's step: \(label)")
+        }
+        return try XCTUnwrap(image.cgImage.map { UIImage(cgImage: $0, scale: 1, orientation: .up) })
+    }
+
+    /// Every channel of every pixel along one line across the stripes, read
+    /// straight from the bitmap.
+    private func channels(of image: UIImage, alongRows: Bool) throws -> [UInt8] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let data = try XCTUnwrap(cgImage.dataProvider?.data) as Data
+        let bytesPerPixel = cgImage.bitsPerPixel / 8
+        let count = alongRows ? cgImage.height : cgImage.width
+        let middle = alongRows ? cgImage.width / 2 : cgImage.height / 2
+        var values: [UInt8] = []
+        for index in 0..<count {
+            let (x, y) = alongRows ? (middle, index) : (index, middle)
+            let offset = y * cgImage.bytesPerRow + x * bytesPerPixel
+            values.append(contentsOf: data[offset..<(offset + min(3, bytesPerPixel))])
+        }
+        return values
+    }
+
+    /// 146.2: 5712×4284 → 9:16, landscape and portrait: one-pixel stripes come
+    /// out of `bake` still pure black and white, no interpolated grey.
+    func test_bake24MPNineBySixteen_keepsOnePixelStripesSharp() throws {
+        for (width, height) in [(5712, 4284), (4284, 5712)] {
+            let alongRows = width > height
+            let photo = try makeStripes(width: width, height: height, alongRows: alongRows)
+            let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: width, height: height), ratio: .nineBySixteen)
+            let label = "146.2 \(width)x\(height)"
+            let baked = try XCTUnwrap(renderer.bake(image: photo, text: "", style: style,
+                                                    placement: .anchor(.bottomTrailing), font: .pingFang,
+                                                    cropRect: rect), label)
+            XCTAssertEqual(normalizedPixelSize(baked), rect.size, label)
+            let values = try channels(of: baked, alongRows: alongRows)
+            XCTAssertEqual(values.count, Int(alongRows ? rect.height : rect.width) * 3, label)
+            let grey = values.filter { $0 != 0 && $0 != 255 }
+            XCTAssertTrue(grey.isEmpty, "\(label): \(grey.count) grey values, e.g. \(grey.prefix(5))")
+            XCTAssertTrue(values.contains(0) && values.contains(255), "\(label) both stripes survive")
         }
     }
 
