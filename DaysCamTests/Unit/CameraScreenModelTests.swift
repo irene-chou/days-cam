@@ -126,7 +126,8 @@ final class CameraScreenModelTests: XCTestCase {
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
                            thumbnailLibrary: GalleryLibrary? = nil,
-                           fontLibrary: (any FontShellControlling)? = nil) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           fontLibrary: (any FontShellControlling)? = nil,
+                           saveTimeout: TimeInterval = 30) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         makeModel(status: status,
                  captureSupported: captureSupported,
                  profileStore: profileStore,
@@ -140,7 +141,8 @@ final class CameraScreenModelTests: XCTestCase {
                  captureImage: captureImage,
                  scheduleToastDismiss: scheduleToastDismiss,
                  thumbnailLibrary: thumbnailLibrary,
-                 fontLibrary: fontLibrary)
+                 fontLibrary: fontLibrary,
+                 saveTimeout: saveTimeout)
     }
 
     /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
@@ -173,7 +175,8 @@ final class CameraScreenModelTests: XCTestCase {
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
                            thumbnailLibrary: GalleryLibrary? = nil,
                            fontLibrary: (any FontShellControlling)? = nil,
-                           fontPreparationTimeout: TimeInterval = 3) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+                           fontPreparationTimeout: TimeInterval = 3,
+                           saveTimeout: TimeInterval = 30) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let authorizer = StubAuthorizer(status: status)
         let provider = EmptyDeviceProvider()
         let service = CameraService(authorizer: authorizer,
@@ -197,7 +200,8 @@ final class CameraScreenModelTests: XCTestCase {
                                       scheduleToastDismiss: scheduleToastDismiss,
                                       makeThumbnailLibrary: { _ in thumbnailLibrary ?? FakeThumbnailLibrary(status: .denied) },
                                       fontLibrary: fontLibrary,
-                                      fontPreparationTimeout: fontPreparationTimeout)
+                                      fontPreparationTimeout: fontPreparationTimeout,
+                                      saveTimeout: saveTimeout)
         return (model, service, provider, store)
     }
 
@@ -1283,8 +1287,8 @@ final class CameraScreenModelTests: XCTestCase {
         var firstBakeGate: DispatchSemaphore?
     }
 
-    private func makePipelineModel(harness: CaptureHarness, profileStore: ProfileStore, clock: MutableClock)
-        -> CameraScreenModel {
+    private func makePipelineModel(harness: CaptureHarness, profileStore: ProfileStore, clock: MutableClock,
+                                   saveTimeout: TimeInterval = 30) -> CameraScreenModel {
         let (model, _, _, _) = makeModel(
             profileStore: profileStore,
             nowProvider: clock.now,
@@ -1297,7 +1301,8 @@ final class CameraScreenModelTests: XCTestCase {
                 return UIImage()
             },
             save: { _, completion in harness.saves.append(completion) },
-            captureImage: { _, completion in harness.captures.append(completion) })
+            captureImage: { _, completion in harness.captures.append(completion) },
+            saveTimeout: saveTimeout)
         return model
     }
 
@@ -1438,6 +1443,83 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { harness.saves.count == 3 }
         harness.saves[2](.failure(.saveFailed("磁碟空間不足")))
         XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+    }
+
+    /// 151.1: a save that never calls back is given up on after the timeout:
+    /// the photo is reported as failed (never saved), its place is freed and
+    /// the shutter works again.
+    func testSaveTimeoutFreesThePlaceAndReportsFailure() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.1)
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
+
+        for index in 0..<2 {
+            model.beginCapture(profile: a)
+            harness.captures[index](.success(UIImage()))
+            waitUntil { harness.saves.count == index + 1 }
+        }
+        XCTAssertTrue(model.isShutterBusy, "151.1 both places taken")
+
+        waitUntil { model.inFlightSaveCount == 0 }
+
+        XCTAssertFalse(model.isShutterBusy, "151.1 the shutter works again")
+        XCTAssertEqual(model.captureFlights.map(\.status), [.failed, .failed], "151.1 failed, not saved")
+        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
+        XCTAssertTrue(announcements.isEmpty, "151.1 nothing is announced as saved")
+    }
+
+    /// 151.2: the callback arriving after the timeout reports nothing again
+    /// and the count stays at zero, even with a later photo in flight.
+    func testLateSaveCallbackAfterTheTimeoutIsIgnored() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.1)
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
+
+        model.beginCapture(profile: a)
+        harness.captures[0](.success(UIImage()))
+        waitUntil { harness.saves.count == 1 }
+        waitUntil { model.inFlightSaveCount == 0 }
+        let errorAfterTimeout = model.captureError
+        XCTAssertEqual(model.captureFlights.first?.status, .failed)
+
+        harness.saves[0](.success("late-asset"))
+
+        XCTAssertEqual(model.inFlightSaveCount, 0, "151.2 never negative")
+        XCTAssertEqual(model.captureFlights.first?.status, .failed, "151.2 still failed")
+        XCTAssertEqual(model.captureError, errorAfterTimeout, "151.2 not reported twice")
+        XCTAssertTrue(announcements.isEmpty)
+
+        // A photo saved normally later is counted on its own.
+        model.beginCapture(profile: a)
+        harness.captures[1](.success(UIImage()))
+        waitUntil { harness.saves.count == 2 }
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        harness.saves[1](.success("asset-2"))
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+    }
+
+    /// A save answered in time is not touched by its (cancelled) timeout.
+    func testSaveAnsweredInTimeIsNotReportedAsTimedOut() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.2)
+
+        model.beginCapture(profile: a)
+        harness.captures[0](.success(UIImage()))
+        waitUntil { harness.saves.count == 1 }
+        harness.saves[0](.success("asset-1"))
+
+        let wait = expectation(description: "timeout window passes")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { wait.fulfill() }
+        self.wait(for: [wait], timeout: 2)
+
+        XCTAssertEqual(model.captureFlights.first?.status, .saved)
+        XCTAssertNil(model.captureError)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
     /// A camera-level failure frees the shutter and leaves nothing in flight.

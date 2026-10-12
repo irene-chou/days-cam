@@ -1186,7 +1186,7 @@ extension CameraService {
             }
             self.captureDelegates[ObjectIdentifier(delegate)] = delegate
             let settings = CameraService.makePhotoSettings(for: self.photoOutput, flashMode: resolvedFlashMode)
-            CaptureTiming.begin(at: shutterPressedAt)
+            CaptureTiming.begin(id: delegate.timingID, at: shutterPressedAt)
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
     }
@@ -1510,6 +1510,8 @@ private extension CameraService {
 final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
 
     private let finish: (Result<UIImage, CameraCaptureError>, PhotoCaptureDelegate) -> Void
+    /// Tells this capture's timing apart from any other in flight (DEBUG log).
+    let timingID = UUID()
     private let hasFinished = OSAllocatedUnfairLock(initialState: false)
 
     /// - Parameter finish: called at most once, with the result and this
@@ -1530,21 +1532,20 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             deliver(.failure(.noImageData))
             return
         }
-        CaptureTiming.mark(.processed, size: CGSize(width: image.size.width * image.scale,
-                                                    height: image.size.height * image.scale))
+        CaptureTiming.markProcessed(id: timingID, image: image)
         deliver(.success(image))
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
         // The exposure is starting: the shutter lag the user feels (TASK-143).
-        CaptureTiming.markWillCapture()
+        CaptureTiming.markWillCapture(id: timingID)
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
-        CaptureTiming.logCaptureFinished()
+        CaptureTiming.logCaptureFinished(id: timingID)
         // This is the last callback of a capture, so it is where the completion
         // is guaranteed to have run exactly once: `deliver` ignores the second
         // call when processing already answered, and answers here when it
@@ -1577,6 +1578,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             return true
         }
         guard isFirst else { return }
+        if case .failure = result { CaptureTiming.discard(id: timingID) }
         finish(result, self)
     }
 }
@@ -1665,42 +1667,123 @@ extension CameraService {
 
 // MARK: - Capture timing
 
-/// Per-stage timing of one capture, logged as a single line per photo
-/// (category `capture-timing`, DEBUG builds only; issue #154).
-///
-/// A static recorder rather than a value threaded through the pipeline: the
-/// shutter is disabled while a capture is in flight, so at most one is timed
-/// at a time, and this keeps the instrumentation out of the control flow.
-enum CaptureTiming {
+/// The timing of each in-flight capture, keyed so overlapping captures keep
+/// their own marks (TASK-151, #529; the pipeline now holds up to two photos).
+/// Pure, with the clock passed in, so it is testable in any build.
+final class CaptureTimingRecorder {
     enum Stage: Int, CaseIterable {
         case processed, baked, saved
     }
 
-    private struct State {
-        var start: CFAbsoluteTime?
+    private struct Record {
+        var start: CFAbsoluteTime
         var willCapture: CFAbsoluteTime?
         var marks: [Stage: CFAbsoluteTime] = [:]
         var size: CGSize = .zero
     }
 
-    private static let state = OSAllocatedUnfairLock(initialState: State())
+    private struct State {
+        var records: [UUID: Record] = [:]
+        var idsByPhoto: [ObjectIdentifier: UUID] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Starts timing capture `id` from `start`, the moment the shutter was
+    /// pressed (TASK-145 #501).
+    func begin(id: UUID, at start: CFAbsoluteTime) {
+        state.withLock { $0.records[id] = Record(start: start) }
+    }
+
+    /// Records `willCapturePhotoFor`, the start of the exposure.
+    func markWillCapture(id: UUID, at now: CFAbsoluteTime) {
+        state.withLock { $0.records[id]?.willCapture = now }
+    }
+
+    /// The `logCaptureFinished` line for capture `id`, or `nil` when it is
+    /// not being timed.
+    func finishedLine(id: UUID, at now: CFAbsoluteTime) -> String? {
+        state.withLock { state in
+            state.records[id].map {
+                CaptureTiming.captureFinishedLine(start: $0.start, willCapture: $0.willCapture, finished: now)
+            }
+        }
+    }
+
+    /// Records that capture `id` produced `photo`, so later stages can find
+    /// it by the photo alone.
+    func markProcessed(id: UUID, photo: ObjectIdentifier, size: CGSize, at now: CFAbsoluteTime) {
+        state.withLock { state in
+            guard state.records[id] != nil else { return }
+            state.records[id]?.marks[.processed] = now
+            state.records[id]?.size = size
+            state.idsByPhoto[photo] = id
+        }
+    }
+
+    /// Records that `stage` of `photo` finished at `now`. Returns the one-line
+    /// summary when `.saved` completes the capture, and forgets it.
+    func mark(_ stage: Stage, photo: ObjectIdentifier, at now: CFAbsoluteTime) -> String? {
+        state.withLock { state in
+            guard let id = state.idsByPhoto[photo], var record = state.records[id] else { return nil }
+            record.marks[stage] = now
+            guard stage == .saved else {
+                state.records[id] = record
+                return nil
+            }
+            state.records[id] = nil
+            state.idsByPhoto[photo] = nil
+            var previous = record.start
+            var parts: [String] = []
+            for stage in Stage.allCases {
+                guard let time = record.marks[stage] else { continue }
+                parts.append("\(stage)=\(Int((time - previous) * 1000))ms")
+                previous = time
+            }
+            let toBaked = record.marks[.baked].map { Int(($0 - record.start) * 1000) }
+            let total = Int((now - record.start) * 1000)
+            return "\(parts.joined(separator: " ")) shutterToBaked=\(toBaked.map(String.init) ?? "n/a")ms total=\(total)ms size=\(Int(record.size.width))x\(Int(record.size.height))"
+        }
+    }
+
+    /// Forgets a capture that will not reach `.saved` (failed or timed out).
+    func discard(photo: ObjectIdentifier) {
+        state.withLock { state in
+            if let id = state.idsByPhoto.removeValue(forKey: photo) { state.records[id] = nil }
+        }
+    }
+
+    /// Forgets a capture that never produced a photo.
+    func discard(id: UUID) {
+        state.withLock { state in
+            state.records[id] = nil
+            state.idsByPhoto = state.idsByPhoto.filter { $0.value != id }
+        }
+    }
+}
+
+/// Per-stage timing of each capture, logged as one line per photo (category
+/// `capture-timing`, DEBUG builds only; issue #154). Captures are told apart
+/// by an ID the camera assigns, then by the photo they produced, so two
+/// photos in flight at once each log their own begin → baked → saved.
+enum CaptureTiming {
+    typealias Stage = CaptureTimingRecorder.Stage
+
+    private static let recorder = CaptureTimingRecorder()
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DaysCam",
                                        category: "capture-timing")
 
-    /// Starts timing a new capture from `start`, the moment the shutter was
-    /// pressed — read before the capture waited for the session queue
-    /// (TASK-145 #501).
-    static func begin(at start: CFAbsoluteTime) {
+    /// Starts timing capture `id` from `start` (DEBUG only).
+    static func begin(id: UUID, at start: CFAbsoluteTime) {
         #if DEBUG
-        state.withLock { $0 = State(start: start) }
+        recorder.begin(id: id, at: start)
         #endif
     }
 
     /// DEBUG only: records `willCapturePhotoFor`, the start of the exposure.
-    static func markWillCapture() {
+    static func markWillCapture(id: UUID) {
         #if DEBUG
-        let now = CFAbsoluteTimeGetCurrent()
-        state.withLock { if $0.start != nil { $0.willCapture = now } }
+        recorder.markWillCapture(id: id, at: CFAbsoluteTimeGetCurrent())
         #endif
     }
 
@@ -1708,13 +1791,9 @@ enum CaptureTiming {
     /// number to compare before and after low-latency capture; TASK-143
     /// #499) and, as a separate stage, press → `didFinishCapture`, which
     /// also includes the image processing (TASK-130).
-    static func logCaptureFinished() {
+    static func logCaptureFinished(id: UUID) {
         #if DEBUG
-        let now = CFAbsoluteTimeGetCurrent()
-        guard let (start, willCapture) = state.withLock({ state in
-            state.start.map { ($0, state.willCapture) }
-        }) else { return }
-        let line = captureFinishedLine(start: start, willCapture: willCapture, finished: now)
+        guard let line = recorder.finishedLine(id: id, at: CFAbsoluteTimeGetCurrent()) else { return }
         logger.debug("\(line, privacy: .public)")
         #endif
     }
@@ -1728,29 +1807,37 @@ enum CaptureTiming {
         return "shutterToWillCapture=\(willCapture.map(milliseconds) ?? "n/a") shutterToDidFinishCapture=\(milliseconds(finished))"
     }
 
-    /// Records that `stage` finished now. `size` is the photo's pixel size,
-    /// kept from the stage that knows it. Logs once `.saved` is marked.
-    static func mark(_ stage: Stage, size: CGSize? = nil) {
+    /// DEBUG only: capture `id` produced `image`; later stages look it up by
+    /// the image's identity.
+    static func markProcessed(id: UUID, image: UIImage) {
         #if DEBUG
-        let now = CFAbsoluteTimeGetCurrent()
-        let line: String? = state.withLock { state in
-            guard let start = state.start else { return nil }
-            state.marks[stage] = now
-            if let size { state.size = size }
-            guard stage == .saved else { return nil }
-            var previous = start
-            var parts: [String] = []
-            for stage in Stage.allCases {
-                guard let time = state.marks[stage] else { continue }
-                parts.append("\(stage)=\(Int((time - previous) * 1000))ms")
-                previous = time
-            }
-            let toBaked = state.marks[.baked].map { Int(($0 - start) * 1000) }
-            let total = Int((now - start) * 1000)
-            state.start = nil
-            return "\(parts.joined(separator: " ")) shutterToBaked=\(toBaked.map(String.init) ?? "n/a")ms total=\(total)ms size=\(Int(state.size.width))x\(Int(state.size.height))"
-        }
-        if let line { logger.debug("\(line, privacy: .public)") }
+        recorder.markProcessed(id: id, photo: ObjectIdentifier(image),
+                               size: CGSize(width: image.size.width * image.scale,
+                                            height: image.size.height * image.scale),
+                               at: CFAbsoluteTimeGetCurrent())
+        #endif
+    }
+
+    /// DEBUG only: `stage` of the photo identified by `photo` finished now.
+    /// Logs once `.saved` is marked.
+    static func mark(_ stage: Stage, for photo: ObjectIdentifier) {
+        #if DEBUG
+        guard let line = recorder.mark(stage, photo: photo, at: CFAbsoluteTimeGetCurrent()) else { return }
+        logger.debug("\(line, privacy: .public)")
+        #endif
+    }
+
+    /// DEBUG only: the photo will not reach `.saved`.
+    static func discard(_ photo: ObjectIdentifier) {
+        #if DEBUG
+        recorder.discard(photo: photo)
+        #endif
+    }
+
+    /// DEBUG only: the capture never produced a photo.
+    static func discard(id: UUID) {
+        #if DEBUG
+        recorder.discard(id: id)
         #endif
     }
 }
