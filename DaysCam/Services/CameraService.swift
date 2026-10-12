@@ -1157,7 +1157,10 @@ extension CameraService {
         let resolvedFlashMode = CameraService.effectiveFlashMode(requested: flashMode,
                                                                   isFlashAvailable: isFlashAvailable)
 
-        sessionQueue.async { [weak self] in
+        // The shutter-lag clock starts here, on the press, not once the
+        // session queue gets round to it: focus, zoom or a configuration
+        // queued ahead of this capture is part of the lag (TASK-145 #501).
+        CameraService.schedule(on: sessionQueue) { [weak self] shutterPressedAt in
             guard let self else { return }
             guard self.isConfigured, self.session.isRunning else {
                 self.onMain { completion(.failure(.notRunning)) }
@@ -1183,9 +1186,18 @@ extension CameraService {
             }
             self.captureDelegates[ObjectIdentifier(delegate)] = delegate
             let settings = CameraService.makePhotoSettings(for: self.photoOutput, flashMode: resolvedFlashMode)
-            CaptureTiming.begin()
+            CaptureTiming.begin(at: shutterPressedAt)
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
+    }
+
+    /// Reads the clock now, on the caller's thread, then runs `work` on
+    /// `queue` with that moment: what `capturePhoto` times from (TASK-145).
+    static func schedule(on queue: DispatchQueue,
+                         now: @escaping () -> CFAbsoluteTime = CFAbsoluteTimeGetCurrent,
+                         _ work: @escaping (CFAbsoluteTime) -> Void) {
+        let scheduledAt = now()
+        queue.async { work(scheduledAt) }
     }
 }
 
@@ -1675,10 +1687,12 @@ enum CaptureTiming {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DaysCam",
                                        category: "capture-timing")
 
-    /// Starts timing a new capture, at the moment the shutter fires.
-    static func begin() {
+    /// Starts timing a new capture from `start`, the moment the shutter was
+    /// pressed — read before the capture waited for the session queue
+    /// (TASK-145 #501).
+    static func begin(at start: CFAbsoluteTime) {
         #if DEBUG
-        state.withLock { $0 = State(start: CFAbsoluteTimeGetCurrent()) }
+        state.withLock { $0 = State(start: start) }
         #endif
     }
 
