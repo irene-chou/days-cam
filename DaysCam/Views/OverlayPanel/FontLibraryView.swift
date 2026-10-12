@@ -49,7 +49,10 @@ struct FontListView: View {
                         .padding(.bottom, 6)
                         .accessibilityAddTraits(.isHeader)
                 }
-                LazyVStack(spacing: 0) {
+                // A plain stack, not a lazy one: every row is measured up
+                // front, so the content height never gets corrected while the
+                // user scrolls (TASK-150).
+                VStack(spacing: 0) {
                     ForEach(section.cells) { cell in
                         cellView(cell, showsSeparator: cell.id != section.cells.last?.id)
                     }
