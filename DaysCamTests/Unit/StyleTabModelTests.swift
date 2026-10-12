@@ -369,6 +369,33 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.textColorSwatches.count, 9, "23.4")
     }
 
+    // MARK: - TASK-149 (#518) 文字顏色的淺色、深色、底片日期色列
+
+    /// 149.5: the text page's extra rows, column for column; outline and
+    /// shadow keep their one row (149.8, `outlineColorSwatches` unchanged).
+    func testTextColorHasTintAndFilmRows() {
+        let model = makeModel()
+        XCTAssertEqual(model.textColorTintRows, [OverlayStyle.lightSwatches, OverlayStyle.darkSwatches], "149.5")
+        XCTAssertTrue(model.textColorTintRows.allSatisfy { $0.count == model.textColorSwatches.count }, "149.5 nine columns")
+        XCTAssertEqual(model.textColorFilmSwatches, OverlayStyle.filmSwatches, "149.5")
+        XCTAssertEqual(model.outlineColorSwatches, OverlayStyle.swatches, "149.8")
+    }
+
+    /// 149.6: any new preset is applied fully opaque and never enters 最近.
+    func testSelectingANewPresetIsOpaqueAndNotRecent() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let model = makeModel(store: store)
+        model.applyCustomTextColor(try hex("#12345680"))
+        let presets = OverlayStyle.lightSwatches + OverlayStyle.darkSwatches + OverlayStyle.filmSwatches.map(\.color)
+        for preset in presets {
+            model.selectTextColor(preset)
+            XCTAssertEqual(model.profile.style.textColor, preset, "149.6 \(preset.hexString)")
+            XCTAssertEqual(model.profile.style.textColor.opacity, 1, "149.6 opaque")
+            model.commitCustomColor(preset)
+        }
+        XCTAssertTrue(store.recentCustomColors.isEmpty, "149.6 最近 unchanged")
+    }
+
     // MARK: - 23.5 外框顏色第一排：自動 + 9 色，初始選中自動
 
     func testOutlineColorSwatchesAreAllPresetsAndAutoIsInitiallySelected() {

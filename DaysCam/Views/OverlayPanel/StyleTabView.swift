@@ -253,6 +253,7 @@ struct StyleTabView: View {
     private var textColorPalette: some View {
         colorPalette(current: model.profile.style.textColor,
                     swatches: model.textColorSwatches,
+                    showsPresetRows: true,
                     showAutoButton: false,
                     isDisabled: false,
                     onSelectSwatch: { model.selectTextColor($0) },
@@ -454,13 +455,15 @@ struct StyleTabView: View {
 
     // MARK: - 共用：兩排色票 (FR-10.4, FR-10.6, FR-10.7)
 
-    /// Renders the shared two-row color palette: a first row of swatches (plus
-    /// an optional leading "automatic" button and a trailing rainbow custom
-    /// picker), and a second "recent" row. Used for both text color and
-    /// outline color (FR-10.4, FR-10.6) so their behavior — including sharing
-    /// `RecentColorsStore` — cannot drift apart.
+    /// Renders the shared color palette: a first row of swatches, then (text
+    /// color only, `showsPresetRows`) the light, dark and film date-stamp rows
+    /// (TASK-149), then a row with an optional leading "automatic" button,
+    /// the rainbow custom picker and the recent colors. Used for text,
+    /// outline and shadow color (FR-10.4, FR-10.6) so their behavior —
+    /// including sharing `RecentColorsStore` — cannot drift apart.
     private func colorPalette(current: OverlayColor?,
                               swatches: [OverlayColor],
+                              showsPresetRows: Bool = false,
                               showAutoButton: Bool,
                               autoLabel: String = "自動（黑或白）",
                               isDisabled: Bool,
@@ -468,15 +471,43 @@ struct StyleTabView: View {
                               onSelectAuto: @escaping () -> Void = {},
                               onApplyCustom: @escaping (OverlayColor) -> Void,
                               onCommitCustom: @escaping (OverlayColor) -> Void) -> some View {
-        // `.pal{gap:6px}` between the two rows (#106).
-        VStack(alignment: .leading, spacing: 6) {
+        // Every preset this palette shows; a color matching none of them is
+        // custom (the rainbow's ring).
+        let presets = showsPresetRows
+            ? swatches + model.textColorTintRows.flatMap { $0 } + model.textColorFilmSwatches.map(\.color)
+            : swatches
+        // `.pal{gap:6px}` between the rows (#106).
+        return VStack(alignment: .leading, spacing: 6) {
             // First row: nine swatches filling the content width, equal gaps.
             paletteRow {
                 ForEach(swatches, id: \.hexString) { swatch in
                     colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
                 }
             }
-            // Second row: (auto,) rainbow, then recent custom colors, each in
+            if showsPresetRows {
+                // Light and dark tints, each under its swatch (TASK-149).
+                ForEach(Array(model.textColorTintRows.enumerated()), id: \.offset) { _, row in
+                    paletteRow {
+                        ForEach(row, id: \.hexString) { swatch in
+                            colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
+                        }
+                    }
+                }
+                // Film date-stamp colors on the same grid, left-aligned, under
+                // their own heading; read by name (TASK-149).
+                Text("底片日期色")
+                    .font(.system(size: 12))
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .padding(.top, 6)
+                paletteRow {
+                    ForEach(model.textColorFilmSwatches, id: \.color.hexString) { film in
+                        colorDot(film.color, isSelected: isSame(current, film.color), label: film.name) {
+                            onSelectSwatch(film.color)
+                        }
+                    }
+                }
+            }
+            // Last row: (auto,) rainbow, then recent custom colors, each in
             // the same column as the first row's swatch above it, left-aligned.
             paletteRow {
                 if showAutoButton {
@@ -487,7 +518,7 @@ struct StyleTabView: View {
                 // those already show their own ring, so this only fires for
                 // an actually custom color (R.3).
                 let isCustomSelected = current != nil
-                    && !swatches.contains { isSame(current, $0) }
+                    && !presets.contains { isSame(current, $0) }
                     && !model.recentColors.contains { isSame(current, $0) }
                 customColorPicker(current: current, isSelected: isCustomSelected,
                                   onApply: onApplyCustom, onCommit: onCommitCustom)
@@ -538,6 +569,7 @@ struct StyleTabView: View {
 
     func colorDot(_ color: OverlayColor, isSelected: Bool,
                           labelPrefix: String = "",
+                          label: String? = nil,
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
@@ -553,7 +585,8 @@ struct StyleTabView: View {
                 .overlay(swatchSelectionRing(isSelected))
                 .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }
-        .accessibilityLabel(labelPrefix + color.hexString)
+        // Named presets read their name (底片橘); the rest their hex.
+        .accessibilityLabel(labelPrefix + (label ?? color.hexString))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -580,6 +613,7 @@ struct StyleTabView: View {
                 .overlay(swatchSelectionRing(isSelected))
         }
         .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// Whether `color` is `swatch` ignoring opacity (a swatch stays selected
