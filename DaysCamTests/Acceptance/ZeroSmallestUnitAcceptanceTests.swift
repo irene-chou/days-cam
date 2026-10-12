@@ -78,8 +78,8 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
             capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)),
             calendar: DateFixture.taipei,
             calculator: DayCountCalculator(calendar: DateFixture.taipei, now: now),
-            crop: { image, _ in image },
-            bake: { image, text, style, placement, _ in
+            cropRect: { size, _ in CGRect(origin: .zero, size: size) },
+            bake: { image, text, style, placement, _, _ in
                 recorder.add(BakeCall(text: text, style: style, placement: placement))
                 return bakeOutput(image, text, style, placement)
             },

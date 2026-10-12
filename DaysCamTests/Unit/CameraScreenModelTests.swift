@@ -120,8 +120,8 @@ final class CameraScreenModelTests: XCTestCase {
                            flashCapabilityProvider: FlashCapabilityProviding? = nil,
                            captureSettingsStore: CaptureSettingsStore? = nil,
                            countdownTicker: CountdownTicker = SystemCountdownTicker(),
-                           crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { _, _, _, _, _ in UIImage() },
+                           cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { size, _ in CGRect(origin: .zero, size: size) },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
@@ -134,7 +134,7 @@ final class CameraScreenModelTests: XCTestCase {
                  flashCapabilityProvider: flashCapabilityProvider,
                  captureSettingsStore: captureSettingsStore,
                  countdownTicker: countdownTicker,
-                 crop: crop,
+                 cropRect: cropRect,
                  bake: bake,
                  save: save,
                  captureImage: captureImage,
@@ -166,8 +166,8 @@ final class CameraScreenModelTests: XCTestCase {
                            flashCapabilityProvider: FlashCapabilityProviding? = nil,
                            captureSettingsStore: CaptureSettingsStore? = nil,
                            countdownTicker: CountdownTicker = SystemCountdownTicker(),
-                           crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, _ in image },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { _, _, _, _, _ in UIImage() },
+                           cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { size, _ in CGRect(origin: .zero, size: size) },
+                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
                            save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
@@ -189,7 +189,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       capturedPhotoStore: capturedPhotoStore,
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
-                                      crop: crop,
+                                      cropRect: cropRect,
                                       countdownTicker: countdownTicker,
                                       bake: bake,
                                       save: save,
@@ -918,7 +918,7 @@ final class CameraScreenModelTests: XCTestCase {
         var received: (image: UIImage?, text: String?, style: OverlayStyle?, placement: OverlayPlacement?)
         let bakeExp = expectation(description: "bake called")
         let sourceImage = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement, _ in
+        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement, _, _ in
             received = (image, text, style, placement)
             bakeExp.fulfill()
             return UIImage()
@@ -933,35 +933,48 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(received.placement, .anchor(.bottomTrailing))
     }
 
-    func testProcessCapturedImageCropsBeforeBakingUsingTheConfiguredAspectRatio() throws {
-        // PRD 0.2 FR-5.7′: "先裁再烘焙" — the configured
-        // `captureSettingsStore.captureAspectRatio` must reach `crop` before
-        // `bake` ever sees the image.
+    /// 128.1: one `bake` call, carrying the crop window for the configured
+    /// ratio computed from the photo's pixel size (orientation-normalized).
+    func testProcessCapturedImageBakesOnceWithTheCropWindow() throws {
         let now = try fixedNow()
         let settings = CaptureSettingsStore(defaults: defaults)
         settings.setAspectRatio(.oneByOne)
+        let photoSize = CGSize(width: 400, height: 300)
+        let photo = UIGraphicsImageRenderer(size: photoSize,
+                                            format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }())
+            .image { _ in }
+        var receivedPixelSize: CGSize?
         var receivedRatio: CaptureAspectRatio?
-        let cropExp = expectation(description: "crop called")
+        var bakeRects: [CGRect?] = []
+        let lock = NSLock()
+        let bakeExp = expectation(description: "bake called")
         let (model, _, _, _) = makeModel(now: now,
                                          captureSettingsStore: settings,
-                                         crop: { image, ratio in
+                                         cropRect: { size, ratio in
+                                             receivedPixelSize = size
                                              receivedRatio = ratio
-                                             cropExp.fulfill()
-                                             return image
+                                             return CGRect(x: 50, y: 0, width: 300, height: 300)
                                          },
-                                         bake: { _, _, _, _, _ in UIImage() })
+                                         bake: { _, _, _, _, _, rect in
+                                             lock.lock(); bakeRects.append(rect); lock.unlock()
+                                             bakeExp.fulfill()
+                                             return UIImage()
+                                         })
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(photo, context: sampleContext(now))
 
-        wait(for: [cropExp], timeout: 2)
-        XCTAssertEqual(receivedRatio, .oneByOne)
+        wait(for: [bakeExp], timeout: 2)
+        XCTAssertEqual(receivedPixelSize, photoSize, "128.1")
+        XCTAssertEqual(receivedRatio, .oneByOne, "128.1")
+        XCTAssertEqual(bakeRects.count, 1, "128.1")
+        XCTAssertEqual(bakeRects.first ?? nil, CGRect(x: 50, y: 0, width: 300, height: 300), "128.1")
     }
 
     func testProcessCapturedImageSurfacesCaptureErrorWhenBakeFails() throws {
         // PRD §7.3: baking failure — not one of PhotoSaver's save errors,
         // does not depend on it landing.
         let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _ in nil })
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _, _ in nil })
         XCTAssertNil(model.captureError)
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -984,7 +997,7 @@ final class CameraScreenModelTests: XCTestCase {
         var saveCalled = false
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in nil },
+                                         bake: { _, _, _, _, _, _ in nil },
                                          save: { _, completion in
                                              saveCalled = true
                                              completion(.success("asset-1"))
@@ -1002,7 +1015,7 @@ final class CameraScreenModelTests: XCTestCase {
         var receivedImage: UIImage?
         let saveExp = expectation(description: "save called")
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in bakedImage },
+                                         bake: { _, _, _, _, _, _ in bakedImage },
                                          save: { image, completion in
                                              receivedImage = image
                                              saveExp.fulfill()
@@ -1019,7 +1032,7 @@ final class CameraScreenModelTests: XCTestCase {
         // Issue #148 (S.10): no "已儲存" toast; one flight instead.
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1036,7 +1049,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testLandingASavedFlightReplacesTheThumbnailAndRemovesIt() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 }
@@ -1056,7 +1069,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(results.removeFirst()) })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 }
@@ -1074,7 +1087,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(results.removeFirst()) })
         var announcements: [String] = []
         model.announce = { announcements.append($0) }
@@ -1116,7 +1129,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         var finishSave: ((Result<String, PhotoSaveError>) -> Void)?
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in finishSave = completion })
         model.processCapturedImage(UIImage(), context: sampleContext(now))
         waitUntil { model.captureFlights.count == 1 && finishSave != nil }
@@ -1134,7 +1147,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testBackToBackCapturesEachGetTheirOwnFlight() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset")) })
         for _ in 0..<3 {
             model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1153,21 +1166,50 @@ final class CameraScreenModelTests: XCTestCase {
             context.fill(CGRect(origin: .zero, size: largeSize))
         }
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in large },
+                                         bake: { _, _, _, _, _, _ in large },
                                          save: { _, completion in completion(.success("asset-1")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
         waitUntil { model.captureFlights.count == 1 }
         let flight = try XCTUnwrap(model.captureFlights.first)
-        XCTAssertEqual(max(flight.thumbnail.size.width, flight.thumbnail.size.height), 88, accuracy: 0.5)
-        XCTAssertEqual(max(flight.image.size.width, flight.image.size.height), 600, accuracy: 0.5)
+        // 128.2: points are `maxDimension`; pixels are points * the screen
+        // scale, once (not squared by the renderer's own scale).
+        let scale = UIScreen.main.scale
+        func pixels(_ image: UIImage) -> CGSize {
+            CGSize(width: image.cgImage?.width ?? 0, height: image.cgImage?.height ?? 0)
+        }
+        let thumbnailPixels = pixels(flight.thumbnail)
+        let flightPixels = pixels(flight.image)
+        XCTAssertEqual(max(thumbnailPixels.width, thumbnailPixels.height),
+                       CameraScreenModel.thumbnailMaxDimension * scale, accuracy: 1, "128.2")
+        XCTAssertEqual(max(flightPixels.width, flightPixels.height),
+                       CameraScreenModel.flightImageMaxDimension * scale, accuracy: 1, "128.2")
+        XCTAssertEqual(flight.thumbnail.scale, scale)
+        XCTAssertEqual(max(flight.thumbnail.size.width, flight.thumbnail.size.height),
+                       CameraScreenModel.thumbnailMaxDimension, accuracy: 1)
+    }
+
+    /// 128.2: the pixel size follows the scale argument, never 3x by accident.
+    func testThumbnailPixelSizeFollowsTheRequestedScale() {
+        let size = CGSize(width: 2000, height: 1500)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let source = UIGraphicsImageRenderer(size: size, format: format).image { _ in }
+        for scale in [1, 2, 3] as [CGFloat] {
+            let thumb = CameraScreenModel.thumbnail(of: source, maxDimension: 88, scale: scale)
+            XCTAssertEqual(thumb.cgImage?.width, Int(88 * scale), "128.2 @\(scale)x")
+            XCTAssertEqual(thumb.cgImage?.height, Int((88 * scale * 0.75).rounded()), "128.2 @\(scale)x")
+            XCTAssertEqual(thumb.scale, scale)
+        }
+        let small = CameraScreenModel.thumbnail(of: source, maxDimension: 5000, scale: 3)
+        XCTAssertEqual(small.cgImage?.width, 2000, "never upscaled")
     }
 
     func testProcessCapturedImageSurfacesCaptureErrorOnPermissionDenied() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.failure(.permissionDenied)) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1185,7 +1227,7 @@ final class CameraScreenModelTests: XCTestCase {
     func testProcessCapturedImageSurfacesCaptureErrorOnSaveFailed() throws {
         let now = try fixedNow()
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.failure(.saveFailed("磁碟空間不足"))) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1204,7 +1246,7 @@ final class CameraScreenModelTests: XCTestCase {
         var storedCompletion: ((Result<String, PhotoSaveError>) -> Void)?
         let completionStored = expectation(description: "save completion captured")
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in
                                              storedCompletion = completion
                                              completionStored.fulfill()
@@ -1580,7 +1622,7 @@ final class CameraScreenModelTests: XCTestCase {
         // 21.5.
         let now = try fixedNow()
         let baked = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _ in baked })
+        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _, _ in baked })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
 
@@ -1602,7 +1644,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       capturedPhotoStore: capturedPhotoStore,
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
-                                      bake: { _, _, _, _, _ in UIImage() },
+                                      bake: { _, _, _, _, _, _ in UIImage() },
                                       save: { _, completion in completion(.success("new-asset-id")) })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1703,7 +1745,7 @@ final class CameraScreenModelTests: XCTestCase {
                                          nowProvider: clock.now,
                                          captureSettingsStore: settings,
                                          countdownTicker: ticker,
-                                         bake: { _, text, _, _, _ in
+                                         bake: { _, text, _, _, _, _ in
                                              receivedText = text
                                              return UIImage()
                                          },
@@ -1831,7 +1873,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) },
                                          thumbnailLibrary: library)
         model.processCapturedImage(UIImage(), context: sampleContext(now))
@@ -1896,7 +1938,7 @@ final class CameraScreenModelTests: XCTestCase {
         let now = try fixedNow()
         let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
         let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _ in UIImage() },
+                                         bake: { _, _, _, _, _, _ in UIImage() },
                                          save: { _, completion in completion(.success("asset-1")) },
                                          thumbnailLibrary: library)
         library.suspendNextImage = true
