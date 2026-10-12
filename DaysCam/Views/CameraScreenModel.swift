@@ -556,7 +556,19 @@ final class CameraScreenModel: ObservableObject {
                 self?.applyFont(fontID, profileID: profileID)
             },
             allProfiles: { [weak self] in self?.profiles ?? [] },
-            updateProfile: styleWriter.write)
+            updateProfile: { [weak self] profile in
+                let previous = self?.profileStore.profiles.first { $0.id == profile.id }
+                try styleWriter.write(profile)
+                // A weight chosen in the font list writes font and weight
+                // without `applyFont`; it is the newest font choice for this
+                // profile, so a download still pending for it must not land
+                // afterwards (#458).
+                if let previous,
+                   previous.style.fontID != profile.style.fontID
+                    || previous.style.fontWeight != profile.style.fontWeight {
+                    self?.pendingFontApplications[profile.id] = nil
+                }
+            })
 
         let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
         self.formatWriter = formatWriter
@@ -1580,6 +1592,11 @@ extension CameraScreenModel {
             case .available:
                 pendingFontApplications[profileID] = nil
                 guard profileStore.profiles.contains(where: { $0.id == profileID }) else { continue }
+                // The user has since picked a weight of another font for this
+                // profile and it is still downloading: that is the newer
+                // choice, so this one must not land first (#458).
+                if let list = styleTabModel?.fontList, list.profileID == profileID,
+                   let newer = list.pendingWeight, newer.fontID != fontID { continue }
                 if writeFont(fontID, to: profileID) { announceApplied(fontID) }
             case .notDownloaded, .failed:
                 pendingFontApplications[profileID] = nil
