@@ -121,6 +121,47 @@ final class DayCountCalculatorTests: XCTestCase {
                        ElapsedBreakdown(weeks: 1, days: 2))
     }
 
+    // MARK: - TASK-140 (#487) countdown breakdown
+
+    /// Today 2026-10-12 → 2027-01-16, 96 days, split like the elapsed amount.
+    func testCountdownBreakdownSplitsOnlyTheCheckedUnits() throws {
+        let subject = calculator(now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10)))
+        let start = DateFixture.components(2027, 1, 16)
+        func breakdown(_ units: Set<DisplayUnit>) -> ElapsedBreakdown {
+            subject.countdownBreakdown(to: start, units: units)
+        }
+        XCTAssertEqual(breakdown([.day]), ElapsedBreakdown(days: 96))
+        XCTAssertEqual(breakdown([.month, .day]), ElapsedBreakdown(months: 3, days: 4))
+        XCTAssertEqual(breakdown([.week, .day]), ElapsedBreakdown(weeks: 13, days: 5))
+        XCTAssertEqual(breakdown([.year, .month, .day]), ElapsedBreakdown(months: 3, days: 4))
+        XCTAssertEqual(breakdown([.year]), ElapsedBreakdown())
+        XCTAssertEqual(breakdown([.month, .week, .day]), ElapsedBreakdown(months: 3, days: 4))
+    }
+
+    /// The counting rule plays no part in a countdown; there is none to pass.
+    func testCountdownBreakdownIsEmptyFromTheStartDateOn() throws {
+        let subject = calculator(now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10)))
+        XCTAssertEqual(subject.countdownBreakdown(to: DateFixture.components(2026, 10, 12), units: [.day]),
+                       ElapsedBreakdown())
+        XCTAssertEqual(subject.countdownBreakdown(to: DateFixture.components(2026, 1, 1), units: [.month, .day]),
+                       ElapsedBreakdown())
+        XCTAssertEqual(subject.countdownBreakdown(to: DateFixture.components(2026, 10, 13), units: [.week, .day]),
+                       ElapsedBreakdown(days: 1))
+    }
+
+    /// Month arithmetic is anchored on today, clamping like Foundation.
+    func testCountdownBreakdownAtMonthEndsAndLeapDays() throws {
+        let janEnd = calculator(now: try XCTUnwrap(DateFixture.date(2026, 1, 31, hour: 10)))
+        XCTAssertEqual(janEnd.countdownBreakdown(to: DateFixture.components(2026, 3, 1), units: [.month, .day]),
+                       ElapsedBreakdown(months: 1, days: 1))
+        let leapFeb = calculator(now: try XCTUnwrap(DateFixture.date(2028, 2, 1, hour: 10)))
+        XCTAssertEqual(leapFeb.countdownBreakdown(to: DateFixture.components(2028, 3, 1), units: [.day]),
+                       ElapsedBreakdown(days: 29))
+        let leapDay = calculator(now: try XCTUnwrap(DateFixture.date(2028, 2, 29, hour: 10)))
+        XCTAssertEqual(leapDay.countdownBreakdown(to: DateFixture.components(2029, 2, 28), units: [.year, .day]),
+                       ElapsedBreakdown(years: 1))
+    }
+
     // MARK: - 2.23 ... 2.25 current date and time zones
 
     func testCurrentDateComponentsIgnoresTimeOfDay() throws {

@@ -344,12 +344,20 @@ final class TemplateRendererTests: XCTestCase {
         XCTAssertEqual(render(subject, at: capturedAt), "第 0 天", "4.52 ordinal, not the 0 天 fallback")
     }
 
-    func testEveryUnitPairReportsNotStartedForAFutureStart() throws {
+    /// 4.53, re-baselined by TASK-140 (#487): the countdown reads in the
+    /// checked units; year only has nothing to show and falls back to days.
+    func testEveryUnitPairCountsDownForAFutureStart() throws {
         let capturedAt = try XCTUnwrap(DateFixture.date(2026, 9, 19, hour: 10))
         let start = DateFixture.components(2026, 12, 1)
-        for pair in Self.legacyPairs {
+        let expected: [String] = [
+            "還有 73 天",
+            "還有 10 週又 3 天", "還有 10 週",
+            "還有 2 個月又 12 天", "還有 2 個月",
+            "還有 2 個月 12 天", "還有 2 個月", "還有 73 天"
+        ]
+        for (pair, text) in zip(Self.legacyPairs, expected) {
             let subject = profile(start: start, largest: pair.largest, smallest: pair.smallest)
-            XCTAssertEqual(render(subject, at: capturedAt), "還有 73 天",
+            XCTAssertEqual(render(subject, at: capturedAt), text,
                            "4.53 \(pair.largest)/\(pair.smallest)")
         }
     }
@@ -567,10 +575,16 @@ final class TemplateRendererUnitSetTests: XCTestCase {
         XCTAssertEqual(try render(start: start, capturedAt: (2026, 9, 21), units: [.year]), "還有 10 天", "93.12")
     }
 
-    func testFutureStartIsNotStartedForAnySet() throws {
-        for units: Set<DisplayUnit> in [[.day], [.year, .week], [.month, .week, .day]] {
+    /// Re-baselined by TASK-140 (#487): the countdown reads in any set.
+    func testFutureStartCountsDownForAnySet() throws {
+        let cases: [(Set<DisplayUnit>, String)] = [
+            ([.day], "還有 73 天"),
+            ([.year, .week], "還有 10 週"),
+            ([.month, .week, .day], "還有 2 個月 1 週 5 天")
+        ]
+        for (units, expected) in cases {
             XCTAssertEqual(try render(start: DateFixture.components(2026, 12, 1), capturedAt: (2026, 9, 19),
-                                      units: units), "還有 73 天", "\(units)")
+                                      units: units), expected, "\(units)")
         }
     }
 }
@@ -602,15 +616,16 @@ extension TemplateRendererTests {
         }
     }
 
-    /// 52.3: neither the checked units nor age wording reach the distance.
-    func testDistanceIgnoresUnitsAndAgeWording() throws {
+    /// 52.3, replaced by TASK-140 (#487, user decision 2026-10-12): the
+    /// distance reads in the checked units, and years never read as ages.
+    func testDistanceReadsInTheCheckedUnits() throws {
         let capturedAt = try referenceCapture()
         let start = DateFixture.components(2026, 4, 29)
         XCTAssertEqual(render(profile(start: start, largest: .year, smallest: .month, useAgeWording: true),
                               at: capturedAt),
-                       "還有 40 天", "52.3")
+                       "還有 1 個月", "52.3 → 140")
         XCTAssertEqual(render(profile(start: start, largest: .year, smallest: .day), at: capturedAt),
-                       "還有 40 天", "52.3")
+                       "還有 1 個月 9 天", "52.3 → 140")
     }
 
     /// 52.4: the start date itself is unchanged.
@@ -651,5 +666,132 @@ extension TemplateRendererTests {
         XCTAssertEqual(render(profile(start: DateFixture.components(2026, 3, 10)),
                               at: lateEvening, calendar: DateFixture.newYork),
                        "還有 3 天", "52.6")
+    }
+}
+
+// MARK: - TASK-140 (#487): the countdown reads in the checked units
+
+extension TemplateRendererUnitSetTests {
+
+    private var weddingCapture: (Int, Int, Int) { (2026, 10, 12) }
+    private var wedding: DateComponents { DateFixture.components(2027, 1, 16) }
+
+    func testCountdownDayOnlyStaysInDays() throws {
+        XCTAssertEqual(try render(start: wedding, capturedAt: weddingCapture, units: [.day]),
+                       "還有 96 天", "140.1")
+    }
+
+    func testCountdownMonthAndDayJoinWithYou() throws {
+        XCTAssertEqual(try render(start: wedding, capturedAt: weddingCapture, units: [.month, .day]),
+                       "還有 3 個月又 4 天", "140.2")
+    }
+
+    func testCountdownWeekAndDayJoinWithYou() throws {
+        XCTAssertEqual(try render(start: wedding, capturedAt: weddingCapture, units: [.week, .day]),
+                       "還有 13 週又 5 天", "140.3")
+    }
+
+    /// The separator follows the checked set, so a zero year that is dropped
+    /// still leaves a space, as the elapsed amount does (U-8).
+    func testCountdownDropsAZeroYearAndKeepsTheCheckedSetsSeparator() throws {
+        XCTAssertEqual(try render(start: wedding, capturedAt: weddingCapture, units: [.year, .month, .day]),
+                       "還有 3 個月 4 天", "140.4")
+    }
+
+    /// Every checked unit zero reads in days, never 還有 0 年／0 歲.
+    func testCountdownWithEveryCheckedUnitZeroFallsBackToDays() throws {
+        for ageWording in [false, true] {
+            XCTAssertEqual(try render(start: wedding, capturedAt: weddingCapture, units: [.year],
+                                      useAgeWording: ageWording),
+                           "還有 96 天", "140.5 age wording \(ageWording)")
+        }
+        XCTAssertEqual(try render(start: DateFixture.components(2026, 10, 16), capturedAt: weddingCapture,
+                                  units: [.week]),
+                       "還有 4 天", "week only, under a week")
+    }
+
+    func testCountdownYearsNeverReadAsAges() throws {
+        XCTAssertEqual(try render(start: DateFixture.components(2028, 2, 1), capturedAt: weddingCapture,
+                                  units: [.year, .month], useAgeWording: true),
+                       "還有 1 年 3 個月", "140.6")
+    }
+
+    func testCountdownTomorrowIsOneDayForAnyUnitsAndRule() throws {
+        let tomorrow = DateFixture.components(2026, 10, 13)
+        let sets: [Set<DisplayUnit>] = [
+            [.day], [.week], [.week, .day], [.month], [.month, .day], [.month, .week, .day],
+            [.year], [.year, .day], [.year, .month], [.year, .week], [.year, .month, .week, .day]
+        ]
+        for units in sets {
+            for rule in [CountingRule.dayOne, .dayZero] {
+                for ageWording in [false, true] {
+                    XCTAssertEqual(try render(start: tomorrow, capturedAt: weddingCapture, units: units,
+                                              rule: rule, useAgeWording: ageWording),
+                                   "還有 1 天", "140.7 \(units) \(rule) \(ageWording)")
+                }
+            }
+        }
+    }
+
+    /// From the start date on, nothing changes (52.4).
+    func testStartDateAndAfterAreUnchanged() throws {
+        let today = DateFixture.components(2026, 10, 12)
+        XCTAssertEqual(try render(start: today, capturedAt: weddingCapture, units: [.day]), "第 1 天", "140.8")
+        XCTAssertEqual(try render(start: today, capturedAt: weddingCapture, units: [.day], rule: .dayZero),
+                       "第 0 天", "140.8")
+        XCTAssertEqual(try render(start: today, capturedAt: weddingCapture, units: [.month, .day]),
+                       "0 天", "140.8")
+        XCTAssertEqual(try render(start: today, capturedAt: weddingCapture, units: [.year], useAgeWording: true),
+                       "0 歲", "140.8")
+        XCTAssertEqual(try render(start: DateFixture.components(2025, 7, 8), capturedAt: weddingCapture,
+                                  units: [.year, .month, .day], useAgeWording: true),
+                       "1 歲 3 個月 4 天", "140.8")
+    }
+
+    func testCountdownComposesWithDateAndName() throws {
+        let capturedAt = try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10))
+        let subject = CameraProfile(name: "婚禮", startDate: wedding, showDate: true, showName: true,
+                                    displayUnits: [.month, .day])
+        XCTAssertEqual(TemplateRenderer().render(profile: subject, capturedAt: capturedAt, calendar: DateFixture.taipei),
+                       "2026.10.12 婚禮 還有 3 個月又 4 天", "140.9")
+    }
+
+    /// Calendar days in the capture's own time zone, across a DST change.
+    func testCountdownCountsCalendarDaysAcrossTimeZonesAndDST() throws {
+        // 2026-01-09 20:00 UTC is already 01-10 in Taipei, still 01-09 in New York.
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 20, in: DateFixture.utc))
+        let subject = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 2, 11),
+                                    displayUnits: [.month, .day])
+        let renderer = TemplateRenderer()
+        XCTAssertEqual(renderer.render(profile: subject, capturedAt: instant, calendar: DateFixture.taipei),
+                       "還有 1 個月又 1 天", "140.10")
+        XCTAssertEqual(renderer.render(profile: subject, capturedAt: instant, calendar: DateFixture.newYork),
+                       "還有 1 個月又 2 天", "140.10")
+
+        // New York springs forward on 2026-03-08; the 23-hour day still counts once.
+        let lateEvening = try XCTUnwrap(DateFixture.date(2026, 3, 1, hour: 23, in: DateFixture.newYork))
+        let weeks = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 3, 10),
+                                  displayUnits: [.week, .day])
+        XCTAssertEqual(renderer.render(profile: weeks, capturedAt: lateEvening, calendar: DateFixture.newYork),
+                       "還有 1 週又 2 天", "140.10")
+    }
+
+    /// Month ends and leap days follow Foundation, locked here (PRD §7.1).
+    func testCountdownMonthEndAndLeapDayFollowFoundation() throws {
+        XCTAssertEqual(try render(start: DateFixture.components(2026, 3, 1), capturedAt: (2026, 1, 31),
+                                  units: [.month, .day]),
+                       "還有 1 個月又 1 天", "Jan 31 + 1 month clamps to Feb 28")
+        XCTAssertEqual(try render(start: DateFixture.components(2026, 2, 28), capturedAt: (2026, 1, 31),
+                                  units: [.month, .day]),
+                       "還有 1 個月", "month end to month end")
+        XCTAssertEqual(try render(start: DateFixture.components(2028, 3, 1), capturedAt: (2028, 2, 1),
+                                  units: [.week, .day]),
+                       "還有 4 週又 1 天", "Feb 29 counted in a leap year")
+        XCTAssertEqual(try render(start: DateFixture.components(2028, 2, 29), capturedAt: (2027, 2, 28),
+                                  units: [.year, .month, .day]),
+                       "還有 1 年 1 天", "to a leap day")
+        XCTAssertEqual(try render(start: DateFixture.components(2029, 2, 28), capturedAt: (2028, 2, 29),
+                                  units: [.year], useAgeWording: true),
+                       "還有 1 年", "from a leap day, clamped like §7.1")
     }
 }
