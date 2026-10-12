@@ -9,10 +9,10 @@ import SwiftUI
 /// `FormatTabModel` wrapping the active profile's `DisplaySettingsModel`.
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
-/// sections now sit on one page. TASK-48 (0.4 R-13): 天數單位 heading on top
-/// of the unit row, 顯示內容 below under its own heading (天數、日期、名稱
-/// since TASK-107 brought the day-count switch back);
-/// the day count is always shown, so nothing here is ever disabled for it.
+/// sections now sit on one page. TASK-141 (#485): 顯示內容 (天數、日期、
+/// 名稱) on top, then a divider and 天數單位 (units, 年改成歲) — what goes on
+/// the photo first, then how the day count reads. With the day count off
+/// the 天數單位 section is not shown; the switches above it stay put.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
@@ -35,17 +35,24 @@ struct FormatTabView: View {
     @State private var bouncingUnit: DisplayUnit?
     /// The content switch bouncing right now (TASK-108).
     @State private var bouncingSwitch: DisplaySettingsModel.Rejection.ContentSwitch?
-    /// Whether the whole unit section is nudging (108.8: tapped while the
-    /// day count is off).
-    @State private var bouncingUnits = false
+    /// The tab's content width and the 名稱 switch's trailing x in it, so
+    /// 年改成歲 can end on the same right edge (TASK-141 #485): the switch
+    /// row is spread `space-around`, so its last switch sits half a gap in
+    /// from the edge, and that gap depends on the width.
+    @State private var contentWidth: CGFloat = 0
+    @State private var nameSwitchMaxX: CGFloat = 0
+    private static let coordinateSpace = "formatTab"
+    /// Trailing inset that puts 年改成歲's right edge under 名稱's.
+    private var switchTrailingInset: CGFloat {
+        guard contentWidth > 0, nameSwitchMaxX > 0 else { return 0 }
+        return max(0, contentWidth - nameSwitchMaxX)
+    }
     /// The refusal whose hint is showing under the unit row, if any (the
     /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
     private var unitHint: DisplaySettingsModel.Rejection? {
         guard let hint = model.displaySettings.visibleHint else { return nil }
-        switch hint.kind {
-        case .lastUnit, .dayCountOff: return hint
-        case .lastContentSwitch: return nil
-        }
+        if case .lastUnit = hint.kind { return hint }
+        return nil
     }
     /// The refusal whose hint is showing under the display-content row, if any.
     private var contentHint: DisplaySettingsModel.Rejection? {
@@ -56,25 +63,38 @@ struct FormatTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeading("天數單位")
-            dayCountFormatSection
             sectionHeading("顯示內容")
-                .padding(.top, 8)
             displayContentSection
+            // Collapsed, not dimmed, while the day count is off (TASK-141
+            // #485, replacing FR-11.5's "look as usual"): the switch that
+            // brings it back sits right above, so nothing jumps under the
+            // finger. The checked units are kept in the profile meanwhile.
+            if model.displaySettings.profile.showDayCount {
+                Divider()
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("formatDivider")
+                sectionHeading("天數單位")
+                dayCountFormatSection
+            }
         }
+        .coordinateSpace(name: Self.coordinateSpace)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { contentWidth = $0 }
         // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
         // #106 R2): each tab owns its own padding rather than a generic one.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
         // A refused change (the last unit, the last of 天數／日期) bounces
-        // the control, taps the haptic engine and floats a hint for 1.5 s
-        // (TASK-108, #422; FR-11.2／FR-11.3). On the simulator the haptic is
-        // simply absent (108.6).
+        // the control, taps the haptic engine and shows a hint until the
+        // next tap here (TASK-108 #422, TASK-141 #485; FR-11.2／FR-11.3). On
+        // the simulator the haptic is simply absent (108.6).
         .onChange(of: model.displaySettings.lastRejection) { _, rejection in
             guard let rejection else { return }
             react(to: rejection)
         }
         .sensoryFeedback(.warning, trigger: model.displaySettings.lastRejection)
+        // Switching to another tab (or closing the panel) ends the hint
+        // too (141.4).
+        .onDisappear { model.displaySettings.dismissHint() }
         .alert("無法儲存", isPresented: Binding(get: { model.displaySettings.lastError != nil },
                                              set: { if !$0 { model.displaySettings.lastError = nil } })) {
             Button("好") { model.displaySettings.lastError = nil }
@@ -91,17 +111,12 @@ struct FormatTabView: View {
             withAnimation(bounce) { bouncingUnit = unit }
         case .lastContentSwitch(let contentSwitch):
             withAnimation(bounce) { bouncingSwitch = contentSwitch }
-        case .dayCountOff:
-            // The whole unit row nudges (108.8): the tap could have been any
-            // checkbox or the age-wording switch.
-            withAnimation(bounce) { bouncingUnits = true }
         }
         UIAccessibility.post(notification: .announcement, argument: rejection.hint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             withAnimation(.easeOut(duration: 0.15)) {
                 bouncingUnit = nil
                 bouncingSwitch = nil
-                bouncingUnits = false
             }
         }
     }
@@ -122,7 +137,7 @@ struct FormatTabView: View {
             .accessibilityIdentifier(identifier)
     }
 
-    /// Small heading above the 天數單位 and 顯示內容 sections (13pt, secondary ink).
+    /// Small heading above the 顯示內容 and 天數單位 sections (13pt, secondary ink).
     private func sectionHeading(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13))
@@ -172,6 +187,8 @@ struct FormatTabView: View {
                              isDisabled: false) {
                     model.displaySettings.setShowName($0)
                 }
+                .onGeometryChange(for: CGFloat.self,
+                                  of: { $0.frame(in: .named(Self.coordinateSpace)).maxX }) { nameSwitchMaxX = $0 }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
@@ -211,7 +228,7 @@ struct FormatTabView: View {
         .accessibilityLabel(label)
     }
 
-    // MARK: - 天數單位 (FR-11.3, FR-11.4)
+    // MARK: - 天數單位 (FR-11.3–FR-11.5)
 
     private var dayCountFormatSection: some View {
         // No gap between rows; each row is at least `rowMinHeight` tall and
@@ -239,13 +256,10 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
                 ageWordingToggle
             }
+            // Right edge aligned with the 名稱 switch above (TASK-141).
+            .padding(.trailing, switchTrailingInset)
             .frame(minHeight: Self.rowMinHeight)
         }
-        // With the day count off the unit section looks exactly as usual —
-        // not dimmed, not hidden, no text (107.4; the user's 2026-10-12
-        // call: dimming reads as "half broken", hiding moves the rows). The
-        // model refuses the taps; TASK-108 answers them with feedback.
-        .scaleEffect(bouncingUnits ? 1.03 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dayCountUnits")
     }

@@ -2,7 +2,7 @@ import XCTest
 
 /// TASK-107 (#426): the content tab's 天數 switch is back; a date-only
 /// profile prints only the date, the last of 天數／日期 springs back, the
-/// units go inert, and the profile list says 只顯示日期.
+/// units collapse (TASK-141), and the profile list says 只顯示日期.
 final class DayCountToggleUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -37,7 +37,7 @@ final class DayCountToggleUITests: XCTestCase {
 
     /// 107.1／107.2／107.4: three switches, default 天數 on; turning the date
     /// on and the day count off leaves only the date on the viewfinder and
-    /// dims the units; name on adds the name after the date.
+    /// collapses the units (TASK-141); name on adds the name after the date.
     func testDateOnlyProfilePrintsOnlyTheDate() {
         openContentTab()
         XCTAssertTrue(toggle("日期").exists && toggle("名稱").exists, "107.1 three switches")
@@ -54,10 +54,8 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(overlayText.label)")
-        // Inert: tapping a unit changes nothing (XCUITest still reports the
-        // dimmed buttons as hittable, so the check is behavioural).
-        app.buttons["週"].tap()
-        XCTAssertFalse(app.buttons["週"].isSelected, "107.4 the units are inert")
+        // TASK-141 (#485): the units are collapsed, not inert-but-visible.
+        XCTAssertFalse(app.buttons["週"].exists, "107.4 → 141.2 the units are collapsed")
 
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
