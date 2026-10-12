@@ -17,7 +17,7 @@ final class FontScrollStabilityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
-        XCTAssertTrue(app.buttons["蘋方-繁"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["蘋方"].waitForExistence(timeout: 5))
     }
 
     private var heading: XCUIElement {
@@ -125,7 +125,7 @@ final class FontScrollStabilityUITests: XCTestCase {
     /// open) while the list scrolls down and back.
     func testScrollingWithAnExpandedFontDoesNotJump() {
         launch(extraArguments: ["-UITestFontSeed"])
-        app.buttons["蘋方-繁"].tap()
+        app.buttons["蘋方"].tap()
         XCTAssertTrue(app.buttons["fontWeight.light"].waitForExistence(timeout: 3), "expanded")
         scrollDownAndUp(label: "expanded")
     }
