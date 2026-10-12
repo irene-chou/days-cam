@@ -438,6 +438,136 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertFalse(store.didRecoverFromCorruption)
     }
 
+    // MARK: - TASK-134 (#474) per-record decoding
+
+    /// Writes `profiles` and makes the records at `brokenIndexes` undecodable
+    /// by giving them an outline value no build knows.
+    private func writeProfiles(_ profiles: [CameraProfile], breaking brokenIndexes: Set<Int>) throws {
+        let encoded = try JSONEncoder().encode(profiles)
+        var array = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [[String: Any]])
+        for index in brokenIndexes {
+            var style = try XCTUnwrap(array[index]["style"] as? [String: Any])
+            style["outline"] = "futureOutline"
+            array[index]["style"] = style
+        }
+        try JSONSerialization.data(withJSONObject: array).write(to: fileURL, options: [.atomic])
+    }
+
+    private func partialBackups() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("\(ProfileStore.fileName).partial-") }
+    }
+
+    /// 134.1
+    func testOneUndecodableRecordIsDroppedAndTheOthersKept() throws {
+        let kept = [profile(name: "甲"), profile(name: "丙")]
+        try writeProfiles([kept[0], profile(name: "乙"), kept[1]], breaking: [1])
+        let original = try Data(contentsOf: fileURL)
+
+        let store = makeStore(at: try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10)))
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.map(\.name), ["甲", "丙"], "134.1")
+        XCTAssertEqual(store.droppedUndecodableRecordCount, 1, "134.1")
+        XCTAssertFalse(store.didRecoverFromCorruption, "134.1 the user keeps profiles")
+        let backups = try partialBackups()
+        XCTAssertEqual(backups.count, 1, "134.1")
+        let backup = try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(backups.first)))
+        XCTAssertEqual(backup, original, "134.1 backup is the original file")
+
+        let reopened = makeStore(at: Date())
+        XCTAssertEqual(reopened.load().map(\.name), ["甲", "丙"], "134.1 cleaned file written back")
+        XCTAssertEqual(reopened.droppedUndecodableRecordCount, 0)
+    }
+
+    /// A file manager whose `copyItem` fails while `failsCopy` is set.
+    private final class CopyFailingFileManager: FileManager {
+        var failsCopy = true
+        override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+            if failsCopy { throw CocoaError(.fileWriteOutOfSpace) }
+            try super.copyItem(at: srcURL, to: dstURL)
+        }
+    }
+
+    /// #477: a failed backup must not let a later write destroy the original.
+    func testFailedBackupBlocksWritesUntilTheBackupSucceeds() throws {
+        try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [1])
+        let original = try Data(contentsOf: fileURL)
+        let fileManager = CopyFailingFileManager()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
+                                 now: { Date() }, defaults: defaults, fileManager: fileManager)
+
+        let loaded = store.load()
+        XCTAssertEqual(loaded.map(\.name), ["甲"])
+        XCTAssertTrue(store.isPartialBackupPending)
+        XCTAssertEqual(try Data(contentsOf: fileURL), original, "file untouched after failed backup")
+
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "改名"
+        XCTAssertThrowsError(try store.update(edited))
+        XCTAssertThrowsError(try store.add(profile(name: "新")))
+        XCTAssertEqual(try Data(contentsOf: fileURL), original, "original never overwritten")
+        XCTAssertTrue(try partialBackups().isEmpty)
+
+        fileManager.failsCopy = false
+        try store.update(edited)
+        XCTAssertFalse(store.isPartialBackupPending)
+        let backups = try partialBackups()
+        XCTAssertEqual(backups.count, 1)
+        let backup = try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(backups.first)))
+        XCTAssertEqual(backup, original, "backup holds the original, written before the overwrite")
+        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名"])
+    }
+
+    /// #477: two loads in the same second keep separate backups.
+    func testBackupsFromTheSameSecondDoNotOverwriteEachOther() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        for _ in 0..<2 {
+            try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [1])
+            makeStore(at: instant).load()
+        }
+        XCTAssertEqual(try partialBackups().count, 2)
+    }
+
+    /// 134.2
+    func testEveryRecordUndecodableBehavesLikeCorruption() throws {
+        try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [0, 1])
+
+        let store = makeStore(at: try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10)))
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.count, 1, "134.2 reseeded")
+        XCTAssertEqual(loaded.first?.name, ProfileStore.defaultProfileName, "134.2")
+        XCTAssertTrue(store.didRecoverFromCorruption, "134.2")
+        XCTAssertEqual(store.droppedUndecodableRecordCount, 0, "134.2")
+        let saved = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("\(ProfileStore.fileName).corrupt-") }
+        XCTAssertEqual(saved.count, 1, "134.2")
+        XCTAssertTrue(try partialBackups().isEmpty, "134.2")
+    }
+
+    /// 134.2: a top level that is not an array is still corruption.
+    func testNonArrayTopLevelBehavesLikeCorruption() throws {
+        try XCTUnwrap("{\"a\":1}".data(using: .utf8)).write(to: fileURL)
+        let store = makeStore(at: try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10)))
+        store.load()
+        XCTAssertTrue(store.didRecoverFromCorruption, "134.2")
+    }
+
+    /// 134.3
+    func testDroppedLastUsedProfileFallsBackToAnotherProfile() throws {
+        let first = profile(name: "甲")
+        let second = profile(name: "乙")
+        try writeProfiles([first, second], breaking: [1])
+        defaults.set(second.id.uuidString, forKey: ProfileStore.lastUsedProfileIDKey)
+
+        let store = makeStore(at: try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10)))
+        store.load()
+
+        XCTAssertEqual(store.selectedProfileID, first.id, "134.3")
+        XCTAssertEqual(store.lastUsedProfileID, first.id, "134.3")
+    }
+
     func testRecoveryFlagIsClearOnAHealthyLoad() throws {
         let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
         let store = makeStore(at: instant)

@@ -52,6 +52,19 @@ final class ProfileStore: ObservableObject {
     /// stays `false` there. Read-only; it changes nothing about how profiles
     /// are read or written.
     private(set) var didSeedFreshInstall = false
+    /// How many records the last `load()` could not decode and dropped while
+    /// keeping the rest (TASK-134, #474) — typically a file written by a newer
+    /// build. Zero when nothing was dropped, and when the whole file was
+    /// unusable (that is `didRecoverFromCorruption`). The original file is
+    /// kept beside it as `profiles.json.partial-<timestamp>`. Flag only; no UI
+    /// reads it yet.
+    private(set) var droppedUndecodableRecordCount = 0
+
+    /// True while the original file still has to be copied to a
+    /// `.partial-` backup before anything may overwrite it (#477). Every write
+    /// retries the copy first and fails with `writeFailed` if it still cannot
+    /// be made, so the undecodable records are never lost without a copy.
+    private(set) var isPartialBackupPending = false
 
     private let directory: URL
     private let calendar: Calendar
@@ -100,6 +113,8 @@ extension ProfileStore {
     func load() -> [CameraProfile] {
         didRecoverFromCorruption = false
         didSeedFreshInstall = false
+        droppedUndecodableRecordCount = 0
+        isPartialBackupPending = false
 
         guard fileManager.fileExists(atPath: fileURL.path) else {
             didSeedFreshInstall = true
@@ -107,13 +122,18 @@ extension ProfileStore {
             return profiles
         }
 
+        // Decode record by record: one unreadable record (an unknown enum
+        // value from a newer build, say) must not take the others with it.
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([CameraProfile].self, from: data) else {
+              let records = try? JSONDecoder().decode([LossyRecord].self, from: data),
+              records.isEmpty || records.contains(where: { $0.profile != nil }) else {
             setAsideCorruptFile()
             didRecoverFromCorruption = true
             seedDefaultProfile()
             return profiles
         }
+        let decoded = records.compactMap(\.profile)
+        let droppedCount = records.count - decoded.count
 
         // Strip what can be stripped, drop what cannot be repaired. This is
         // defence in depth — only the app writes this file — which is why a
@@ -141,9 +161,16 @@ extension ProfileStore {
 
         profiles = repaired
         resolveSelection()
+        droppedUndecodableRecordCount = droppedCount
         // Persist the cleaned-up records so the repair happens once, not on
         // every launch.
-        if repaired != decoded {
+        if droppedCount > 0 {
+            // Rewriting drops the undecodable records for good, so `persist`
+            // keeps the original first. If the copy fails the file is left
+            // alone and every later write retries it.
+            isPartialBackupPending = true
+            try? persist(repaired)
+        } else if repaired != decoded {
             try? persist(repaired)
         }
         return profiles
@@ -161,6 +188,32 @@ extension ProfileStore {
         profiles = [seeded]
         try? persist(profiles)
         select(id: seeded.id)
+    }
+
+    /// Copies the current file to `profiles.json.partial-<timestamp>` before it
+    /// is rewritten without its undecodable records. Returns whether the copy
+    /// exists.
+    private func keepPartialBackup() -> Bool {
+        // Milliseconds plus a random suffix: two loads in the same second must
+        // not overwrite each other's backup.
+        let stamp = Int(now().timeIntervalSince1970 * 1000)
+        let suffix = UUID().uuidString.prefix(8)
+        let destination = directory.appendingPathComponent("\(Self.fileName).partial-\(stamp)-\(suffix)")
+        do {
+            try fileManager.copyItem(at: fileURL, to: destination)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// One array element that decodes to `nil` instead of failing the array.
+    private struct LossyRecord: Decodable {
+        let profile: CameraProfile?
+
+        init(from decoder: Decoder) throws {
+            profile = try? decoder.singleValueContainer().decode(CameraProfile.self)
+        }
     }
 
     /// Renames an unreadable file rather than deleting it, so the user's data
@@ -389,6 +442,12 @@ private extension ProfileStore {
     func persist(_ profiles: [CameraProfile]) throws {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            if isPartialBackupPending {
+                guard keepPartialBackup() else {
+                    throw ProfileStoreError.writeFailed("could not back up the original profiles file")
+                }
+                isPartialBackupPending = false
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(profiles)
