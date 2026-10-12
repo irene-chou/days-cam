@@ -69,7 +69,7 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | 主要語言 | 繁體中文 |
 | 類別 | 攝影與錄影 |
 | 副標 | 每張照片都記得第幾天（2026-10-12 人類選定；原案「把日子印在照片上」） |
-| 宣傳文字 | 拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。 |
+| 宣傳文字 | 寶寶出生、開始健身、搬進新家……設定一個起始日，之後按下快門，天數就直接印在照片上。離線、免帳號，照片只存在你的相簿。（2026-10-12 人類選定；原案「拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。」） |
 | 關鍵字 | 天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera |
 | 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/> |
 | 支援 URL | <https://irene-chou.github.io/dayscam-privacy/> |
