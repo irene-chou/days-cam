@@ -1,8 +1,8 @@
 import XCTest
 
 /// TASK-108 (#422): the last checked unit is not dimmed; tapping it bounces,
-/// floats a hint for about 1.5 s and moves nothing; the last of 天數／日期
-/// gets the same treatment.
+/// shows a hint and moves nothing; the last of 天數／日期 gets the same
+/// treatment. TASK-141 (#485): the hint stays until the next tap.
 final class LastUnitFeedbackUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -10,8 +10,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        // `-UITestLongHints`: 6 s hints, since `tap()` returns only once animations settle.
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestLongHints", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.buttons["疊字設定"].tap()
         let content = app.buttons["內容"]
@@ -29,13 +28,14 @@ final class LastUnitFeedbackUITests: XCTestCase {
     private func isOn(_ element: XCUIElement) -> Bool { (element.value as? String) == "1" }
 
     /// 108.1／108.2: 天 alone is enabled and stays checked when tapped; the
-    /// hint appears and goes away; 年改成歲 and 顯示內容 do not move.
+    /// hint appears and stays until another checkbox is tapped (141.4);
+    /// 年改成歲 and 照片上寫什麼 do not move.
     func testLastUnitStaysCheckedWithAHintAndNothingMoves() {
         let day = app.buttons["天"]
         XCTAssertTrue(day.isEnabled, "108.1 not disabled")
         XCTAssertTrue(day.isSelected, "108.1 checked")
         let ageRowBefore = app.staticTexts["年改成歲"].frame
-        let contentHeadingBefore = app.staticTexts["顯示內容"].frame
+        let contentHeadingBefore = app.staticTexts["照片上寫什麼"].frame
         // The hint line is always laid out (108.2); it carries the text only
         // while showing, so the checks read its label.
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
@@ -45,10 +45,13 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let shown = NSPredicate(format: "label == '至少保留一個單位'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 the age-wording row did not move")
-        XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
+        XCTAssertEqual(app.staticTexts["照片上寫什麼"].frame, contentHeadingBefore, "108.2 the content heading did not move")
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
+        app.buttons["週"].tap()
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 9), .completed, "108.1 the hint went away")
+        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 2), .completed, "141.4 a checkbox tap clears it")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 still in place after the hint")
     }
 
@@ -68,8 +71,11 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
         let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(contentHint.label, "至少顯示天數或日期", "141.3 still there after 3 s")
+        toggle("名稱").tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != '至少顯示天數或日期'"), object: contentHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 9), .completed)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 2), .completed, "141.3 the 名稱 switch clears it")
 
         toggle("日期").tap()
         toggle("天數").tap()
@@ -79,26 +85,17 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the same hint")
     }
 
-    /// 108.8: with the day count off, tapping a unit changes nothing and
-    /// floats 先打開天數; turning the day count on makes the tap work.
-    func testUnitTapWhileTheDayCountIsOffHintsToTurnItOn() {
+    /// 108.8 → TASK-141 (#485): with the day count off the 天數寫法 section
+    /// is not there to tap; turning the day count on brings it back.
+    func testUnitSectionIsCollapsedWhileTheDayCountIsOff() {
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
-        app.buttons["週"].tap()
-        XCTAssertFalse(app.buttons["週"].isSelected, "108.8 setting unchanged")
-        let shown = NSPredicate(format: "label == '先打開天數'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 the hint appeared")
-        let gone = NSPredicate(format: "label != '先打開天數'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
-        // 年改成歲 without the year ticked: still answered with the hint.
-        // The combined row is wide; tap near its switch end so the tap lands
-        // on the switch rather than the label (same as a finger would).
-        toggle("年改成歲").coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.8 年改成歲 hints too")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: unitHint)], timeout: 9), .completed)
+        XCTAssertFalse(app.buttons["週"].exists, "141.2 collapsed")
+        XCTAssertFalse(toggle("年改成歲").exists, "141.2 collapsed")
         toggle("天數").tap()
+        XCTAssertTrue(app.buttons["週"].waitForExistence(timeout: 3))
         app.buttons["週"].tap()
-        XCTAssertTrue(app.buttons["週"].isSelected, "108.8 works once the day count is on")
+        XCTAssertTrue(app.buttons["週"].isSelected, "works once the day count is on")
     }
 }

@@ -21,14 +21,14 @@ final class DisplaySettingsModel: ObservableObject {
 
     /// A change the model refused because it would leave nothing to show
     /// (TASK-108, #422): the last checked unit, or the last of 天數／日期.
-    /// The view answers each one with a bounce, a light haptic and a short
-    /// hint (FR-11.2／FR-11.3); `serial` makes a repeated refusal a new event.
+    /// The view answers each one with a bounce, a light haptic and a hint
+    /// (FR-11.2／FR-11.3); `serial` makes a repeated refusal a new event.
+    /// TASK-141 (#485) dropped 108.8's 先打開天數: with the day count off
+    /// the unit section is not shown at all.
     struct Rejection: Equatable {
         enum Kind: Equatable {
             case lastUnit(DisplayUnit)
             case lastContentSwitch(ContentSwitch)
-            /// A unit or 年改成歲 tapped while the day count is off (108.8).
-            case dayCountOff
         }
         enum ContentSwitch: Equatable { case dayCount, date }
         let kind: Kind
@@ -39,28 +39,17 @@ final class DisplaySettingsModel: ObservableObject {
             switch kind {
             case .lastUnit: return "至少保留一個單位"
             case .lastContentSwitch: return "至少顯示天數或日期"
-            case .dayCountOff: return "先打開天數"
             }
         }
     }
     /// The most recent refusal; `nil` until one happens.
     @Published private(set) var lastRejection: Rejection?
-    /// The refusal whose hint is on screen right now (TASK-108): set by
-    /// `reject`, cleared `hintDuration` later; a newer refusal restarts the
-    /// clock. Owned here, not by the view, so the hint's lifetime does not
-    /// depend on view identity or re-renders.
+    /// The refusal whose hint is on screen right now: set by `reject` and
+    /// kept until the next tap on any switch or checkbox here, or until
+    /// `dismissHint()` (leaving the tab) — no timer (TASK-141 #485,
+    /// replacing TASK-108's 1.5 s fade). Owned here, not by the view, so the
+    /// hint's lifetime does not depend on view identity or re-renders.
     @Published private(set) var visibleHint: Rejection?
-    /// How long a hint stays before fading (108.1): 1.5 s. UI tests launch
-    /// with `-UITestLongHints` to stretch it, because `XCUIElement.tap()`
-    /// only returns once the app's animations settle — by then a 1.5 s hint
-    /// has nearly expired; the 1.5 s itself is pinned by a unit test.
-    static var hintDuration: TimeInterval {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-UITestLongHints") { return 6 }
-        #endif
-        return 1.5
-    }
-    private var hintTask: Task<Void, Never>?
 
     /// Refusals of the same kind closer together than this are one event:
     /// a switch that springs back can report its refusal more than once,
@@ -72,18 +61,23 @@ final class DisplaySettingsModel: ObservableObject {
         let now = Date()
         if let last = lastRejection, last.kind == kind,
            let lastTime = lastRejectionTime, now.timeIntervalSince(lastTime) < Self.rejectionDebounce {
+            // The same tap again: the setter's `dismissHint()` must not
+            // take the hint it just raised away.
+            visibleHint = last
             return
         }
         lastRejectionTime = now
         let rejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
         lastRejection = rejection
         visibleHint = rejection
-        hintTask?.cancel()
-        hintTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.hintDuration))
-            guard !Task.isCancelled, let self, self.visibleHint == rejection else { return }
-            self.visibleHint = nil
-        }
+    }
+
+    /// Clears the hint; called by every setter before it acts (a tap on any
+    /// switch or checkbox) and by the view when the tab goes away (141.3,
+    /// 141.4).
+    func dismissHint() {
+        guard visibleHint != nil else { return }
+        visibleHint = nil
     }
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
@@ -145,6 +139,7 @@ extension DisplaySettingsModel {
     /// the date is off too is refused — the two may not both be off (PRD
     /// §4.1 invariant 3) — and the view's switch springs back (107.3).
     func setShowDayCount(_ newValue: Bool) {
+        dismissHint()
         guard newValue != profile.showDayCount else { return }
         guard newValue || profile.showDate else {
             reject(.lastContentSwitch(.dayCount))
@@ -156,6 +151,7 @@ extension DisplaySettingsModel {
     /// Sets `showDate`; symmetric with `setShowDayCount` — turning it off
     /// while the day count is off is refused (107.3).
     func setShowDate(_ newValue: Bool) {
+        dismissHint()
         guard newValue != profile.showDate else { return }
         guard newValue || profile.showDayCount else {
             reject(.lastContentSwitch(.date))
@@ -172,14 +168,14 @@ extension DisplaySettingsModel {
     /// Whether the date switch is the last of 天數／日期 still on.
     var isDateTheLastContentSwitch: Bool { profile.showDate && !profile.showDayCount }
 
-    /// Whether the 天數單位 controls are inert: the day count is off, so the
-    /// units have nothing to format and `toggleUnit`／`setUseAgeWording`
-    /// refuse (107.4; FR-11.5 as revised by TASK-107 — the controls look as
-    /// usual, neither dimmed nor hidden, with no explanatory text; TASK-108
-    /// answers the refused tap with feedback).
+    /// Whether the 天數寫法 controls are inert: the day count is off, so the
+    /// units have nothing to format. The view collapses the section then
+    /// (FR-11.5 as revised by TASK-141 #485); `toggleUnit`／`setUseAgeWording`
+    /// still ignore a call as a backstop (107.4).
     var areUnitsInert: Bool { !profile.showDayCount }
 
     func setShowName(_ newValue: Bool) {
+        dismissHint()
         guard newValue != profile.showName else { return }
         mutate { $0.showName = newValue }
     }
@@ -194,12 +190,10 @@ extension DisplaySettingsModel {
     /// TASK-108): `displayUnits` may never be empty. `useAgeWording` is left
     /// alone either way (FR-11.4 as amended by TASK-139 #486).
     func toggleUnit(_ unit: DisplayUnit) {
-        // With the day count off the units have nothing to format: the tap
-        // changes nothing (107.4; the feedback is TASK-108's 108.8).
-        guard !areUnitsInert else {
-            reject(.dayCountOff)
-            return
-        }
+        dismissHint()
+        // With the day count off the units have nothing to format: the call
+        // changes nothing (107.4). The section is hidden then (TASK-141).
+        guard !areUnitsInert else { return }
         if profile.displayUnits.contains(unit) {
             guard profile.displayUnits.count > 1 else {
                 reject(.lastUnit(unit))
@@ -223,11 +217,20 @@ extension DisplaySettingsModel {
     /// only renames the year unit 年 → 歲 (FR-11.4 as amended by TASK-139
     /// #486; it used to need the year checked).
     func setUseAgeWording(_ newValue: Bool) {
+        dismissHint()
         guard newValue != profile.useAgeWording else { return }
-        guard !areUnitsInert else {
-            reject(.dayCountOff)
-            return
-        }
+        guard !areUnitsInert else { return }
         mutate { $0.useAgeWording = newValue }
     }
+
+    /// Whether to explain under 年改成歲 that a countdown reads 年 (141.5):
+    /// age wording is on and the start date is still ahead, where years
+    /// always read 年 (TASK-140 #487). Same `rawDayDifference < 0` test as
+    /// the renderer, as of `calculator`'s clock.
+    var showsCountdownAgeNote: Bool {
+        profile.useAgeWording && calculator.rawDayDifference(from: profile.startDate) < 0
+    }
+
+    /// The note shown when `showsCountdownAgeNote` is true.
+    static let countdownAgeNote = "倒數時寫作「年」，到了那天之後才寫「歲」"
 }

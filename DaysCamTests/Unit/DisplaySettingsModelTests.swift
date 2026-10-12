@@ -399,52 +399,84 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertTrue(model.profile.showDate)
     }
 
-    /// 108.8: a unit or 年改成歲 tapped while the day count is off changes
-    /// nothing and is reported with its own hint; after turning the day
-    /// count on the same taps work.
-    func testTapsWhileTheDayCountIsOffAreReportedAsDayCountOff() throws {
+    /// 108.8 → TASK-141 (#485): with the day count off the section is
+    /// hidden; a stray call changes nothing and raises no 先打開天數 hint
+    /// any more. After turning the day count on the same calls work.
+    func testCallsWhileTheDayCountIsOffChangeNothingAndReportNothing() throws {
         let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: Spy())
         model.setShowDate(true)
         model.setShowDayCount(false)
         model.toggleUnit(.week)
-        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8")
-        XCTAssertEqual(model.lastRejection?.hint, "先打開天數")
-        XCTAssertEqual(model.profile.displayUnits, [.year, .day])
-        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
         model.setUseAgeWording(true)
-        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8 age wording too")
+        XCTAssertEqual(model.profile.displayUnits, [.year, .day])
         XCTAssertFalse(model.profile.useAgeWording)
+        XCTAssertNil(model.lastRejection, "141 no 先打開天數")
+        XCTAssertNil(model.visibleHint)
         model.setShowDayCount(true)
         model.toggleUnit(.week)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "108.8 live again")
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "live again")
     }
 
-    /// 108.8: with the day count off and no year ticked, 年改成歲 still
-    /// reports 先打開天數 (TASK-139 #486 dropped the year rule it used to precede).
-    func testAgeWordingTapWithoutYearWhileTheDayCountIsOffIsDayCountOff() throws {
+    // MARK: - TASK-141 (#485) hints stay until the next tap
+
+    /// 141.3: the content-switch hint has no timer; it stays until the next
+    /// switch is tapped (here 名稱).
+    func testContentSwitchHintStaysUntilTheNextSwitchTap() async throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.setShowDate(true)
         model.setShowDayCount(false)
-        model.setUseAgeWording(true)
-        XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8")
-        XCTAssertFalse(model.profile.useAgeWording)
+        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "141.3 shown")
+        XCTAssertTrue(model.profile.showDayCount, "141.3 springs back")
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "141.3 still there, no 1.5 s fade")
+        model.setShowName(true)
+        XCTAssertNil(model.visibleHint, "141.3 cleared by the 名稱 switch")
     }
 
-    /// 108.1／108.2: the hint stays `hintDuration` then clears itself; a
-    /// newer refusal restarts the clock.
-    func testVisibleHintClearsItselfAfterTheDuration() async throws {
+    /// 141.4: the unit hint stays until any checkbox is tapped, or the tab
+    /// goes away (`dismissHint()`).
+    func testUnitHintStaysUntilACheckboxTapOrLeavingTheTab() throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        XCTAssertEqual(DisplaySettingsModel.hintDuration, 1.5, "108.1 about 1.5 s")
-        XCTAssertNil(model.visibleHint)
         model.toggleUnit(.day)
-        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day), "shown at once")
-        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.5))
-        XCTAssertNotNil(model.visibleHint, "still shown halfway")
+        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day), "141.4 shown")
+        model.toggleUnit(.month)
+        XCTAssertNil(model.visibleHint, "141.4 cleared by another checkbox")
+
+        model.toggleUnit(.month)
+        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day))
+        model.dismissHint()
+        XCTAssertNil(model.visibleHint, "141.4 cleared by switching tabs")
+    }
+
+    /// A refused tap reported twice by a springing-back control keeps its
+    /// hint: the repeat clears and then restores it.
+    func testRepeatedRefusalKeepsTheHint() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
         model.setShowDayCount(false)
-        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "a newer refusal replaces it")
-        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.7))
-        XCTAssertNotNil(model.visibleHint, "the clock restarted")
-        try await Task.sleep(for: .seconds(DisplaySettingsModel.hintDuration * 0.5))
-        XCTAssertNil(model.visibleHint, "cleared after the duration")
+        model.setShowDayCount(false)
+        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount))
+    }
+
+    // MARK: - TASK-141 (#485) 141.5 countdown note under 年改成歲
+
+    func testCountdownAgeNoteNeedsAgeWordingAndAFutureStart() throws {
+        let now = try fixedNow() // 2026-01-10
+        let future = makeModel(profile: baselineProfile(startDate: DateFixture.components(2026, 1, 11),
+                                                        useAgeWording: true),
+                               now: now, spy: Spy())
+        XCTAssertTrue(future.showsCountdownAgeNote, "141.5 future, 歲 on")
+        future.setUseAgeWording(false)
+        XCTAssertFalse(future.showsCountdownAgeNote, "141.5 歲 off")
+
+        let today = makeModel(profile: baselineProfile(startDate: DateFixture.components(2026, 1, 10),
+                                                       useAgeWording: true),
+                              now: now, spy: Spy())
+        XCTAssertFalse(today.showsCountdownAgeNote, "141.5 the start date itself is not a countdown")
+        let past = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
+                                                      useAgeWording: true),
+                             now: now, spy: Spy())
+        XCTAssertFalse(past.showsCountdownAgeNote, "141.5 past")
+        XCTAssertEqual(DisplaySettingsModel.countdownAgeNote, "倒數時寫作「年」，到了那天之後才寫「歲」")
     }
 }
