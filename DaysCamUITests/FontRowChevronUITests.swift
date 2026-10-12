@@ -34,10 +34,10 @@ final class FontRowChevronUITests: XCTestCase {
                           "seed notoSerifTC.otf and notoSerifTC-regular.otf and set DAYSCAM_UI_NOTO_SEEDED=1")
     }
 
-    private var pingFang: XCUIElement { app.buttons["蘋方-繁"] }
+    private var pingFang: XCUIElement { app.buttons["蘋方"] }
     /// 思源宋體 sits first in the 開源字型 group after 粉圓; its label carries the state.
     private var noto: XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Noto Serif TC'")).firstMatch
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH '思源宋體'")).firstMatch
     }
     private func weight(_ id: String) -> XCUIElement { app.buttons["fontWeight.\(id)"] }
 

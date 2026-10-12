@@ -327,7 +327,9 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
 
 `swift scripts/render-font-previews.swift <四個開源字型檔所在資料夾>` 產生 `DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`（17pt、@2x／@3x 模板圖）。開源字型直接從檔案建立（先比對 SHA-256），不會畫到 Mac 上安裝的同名字型；系統字型經 CoreText 比對。取得的字型名稱不符 PRD-0.3 §4.1 時以非零狀態結束。
 
-TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`；toast、授權頁與其他簡稱沿用 `displayName`。預覽圖以完整名稱、17pt、210pt 文字寬換行，保留 4pt 透明邊界（保留負 side bearing 與下緣字形）；列表使用原始點尺寸，不再以 24pt 高度縮小兩行圖。下載版本與 PostScript 名稱不變，完整名稱依系統 CoreText 在地化 fullName／字型 name table ID 4 查證（對照表見 PR #323）。
+**TASK-148（#515）**：字型頁、VoiceOver 與預覽圖一律使用中文簡稱 `FontCatalogEntry.displayName`（系統字型與開源字型一起），取代 TASK-78 的「清單用 `fullName`」與 TASK-142（#510，已關閉）的「清單名稱照 name table 原樣」；`fullName` 已移除，字型的正式名稱只在授權頁的 copyright／授權全文出現。預覽圖以簡稱、17pt、210pt 文字寬換行，保留 4pt 透明邊界（保留負 side bearing 與下緣字形），列表使用原始點尺寸。腳本的名稱與 `displayName` 相同；本次重畫了簡稱與原完整名稱不同的 22 套（蘋方、粉圓、思源宋體、芫荽、辰宇落雁體與 17 套系統字型），其餘 30 套 TASK-142 家族原本就以簡稱繪製，字串與字型都沒變，圖不需重畫。下載版本與 PostScript 名稱不變。
+
+~~TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`（作廢，見上）。~~
 
 ## TASK-89 字重下載與上游授權紀錄
 

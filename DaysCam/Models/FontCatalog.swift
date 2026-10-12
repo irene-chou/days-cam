@@ -152,41 +152,6 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
         weights.first { $0.id == id } ?? defaultWeight
     }
 
-    /// The localized full face name shown in the font list and VoiceOver.
-    /// Verified against CoreText localized names and the font name table
-    /// (TASK-78), except that a version number in the name table is dropped
-    /// (TASK-111, #425): 粉圓's "jf open 粉圓 2.1" is listed as "jf open 粉圓";
-    /// its version stays on the license page (FR-16.13).
-    var fullName: String {
-        switch fontID {
-        case .pingFang: return "蘋方-繁 中粗體"
-        case .huninn: return "jf open 粉圓"
-        case .notoSerifTC: return "Noto Serif TC Bold"
-        case .iansui: return "芫荽 Regular"
-        case .chenyuluoyan: return "辰宇落雁體 2.0 細體"
-        case .lantinghei: return "蘭亭黑-繁 中黑"
-        case .liHei: return "儷黑 Pro"
-        case .hiraginoSans: return "冬青黑體繁體中文 W6"
-        case .yuanti: return "圓體-繁 粗體"
-        case .songti: return "宋體-繁 粗體"
-        case .liSong: return "儷宋 Pro"
-        case .kaiti: return "楷體-繁 粗體"
-        case .biauKai: return "標楷體-繁"
-        case .hanziPen: return "翩翩體-繁 粗體"
-        case .hannotate: return "手札體-繁 粗體"
-        case .lingWai: return "凌慧體-繁 中黑體"
-        case .xingkai: return "行楷-繁 粗體"
-        case .weibei: return "魏碑-繁 粗體"
-        case .libian: return "隸變-繁 標準體"
-        case .baoli: return "報隸-繁 標準體"
-        case .wawa: return "娃娃體-繁 標準體"
-        case .yuppy: return "雅痞-繁 標準體"
-        // TASK-142 families: the short Chinese name; the weight is read from
-        // the buttons of the expanded row.
-        default: return displayName
-        }
-    }
-
     /// The size as the list shows it, e.g. "43.7 MB"; `nil` for PingFang.
     var downloadSizeText: String? {
         downloadSizeMegabytes.map { String(format: "%.1f MB", $0) }

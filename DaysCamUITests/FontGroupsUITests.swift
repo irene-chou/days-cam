@@ -58,7 +58,7 @@ final class FontGroupsUITests: XCTestCase {
     /// 120.1: the two headings exist, the old ones do not, and the fresh list
     /// starts with 蘋方 then 開源字型.
     func testOnlyTheTwoSourceHeadingsExist() {
-        let pingFang = app.buttons["蘋方-繁"]
+        let pingFang = app.buttons["蘋方"]
         XCTAssertTrue(pingFang.waitForExistence(timeout: 5))
         let listTop = pingFang.frame.minY
         XCTAssertTrue(heading("開源字型").waitForExistence(timeout: 5), "120.1")

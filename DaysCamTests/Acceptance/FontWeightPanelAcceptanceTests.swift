@@ -452,19 +452,13 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
 
     /// Row title: a multi-weight font shows the family name alone (expanded
     /// and collapsed, whatever the weight); a single-weight font keeps its
-    /// full name.
-    func testRowTitleShowsOnlyTheFamilyNameForMultiWeightFonts() throws {
-        let family: [OverlayFontID: String] = [
-            .pingFang: "蘋方-繁", .notoSerifTC: "Noto Serif TC", .hiraginoSans: "冬青黑體繁體中文",
-            .songti: "宋體-繁", .kaiti: "楷體-繁", .yuanti: "圓體-繁", .hannotate: "手札體-繁"]
+    /// short name (TASK-148).
+    func testRowTitleShowsTheShortNameForEveryFont() throws {
         let multi = Set(OverlayFontID.allCases.filter {
             FontCatalog.entry(for: $0).weights.count > 1 && FontCatalog.downloadFamiliesByID[$0] == nil
         })
-        XCTAssertEqual(multi, Set(family.keys), "多字重字型的集合與設計一致")
-        // TASK-142 families: a multi-weight one is listed by its short name too.
-        for entry in FontCatalog.entries where FontCatalog.downloadFamiliesByID[entry.fontID] != nil && entry.weights.count > 1 {
-            XCTAssertEqual(FontLibraryModel.listName(of: entry), entry.displayName, "142 \(entry.fontID)")
-        }
+        XCTAssertEqual(multi, [.pingFang, .notoSerifTC, .hiraginoSans, .songti, .kaiti, .yuanti, .hannotate],
+                       "多字重字型的集合與設計一致")
         for selected in [OverlayFontID.pingFang, .notoSerifTC, .songti] {
             let library = StandInLibrary()
             library.fontStates[.notoSerifTC] = .available
@@ -472,11 +466,8 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
                                         profiles: { [] }, applyFont: { _, _ in })
             list.listDidAppear()
             for cell in list.sections.flatMap(\.cells) {
-                if let expected = family[cell.fontID] {
-                    XCTAssertEqual(cell.name, expected, "\(cell.fontID) 選取=\(selected)")
-                } else {
-                    XCTAssertEqual(cell.name, FontCatalog.entry(for: cell.fontID).fullName, "單一字重維持 fullName \(cell.fontID)")
-                }
+                XCTAssertEqual(cell.name, FontCatalog.entry(for: cell.fontID).displayName,
+                               "148.1 \(cell.fontID) 選取=\(selected)")
             }
         }
         // Choosing another weight does not change the title.
@@ -485,7 +476,7 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
         library.weightStates[black()] = .available
         let panel = makePanel(library: library)
         panel.fontList.didTapWeight("black")
-        XCTAssertEqual(try cell(.notoSerifTC, in: panel.fontList).name, "Noto Serif TC")
+        XCTAssertEqual(try cell(.notoSerifTC, in: panel.fontList).name, "思源宋體")
     }
 
     /// A pending face that settles by preparing (no finish event) is applied

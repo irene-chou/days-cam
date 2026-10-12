@@ -27,7 +27,7 @@ final class FontWeightUITests: XCTestCase {
     }
     /// TASK-112: the selected font's weights show only after a tap on its row.
     private func expandSelectedFont() {
-        let row = app.buttons["蘋方-繁"]
+        let row = app.buttons["蘋方"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         if !weight("light").exists { row.tap() }
     }
