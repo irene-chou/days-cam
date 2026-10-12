@@ -134,6 +134,30 @@ final class ImageCropperTests: XCTestCase {
         }
     }
 
+    // MARK: - Half-pixel origins (#502 review)
+
+    /// 5712×4284 (a supported 24 MP format) cut to 9:16 trims 1071 pixels
+    /// off the short side, an odd number, so the window starts on a half
+    /// pixel (535.5). Its size stays whole; only the origin is fractional.
+    ///
+    /// Pixel-alignment rule: `bake` draws the photo at `-origin`, so a half
+    /// pixel origin makes every output pixel an interpolation of two
+    /// neighbouring source rows (columns); `CGImage.cropping(to:)` instead
+    /// rounds the rect out (`integral`) and would be one row taller. The
+    /// reference for such a window is therefore the whole-pixel window of the
+    /// same size at `floor(origin)`, and `bake` may differ from it by at most
+    /// one row's step (`OverlayRendererCropTests`).
+    func test_cropRect_halfPixelOrigin_5712x4284_nineBySixteen() {
+        let landscape = ImageCropper.cropRect(forPixelSize: CGSize(width: 5712, height: 4284), ratio: .nineBySixteen)
+        XCTAssertEqual(landscape, CGRect(x: 0, y: 535.5, width: 5712, height: 3213), "landscape")
+        let portrait = ImageCropper.cropRect(forPixelSize: CGSize(width: 4284, height: 5712), ratio: .nineBySixteen)
+        XCTAssertEqual(portrait, CGRect(x: 535.5, y: 0, width: 3213, height: 5712), "portrait")
+        // `cropping(to:)` would round outward to one row (column) too many,
+        // which is why the reference floors the origin instead.
+        XCTAssertEqual(landscape.integral, CGRect(x: 0, y: 535, width: 5712, height: 3214))
+        XCTAssertEqual(portrait.integral, CGRect(x: 535, y: 0, width: 3214, height: 5712))
+    }
+
     // MARK: - 126.2: the rect is a whole-pixel window the image can be cut to
 
     /// Every ratio, both orientations: at sizes whose crop lands on whole

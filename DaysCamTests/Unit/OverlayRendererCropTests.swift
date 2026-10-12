@@ -101,6 +101,61 @@ final class OverlayRendererCropTests: XCTestCase {
         XCTAssertEqual(lhs.bytes, rhs.bytes)
     }
 
+    /// A smooth photo: red rises along x and green along y, each by at most
+    /// one level per pixel, so a half-pixel shift moves a value by at most
+    /// one level.
+    private func makeGradient(width: Int, height: Int) throws -> UIImage {
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                bytes[index] = UInt8(x * 255 / (width - 1))
+                bytes[index + 1] = UInt8(y * 255 / (height - 1))
+                bytes[index + 2] = 128
+            }
+        }
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let cgImage = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                            bytesPerRow: width * 4, space: space,
+                                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                            provider: provider, decode: nil, shouldInterpolate: false,
+                                            intent: .defaultIntent))
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
+    /// #502 review: a 9:16 window with a half-pixel origin (400×300 → y =
+    /// 37.5, the same odd trim as 5712×4284 → 535.5), landscape and
+    /// portrait. `bake`'s output is exactly the rect's whole-pixel size, and
+    /// its pixels are within one row's step of the whole-pixel window of
+    /// that size at `floor(origin)` (see `ImageCropperTests`): here at most
+    /// 1 level plus 1 for rounding.
+    func test_bakeWithHalfPixelCropRect_isWithinOneRowOfTheFlooredWindow() throws {
+        for (width, height) in [(400, 300), (300, 400)] {
+            let photo = try makeGradient(width: width, height: height)
+            let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: width, height: height), ratio: .nineBySixteen)
+            let label = "\(width)x\(height) \(rect)"
+            XCTAssertNotEqual(rect, rect.integral, "the fixture really has a half-pixel origin: \(label)")
+
+            let baked = try XCTUnwrap(renderer.bake(image: photo, text: "", style: style,
+                                                    placement: .anchor(.bottomTrailing), font: .pingFang,
+                                                    cropRect: rect), label)
+            XCTAssertEqual(normalizedPixelSize(baked), rect.size, "no extra row: \(label)")
+
+            let floored = CGRect(origin: CGPoint(x: rect.minX.rounded(.down), y: rect.minY.rounded(.down)),
+                                 size: rect.size)
+            let reference = try referenceCrop(photo, to: floored)
+            let lhs = try XCTUnwrap(PixelGrid(baked), label)
+            let rhs = try XCTUnwrap(PixelGrid(reference), label)
+            XCTAssertEqual(lhs.bytes.count, rhs.bytes.count, label)
+            var maxDifference = 0
+            for index in 0..<min(lhs.bytes.count, rhs.bytes.count) where index % 4 != 3 {
+                maxDifference = max(maxDifference, abs(Int(lhs.bytes[index]) - Int(rhs.bytes[index])))
+            }
+            XCTAssertLessThanOrEqual(maxDifference, 2, "within one row's step: \(label)")
+        }
+    }
+
     func test_bakeWithNilCropRect_keepsTheWholePhoto() throws {
         let photo = try makePhoto(storedWidth: 800, storedHeight: 600, orientation: .right)
         let output = try XCTUnwrap(renderer.bake(image: photo, text: text, style: style,
