@@ -38,7 +38,7 @@ struct DayCountCalculator {
     /// Day count after applying the counting rule. Can be zero or negative.
     ///
     /// A negative result means the start date is in the future; the display
-    /// layer turns that into "還有 N 天" (#250).
+    /// layer turns that into a countdown, "還有 …" (#250, TASK-140 #487).
     func dayCount(from startDate: DateComponents, rule: CountingRule) -> Int {
         let raw = rawDayDifference(from: startDate)
         switch rule {
@@ -79,18 +79,44 @@ struct DayCountCalculator {
     func elapsedBreakdown(from startDate: DateComponents,
                           units: Set<DisplayUnit>,
                           rule: CountingRule) -> ElapsedBreakdown {
+        breakdown(units: units,
+                  calendarDifference: { calendarDifference($0, from: startDate) },
+                  dayCount: { dayCount(from: startDate, rule: rule) })
+    }
+
+    /// The time left until a future `startDate`, broken into the checked
+    /// `units` the same way as `elapsedBreakdown` (TASK-140 #487).
+    ///
+    /// The calendar difference runs from today to the start date, so month
+    /// arithmetic is anchored on today. Without a year or month unit the
+    /// days come from `-rawDayDifference`: the counting rule plays no part in
+    /// how far away the start is (52.1). All zero when `startDate` is not in
+    /// the future or names no day.
+    func countdownBreakdown(to startDate: DateComponents,
+                            units: Set<DisplayUnit>) -> ElapsedBreakdown {
+        guard rawDayDifference(from: startDate) < 0 else { return ElapsedBreakdown() }
+        return breakdown(units: units,
+                         calendarDifference: { calendarDifference($0, to: startDate) },
+                         dayCount: { -rawDayDifference(from: startDate) })
+    }
+
+    /// Splits an amount into `units` (PRD 0.2 §4.5); shared by the elapsed
+    /// and countdown directions so both follow the same rules.
+    private func breakdown(units: Set<DisplayUnit>,
+                           calendarDifference: (Set<Calendar.Component>) -> DateComponents,
+                           dayCount: () -> Int) -> ElapsedBreakdown {
         var breakdown = ElapsedBreakdown()
         let remainder: Int
         if units.contains(.year) || units.contains(.month) {
             var components: Set<Calendar.Component> = [.day]
             if units.contains(.year) { components.insert(.year) }
             if units.contains(.month) { components.insert(.month) }
-            let difference = calendarDifference(components, from: startDate)
+            let difference = calendarDifference(components)
             breakdown.years = difference.year ?? 0
             breakdown.months = difference.month ?? 0
             remainder = difference.day ?? 0
         } else {
-            remainder = dayCount(from: startDate, rule: rule)
+            remainder = dayCount()
         }
 
         if units.contains(.week) {
@@ -108,6 +134,14 @@ struct DayCountCalculator {
                                     from startDate: DateComponents) -> DateComponents {
         guard let fromMidnight = startOfStartDate(startDate) else { return DateComponents() }
         return calendar.dateComponents(components, from: fromMidnight, to: calendar.startOfDay(for: now()))
+    }
+
+    /// `Calendar`'s difference in `components` from today to `startDate`,
+    /// all zero when `startDate` names no day.
+    private func calendarDifference(_ components: Set<Calendar.Component>,
+                                    to startDate: DateComponents) -> DateComponents {
+        guard let toMidnight = startOfStartDate(startDate) else { return DateComponents() }
+        return calendar.dateComponents(components, from: calendar.startOfDay(for: now()), to: toMidnight)
     }
 
     /// Local midnight on `startDate`, or nil when it names no day.

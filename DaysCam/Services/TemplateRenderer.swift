@@ -7,9 +7,11 @@ import Foundation
 /// elsewhere without this type changing. Never read the system clock in here:
 /// `capturedAt` is the only time source (PRD FR-2.18, §6.5.3).
 struct TemplateRenderer {
-    /// Shown instead of a count when the start date has not arrived yet:
-    /// `還有 N 天`, `daysUntilStart` calendar days away (#250, replacing
-    /// PRD §7.2's 尚未開始). Always in days, whatever the units or wording.
+    /// Shown instead of a count when the start date has not arrived yet and
+    /// the checked units leave nothing to show: `還有 N 天`, `daysUntilStart`
+    /// calendar days away (#250, replacing PRD §7.2's 尚未開始). Other
+    /// settings read in the checked units, e.g. `還有 3 個月又 4 天`
+    /// (TASK-140 #487).
     static func notStartedText(daysUntilStart: Int) -> String {
         "還有 \(daysUntilStart) 天"
     }
@@ -74,7 +76,7 @@ private extension TemplateRenderer {
         // start date tomorrow reads 還有 1 天 under either rule.
         let rawDifference = calculator.rawDayDifference(from: profile.startDate)
         guard rawDifference >= 0 else {
-            return Self.notStartedText(daysUntilStart: -rawDifference)
+            return countdownText(profile: profile, calculator: calculator, daysUntilStart: -rawDifference)
         }
 
         let units = profile.displayUnits
@@ -89,17 +91,37 @@ private extension TemplateRenderer {
         let breakdown = calculator.elapsedBreakdown(from: profile.startDate,
                                                     units: units,
                                                     rule: profile.countingRule)
-        // U-1 order; U-7 drops zero units.
+        guard let text = unitText(breakdown, units: units, useAgeWording: profile.useAgeWording) else {
+            return allZeroText(units: units, useAgeWording: profile.useAgeWording)
+        }
+        return text
+    }
+
+    /// The time left before a future start date in the checked units
+    /// (TASK-140 #487, replacing #250's days-only 52.3): `還有 ` followed by
+    /// the same segments and separator as the elapsed amount. Years always
+    /// read 年 — an age that has not started is not an age. When every
+    /// checked unit is zero, and for day only, it is `還有 N 天` rather than
+    /// a meaningless `還有 0 年`.
+    func countdownText(profile: CameraProfile, calculator: DayCountCalculator, daysUntilStart: Int) -> String {
+        let units = profile.displayUnits
+        let breakdown = calculator.countdownBreakdown(to: profile.startDate, units: units)
+        guard let text = unitText(breakdown, units: units, useAgeWording: false) else {
+            return Self.notStartedText(daysUntilStart: daysUntilStart)
+        }
+        return "還有 \(text)"
+    }
+
+    /// The non-zero checked units of `breakdown` in U-1 order (U-7 drops
+    /// zero units), joined per U-8; nil when every one is zero.
+    func unitText(_ breakdown: ElapsedBreakdown, units: Set<DisplayUnit>, useAgeWording: Bool) -> String? {
         let segments: [String] = DisplayUnit.allCases.compactMap { unit in
             guard units.contains(unit) else { return nil }
             let value = breakdown.value(of: unit)
             guard value != 0 else { return nil }
-            return "\(value) \(label(for: unit, useAgeWording: profile.useAgeWording))"
+            return "\(value) \(label(for: unit, useAgeWording: useAgeWording))"
         }
-        guard !segments.isEmpty else {
-            return allZeroText(units: units, useAgeWording: profile.useAgeWording)
-        }
-        return segments.joined(separator: separator(for: units))
+        return segments.isEmpty ? nil : segments.joined(separator: separator(for: units))
     }
 
     /// Shown when every checked unit is zero (PRD 0.2 U-7, TASK-93 #392): `0`
