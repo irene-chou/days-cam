@@ -1251,6 +1251,30 @@ final class CameraServiceLowLatencyCaptureTests: XCTestCase {
                        "shutterToWillCapture=n/a shutterToDidFinishCapture=500ms", "143.2 no willCapture")
     }
 
+    /// 145.1: with slow work already queued, the shutter's start time is
+    /// read on the press, before that work finishes — not when the queue
+    /// reaches the capture.
+    func testShutterStartIsReadBeforeQueuedWorkFinishes() throws {
+        let queue = DispatchQueue(label: "test.session")
+        let queuedWorkFinished = OSAllocatedUnfairLock<CFAbsoluteTime?>(initialState: nil)
+        queue.async {
+            Thread.sleep(forTimeInterval: 0.2)
+            queuedWorkFinished.withLock { $0 = CFAbsoluteTimeGetCurrent() }
+        }
+        let ran = expectation(description: "capture work ran")
+        var start: CFAbsoluteTime = 0
+        var finishedBeforeCapture: CFAbsoluteTime?
+        CameraService.schedule(on: queue) { shutterPressedAt in
+            start = shutterPressedAt
+            finishedBeforeCapture = queuedWorkFinished.withLock { $0 }
+            ran.fulfill()
+        }
+        wait(for: [ran], timeout: 2)
+        let finished = try XCTUnwrap(finishedBeforeCapture, "the queued work ran first")
+        XCTAssertLessThan(start, finished, "145.1 the start precedes the queued work's end")
+        XCTAssertGreaterThanOrEqual(finished - start, 0.15, "145.1 the queue wait is inside the measured lag")
+    }
+
     /// 130.1: a camera swap that drops support turns the features off again.
     func testFeaturesFollowSupportAfterACameraSwap() {
         let output = FakePhotoOutput()
