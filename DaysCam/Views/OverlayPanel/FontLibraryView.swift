@@ -26,6 +26,9 @@ struct FontListView: View {
     static let weightTextSize: CGFloat = 15
     static let weightButtonSpacing: CGFloat = 8
     static let cardCornerRadius: CGFloat = 12
+    /// How far the card background is inset from the top and bottom of its
+    /// rows: a visual gap that takes no layout height (TASK-123).
+    static let cardInset: CGFloat = 2
     /// The selection bar left of the name.
     static let selectionBarWidth: CGFloat = 3
     /// The chevron's tap area (TASK-115, 115.8): at least 44×44pt.
@@ -128,8 +131,12 @@ struct FontListView: View {
                 }
             }
             .clipped()
+            // The gap to the rows above and below comes from the inset
+            // background, never from layout padding: selecting a row must not
+            // change its height (TASK-123).
             .background(RoundedRectangle(cornerRadius: Self.cardCornerRadius)
-                .fill(CameraTheme.active.opacity(0.12)))
+                .fill(CameraTheme.active.opacity(0.12))
+                .padding(.vertical, Self.cardInset))
             .overlay(alignment: .topLeading) {
                 Capsule()
                     .fill(CameraTheme.active)
@@ -137,7 +144,6 @@ struct FontListView: View {
                     .padding(.top, 12)
                     .padding(.leading, 4)
             }
-            .padding(.vertical, 6)
         } else if cell.isExpanded {
             VStack(spacing: 0) {
                 rowView(cell, showsSeparator: false)
@@ -146,8 +152,8 @@ struct FontListView: View {
             }
             .clipped()
             .background(RoundedRectangle(cornerRadius: Self.cardCornerRadius)
-                .fill(CameraTheme.ink.opacity(0.04)))
-            .padding(.vertical, 6)
+                .fill(CameraTheme.ink.opacity(0.04))
+                .padding(.vertical, Self.cardInset))
         } else {
             rowView(cell, showsSeparator: showsSeparator)
         }
