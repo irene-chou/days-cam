@@ -206,6 +206,42 @@ final class FontCatalogDownloadFamiliesTests: XCTestCase {
               "0193f5f033612496df6b45ee92ac3b335bc6a5a24ff95da55ca87b33e57dcf62")]),
     ]
 
+    /// Full and family names read from each default face's name table:
+    /// Traditional Chinese record (0x404) first, else English; no version
+    /// (PRD-0.3 FR-16.4, TASK-78).
+    private let names: [OverlayFontID: (full: String, family: String)] = [
+        .notoSansTC: ("Noto Sans TC Bold", "Noto Sans TC"),
+        .taipeiSans: ("Taipei Sans TC Beta Bold", "Taipei Sans TC Beta"),
+        .genSeki: ("源石黑體月 B", "源石黑體月"),
+        .chironHei: ("Chiron Hei HK Bold", "Chiron Hei HK"),
+        .chocolateSans: ("朱古力黑體", "朱古力黑體"),
+        .glowSans: ("未來熒黑 Normal Bold", "未來熒黑"),
+        .genSen: ("源泉圓體月 B", "源泉圓體月"),
+        .sweiGothic: ("獅尾圓體-Bold", "獅尾圓體"),
+        .chironGoRound: ("Chiron GoRound TC Bold", "Chiron GoRound TC"),
+        .genWan: ("源雲明體月 SB", "源雲明體月"),
+        .genRyu: ("源流明體月 B", "源流明體月"),
+        .sweiSpring: ("獅尾四季春-Bold", "獅尾四季春"),
+        .sweiSugar: ("獅尾加糖宋體-Bold", "獅尾加糖宋體"),
+        .chironSung: ("Chiron Sung HK Bold", "Chiron Sung HK"),
+        .cactusSerif: ("仙人掌明體", "仙人掌明體"),
+        .twSung: ("全字庫正宋體", "全字庫正宋體"),
+        .thenKhung: ("宇文天穹", "宇文天穹"),
+        .lxgwWenKai: ("LXGW WenKai TC Medium", "霞鶩文楷 TC"),
+        .twKai: ("全字庫正楷體", "全字庫正楷體"),
+        .eduKai: ("教育部標準楷書", "教育部標準楷書"),
+        .arphicUKai: ("AR PL UKai TW", "AR PL UKai TW"),
+        .naikai: ("内海フォント-Bold", "內海字體"),
+        .xiaolai: ("Xiaolai", "小賴字體"),
+        .yozai: ("Yozai Medium", "Yozai"),
+        .nani: ("何某手寫-Bold", "何某手寫"),
+        .lxgwMarker: ("LXGW Marker Gothic Regular", "LXGW Marker Gothic"),
+        .kurewa: ("苦累蛙圓體 CJK TC-Bold", "苦累蛙圓體 CJK TC"),
+        .popGothic: ("大波浪圓體 CJK TC-Bold", "大波浪圓體 CJK TC"),
+        .wdxl: ("WD-XL 滑油字 TC", "WD-XL 滑油字 TC"),
+        .cubic11: ("俐方體11號", "俐方體11號")
+    ]
+
     // MARK: - 142.1
 
     /// 142.1: all 30 families are in the library's open-source group, typed
@@ -248,6 +284,21 @@ final class FontCatalogDownloadFamiliesTests: XCTestCase {
         let names = Set(FontCatalog.entries.map(\.displayName))
         for banned in ["清松手寫體", "莫大毛筆", "正風毛筆"] {
             XCTAssertFalse(names.contains(banned), banned)
+        }
+    }
+
+    /// 142.1 / FR-16.4: list name, VoiceOver name and preview text of every
+    /// family are the name-table names, not the short display name.
+    func test_acceptance_142_1_listNamesAreTheNameTableNames() throws {
+        XCTAssertEqual(Set(names.keys), Set(expected.map(\.fontID)))
+        for item in expected {
+            let entry = FontCatalog.entry(for: item.fontID)
+            let name = try XCTUnwrap(names[item.fontID])
+            XCTAssertEqual(entry.fullName, name.full, "\(item.fontID)")
+            XCTAssertEqual(FontLibraryModel.listName(of: entry), entry.weights.count > 1 ? name.family : name.full,
+                           "\(item.fontID)")
+            XCTAssertFalse(entry.fullName.isEmpty)
+            XCTAssertNotNil(UIImage(named: item.fontID.rawValue), "\(item.fontID) 預覽圖")
         }
     }
 

@@ -375,7 +375,7 @@ final class FontLibraryModel: ObservableObject {
         case .kaiti: return "楷體-繁"
         case .yuanti: return "圓體-繁"
         case .hannotate: return "手札體-繁"
-        default: return entry.displayName
+        default: return FontCatalog.downloadFamiliesByID[entry.fontID]?.listName ?? entry.displayName
         }
     }
 

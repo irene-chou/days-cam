@@ -461,9 +461,9 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
             FontCatalog.entry(for: $0).weights.count > 1 && FontCatalog.downloadFamiliesByID[$0] == nil
         })
         XCTAssertEqual(multi, Set(family.keys), "多字重字型的集合與設計一致")
-        // TASK-142 families: a multi-weight one is listed by its short name too.
+        // TASK-142 families: a multi-weight one is listed by its family name from the name table.
         for entry in FontCatalog.entries where FontCatalog.downloadFamiliesByID[entry.fontID] != nil && entry.weights.count > 1 {
-            XCTAssertEqual(FontLibraryModel.listName(of: entry), entry.displayName, "142 \(entry.fontID)")
+            XCTAssertEqual(FontLibraryModel.listName(of: entry), FontCatalog.downloadFamiliesByID[entry.fontID]?.listName, "142 \(entry.fontID)")
         }
         for selected in [OverlayFontID.pingFang, .notoSerifTC, .songti] {
             let library = StandInLibrary()
@@ -474,6 +474,8 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
             for cell in list.sections.flatMap(\.cells) {
                 if let expected = family[cell.fontID] {
                     XCTAssertEqual(cell.name, expected, "\(cell.fontID) 選取=\(selected)")
+                } else if let downloadFamily = FontCatalog.downloadFamiliesByID[cell.fontID], downloadFamily.faces.count > 1 {
+                    XCTAssertEqual(cell.name, downloadFamily.listName, "142 多字重只列家族名 \(cell.fontID)")
                 } else {
                     XCTAssertEqual(cell.name, FontCatalog.entry(for: cell.fontID).fullName, "單一字重維持 fullName \(cell.fontID)")
                 }

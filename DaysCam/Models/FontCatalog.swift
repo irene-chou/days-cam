@@ -162,9 +162,9 @@ struct FontCatalogEntry: Equatable, Hashable, Sendable {
         case .baoli: return "報隸-繁 標準體"
         case .wawa: return "娃娃體-繁 標準體"
         case .yuppy: return "雅痞-繁 標準體"
-        // TASK-142 families: the short Chinese name; the weight is read from
-        // the buttons of the expanded row.
-        default: return displayName
+        // TASK-142 families: the name table's full name (Traditional Chinese
+        // record first, no version), like 粉圓 above.
+        default: return FontCatalog.downloadFamiliesByID[fontID]?.fullName ?? displayName
         }
     }
 
