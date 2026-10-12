@@ -457,8 +457,14 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
         let family: [OverlayFontID: String] = [
             .pingFang: "蘋方-繁", .notoSerifTC: "Noto Serif TC", .hiraginoSans: "冬青黑體繁體中文",
             .songti: "宋體-繁", .kaiti: "楷體-繁", .yuanti: "圓體-繁", .hannotate: "手札體-繁"]
-        let multi = Set(OverlayFontID.allCases.filter { FontCatalog.entry(for: $0).weights.count > 1 })
+        let multi = Set(OverlayFontID.allCases.filter {
+            FontCatalog.entry(for: $0).weights.count > 1 && FontCatalog.downloadFamiliesByID[$0] == nil
+        })
         XCTAssertEqual(multi, Set(family.keys), "多字重字型的集合與設計一致")
+        // TASK-142 families: a multi-weight one is listed by its short name too.
+        for entry in FontCatalog.entries where FontCatalog.downloadFamiliesByID[entry.fontID] != nil && entry.weights.count > 1 {
+            XCTAssertEqual(FontLibraryModel.listName(of: entry), entry.displayName, "142 \(entry.fontID)")
+        }
         for selected in [OverlayFontID.pingFang, .notoSerifTC, .songti] {
             let library = StandInLibrary()
             library.fontStates[.notoSerifTC] = .available
