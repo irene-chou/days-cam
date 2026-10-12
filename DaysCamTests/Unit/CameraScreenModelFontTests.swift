@@ -155,7 +155,7 @@ final class CameraScreenModelFontTests: XCTestCase {
                              fontB: OverlayFontID = .pingFang,
                              states: [OverlayFontID: FontState] = [:],
                              timeout: TimeInterval = 3,
-                             bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { _, _, _, _, _ in UIImage() },
+                             bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
                              captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
@@ -174,7 +174,7 @@ final class CameraScreenModelFontTests: XCTestCase {
             capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)),
             calendar: DateFixture.taipei,
             calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
-            crop: { image, _ in image },
+            cropRect: { size, _ in CGRect(origin: .zero, size: size) },
             bake: bake,
             save: { _, completion in completion(.success("asset")) },
             captureImage: captureImage,
@@ -369,7 +369,7 @@ final class CameraScreenModelFontTests: XCTestCase {
         let baked = expectation(description: "baked")
         let harness = try makeHarness(
             fontA: font, states: [font: .available],
-            bake: { _, _, _, _, resolved in
+            bake: { _, _, _, _, resolved, _ in
                 received.value = resolved
                 baked.fulfill()
                 return UIImage()

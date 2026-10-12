@@ -1531,7 +1531,7 @@ extension CameraService {
 /// at a time, and this keeps the instrumentation out of the control flow.
 enum CaptureTiming {
     enum Stage: Int, CaseIterable {
-        case processed, cropped, baked, saved
+        case processed, baked, saved
     }
 
     private struct State {

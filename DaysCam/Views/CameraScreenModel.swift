@@ -83,12 +83,13 @@ final class CameraScreenModel: ObservableObject {
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
-    /// Crops a captured 4:3 photo to `captureSettingsStore.captureAspectRatio`
-    /// before it is baked (PRD 0.2 FR-5.7′: "先裁再烘焙"). Defaults to the
-    /// real `ImageCropper`. Injectable so tests can confirm the pipeline
-    /// crops before baking without depending on real pixel math (already
-    /// covered by `ImageCropperTests`).
-    private let crop: (UIImage, CaptureAspectRatio) -> UIImage
+    /// Picks the crop window for a captured photo of the given pixel size at
+    /// `captureSettingsStore.captureAspectRatio` (PRD 0.2 FR-5.7′). The
+    /// window is handed to `bake`, which crops and draws in one pass
+    /// (TASK-128). Defaults to `ImageCropper.cropRect`. Injectable so tests
+    /// can confirm what `bake` receives without depending on real pixel math
+    /// (already covered by `ImageCropperTests`).
+    private let cropRect: (CGSize, CaptureAspectRatio) -> CGRect
     /// Drives the timer countdown (PRD 0.2 FR-7.6). Defaults to the real
     /// `SystemCountdownTicker`. Injectable so tests can advance the
     /// countdown one tick at a time instead of waiting on a real clock.
@@ -225,7 +226,7 @@ final class CameraScreenModel: ObservableObject {
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage?
 
     /// Saves a baked photo to the system photo library, returning its new
     /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
@@ -237,7 +238,7 @@ final class CameraScreenModel: ObservableObject {
     /// Fires the actual shutter. Defaults to `cameraService.capturePhoto`
     /// (set in `init` rather than in the parameter list, since the default
     /// has to close over the specific `cameraService` instance this model
-    /// was built with — unlike `bake`/`save`/`crop`, which each construct an
+    /// was built with — unlike `bake`/`save`/`cropRect`, which each construct an
     /// unrelated fresh object). Injectable so `CameraScreenModelTests` can
     /// exercise the countdown state machine (acceptance 19.8–19.10) end to
     /// end without needing `cameraService.status == .running`, which — like
@@ -305,12 +306,12 @@ final class CameraScreenModel: ObservableObject {
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
-         crop: @escaping (UIImage, CaptureAspectRatio) -> UIImage = { image, aspectRatio in
-             ImageCropper().crop(image, to: aspectRatio)
+         cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { pixelSize, aspectRatio in
+             ImageCropper.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont) -> UIImage? = { image, text, style, placement, font in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font)
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { image, text, style, placement, font, cropRect in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
@@ -385,7 +386,7 @@ final class CameraScreenModel: ObservableObject {
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
-        self.crop = crop
+        self.cropRect = cropRect
         self.countdownTicker = countdownTicker
         self.bake = bake
         self.save = save
@@ -1209,7 +1210,7 @@ extension CameraScreenModel {
         // rather than starting from (and asserting against) a value nobody
         // in the test ever set.
         isCapturing = true
-        let crop = self.crop
+        let cropRect = self.cropRect
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
@@ -1219,13 +1220,15 @@ extension CameraScreenModel {
             // per bake — without this, memory piles up across rapid presses
             // (PRD acceptance 10.22) instead of being reclaimed between them.
             let baked = autoreleasepool { () -> UIImage? in
-                // Crop first, then bake (PRD 0.2 FR-5.7′): the overlay's
-                // margin and font size are derived from the *cropped*
-                // image's short edge, matching what the viewfinder already
-                // showed for the same aspect ratio (FR-5.9, FR-5.11).
-                let cropped = crop(image, aspectRatio)
-                CaptureTiming.mark(.cropped)
-                return bake(cropped, context.text, context.style, context.placement, context.font)
+                // One pass: `bake` crops to the window and draws the overlay
+                // (PRD 0.2 FR-5.7′). The overlay's margin and font size are
+                // derived from the *cropped* canvas's short edge, matching
+                // what the viewfinder already showed for the same aspect
+                // ratio (FR-5.9, FR-5.11).
+                let pixelSize = CGSize(width: image.size.width * image.scale,
+                                       height: image.size.height * image.scale)
+                let window = cropRect(pixelSize, aspectRatio)
+                return bake(image, context.text, context.style, context.placement, context.font, window)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
@@ -1276,18 +1279,42 @@ extension CameraScreenModel {
         }
     }
 
-    /// Longest side of the picture used for the flight animation.
-    static let flightImageMaxDimension: CGFloat = 600
+    /// Longest side of the picture used for the flight animation, in points.
+    /// The picture is drawn at its start frame for a moment and then shrinks,
+    /// so it is sized for the animation, not for the full viewfinder.
+    static let flightImageMaxDimension: CGFloat = 300
+
+    /// Longest side of the toast / footer thumbnail, in points. The tile
+    /// those two show is 44pt and aspect-fills, so 88pt keeps the short side
+    /// at 44pt or more down to a 1:2 photo.
+    static let thumbnailMaxDimension: CGFloat = 88
 
     /// A small copy of `image`, for the toast (PRD FR-5.4) — never the
     /// full-resolution baked photo.
-    static func thumbnail(of image: UIImage, maxDimension: CGFloat = 88) -> UIImage {
-        let largestSide = max(image.size.width, image.size.height)
-        guard largestSide > maxDimension else { return image }
-        let scale = maxDimension / largestSide
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    ///
+    /// `maxDimension` is in points; the bitmap is `maxDimension * scale`
+    /// pixels on its longest side and the returned image carries that
+    /// `scale`, so it displays sharp at `maxDimension` points and is not
+    /// multiplied by the screen scale a second time (#468). `scale` defaults
+    /// to the main screen's.
+    static func thumbnail(of image: UIImage,
+                          maxDimension: CGFloat = thumbnailMaxDimension,
+                          scale: CGFloat = UIScreen.main.scale) -> UIImage {
+        let sourcePixels = CGSize(width: image.size.width * image.scale,
+                                  height: image.size.height * image.scale)
+        let targetPixels = maxDimension * scale
+        let largestSide = max(sourcePixels.width, sourcePixels.height)
+        guard largestSide > targetPixels else { return image }
+        let ratio = targetPixels / largestSide
+        let pixelSize = CGSize(width: max(1, (sourcePixels.width * ratio).rounded()),
+                               height: max(1, (sourcePixels.height * ratio).rounded()))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let drawn = UIGraphicsImageRenderer(size: pixelSize, format: format)
+            .image { _ in image.draw(in: CGRect(origin: .zero, size: pixelSize)) }
+        guard let cgImage = drawn.cgImage else { return drawn }
+        return UIImage(cgImage: cgImage, scale: scale, orientation: .up)
     }
 }
 
