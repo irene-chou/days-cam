@@ -1684,7 +1684,6 @@ final class CaptureTimingRecorder {
 
     private struct State {
         var records: [UUID: Record] = [:]
-        var idsByPhoto: [ObjectIdentifier: UUID] = [:]
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -1710,29 +1709,26 @@ final class CaptureTimingRecorder {
         }
     }
 
-    /// Records that capture `id` produced `photo`, so later stages can find
-    /// it by the photo alone.
-    func markProcessed(id: UUID, photo: ObjectIdentifier, size: CGSize, at now: CFAbsoluteTime) {
+    /// Records that capture `id` produced its photo, of `size` pixels.
+    func markProcessed(id: UUID, size: CGSize, at now: CFAbsoluteTime) {
         state.withLock { state in
             guard state.records[id] != nil else { return }
             state.records[id]?.marks[.processed] = now
             state.records[id]?.size = size
-            state.idsByPhoto[photo] = id
         }
     }
 
-    /// Records that `stage` of `photo` finished at `now`. Returns the one-line
-    /// summary when `.saved` completes the capture, and forgets it.
-    func mark(_ stage: Stage, photo: ObjectIdentifier, at now: CFAbsoluteTime) -> String? {
+    /// Records that `stage` of capture `id` finished at `now`. Returns the
+    /// one-line summary when `.saved` completes the capture, and forgets it.
+    func mark(_ stage: Stage, id: UUID, at now: CFAbsoluteTime) -> String? {
         state.withLock { state in
-            guard let id = state.idsByPhoto[photo], var record = state.records[id] else { return nil }
+            guard var record = state.records[id] else { return nil }
             record.marks[stage] = now
             guard stage == .saved else {
                 state.records[id] = record
                 return nil
             }
             state.records[id] = nil
-            state.idsByPhoto[photo] = nil
             var previous = record.start
             var parts: [String] = []
             for stage in Stage.allCases {
@@ -1746,19 +1742,10 @@ final class CaptureTimingRecorder {
         }
     }
 
-    /// Forgets a capture that will not reach `.saved` (failed or timed out).
-    func discard(photo: ObjectIdentifier) {
-        state.withLock { state in
-            if let id = state.idsByPhoto.removeValue(forKey: photo) { state.records[id] = nil }
-        }
-    }
-
-    /// Forgets a capture that never produced a photo.
+    /// Forgets a capture that will not reach `.saved` (failed, timed out or
+    /// never produced a photo).
     func discard(id: UUID) {
-        state.withLock { state in
-            state.records[id] = nil
-            state.idsByPhoto = state.idsByPhoto.filter { $0.value != id }
-        }
+        state.withLock { $0.records[id] = nil }
     }
 }
 
@@ -1807,37 +1794,41 @@ enum CaptureTiming {
         return "shutterToWillCapture=\(willCapture.map(milliseconds) ?? "n/a") shutterToDidFinishCapture=\(milliseconds(finished))"
     }
 
-    /// DEBUG only: capture `id` produced `image`; later stages look it up by
-    /// the image's identity.
+    /// The key `timingID(of:)` reads the capture ID back with.
+    private static let timingIDKey = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
+
+    /// DEBUG only: capture `id` produced `image`. The ID travels on the image
+    /// itself (not on its memory address, which a later photo may reuse), so
+    /// the bake and save stages can find their capture again.
     static func markProcessed(id: UUID, image: UIImage) {
         #if DEBUG
-        recorder.markProcessed(id: id, photo: ObjectIdentifier(image),
+        objc_setAssociatedObject(image, timingIDKey, id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        recorder.markProcessed(id: id,
                                size: CGSize(width: image.size.width * image.scale,
                                             height: image.size.height * image.scale),
                                at: CFAbsoluteTimeGetCurrent())
         #endif
     }
 
-    /// DEBUG only: `stage` of the photo identified by `photo` finished now.
-    /// Logs once `.saved` is marked.
-    static func mark(_ stage: Stage, for photo: ObjectIdentifier) {
+    /// The capture ID `markProcessed(id:image:)` attached to `image`; nil in
+    /// release builds and for images the camera did not capture.
+    static func timingID(of image: UIImage) -> UUID? {
+        objc_getAssociatedObject(image, timingIDKey) as? UUID
+    }
+
+    /// DEBUG only: `stage` of capture `id` finished now. Logs once `.saved`
+    /// is marked.
+    static func mark(_ stage: Stage, id: UUID?) {
         #if DEBUG
-        guard let line = recorder.mark(stage, photo: photo, at: CFAbsoluteTimeGetCurrent()) else { return }
+        guard let id, let line = recorder.mark(stage, id: id, at: CFAbsoluteTimeGetCurrent()) else { return }
         logger.debug("\(line, privacy: .public)")
         #endif
     }
 
-    /// DEBUG only: the photo will not reach `.saved`.
-    static func discard(_ photo: ObjectIdentifier) {
+    /// DEBUG only: capture `id` will not reach `.saved`.
+    static func discard(id: UUID?) {
         #if DEBUG
-        recorder.discard(photo: photo)
-        #endif
-    }
-
-    /// DEBUG only: the capture never produced a photo.
-    static func discard(id: UUID) {
-        #if DEBUG
-        recorder.discard(id: id)
+        if let id { recorder.discard(id: id) }
         #endif
     }
 }
