@@ -11,6 +11,7 @@
 | 2026-10-10 | 免費、全地區 | MVP 排除 IAP（PRD 排除項） |
 | 2026-10-10 | 隱私權政策與支援頁放 GitHub Pages | 網址見下表 |
 | 2026-10-10 | 出口管制申報 `ITSAppUsesNonExemptEncryption = false` | 只用 HTTPS 下載字型，屬豁免 |
+| 2026-10-12 | Apple Developer Program 已開通，Team ID 維持 `W5937V2WUF`；版本升 1.0.0 | `project.yml`、`scripts/ExportOptions.plist` 不必改 Team；`MARKETING_VERSION: "1.0.0"`（`chore/bump-1.0.0`） |
 
 ## 送審前檢查表
 
@@ -21,8 +22,8 @@
 | Release 不含除錯時鐘與 UI 測試旗標 | ✅ | `DAYSCAM_FAKE_TODAY`、`-UITest*` 都在 `#if DEBUG`（TASKS 0.1 §10.4） |
 | App 圖示 | ✅ | `AppIcon.png` 1024×1024、無 alpha、未預切圓角（#383） |
 | 字型授權 | ✅ | OFL／Apache 全文內建於字型頁；下載的是字型檔不是程式碼 |
-| 版本號 `1.0.0` | ⏳ | 由 Lead 開 `chore/bump-1.0.0`（觸發 `swift.yml` 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
-| Apple Developer Program 會員 | ⏳ 人類 | 若付費團隊的 Team ID 與 `W5937V2WUF` 不同，Lead 同步改 `project.yml` 的 `DEVELOPMENT_TEAM` 與 `scripts/ExportOptions.plist` 的 `teamID` |
+| 版本號 `1.0.0` | ✅ | `chore/bump-1.0.0`（CI 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
+| Apple Developer Program 會員 | ✅ | 2026-10-12 開通，Team ID 與 `W5937V2WUF` 相同，`project.yml` 與 `scripts/ExportOptions.plist` 不必改 |
 | TestFlight 實機驗收 | ⏳ 人類 | 下方「實機驗收」 |
 | 截圖、商店資料 | ⏳ 人類 | 下方「要填的資料」 |
 
