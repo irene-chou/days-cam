@@ -277,6 +277,13 @@ final class FontFaceCache: @unchecked Sendable {
         return font
     }
 
+    /// How many names currently have a cached result.
+    var cachedCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return faces.count
+    }
+
     /// Drops every cached result.
     func invalidate() {
         lock.lock()

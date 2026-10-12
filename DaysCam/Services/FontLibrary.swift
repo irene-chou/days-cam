@@ -361,6 +361,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
         let url = storedFileURL(for: fontID)
         if fileManager.fileExists(atPath: url.path) {
             registrar.unregister(fontAt: url)
+            OverlayMetrics.invalidateFontCache()
             try? fileManager.removeItem(at: url)
             guard !fileManager.fileExists(atPath: url.path) else { return false }
         }
@@ -456,6 +457,9 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
 
     private func setState(_ newState: FontState, for fontID: FontDownloadID) {
         guard weightStates[fontID] != newState else { return }
+        // Registration may have changed since the last font lookup; drop cached
+        // results before observers see the new state and resolve fonts again.
+        OverlayMetrics.invalidateFontCache()
         weightStates[fontID] = newState
         if isDefault(fontID) { states[fontID.fontID] = newState }
         if newState != .preparing, let waiters = settleWaiters.removeValue(forKey: fontID) {
@@ -605,6 +609,7 @@ private extension FontLibrary {
         do {
             if fileManager.fileExists(atPath: destination.path) {
                 registrar.unregister(fontAt: destination)
+                OverlayMetrics.invalidateFontCache()
                 try fileManager.removeItem(at: destination)
             }
             try fileManager.moveItem(at: temporaryURL, to: destination)
@@ -623,7 +628,10 @@ private extension FontLibrary {
         }.value
         guard isCurrent(operation, for: fontID) else {
             // Cancelled or deleted while registering: leave nothing behind.
-            if registered { registrar.unregister(fontAt: destination) }
+            if registered {
+                registrar.unregister(fontAt: destination)
+                OverlayMetrics.invalidateFontCache()
+            }
             try? fileManager.removeItem(at: destination)
             return
         }
@@ -684,7 +692,6 @@ private extension FontLibrary {
         let newMarker: String?
     }
 
-    /// `valid` means verified *and* already registered.
     /// The stored verification marker for `fontID`'s file, if any.
     func storedMarker(for fontID: FontDownloadID) -> String? {
         defaults.dictionary(forKey: Self.verificationMarkersKey)?[storedFileURL(for: fontID).lastPathComponent] as? String
@@ -698,6 +705,7 @@ private extension FontLibrary {
         defaults.set(markers, forKey: Self.verificationMarkersKey)
     }
 
+    /// `valid` means verified *and* already registered.
     enum PreparationOutcome: Sendable { case missing, corrupt, registrationFailed, valid }
 
     func finishPreparation(_ fontID: FontDownloadID, operation: Operation, outcome: PreparationOutcome) {
