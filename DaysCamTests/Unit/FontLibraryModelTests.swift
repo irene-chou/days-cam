@@ -111,8 +111,14 @@ final class FontLibraryModelTests: XCTestCase {
     func testNotDownloadedFontsFollowInTwoSourceGroups() throws {
         let model = makeModel(library: FakeFontLibrary())
         XCTAssertEqual(model.sections.dropFirst().compactMap(\.title), ["開源字型", "系統字型"], "120.1")
-        XCTAssertEqual(try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID),
-                       [.huninn, .notoSerifTC, .iansui, .chenyuluoyan], "120.1 粉圓、思源宋體、芫荽、辰宇落雁體")
+        let open = try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID)
+        XCTAssertEqual(open.count, 34, "120.1 四套原有加上 TASK-142 的 30 套都在開源字型組")
+        XCTAssertTrue(open.allSatisfy { FontCatalog.entry(for: $0).source == .openSource })
+        let openRanks = open.map { FontStyleCategory.allCases.firstIndex(of: FontCatalog.entry(for: $0).category)! }
+        XCTAssertEqual(openRanks, openRanks.sorted(), "120.1 開源字型依 黑→圓→宋→楷→手寫→書法→可愛")
+        XCTAssertLessThan(try XCTUnwrap(open.firstIndex(of: .huninn)), try XCTUnwrap(open.firstIndex(of: .notoSerifTC)), "圓在宋前")
+        XCTAssertLessThan(try XCTUnwrap(open.firstIndex(of: .notoSerifTC)), try XCTUnwrap(open.firstIndex(of: .iansui)), "宋在楷前")
+        XCTAssertLessThan(try XCTUnwrap(open.firstIndex(of: .iansui)), try XCTUnwrap(open.firstIndex(of: .chenyuluoyan)), "楷在手寫前")
         let system = try XCTUnwrap(section(.system, in: model)).cells.map(\.fontID)
         let ranks = system.map { FontStyleCategory.allCases.firstIndex(of: FontCatalog.entry(for: $0).category)! }
         XCTAssertEqual(ranks, ranks.sorted(), "120.1 系統字型依 黑→圓→宋→楷→手寫→書法→可愛")
@@ -128,7 +134,9 @@ final class FontLibraryModelTests: XCTestCase {
                                                          .huninn: .available, .songti: .available]))
         XCTAssertEqual(model.sections[0].cells.map(\.fontID), [.pingFang, .huninn, .notoSerifTC, .songti, .kaiti], "120.2")
         XCTAssertEqual(model.sections.compactMap(\.title), ["開源字型", "系統字型"])
-        XCTAssertEqual(try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID), [.iansui, .chenyuluoyan])
+        let remainingOpen = try XCTUnwrap(section(.openSource, in: model)).cells.map(\.fontID)
+        XCTAssertEqual(remainingOpen.count, 32, "開源字型組少了兩套")
+        XCTAssertFalse(remainingOpen.contains(.huninn) || remainingOpen.contains(.notoSerifTC))
     }
 
     /// 120.5: a font filled in with a source and a category lands by type, not last.
@@ -571,7 +579,10 @@ final class FontWeightListTests: XCTestCase {
         for (fontID, name) in expected {
             XCTAssertEqual(try cell(fontID, in: model).name, name, "展開與收合都不帶字重字樣")
         }
-        XCTAssertEqual(expected.count, FontCatalog.entries.filter { $0.weights.count > 1 }.count, "名單涵蓋所有多字重字型")
+        // TASK-142's families show their display name, which is already the family name.
+        for entry in FontCatalog.entries where entry.weights.count > 1 && expected[entry.fontID] == nil {
+            XCTAssertEqual(try cell(entry.fontID, in: model).name, FontLibraryModel.listName(of: entry), "\(entry.fontID)")
+        }
         XCTAssertEqual(try cell(.huninn, in: model).name, "jf open 粉圓", "單一字重維持 fullName；111.2 不含版本號")
         XCTAssertEqual(try cell(.chenyuluoyan, in: model).name, "辰宇落雁體 2.0 細體")
         XCTAssertEqual(try cell(.notoSerifTC, in: model).accessibilityLabel, "Noto Serif TC")
@@ -1056,8 +1067,9 @@ final class FontWeightListTests: XCTestCase {
 final class FontLicenseViewTests: XCTestCase {
     func testListsTheOpenSourceFontsWithNoticesAndFullTexts() throws {
         let model = FontLicenseModel()
-        XCTAssertEqual(model.entries.map(\.name), ["粉圓", "思源宋體", "芫荽", "辰宇落雁體"], "34.10")
-        XCTAssertEqual(model.entries.map(\.version), ["2.1", "2.003", "1.012", "2.100"], "34.10")
+        XCTAssertEqual(Array(model.entries.map(\.name).prefix(4)), ["粉圓", "思源宋體", "芫荽", "辰宇落雁體"], "34.10")
+        XCTAssertEqual(Array(model.entries.map(\.version).prefix(4)), ["2.1", "2.003", "1.012", "2.100"], "34.10")
+        XCTAssertEqual(model.entries.count, 34, "142.1 加上 TASK-142 的 30 套")
         for entry in model.entries {
             XCTAssertFalse(entry.copyright.isEmpty, "34.10 \(entry.name)")
             XCTAssertFalse(entry.licenses.isEmpty)
