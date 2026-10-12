@@ -33,11 +33,11 @@ final class FontCatalogDownloadFamiliesTests: XCTestCase {
     private struct X {
         let fontID: OverlayFontID
         let name: String
-        let category: FontSection
+        let category: FontStyleCategory
         let defaultWeight: String
         let faces: [F]
 
-        init(_ fontID: OverlayFontID, _ name: String, _ category: FontSection, _ defaultWeight: String, _ faces: [F]) {
+        init(_ fontID: OverlayFontID, _ name: String, _ category: FontStyleCategory, _ defaultWeight: String, _ faces: [F]) {
             self.fontID = fontID
             self.name = name
             self.category = category
@@ -225,7 +225,8 @@ final class FontCatalogDownloadFamiliesTests: XCTestCase {
             XCTAssertEqual(family.faces.map(\.postScriptName), item.faces.map(\.postScriptName), "\(item.fontID)")
 
             let entry = FontCatalog.entry(for: item.fontID)
-            XCTAssertEqual(entry.section, .openSource, "\(item.fontID) 在開源（可下載）組")
+            XCTAssertEqual(entry.source, .openSource, "\(item.fontID) 在開源字型組")
+            XCTAssertEqual(entry.category, item.category, "\(item.fontID) 類型")
             XCTAssertEqual(entry.source, .openSource)
             XCTAssertEqual(entry.displayName, item.name)
             XCTAssertTrue((1...3).contains(entry.weights.count), "\(item.fontID) 最多三個字重")

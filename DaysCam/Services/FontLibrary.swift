@@ -197,7 +197,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
     private func resolvedEntry(for unit: FontDownloadID) -> FontCatalogEntry {
         let entry = entryProvider(unit.fontID)
         let weight = entry.weight(for: unit.weightID)
-        return FontCatalogEntry(fontID: entry.fontID, displayName: entry.displayName, section: entry.section,
+        return FontCatalogEntry(fontID: entry.fontID, displayName: entry.displayName, category: entry.category,
                                 source: entry.source, postScriptName: weight.postScriptName,
                                 downloadSizeMegabytes: weight.downloadSizeMegabytes, openSource: weight.openSource,
                                 weights: [weight])

@@ -265,7 +265,7 @@ final class FontWeightAcceptanceTests: XCTestCase {
             let real = FontCatalog.entry(for: fontID)
             guard fontID == .notoSerifTC else { return real }
             return FontCatalogEntry(
-                fontID: fontID, displayName: real.displayName, section: real.section, source: .openSource,
+                fontID: fontID, displayName: real.displayName, category: real.category, source: .openSource,
                 postScriptName: "NotoSerifTC-Bold", downloadSizeMegabytes: 1, openSource: bold,
                 weights: [option("regular", "NotoSerifTC-Regular", regular),
                           option("bold", "NotoSerifTC-Bold", bold),

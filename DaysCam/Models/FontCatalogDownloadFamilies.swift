@@ -5,9 +5,8 @@ import Foundation
 /// three faces. Values are written out from `docs/fonts-manifest.md`; change
 /// both together.
 ///
-/// A family's `category` is the type it sorts under (黑 圓 宋 楷 手寫 可愛).
-/// It is kept here until the library groups open-source fonts by type
-/// (TASK-120, #453), which will move it onto `FontCatalogEntry`.
+/// A family's `category` is the type it sorts under (黑 圓 宋 楷 手寫 可愛);
+/// it becomes the entry's `category` (TASK-120, #453).
 extension FontCatalog {
     /// One downloadable face of a family.
     struct DownloadFace: Equatable, Sendable {
@@ -24,7 +23,7 @@ extension FontCatalog {
     struct DownloadFamily: Equatable, Sendable {
         let fontID: OverlayFontID
         let displayName: String
-        let category: FontSection
+        let category: FontStyleCategory
         let defaultWeightID: String
         /// Source and attribution the license page shows under the name, for
         /// fonts whose license asks for it (全字庫, 教育部標準楷書, 文鼎 PL 中楷).
@@ -52,13 +51,13 @@ extension FontCatalog {
             FontWeightOption(id: $0.id, displayName: $0.weightName, postScriptName: $0.postScriptName,
                              downloadSizeMegabytes: Double($0.asset.byteCount) / 1_000_000, openSource: $0.asset)
         }
-        return FontCatalogEntry(fontID: fontID, displayName: family.displayName, section: .openSource,
+        return FontCatalogEntry(fontID: fontID, displayName: family.displayName, category: family.category,
                                 source: .openSource, postScriptName: defaultFace.postScriptName,
                                 downloadSizeMegabytes: Double(defaultFace.asset.byteCount) / 1_000_000,
                                 openSource: defaultFace.asset, weights: weights)
     }
 
-    private static func family(_ fontID: OverlayFontID, _ displayName: String, _ category: FontSection,
+    private static func family(_ fontID: OverlayFontID, _ displayName: String, _ category: FontStyleCategory,
                                defaultWeight: String, sourceNote: String? = nil,
                                faces: [DownloadFace]) -> DownloadFamily {
         precondition(faces.contains { $0.id == defaultWeight }, "\(fontID): default weight is not a face")

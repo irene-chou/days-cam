@@ -35,7 +35,7 @@ final class FontRowChevronUITests: XCTestCase {
     }
 
     private var pingFang: XCUIElement { app.buttons["蘋方-繁"] }
-    /// 思源宋體 sits first in the 可下載 section; its label carries the state.
+    /// 思源宋體 sits first in the 開源字型 group after 粉圓; its label carries the state.
     private var noto: XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Noto Serif TC'")).firstMatch
     }
