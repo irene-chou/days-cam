@@ -10,7 +10,7 @@
 3. **順序**：守門測試 → 葉節點 `@Observable` → `@MainActor` 補齊 → 拆 `CameraScreenModel`（呈現 → 縮圖 → 字型 → 疊字編輯 → 拍攝）→ `CameraScreenModel` 本身轉 `@Observable` → strict concurrency `targeted` → `complete`。
 4. **與進行中卡片的衝突**：TASK-122（#458）、TASK-128（#468）、TASK-129（#469）都改 `CameraScreenModel.swift`；TASK-124（#464）、TASK-134（#474）改 `ProfileStore`；TASK-125／130／131 改 `CameraService`；TASK-132 改 `FontLibrary`。拆分步驟必須排在它們之後（見 §7）。
 5. **`DaysCamCore` SPM**：現在不做。等 strict concurrency `complete` 後再評估，最小版本只放純計算（見 §6）。
-6. **135.2 的 `targeted` 試編譯尚未執行**（Lead 指示本卡不跑 xcodebuild），§5.1 附指令與預期分類，待 Lead 指派 rinclaw 執行後補數字。
+6. **135.2**：Lead 已於 rinclaw 試跑 `targeted`，並行相關 22 條（11 條 Swift 6 會變 error），集中在 `CameraScreenModel`（10）與 `FontLibrary`（6），見 §5.1。
 
 ---
 
@@ -226,9 +226,22 @@ func update(id: UUID, _ change: (inout CameraProfile) -> Void) throws -> CameraP
 
 ## 5. Strict concurrency
 
-### 5.1 135.2 試編譯（**待驗**）
+### 5.1 135.2 試編譯
 
-本卡依 Lead 指示未執行 xcodebuild。請 Lead 指派到 rinclaw（不需開模擬器，只編譯）：
+**結果（Lead 2026-10-12，rinclaw Xcode 26.3，main 2af1e1c＋本文件，`build-for-testing`、`SWIFT_STRICT_CONCURRENCY=targeted`，log `/tmp/task135-targeted.log`）**：編譯成功；去重後 55 條 warning，其中**並行相關 22 條**（其餘 33 條為 unused result、`#Preview` previewDevice、AppIntents metadata、iOS 17 deprecation 等既有警告）。其中 11 條已標「Swift 6 會變 error」。
+
+| 檔案 | 條數 | 類別 |
+|---|---|---|
+| `Views/CameraScreenModel.swift` | 10 | `processCapturedImage` 背景 closure 捕獲非 Sendable 的 `crop`／`bake`／`save`（L1226–1254）、背景呼叫 main actor 的 `thumbnail`／`flightImageMaxDimension`（L1242–1244）、`defaultLaunchTimeout`（L330）、`work` 傳入 `@Sendable`（L320） |
+| `Services/FontLibrary.swift` | 6 | `Operation`／`work` 非 Sendable 被 `@Sendable` closure 捕獲（L513、552、678、727）、`defaultLaunchTimeout`（L248） |
+| `Views/ViewfinderFocusModel.swift` | 2 | main actor 靜態屬性 `biasStep` 在非隔離環境讀取（L138） |
+| `Views/Gallery/GalleryLibrary.swift` | 1 | `PhotoLibraryChangeBridge` 非 Sendable（L118） |
+| `Views/PositionDragAdapter.swift` | 1 | 協定一致性跨入 main actor（L19） |
+| `DaysCamTests/Unit/CameraScreenModelTests.swift` | 2 | 測試替身 closure 非 Sendable（L233、687） |
+
+與下方靜態預期比對：`processCapturedImage` 類別命中（C6／TASK-129）；`CameraService` 的 `sessionQueue` 類別在 targeted 下**沒有出現**（只在 complete 才會檢查），`init` 預設參數類別也未出現。`complete` 尚未試跑。
+
+原指令（試跑時改用 `build-for-testing` 以涵蓋測試 target）：
 
 ```bash
 xcodegen generate   # .xcodeproj 不在版控
