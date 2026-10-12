@@ -16,7 +16,7 @@
 
 | 項目 | 狀態 | 依據 |
 |---|---|---|
-| 隱私清單 `DaysCam/PrivacyInfo.xcprivacy` | ✅ | 不追蹤、不收集；只申報 UserDefaults（CA92.1）。Archive 後用 Organizer 的 Generate Privacy Report 核對，多出別的類別就交 Lead 改程式 |
+| 隱私清單 `DaysCam/PrivacyInfo.xcprivacy` | ✅ | 不追蹤、不收集；申報 UserDefaults（CA92.1）與 FileTimestamp（C617.1，字型驗證標記只讀 App 容器內字型檔的修改日期）。Archive 後用 Organizer 的 Generate Privacy Report 核對，多出別的類別就交 Lead 改程式 |
 | 出口管制、權限用途說明 | ✅ | `project.yml` `info.properties` |
 | Release 不含除錯時鐘與 UI 測試旗標 | ✅ | `DAYSCAM_FAKE_TODAY`、`-UITest*` 都在 `#if DEBUG`（TASKS 0.1 §10.4） |
 | App 圖示 | ✅ | `AppIcon.png` 1024×1024、無 alpha、未預切圓角（#383） |

@@ -55,6 +55,10 @@ private final class FakeRegistrar: FontRegistering, @unchecked Sendable {
     private var registered: [URL] = []
     private var unregistered: [URL] = []
     private var shouldSucceed = true
+    private var mainThreadCalls = 0
+
+    /// How many `register` calls ran on the main thread.
+    var mainThreadRegistrations: Int { lock.withLock { mainThreadCalls } }
 
     var registeredURLs: [URL] { lock.withLock { registered } }
     var unregisteredURLs: [URL] { lock.withLock { unregistered } }
@@ -63,6 +67,7 @@ private final class FakeRegistrar: FontRegistering, @unchecked Sendable {
 
     func register(fontAt url: URL) -> Bool {
         lock.withLock {
+            if Thread.isMainThread { mainThreadCalls += 1 }
             registered.append(url)
             return shouldSucceed
         }
@@ -70,6 +75,18 @@ private final class FakeRegistrar: FontRegistering, @unchecked Sendable {
 
     func unregister(fontAt url: URL) {
         lock.withLock { unregistered.append(url) }
+    }
+}
+
+/// Counts full SHA-256 verifications while delegating to the real verifier.
+private final class CountingVerifier: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var calls: Int { lock.withLock { count } }
+
+    func verify(_ url: URL, _ asset: OpenSourceFontAsset) -> Bool {
+        lock.withLock { count += 1 }
+        return FontFileVerifier.isValid(fileAt: url, for: asset)
     }
 }
 
@@ -248,13 +265,14 @@ final class FontLibraryTests: XCTestCase {
     // MARK: Helpers
 
     private func makeLibrary(launchTimeout: TimeInterval = 3,
-                             fileManager: FileManager = .default) -> FontLibrary {
+                             fileManager: FileManager = .default,
+                             verifyFile: @escaping @Sendable (URL, OpenSourceFontAsset) -> Bool = FontFileVerifier.isValid(fileAt:for:)) -> FontLibrary {
         let huninn = huninnAsset
         let noto = notoAsset
         let regular = regularAsset
         return FontLibrary(directory: directory, fetcher: fetcher, registrar: registrar, matcher: matcher,
                            defaults: defaults, fileManager: fileManager,
-                           launchTimeout: launchTimeout) { fontID in
+                           launchTimeout: launchTimeout, verifyFile: verifyFile) { fontID in
             let real = FontCatalog.entry(for: fontID)
             switch fontID {
             case .huninn:
@@ -536,6 +554,87 @@ final class FontLibraryTests: XCTestCase {
         XCTAssertEqual(relaunched.state(for: .huninn), .failed(.other), "33.8")
         XCTAssertFalse(FileManager.default.fileExists(atPath: relaunched.storedFileURL(for: .huninn).path), "33.8")
         XCTAssertEqual(registrar.registeredURLs.count, registeredBefore, "33.8 corrupt file not registered")
+    }
+
+    /// 132.1: a matching marker skips the SHA-256 pass; a changed size or date re-verifies.
+    func test_relaunch_matchingMarker_skipsFullVerification() async throws {
+        let first = makeLibrary()
+        first.download(.huninn)
+        await waitUntil("available") { first.state(for: .huninn) == .available }
+        let verifier = CountingVerifier()
+
+        let relaunched = makeLibrary(verifyFile: verifier.verify)
+        await relaunched.prepareAtLaunch(priority: .huninn)
+
+        XCTAssertEqual(relaunched.state(for: .huninn), .available)
+        XCTAssertEqual(verifier.calls, 0, "132.1 marker match")
+
+        // Same content, newer modification date: marker mismatch re-verifies.
+        let url = relaunched.storedFileURL(for: .huninn)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: url.path)
+        let touched = makeLibrary(verifyFile: verifier.verify)
+        await touched.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(touched.state(for: .huninn), .available)
+        XCTAssertEqual(verifier.calls, 1, "132.1 date changed")
+
+        // The re-verification refreshed the marker.
+        let again = makeLibrary(verifyFile: verifier.verify)
+        await again.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(verifier.calls, 1, "132.1 marker refreshed")
+
+        // Different size re-verifies too.
+        try Data("a different size entirely, longer".utf8).write(to: url)
+        let resized = makeLibrary(verifyFile: verifier.verify)
+        await resized.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(verifier.calls, 2, "132.1 size changed")
+    }
+
+    /// 132.1: a file with no marker (installed by an older build) is verified once.
+    func test_relaunch_missingMarker_verifiesOnce() async {
+        let first = makeLibrary()
+        first.download(.huninn)
+        await waitUntil("available") { first.state(for: .huninn) == .available }
+        defaults.removeObject(forKey: FontLibrary.verificationMarkersKey)
+        let verifier = CountingVerifier()
+
+        let relaunched = makeLibrary(verifyFile: verifier.verify)
+        await relaunched.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(relaunched.state(for: .huninn), .available)
+        XCTAssertEqual(verifier.calls, 1)
+
+        let again = makeLibrary(verifyFile: verifier.verify)
+        await again.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(verifier.calls, 1, "marker written after the fallback check")
+    }
+
+    /// 132.2: a corrupt file whose marker no longer matches is still `.corrupt`.
+    func test_relaunch_corruptFileWithStaleMarker_stillFails() async throws {
+        let first = makeLibrary()
+        first.download(.huninn)
+        await waitUntil("available") { first.state(for: .huninn) == .available }
+        let relaunched = makeLibrary()
+        try Data("damaged on disk, same length!".utf8).write(to: relaunched.storedFileURL(for: .huninn))
+
+        await relaunched.prepareAtLaunch(priority: .huninn)
+
+        XCTAssertEqual(relaunched.state(for: .huninn), .failed(.other), "132.2")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: relaunched.storedFileURL(for: .huninn).path))
+        let markers = defaults.dictionary(forKey: FontLibrary.verificationMarkersKey) ?? [:]
+        XCTAssertNil(markers[relaunched.storedFileURL(for: .huninn).lastPathComponent], "marker cleared")
+    }
+
+    /// 132.3: CoreText registration never runs on the main thread.
+    func test_registration_doesNotRunOnMainThread() async {
+        let first = makeLibrary()
+        first.download(.huninn)
+        await waitUntil("available") { first.state(for: .huninn) == .available }
+        XCTAssertEqual(registrar.registeredURLs.count, 1)
+
+        let relaunched = makeLibrary()
+        await relaunched.prepareAtLaunch(priority: .huninn)
+        XCTAssertEqual(relaunched.state(for: .huninn), .available)
+        XCTAssertEqual(registrar.registeredURLs.count, 2)
+        XCTAssertEqual(registrar.mainThreadRegistrations, 0, "132.3")
     }
 
     /// Leftover temporary files from a killed download are cleaned at launch.

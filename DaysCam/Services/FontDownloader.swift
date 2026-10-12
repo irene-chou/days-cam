@@ -98,11 +98,8 @@ enum FontFileVerifier {
     ///
     /// Reads the whole file, so call it off the main actor.
     ///
-    /// The size comes from `URLResourceKey.fileSizeKey` rather than
-    /// `FileManager.attributesOfItem(atPath:)`: the latter also returns the
-    /// file's timestamps, which puts it near Apple's "file timestamp"
-    /// required-reason API list (privacy manifest, `docs/RELEASE.md`); the
-    /// size key alone is not on that list and is all this check needs.
+    /// The size is read with `URLResourceKey.fileSizeKey` alone; the modification
+    /// date is only read by `FontVerificationMarker` (see its note on C617.1).
     static func isValid(fileAt url: URL, for asset: OpenSourceFontAsset) -> Bool {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size == asset.byteCount,
@@ -111,6 +108,27 @@ enum FontFileVerifier {
         }
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         return digest == asset.sha256
+    }
+}
+
+/// Remembers that a font file already passed the full SHA-256 check, so launch
+/// can skip re-hashing it (PRD 0.3 §4.2).
+enum FontVerificationMarker {
+    /// File size + modification date + the hash the file was verified against,
+    /// or `nil` if the file's attributes cannot be read.
+    ///
+    /// Cheap (two attributes, no file read). A file whose size or date changed
+    /// since the marker was recorded no longer matches and must be re-verified.
+    ///
+    /// The modification date is a "file timestamp" required-reason API. Reading
+    /// it is allowed because it only touches font files inside the App's own
+    /// container that the App itself wrote, which is privacy manifest reason
+    /// C617.1 (`PrivacyInfo.xcprivacy`).
+    static func make(fileAt url: URL, sha256: String) -> String? {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let size = values.fileSize,
+              let modified = values.contentModificationDate else { return nil }
+        return "\(size)|\(modified.timeIntervalSinceReferenceDate)|\(sha256)"
     }
 }
 
