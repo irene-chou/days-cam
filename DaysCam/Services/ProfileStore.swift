@@ -93,6 +93,12 @@ final class ProfileStore: ObservableObject {
     /// Serialises every actual file write (background, `flush()`, `load()`).
     private let persistLock = NSLock()
     private var isDirectoryReady = false
+    /// Number of write attempts so far; taken under `persistLock`, so it is
+    /// the real order the attempts hit the disk in.
+    private var writeSequence = 0
+    /// Highest attempt whose outcome has reached `lastWriteError`. Main
+    /// thread only. Anything older arriving later is stale and dropped.
+    private var publishedSequence = 0
     private let dataWriter: DataWriter
     private let scheduler: Scheduler
     private var lifecycleObservers: [NSObjectProtocol] = []
@@ -312,9 +318,35 @@ extension ProfileStore {
         return candidate
     }
 
+    /// Like `update(_:)`, but returns only once the change is on disk, for an
+    /// explicit user action that must not be reported as done while the save
+    /// has failed (font apply, #492). Throws `writeFailed` on a disk failure;
+    /// memory is not rolled back, the change stays queued for the next write,
+    /// and the failure is returned to the caller instead of being published
+    /// to `lastWriteError` (the caller reports it).
+    @discardableResult
+    func updateAndWait(_ profile: CameraProfile) throws -> CameraProfile {
+        let (stored, updated) = try applyUpdate(profile)
+        let pendingWork = writeState.withLock { state -> DispatchWorkItem? in
+            defer { state.scheduled = nil; state.snapshot = updated }
+            return state.scheduled
+        }
+        pendingWork?.cancel()
+        if let failure = writePending(publishFailure: false) { throw failure }
+        return stored
+    }
+
     /// Validates and overwrites an existing profile, keeping its `createdAt`.
     @discardableResult
     func update(_ profile: CameraProfile) throws -> CameraProfile {
+        let (candidate, updated) = try applyUpdate(profile)
+        scheduleWrite(updated)
+        return candidate
+    }
+
+    /// Validates `profile` and swaps it into memory; the caller decides how
+    /// the file follows.
+    private func applyUpdate(_ profile: CameraProfile) throws -> (CameraProfile, [CameraProfile]) {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else {
             throw ProfileStoreError.profileNotFound(id: profile.id)
         }
@@ -326,8 +358,7 @@ extension ProfileStore {
         var updated = profiles
         updated[index] = candidate
         profiles = updated
-        scheduleWrite(updated)
-        return candidate
+        return (candidate, updated)
     }
 
     /// Deletes a profile, refusing to remove the last one (PRD FR-1.8).
@@ -523,29 +554,49 @@ extension ProfileStore {
 
     /// Writes the queued snapshot, if any. A failed snapshot is put back
     /// unless something newer arrived, so the next write retries it.
-    private func writePending() {
+    ///
+    /// - Parameter publishFailure: whether a failure goes to
+    ///   `lastWriteError`; a caller that reports the failure itself passes
+    ///   `false`. Success always clears the error.
+    /// - Returns: the failure, or nil when nothing was queued or it succeeded.
+    @discardableResult
+    private func writePending(publishFailure: Bool = true) -> ProfileStoreError? {
         persistLock.lock()
         defer { persistLock.unlock() }
         guard let snapshot = writeState.withLock({ state -> [CameraProfile]? in
             defer { state.snapshot = nil }
             return state.snapshot
-        }) else { return }
+        }) else { return nil }
+        writeSequence += 1
+        let sequence = writeSequence
         do {
             try persist(snapshot)
-            publishWriteError(nil)
+            publishWriteError(nil, sequence: sequence)
+            return nil
         } catch {
             writeState.withLock { state in
                 if state.snapshot == nil { state.snapshot = snapshot }
             }
-            publishWriteError(error as? ProfileStoreError ?? .writeFailed(String(describing: error)))
+            let failure = error as? ProfileStoreError ?? .writeFailed(String(describing: error))
+            if publishFailure { publishWriteError(failure, sequence: sequence) }
+            return failure
         }
     }
 
-    private func publishWriteError(_ error: ProfileStoreError?) {
+    /// Hands an attempt's outcome to `lastWriteError` on the main thread. An
+    /// outcome older than one already published is dropped, whichever way
+    /// it went: a late failure must not undo a newer success, nor a late
+    /// success a newer failure.
+    private func publishWriteError(_ error: ProfileStoreError?, sequence: Int) {
+        let apply = { [weak self] in
+            guard let self, sequence > self.publishedSequence else { return }
+            self.publishedSequence = sequence
+            self.lastWriteError = error
+        }
         if Thread.isMainThread {
-            lastWriteError = error
+            apply()
         } else {
-            DispatchQueue.main.async { [weak self] in self?.lastWriteError = error }
+            DispatchQueue.main.async(execute: apply)
         }
     }
 

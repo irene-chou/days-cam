@@ -681,6 +681,82 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(makeStore(at: Date()).load().first?.name, "寫不進去", "124.4 retried")
     }
 
+    /// #492: an old failure published late must not undo a newer success.
+    func testLateBackgroundFailureDoesNotOverwriteANewerSuccess() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "甲"
+        recorder.failing = true
+        try store.update(edited)
+        DispatchQueue.global().sync { manual.fireAll() }   // failure queued for main, not yet applied
+
+        recorder.failing = false
+        store.flush()                                       // newer attempt succeeds on main
+        XCTAssertNil(store.lastWriteError)
+        drainMainQueue()
+        XCTAssertNil(store.lastWriteError, "the stale failure was dropped")
+    }
+
+    /// #492 (Codex): an old success published late must not clear a newer failure.
+    func testLateBackgroundSuccessDoesNotClearANewerFailure() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "甲"
+        try store.update(edited)
+        DispatchQueue.global().sync { manual.fireAll() }   // success (nil) queued for main
+
+        edited.name = "乙"
+        recorder.failing = true
+        try store.update(edited)
+        store.flush()                                       // newer attempt fails on main
+        XCTAssertNotNil(store.lastWriteError)
+        drainMainQueue()
+        XCTAssertNotNil(store.lastWriteError, "the stale success was dropped")
+    }
+
+    private func drainMainQueue() {
+        let done = expectation(description: "main drained")
+        DispatchQueue.main.async { done.fulfill() }
+        wait(for: [done], timeout: 2)
+    }
+
+    /// #492: an explicit action can wait for the disk and learn of a failure.
+    func testUpdateAndWaitThrowsOnAFailedWriteAndKeepsMemoryAndRetries() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "套用"
+        recorder.failing = true
+        XCTAssertThrowsError(try store.updateAndWait(edited)) { error in
+            guard case .writeFailed? = error as? ProfileStoreError else { return XCTFail("\(error)") }
+        }
+        XCTAssertNil(store.lastWriteError, "the caller reports it, it is not published")
+        XCTAssertEqual(store.profiles.first?.name, "套用", "no rollback")
+
+        recorder.failing = false
+        store.flush()
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "套用", "retried")
+    }
+
+    func testUpdateAndWaitWritesBeforeReturning() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "立即"
+        try store.updateAndWait(edited)
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "立即")
+    }
+
     /// 124.6: with the real queue, the debounced write never runs on main.
     func testDebouncedWriteRunsOffTheMainThread() throws {
         let recorder = WriteRecorder()

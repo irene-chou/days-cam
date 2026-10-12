@@ -295,6 +295,9 @@ final class CameraScreenModel: ObservableObject {
     private let scheduleToastDismiss: (@escaping () -> Void) -> Void
 
     private var cancellables = Set<AnyCancellable>()
+    private var saveFailureToastPending = false
+    /// Whether the app is in the foreground and active; injectable for tests.
+    private let isApplicationActive: () -> Bool
 
     /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, not
     ///   `.current`. `.current` is a snapshot taken once, at call time — a
@@ -323,6 +326,7 @@ final class CameraScreenModel: ObservableObject {
          },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
+         isApplicationActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
@@ -402,6 +406,7 @@ final class CameraScreenModel: ObservableObject {
         self.prepareCapture = prepareCapture ?? { [cameraService] flashMode in
             cameraService.prepareCapture(flashMode: flashMode)
         }
+        self.isApplicationActive = isApplicationActive
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
@@ -424,6 +429,17 @@ final class CameraScreenModel: ObservableObject {
         if let style = selectedProfile?.style {
             startPreparationTimeoutIfNeeded(for: Self.downloadID(of: style))
         }
+    }
+
+    /// Shows the save-failed toast held back while the app was inactive, if
+    /// the failure is still unresolved. Internal so tests can call it.
+    func showPendingSaveFailureToast() {
+        guard saveFailureToastPending, profileStore.lastWriteError != nil else {
+            saveFailureToastPending = false
+            return
+        }
+        saveFailureToastPending = false
+        showToast(message: Self.profileSaveFailedMessage)
     }
 
     /// Shown when the profile file could not be written.
@@ -452,15 +468,32 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
         // Profile writes are debounced (#464), so a failed save no longer
         // surfaces as a throw from `update`; this is where the user hears of
-        // it. `removeDuplicates` shows one failure once — a retry that fails
-        // again is the same error — and a successful retry (nil) re-arms it.
+        // it. Only failing/not-failing is compared, not the error text (it
+        // carries a random temp file name): one failure shows once, however
+        // many retries fail again, and a successful retry re-arms it.
         profileStore.$lastWriteError
+            .map { $0 != nil }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] error in
-                guard error != nil else { return }
-                self?.showToast(message: Self.profileSaveFailedMessage)
+            .sink { [weak self] hasError in
+                guard let self else { return }
+                guard hasError else {
+                    self.saveFailureToastPending = false
+                    return
+                }
+                // A flush on the way to the background fails while nobody is
+                // looking, and the toast would time out before they return:
+                // hold it until the app is active again.
+                if self.isApplicationActive() {
+                    self.showToast(message: Self.profileSaveFailedMessage)
+                } else {
+                    self.saveFailureToastPending = true
+                }
             }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.showPendingSaveFailureToast() }
             .store(in: &cancellables)
         profileStore.$selectedProfileID
             .receive(on: DispatchQueue.main)
@@ -1497,7 +1530,9 @@ extension CameraScreenModel {
         if latest.style.fontID != fontID {
             latest.style.fontID = fontID
             do {
-                try profileStore.update(latest)
+                // Waits for the disk: "applied" must not be announced for a
+                // save that then fails (#492).
+                try profileStore.updateAndWait(latest)
             } catch {
                 showToast(message: "無法儲存字型設定")
                 return false
