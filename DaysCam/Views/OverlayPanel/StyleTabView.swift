@@ -456,8 +456,8 @@ struct StyleTabView: View {
     // MARK: - 共用：兩排色票 (FR-10.4, FR-10.6, FR-10.7)
 
     /// Renders the shared color palette: a first row of swatches, then (text
-    /// color only, `showsPresetRows`) the light, dark and film date-stamp rows
-    /// (TASK-149), then a row with an optional leading "automatic" button,
+    /// color only, `showsPresetRows`) the light row (TASK-149), then a row
+    /// with an optional leading "automatic" button,
     /// the rainbow custom picker and the recent colors. Used for text,
     /// outline and shadow color (FR-10.4, FR-10.6) so their behavior —
     /// including sharing `RecentColorsStore` — cannot drift apart.
@@ -473,9 +473,7 @@ struct StyleTabView: View {
                               onCommitCustom: @escaping (OverlayColor) -> Void) -> some View {
         // Every preset this palette shows; a color matching none of them is
         // custom (the rainbow's ring).
-        let presets = showsPresetRows
-            ? swatches + model.textColorTintRows.flatMap { $0 } + model.textColorFilmSwatches.map(\.color)
-            : swatches
+        let presets = showsPresetRows ? swatches + model.textColorLightSwatches : swatches
         // `.pal{gap:6px}` between the rows (#106).
         return VStack(alignment: .leading, spacing: 6) {
             // First row: nine swatches filling the content width, equal gaps.
@@ -485,25 +483,10 @@ struct StyleTabView: View {
                 }
             }
             if showsPresetRows {
-                // Light and dark tints, each under its swatch (TASK-149).
-                ForEach(Array(model.textColorTintRows.enumerated()), id: \.offset) { _, row in
-                    paletteRow {
-                        ForEach(row, id: \.hexString) { swatch in
-                            colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
-                        }
-                    }
-                }
-                // Film date-stamp colors on the same grid, left-aligned, under
-                // their own heading; read by name (TASK-149).
-                Text("底片日期色")
-                    .font(.system(size: 12))
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .padding(.top, 6)
+                // Light tints, each under its swatch (TASK-149).
                 paletteRow {
-                    ForEach(model.textColorFilmSwatches, id: \.color.hexString) { film in
-                        colorDot(film.color, isSelected: isSame(current, film.color), label: film.name) {
-                            onSelectSwatch(film.color)
-                        }
+                    ForEach(model.textColorLightSwatches, id: \.hexString) { swatch in
+                        colorDot(swatch, isSelected: isSame(current, swatch)) { onSelectSwatch(swatch) }
                     }
                 }
             }
@@ -569,7 +552,6 @@ struct StyleTabView: View {
 
     func colorDot(_ color: OverlayColor, isSelected: Bool,
                           labelPrefix: String = "",
-                          label: String? = nil,
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
@@ -585,8 +567,7 @@ struct StyleTabView: View {
                 .overlay(swatchSelectionRing(isSelected))
                 .frame(width: Self.swatchDiameter, height: Self.swatchCellHeight)
         }
-        // Named presets read their name (底片橘); the rest their hex.
-        .accessibilityLabel(labelPrefix + (label ?? color.hexString))
+        .accessibilityLabel(labelPrefix + color.hexString)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

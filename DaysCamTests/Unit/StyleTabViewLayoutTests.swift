@@ -73,15 +73,9 @@ final class StyleTabViewLayoutTests: XCTestCase {
         let model = try makeModel()
         model.selectedSubTab = .color
         let colorHeight = pageHeight(model)
-        // TASK-149 (#518) adds three rows (light, dark, film) and the 底片日期色
-        // heading, so the color page no longer fits and scrolls like the
-        // outline page: five 38pt rows with 6pt gaps at least, and at most
-        // the old 204pt cap plus three rows and the heading with its extra
-        // 6pt (replacing TASK-110's 204pt cap).
-        let minimumColorHeight: CGFloat = 5 * 38 + 4 * 6
-        let colorCap: CGFloat = 204 + 3 * 44 + 28
-        XCTAssertGreaterThanOrEqual(colorHeight, minimumColorHeight)
-        XCTAssertLessThanOrEqual(colorHeight, colorCap, "顏色頁 \(colorHeight)pt")
+        XCTAssertGreaterThanOrEqual(colorHeight, 38 + 6 + 38)
+        // TASK-110 adds the 14pt caption row under the sub-tab icons: 190 → 204.
+        XCTAssertLessThanOrEqual(colorHeight, 204, "顏色頁 \(colorHeight)pt")
         model.selectOutline(model.outlineOptions.first { $0 != .none } ?? .none)
         model.selectedSubTab = .outline
         let outlineHeight = pageHeight(model)
@@ -147,15 +141,13 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.optionRowTopPadding, 4)
     }
 
-    /// 49.1: a centered page measures exactly the panel's content height;
-    /// since TASK-149 the color page is taller than a regular panel, so it
-    /// fills at least that and scrolls beyond it.
+    /// 49.1: a centered page measures exactly the panel's content height.
     func testCenteredPagesFillRegularPanelHeight() throws {
         let model = try makeModel()
-        model.selectedSubTab = .size
-        XCTAssertEqual(pageHeight(model, availableHeight: 224), 224, accuracy: 0.5, "size")
-        model.selectedSubTab = .color
-        XCTAssertGreaterThan(pageHeight(model, availableHeight: 224), 224, "color (TASK-149)")
+        for subTab in [StyleTabModel.SubTab.color, .size] {
+            model.selectedSubTab = subTab
+            XCTAssertEqual(pageHeight(model, availableHeight: 224), 224, accuracy: 0.5, "\(subTab)")
+        }
     }
 
     private func width<V: View>(of view: V) -> CGFloat {

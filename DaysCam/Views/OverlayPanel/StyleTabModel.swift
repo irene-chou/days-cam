@@ -240,14 +240,10 @@ extension StyleTabModel {
     /// ten items total.
     var textColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
-    /// The light and dark rows under the text-color swatches, column for
-    /// column (TASK-149, #518). Text color only; outline and shadow keep
-    /// their one swatch row.
-    var textColorTintRows: [[OverlayColor]] { [OverlayStyle.lightSwatches, OverlayStyle.darkSwatches] }
-
-    /// The named film date-stamp colors, the text-color page's last preset
-    /// row (TASK-149, #518).
-    var textColorFilmSwatches: [NamedOverlayColor] { OverlayStyle.filmSwatches }
+    /// The light row under the text-color swatches, column for column
+    /// (TASK-149, #518). Text color only; outline and shadow keep their one
+    /// swatch row.
+    var textColorLightSwatches: [OverlayColor] { OverlayStyle.lightSwatches }
 
     /// The first row of the outline-color palette: all nine swatches
     /// (FR-10.6). The view prepends its own "automatic" button (represented
