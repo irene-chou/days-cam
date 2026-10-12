@@ -58,13 +58,13 @@ final class CameraProfileTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: records)
         let url = folder.appendingPathComponent(ProfileStore.fileName)
         try data.write(to: url)
-        let store = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults)
+        let store = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         XCTAssertEqual(store.load(), profiles)
         XCTAssertEqual(try Data(contentsOf: url), data, "loading does not rewrite old data")
         var selected = profiles[0]
         selected.style.fontWeight = "black"
         try store.update(selected)
-        let reopened = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults)
+        let reopened = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         let loaded = reopened.load()
         XCTAssertEqual(loaded.count, 6)
         XCTAssertEqual(loaded.first?.style.fontWeight, "black")
@@ -315,7 +315,7 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     /// One record exactly as 0.1's synthesized `Codable` wrote it: a
@@ -659,7 +659,7 @@ final class CameraProfileColorOpacityTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     /// One 0.5 record with a non-default value in every field.
@@ -801,7 +801,7 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try referenceInstant()
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     /// One 0.3 record with a non-default value in every field, so a field
@@ -938,7 +938,7 @@ final class CameraProfileOutlineTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     /// One 0.5 record with a non-default value in every field.
@@ -1090,7 +1090,7 @@ final class CameraProfileShadowTests: XCTestCase {
 
     private func makeStore() throws -> ProfileStore {
         let instant = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
-        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults)
+        return ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
     }
 
     /// One 0.5 record with a non-default value in every field.

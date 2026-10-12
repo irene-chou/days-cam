@@ -22,7 +22,7 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
     }
 
     private func makeModel() -> CameraScreenModel {
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: store,

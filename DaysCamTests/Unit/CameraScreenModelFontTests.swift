@@ -158,7 +158,7 @@ final class CameraScreenModelFontTests: XCTestCase {
                              bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
                              captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         let profileA = profile("A", font: fontA)
         let profileB = profile("B", font: fontB)
         _ = try store.add(profileA)
@@ -472,16 +472,18 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(storedFont(harness.profileB.id, in: harness.store), .pingFang, "35.7")
     }
 
-    func testFailedSaveAfterTheDownloadKeepsTheErrorAndDoesNotAnnounceApplied() throws {
+    /// Since #464 `ProfileStore.update` no longer reports a disk failure by
+    /// throwing: memory is updated at once and the write happens later. The
+    /// failure surfaces through `lastWriteError` (and the write is retried).
+    func testFailedFileWriteAfterTheDownloadSurfacesThroughTheStore() throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
         harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
-        // Make the profile file unwritable so `ProfileStore.update` throws.
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
         harness.library.finishDownload(.xingkai)
 
-        XCTAssertEqual(harness.model.toastState?.message, "無法儲存字型設定", "寫入失敗不可報成已套用")
-        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .pingFang)
+        XCTAssertNotNil(harness.store.lastWriteError, "the failed write is observable")
+        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .xingkai, "memory is not rolled back")
     }
 
     func testDownloadFinishingForADeletedProfileWritesNothing() throws {

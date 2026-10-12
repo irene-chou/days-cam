@@ -114,7 +114,8 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
                                                  options: [.atomic])
             let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
             let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
-                                     now: { instant }, defaults: defaults)
+                                     now: { instant }, defaults: defaults,
+                                     scheduler: ProfileStore.immediateScheduler)
             let style = try XCTUnwrap(store.load().first).style
             let baked = try XCTUnwrap(renderer.bake(image: input, text: "第 10 天", style: style,
                                                     placement: .custom(x: 0.5, y: 0.5), font: .pingFang))

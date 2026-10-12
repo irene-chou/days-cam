@@ -65,7 +65,7 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
     private func makeModel(now: @escaping () -> Date, profile: CameraProfile, recorder: Recorder,
                            bakeOutput: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?)
         throws -> (CameraScreenModel, ProfileStore) {
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: now, defaults: defaults)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: now, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         _ = try store.add(profile)
         store.select(id: profile.id)
         let service = CameraService(authorizer: StubAuthorizer(), deviceProvider: EmptyDeviceProvider(),

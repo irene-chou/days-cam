@@ -178,7 +178,7 @@ final class FontWeightAcceptanceTests: XCTestCase {
         }
         let url = folder.appendingPathComponent(ProfileStore.fileName)
         try JSONSerialization.data(withJSONObject: records).write(to: url)
-        let store = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults)
+        let store = ProfileStore(directory: folder, calendar: DateFixture.taipei, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         let loaded = store.load()
         XCTAssertEqual(loaded.map(\.name), expected.map(\.name))
         XCTAssertEqual(loaded, expected)

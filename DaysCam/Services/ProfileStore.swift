@@ -1,4 +1,6 @@
 import Foundation
+import os
+import UIKit
 
 /// A reason a profile operation could not be completed.
 enum ProfileStoreError: Error, Equatable {
@@ -66,6 +68,36 @@ final class ProfileStore: ObservableObject {
     /// be made, so the undecodable records are never lost without a copy.
     private(set) var isPartialBackupPending = false
 
+    /// The most recent background write failure, or nil once a write succeeds
+    /// (TASK-124, #464). In-memory `profiles` is never rolled back; the failed
+    /// snapshot stays queued and the next write (or `flush()`) retries it.
+    /// Nothing reads it yet; the upper layer decides how to show it.
+    @Published private(set) var lastWriteError: ProfileStoreError?
+
+    /// Writes bytes to the file; replaced in tests to count, fail or observe
+    /// the calling thread.
+    typealias DataWriter = (Data, URL) throws -> Void
+    /// Runs `work` after `delay` seconds; replaced in tests so nothing sleeps.
+    typealias Scheduler = (TimeInterval, DispatchWorkItem) -> Void
+
+    /// Trailing debounce for background writes.
+    static let writeDebounce: TimeInterval = 0.4
+
+    private struct WriteState {
+        /// Latest not-yet-written snapshot; newer replaces older.
+        var snapshot: [CameraProfile]?
+        var scheduled: DispatchWorkItem?
+    }
+
+    private let writeState = OSAllocatedUnfairLock(initialState: WriteState())
+    /// Serialises every actual file write (background, `flush()`, `load()`).
+    private let persistLock = NSLock()
+    private var isDirectoryReady = false
+    private let dataWriter: DataWriter
+    private let scheduler: Scheduler
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private let notificationCenter: NotificationCenter
+
     private let directory: URL
     private let calendar: Calendar
     private let now: () -> Date
@@ -76,16 +108,44 @@ final class ProfileStore: ObservableObject {
     ///
     /// - Parameter directory: where `profiles.json` lives. Defaults to
     ///   `Application Support/DaysCam`; tests pass a temporary directory.
+    /// - Parameters:
+    ///   - writeQueue: where debounced writes run; never the main queue.
+    ///   - scheduler: overrides the debounce timer (tests).
+    ///   - dataWriter: overrides the atomic file write (tests).
+    ///   - notificationCenter: where the resign-active and background
+    ///     notifications are observed to flush pending writes.
     init(directory: URL? = nil,
          calendar: Calendar = .autoupdatingCurrent,
          now: @escaping () -> Date = DayCountCalculator.defaultNow(),
          defaults: UserDefaults = .standard,
-         fileManager: FileManager = .default) {
+         fileManager: FileManager = .default,
+         writeQueue: DispatchQueue = DispatchQueue(label: "com.irenechou.DaysCam.profile-writer",
+                                                   qos: .utility),
+         scheduler: Scheduler? = nil,
+         dataWriter: @escaping DataWriter = { data, url in try data.write(to: url, options: [.atomic]) },
+         notificationCenter: NotificationCenter = .default) {
         self.directory = directory ?? Self.defaultDirectory(fileManager: fileManager)
         self.calendar = calendar
         self.now = now
         self.defaults = defaults
         self.fileManager = fileManager
+        self.dataWriter = dataWriter
+        self.notificationCenter = notificationCenter
+        self.scheduler = scheduler ?? { delay, work in
+            writeQueue.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+        let flushNames: [Notification.Name] = [UIApplication.willResignActiveNotification,
+                                               UIApplication.didEnterBackgroundNotification]
+        lifecycleObservers = flushNames.map { name in
+            notificationCenter.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                self?.flush()
+            }
+        }
+    }
+
+    deinit {
+        lifecycleObservers.forEach(notificationCenter.removeObserver)
+        flush()
     }
 
     /// The file the profiles are stored in.
@@ -169,9 +229,9 @@ extension ProfileStore {
             // keeps the original first. If the copy fails the file is left
             // alone and every later write retries it.
             isPartialBackupPending = true
-            try? persist(repaired)
+            try? persistSynchronously(repaired)
         } else if repaired != decoded {
-            try? persist(repaired)
+            try? persistSynchronously(repaired)
         }
         return profiles
     }
@@ -186,7 +246,7 @@ extension ProfileStore {
                                    createdAt: timestamp,
                                    updatedAt: timestamp)
         profiles = [seeded]
-        try? persist(profiles)
+        try? persistSynchronously(profiles)
         select(id: seeded.id)
     }
 
@@ -245,8 +305,8 @@ extension ProfileStore {
 
         var updated = profiles
         updated.append(candidate)
-        try persist(updated)
         profiles = updated
+        scheduleWrite(updated)
         // A new profile becomes the active one (PRD FR-1.10).
         select(id: candidate.id)
         return candidate
@@ -265,8 +325,8 @@ extension ProfileStore {
 
         var updated = profiles
         updated[index] = candidate
-        try persist(updated)
         profiles = updated
+        scheduleWrite(updated)
         return candidate
     }
 
@@ -281,8 +341,8 @@ extension ProfileStore {
 
         var updated = profiles
         updated.removeAll { $0.id == id }
-        try persist(updated)
         profiles = updated
+        scheduleWrite(updated)
         resolveSelection()
     }
 
@@ -314,8 +374,8 @@ extension ProfileStore {
         }
         let insertionIndex = destination - source.count(in: 0..<destination)
         updated.insert(contentsOf: moving, at: insertionIndex)
-        try persist(updated)
         profiles = updated
+        scheduleWrite(updated)
     }
 
     /// Inserts a copy of the profile named `id` directly after it: a new
@@ -358,8 +418,8 @@ extension ProfileStore {
 
         var updated = profiles
         updated.insert(duplicated, at: index + 1)
-        try persist(updated)
         profiles = updated
+        scheduleWrite(updated)
         return duplicated
     }
 
@@ -433,15 +493,82 @@ extension ProfileStore {
 
 // MARK: - Writing
 
-private extension ProfileStore {
-    /// Writes the profiles atomically, creating the directory if needed.
+extension ProfileStore {
+    /// Writes any change that is still waiting out its debounce, on the
+    /// calling thread, and returns once it is on disk (or has failed into
+    /// `lastWriteError`). Called when the app resigns active or backgrounds.
+    func flush() {
+        let pendingWork = writeState.withLock { state -> DispatchWorkItem? in
+            defer { state.scheduled = nil }
+            return state.scheduled
+        }
+        pendingWork?.cancel()
+        writePending()
+    }
+
+    /// Queues `snapshot` as the next write. Memory is already up to date; the
+    /// file follows after a trailing debounce so a slider drag costs one
+    /// write, not one per step (#464).
+    fileprivate func scheduleWrite(_ snapshot: [CameraProfile]) {
+        let work = DispatchWorkItem { [weak self] in self?.writePending() }
+        let previous = writeState.withLock { state -> DispatchWorkItem? in
+            let old = state.scheduled
+            state.snapshot = snapshot
+            state.scheduled = work
+            return old
+        }
+        previous?.cancel()
+        scheduler(Self.writeDebounce, work)
+    }
+
+    /// Writes the queued snapshot, if any. A failed snapshot is put back
+    /// unless something newer arrived, so the next write retries it.
+    private func writePending() {
+        persistLock.lock()
+        defer { persistLock.unlock() }
+        guard let snapshot = writeState.withLock({ state -> [CameraProfile]? in
+            defer { state.snapshot = nil }
+            return state.snapshot
+        }) else { return }
+        do {
+            try persist(snapshot)
+            publishWriteError(nil)
+        } catch {
+            writeState.withLock { state in
+                if state.snapshot == nil { state.snapshot = snapshot }
+            }
+            publishWriteError(error as? ProfileStoreError ?? .writeFailed(String(describing: error)))
+        }
+    }
+
+    private func publishWriteError(_ error: ProfileStoreError?) {
+        if Thread.isMainThread {
+            lastWriteError = error
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.lastWriteError = error }
+        }
+    }
+
+    /// Writes the profiles atomically.
     ///
     /// `.atomic` writes to a temporary file and swaps it in, so a crash or a
     /// full disk leaves the previous file intact rather than truncated
-    /// (PRD §4.3).
-    func persist(_ profiles: [CameraProfile]) throws {
+    /// (PRD §4.3). The directory is created once and again only after a
+    /// failed write. Callers on the load path hold no pending snapshot, so
+    /// they take `persistLock` here; background writers already hold it.
+    fileprivate func persistSynchronously(_ profiles: [CameraProfile]) throws {
+        persistLock.lock()
+        defer { persistLock.unlock() }
+        try persist(profiles)
+    }
+
+    /// Caller must hold `persistLock`.
+    private func persist(_ profiles: [CameraProfile]) throws {
         do {
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !isDirectoryReady {
+                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+                isDirectoryReady = true
+            }
             if isPartialBackupPending {
                 guard keepPartialBackup() else {
                     throw ProfileStoreError.writeFailed("could not back up the original profiles file")
@@ -449,10 +576,15 @@ private extension ProfileStore {
                 isPartialBackupPending = false
             }
             let encoder = JSONEncoder()
+            #if DEBUG
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            #else
+            encoder.outputFormatting = [.sortedKeys]
+            #endif
             let data = try encoder.encode(profiles)
-            try data.write(to: fileURL, options: [.atomic])
+            try dataWriter(data, fileURL)
         } catch {
+            isDirectoryReady = false
             throw ProfileStoreError.writeFailed(String(describing: error))
         }
     }

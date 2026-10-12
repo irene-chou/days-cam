@@ -22,7 +22,7 @@ final class TabProfileWriterTests: XCTestCase {
     /// record and then turns it off — the off must reach the store, which it
     /// would not if the writer still diffed against its stale baseline.
     func testAdoptingTheStoreRecordLetsAFieldChangeBackToTheOldBaseline() throws {
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         let original = try XCTUnwrap(store.profiles.first)
         let writer = TabProfileWriter(baseline: original, profileStore: store)
@@ -44,7 +44,7 @@ final class TabProfileWriterTests: XCTestCase {
     /// Without `adopt`, the same sequence leaves the store on — the bug the
     /// hook exists for; pinned so the wiring is not dropped by accident.
     func testWithoutAdoptingTheStaleBaselineHidesTheChange() throws {
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         var seeded = try XCTUnwrap(store.profiles.first)
         seeded.showName = false // these cases start from name off
@@ -64,7 +64,7 @@ final class TabProfileWriterTests: XCTestCase {
 
     /// `adopt` ignores another profile's record.
     func testAdoptIgnoresAnotherProfile() throws {
-        let store = ProfileStore(directory: directory)
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         var seeded = try XCTUnwrap(store.profiles.first)
         seeded.showName = false // these cases start from name off

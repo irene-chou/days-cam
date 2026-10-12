@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import DaysCam
 
@@ -29,9 +30,15 @@ final class ProfileStoreTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Runs the debounced write at once, so tests that read the file straight
+    /// after a change keep their pre-#464 meaning. The debounce itself is
+    /// covered by the TASK-124 tests below.
+    private static let immediate = ProfileStore.immediateScheduler
+
     private func makeStore(now: @escaping () -> Date,
                            calendar: Calendar = DateFixture.taipei) -> ProfileStore {
-        ProfileStore(directory: directory, calendar: calendar, now: now, defaults: defaults)
+        ProfileStore(directory: directory, calendar: calendar, now: now, defaults: defaults,
+                     scheduler: Self.immediate)
     }
 
     private func makeStore(at instant: Date, calendar: Calendar = DateFixture.taipei) -> ProfileStore {
@@ -495,7 +502,8 @@ final class ProfileStoreTests: XCTestCase {
         let original = try Data(contentsOf: fileURL)
         let fileManager = CopyFailingFileManager()
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
-                                 now: { Date() }, defaults: defaults, fileManager: fileManager)
+                                 now: { Date() }, defaults: defaults, fileManager: fileManager,
+                                 scheduler: Self.immediate)
 
         let loaded = store.load()
         XCTAssertEqual(loaded.map(\.name), ["甲"])
@@ -504,19 +512,23 @@ final class ProfileStoreTests: XCTestCase {
 
         var edited = try XCTUnwrap(store.profiles.first)
         edited.name = "改名"
-        XCTAssertThrowsError(try store.update(edited))
-        XCTAssertThrowsError(try store.add(profile(name: "新")))
+        try store.update(edited)
+        XCTAssertNotNil(store.lastWriteError, "the blocked write is observable")
+        try store.add(profile(name: "新"))
         XCTAssertEqual(try Data(contentsOf: fileURL), original, "original never overwritten")
         XCTAssertTrue(try partialBackups().isEmpty)
+        XCTAssertEqual(store.profiles.map(\.name), ["改名", "新"], "memory is not rolled back")
 
         fileManager.failsCopy = false
+        store.flush()
         try store.update(edited)
+        XCTAssertNil(store.lastWriteError)
         XCTAssertFalse(store.isPartialBackupPending)
         let backups = try partialBackups()
         XCTAssertEqual(backups.count, 1)
         let backup = try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(backups.first)))
         XCTAssertEqual(backup, original, "backup holds the original, written before the overwrite")
-        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名"])
+        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名", "新"])
     }
 
     /// #477: two loads in the same second keep separate backups.
@@ -566,6 +578,127 @@ final class ProfileStoreTests: XCTestCase {
 
         XCTAssertEqual(store.selectedProfileID, first.id, "134.3")
         XCTAssertEqual(store.lastUsedProfileID, first.id, "134.3")
+    }
+
+    // MARK: - TASK-124 (#464) debounced background writes
+
+    /// Collects scheduled work so a test decides when the debounce "fires".
+    private final class ManualScheduler {
+        private(set) var items: [DispatchWorkItem] = []
+        var scheduler: ProfileStore.Scheduler { { [self] _, work in items.append(work) } }
+        func fireAll() { items.forEach { $0.perform() } }
+    }
+
+    private final class WriteRecorder {
+        private let lock = NSLock()
+        private var _writes: [Data] = []
+        private var _threads: [Bool] = []
+        var failing = false
+        var writes: [Data] { lock.lock(); defer { lock.unlock() }; return _writes }
+        /// For each write attempt, whether it ran on the main thread.
+        var onMainThread: [Bool] { lock.lock(); defer { lock.unlock() }; return _threads }
+        func write(_ data: Data, to url: URL) throws {
+            lock.lock()
+            _threads.append(Thread.isMainThread)
+            let fails = failing
+            lock.unlock()
+            if fails { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: [.atomic])
+            lock.lock(); _writes.append(data); lock.unlock()
+        }
+    }
+
+    private func makeDebouncedStore(recorder: WriteRecorder,
+                                    manual: ManualScheduler,
+                                    center: NotificationCenter = NotificationCenter()) -> ProfileStore {
+        ProfileStore(directory: directory, calendar: DateFixture.taipei,
+                     now: { Date(timeIntervalSince1970: 1_800_000_000) }, defaults: defaults,
+                     scheduler: manual.scheduler,
+                     dataWriter: recorder.write, notificationCenter: center)
+    }
+
+    /// 124.1 and 124.2
+    func testTwentyUpdatesWriteOnceAndMemoryIsImmediatelyCurrent() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        let baseline = recorder.writes.count
+        var edited = try XCTUnwrap(store.profiles.first)
+        for index in 1...20 {
+            edited.name = "名稱\(index)"
+            try store.update(edited)
+            XCTAssertEqual(store.profiles.first?.name, "名稱\(index)", "124.2")
+        }
+        XCTAssertEqual(recorder.writes.count, baseline, "nothing written while debouncing")
+
+        manual.fireAll()   // only the last scheduled item is still live
+        XCTAssertEqual(recorder.writes.count, baseline + 1, "124.1")
+        store.flush()
+        XCTAssertEqual(recorder.writes.count, baseline + 1, "124.1 nothing left to flush")
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "名稱20", "124.1 last state on disk")
+    }
+
+    /// 124.3
+    func testResignActiveFlushesPendingChanges() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let center = NotificationCenter()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual, center: center)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "離開前"
+        try store.update(edited)
+        XCTAssertNotEqual(makeStore(at: Date()).load().first?.name, "離開前")
+
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "離開前", "124.3")
+
+        edited.name = "進背景"
+        try store.update(edited)
+        center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "進背景", "124.3")
+    }
+
+    /// 124.4
+    func testFailedWriteIsReportedKeptInMemoryAndRetried() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "寫不進去"
+        recorder.failing = true
+        try store.update(edited)
+        manual.fireAll()
+
+        XCTAssertNotNil(store.lastWriteError, "124.4")
+        XCTAssertEqual(store.profiles.first?.name, "寫不進去", "124.4 no rollback")
+
+        recorder.failing = false
+        store.flush()
+        XCTAssertNil(store.lastWriteError, "124.4")
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "寫不進去", "124.4 retried")
+    }
+
+    /// 124.6: with the real queue, the debounced write never runs on main.
+    func testDebouncedWriteRunsOffTheMainThread() throws {
+        let recorder = WriteRecorder()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
+                                 now: { Date() }, defaults: defaults,
+                                 scheduler: { _, work in DispatchQueue.global().async { work.perform() } },
+                                 dataWriter: recorder.write, notificationCenter: NotificationCenter())
+        store.load()
+        let baseline = recorder.writes.count
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "背景"
+        try store.update(edited)
+        let deadline = Date().addingTimeInterval(5)
+        while recorder.writes.count == baseline && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertEqual(recorder.writes.count, baseline + 1, "124.6 write happened")
+        XCTAssertEqual(recorder.onMainThread.last, false, "124.6 not on the main thread")
     }
 
     func testRecoveryFlagIsClearOnAHealthyLoad() throws {
@@ -834,4 +967,11 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(name.count, CameraProfile.maximumNameLength)
         XCTAssertTrue(name.hasSuffix(" 3"), "expected the next free number, got \(name)")
     }
+}
+
+extension ProfileStore {
+    /// Runs the debounced write at once, so tests that change a profile and
+    /// then read the file or reopen the store see it without waiting out the
+    /// debounce (#464).
+    static let immediateScheduler: Scheduler = { _, work in work.perform() }
 }
