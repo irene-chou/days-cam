@@ -52,8 +52,8 @@ final class OnboardingSpotlightUITests: XCTestCase {
     private func assertStepOne(_ note: String) {
         XCTAssertTrue(spotlight.waitForExistence(timeout: 10), note)
         XCTAssertEqual(stepLabel.label, "1 / 2", note)
-        XCTAssertEqual(title.label, "設定起始日", note)
-        XCTAssertEqual(message.label, "點這裡管理設定檔，設定不同的起始日，例如寶寶生日。", note)
+        XCTAssertEqual(title.label, "設定日期", note)
+        XCTAssertEqual(message.label, "點這裡設定要記錄的日子。寶寶生日會算第幾天，婚禮那天會倒數還有幾天。", note)
         XCTAssertEqual(advance.label, "下一步", note)
         XCTAssertTrue(target.label.hasPrefix("設定檔："), "\(note): the chip is the highlighted target")
     }
