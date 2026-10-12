@@ -1741,6 +1741,11 @@ final class TabProfileWriter {
         probe.style.textColor = updated.style.textColor
         probe.style.outlineColor = updated.style.outlineColor
         probe.style.shadowColor = updated.style.shadowColor
+        // The first drag event from "follow the text color" also flips the
+        // source to custom; going back to following the text is a tap.
+        if updated.style.shadowColorSource == .custom {
+            probe.style.shadowColorSource = .custom
+        }
         if case .custom = updated.position { probe.position = updated.position }
         probe.updatedAt = updated.updatedAt
         return probe == updated
