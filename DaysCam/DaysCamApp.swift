@@ -29,7 +29,16 @@ struct DaysCamApp: App {
         profileStore.load()
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: profileStore,
-                                 fontLibrary: FontLibrary())
+                                 fontLibrary: uiTestFontLibrary ?? FontLibrary())
+    }
+
+    /// Debug builds only: a stand-in font library for UI tests (TASK-150).
+    private static var uiTestFontLibrary: (any FontShellControlling)? {
+        #if DEBUG
+        return UITestFontLibrary.fromLaunchArguments(ProcessInfo.processInfo.arguments)
+        #else
+        return nil
+        #endif
     }
 
     /// UI tests pass `-UITestFreshProfiles <name>` to start from an empty
