@@ -478,8 +478,29 @@ final class CameraService: ObservableObject {
     /// and `false` for a back camera with no flash unit (PRD 0.2 FR-7.4).
     /// The toolbar disables the flash button on this, and `capturePhoto`
     /// forces `.off` regardless of what was requested.
+    ///
+    /// Reads a per-side cache: the toolbar asks on every SwiftUI redraw, and
+    /// the lookup behind it builds a `DiscoverySession` (#471). The cache is
+    /// filled on first use for each side and cleared whenever the session is
+    /// (re)configured, so a lookup that ran before camera access was granted
+    /// does not stick.
     var isFlashAvailable: Bool {
-        CameraService.isFlashAvailable(facing: facing, hasFlash: flashCapabilityProvider.hasFlash(for: facing))
+        let side = facing
+        return CameraService.isFlashAvailable(facing: side, hasFlash: cachedHasFlash(for: side))
+    }
+
+    /// Test seam: `facing` is otherwise only set by a real camera switch.
+    func setFacingForTesting(_ newValue: CameraFacing) {
+        facing = newValue
+    }
+
+    private let flashCache = OSAllocatedUnfairLock(initialState: [CameraFacing: Bool]())
+
+    private func cachedHasFlash(for side: CameraFacing) -> Bool {
+        if let cached = flashCache.withLock({ $0[side] }) { return cached }
+        let hasFlash = flashCapabilityProvider.hasFlash(for: side)
+        flashCache.withLock { $0[side] = hasFlash }
+        return hasFlash
     }
 
     private let authorizer: CameraAuthorizing
@@ -1169,6 +1190,7 @@ private extension CameraService {
     /// Publishes the reason and returns false on any failure, so the caller can
     /// simply stop.
     func configureSession() -> Bool {
+        flashCache.withLock { $0.removeAll() }
         guard let device = deviceProvider.device(for: sessionFacing) else {
             publish(status: .unavailable(.noCaptureDevice))
             return false
