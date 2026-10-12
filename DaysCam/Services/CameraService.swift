@@ -165,6 +165,27 @@ protocol VideoMirroringConfigurable: AnyObject {
 
 extension AVCaptureConnection: VideoMirroringConfigurable {}
 
+/// The slice of `AVCapturePhotoOutput` that low-latency capture touches.
+///
+/// Injected so the "only enable what is supported" rules and the prepared
+/// settings can be tested without a real output attached to a camera, whose
+/// `...Supported` flags only come true on a device.
+protocol PhotoOutputConfiguring: AnyObject {
+    var isZeroShutterLagSupported: Bool { get }
+    var isZeroShutterLagEnabled: Bool { get set }
+    var isResponsiveCaptureSupported: Bool { get }
+    var isResponsiveCaptureEnabled: Bool { get set }
+    var isFastCapturePrioritizationSupported: Bool { get }
+    var isFastCapturePrioritizationEnabled: Bool { get set }
+    var maxPhotoQualityPrioritization: AVCapturePhotoOutput.QualityPrioritization { get set }
+    var maxPhotoDimensions: CMVideoDimensions { get }
+    var supportedFlashModes: [AVCaptureDevice.FlashMode] { get }
+    func setPreparedPhotoSettingsArray(_ preparedPhotoSettingsArray: [AVCapturePhotoSettings],
+                                       completionHandler: ((Bool, (any Error)?) -> Void)?)
+}
+
+extension AVCapturePhotoOutput: PhotoOutputConfiguring {}
+
 /// The slice of `AVCaptureDevice` that zooming touches.
 ///
 /// Injected so the clamping and the lock/unlock pairing can be tested without
@@ -494,6 +515,17 @@ final class CameraService: ObservableObject {
         facing = newValue
     }
 
+    /// Test seam: pretends the session was configured, so camera-dependent
+    /// paths can run without a camera.
+    func markConfiguredForTesting() {
+        sessionQueue.sync { isConfigured = true }
+    }
+
+    /// Test seam: runs `work` after everything queued on the session queue.
+    func drainSessionQueueForTesting() {
+        sessionQueue.sync {}
+    }
+
     private let flashCache = OSAllocatedUnfairLock(initialState: [CameraFacing: Bool]())
 
     private func cachedHasFlash(for side: CameraFacing) -> Bool {
@@ -507,12 +539,15 @@ final class CameraService: ObservableObject {
     private let deviceProvider: CaptureDeviceProviding
     private let flashCapabilityProvider: FlashCapabilityProviding
     private let sessionQueue = DispatchQueue(label: "com.irenechou.DaysCam.camera-session")
-    private let photoOutput = AVCapturePhotoOutput()
+    private let photoOutput: AVCapturePhotoOutput
 
     /// Touched on `sessionQueue` only.
     private var videoInput: AVCaptureDeviceInput?
     private var isConfigured = false
     private var sessionFacing: CameraFacing = .back
+    /// The flash mode the toolbar last asked for, so prepared settings match
+    /// the next photo. Touched on `sessionQueue` only.
+    private var requestedFlashMode: FlashMode = .off
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     /// Keeps each in-flight capture delegate alive; AVFoundation does not
     /// retain it. Touched on `sessionQueue` only.
@@ -539,10 +574,14 @@ final class CameraService: ObservableObject {
     ///     real `AVCaptureDevice` cannot be constructed to report `hasFlash`.
     ///   - isCaptureSupported: false disables every hardware path, which is
     ///     what the simulator gets.
+    ///   - photoOutput: the output photos are taken with; tests pass a subclass
+    ///     that records what the service asks of it.
     init(authorizer: CameraAuthorizing = SystemCameraAuthorizer(),
          deviceProvider: CaptureDeviceProviding = SystemCaptureDeviceProvider(),
          flashCapabilityProvider: FlashCapabilityProviding? = nil,
-         isCaptureSupported: Bool = CameraService.platformSupportsCapture) {
+         isCaptureSupported: Bool = CameraService.platformSupportsCapture,
+         photoOutput: AVCapturePhotoOutput = AVCapturePhotoOutput()) {
+        self.photoOutput = photoOutput
         self.authorizer = authorizer
         self.deviceProvider = deviceProvider
         self.flashCapabilityProvider = flashCapabilityProvider
@@ -687,10 +726,14 @@ extension CameraService {
                 // The new side has its own maximum, and it is usually smaller
                 // going to the front camera.
                 self.adoptNativeResolution(of: device)
+                CameraService.configureLowLatencyCapture(on: self.photoOutput)
                 self.session.commitConfiguration()
                 // The input swap rebuilds the output's connection, so its
                 // mirroring is set again for the new side (issue #272).
                 self.applyPhotoMirroring()
+                // Supported features and the maximum size changed with the
+                // camera, so the prepared settings are redone for it.
+                self.preparePhotoOutput()
                 // A device keeps its zoom across input swaps, so going back to
                 // a side would otherwise resume at its old factor.
                 self.resetZoom(on: device)
@@ -704,8 +747,10 @@ extension CameraService {
                 // Put the working input back rather than leaving a dead session.
                 self.session.addInput(previous)
                 self.adoptNativeResolution(of: previous.device)
+                CameraService.configureLowLatencyCapture(on: self.photoOutput)
                 self.session.commitConfiguration()
                 self.applyPhotoMirroring()
+                self.preparePhotoOutput()
                 // Still the same side, so it keeps its zoom.
                 self.publishZoom(of: previous.device)
             } else {
@@ -1137,22 +1182,96 @@ extension CameraService {
                 }
             }
             self.captureDelegates[ObjectIdentifier(delegate)] = delegate
-            let settings = AVCapturePhotoSettings()
-            // Ask for the full sensor resolution the output was configured
-            // for (10.18). Taken from the output rather than the device so it
-            // can never exceed what the output allows, which would raise an
-            // uncatchable exception.
-            settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
-            // Only ever a mode the output actually reports supporting —
-            // assigning an unsupported one is silently ignored by
-            // AVFoundation, but checking here keeps the intent explicit
-            // (PRD 0.2 FR-5.12).
-            if self.photoOutput.supportedFlashModes.contains(resolvedFlashMode) {
-                settings.flashMode = resolvedFlashMode
-            }
+            let settings = CameraService.makePhotoSettings(for: self.photoOutput, flashMode: resolvedFlashMode)
             CaptureTiming.begin()
             self.photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
+    }
+}
+
+// MARK: - Prepared settings
+
+extension CameraService {
+
+    /// Prepares the photo output for `flashMode`; call when the flash mode
+    /// changes (and the camera switch does it by itself with the last value).
+    /// A no-op until a camera is configured; the mode is remembered for then.
+    ///
+    /// Call on the main queue.
+    func prepareCapture(flashMode: FlashMode) {
+        guard isCaptureSupported else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.requestedFlashMode = flashMode
+            guard self.isConfigured else { return }
+            self.preparePhotoOutput()
+        }
+    }
+
+    /// The settings every photo is taken with, and the ones prepared ahead of
+    /// time: they must match, or the preparation does not help.
+    static func makePhotoSettings(for output: PhotoOutputConfiguring,
+                                  flashMode: AVCaptureDevice.FlashMode) -> AVCapturePhotoSettings {
+        let settings = AVCapturePhotoSettings()
+        // Ask for the full sensor resolution the output was configured
+        // for (10.18). Taken from the output rather than the device so it
+        // can never exceed what the output allows, which would raise an
+        // uncatchable exception.
+        settings.maxPhotoDimensions = output.maxPhotoDimensions
+        // Never above the output's `maxPhotoQualityPrioritization`, which is
+        // also `.balanced`; `.speed` is a quality trade-off left to a human.
+        settings.photoQualityPrioritization = .balanced
+        // Only ever a mode the output actually reports supporting —
+        // assigning an unsupported one is silently ignored by
+        // AVFoundation, but checking here keeps the intent explicit
+        // (PRD 0.2 FR-5.12).
+        if output.supportedFlashModes.contains(flashMode) {
+            settings.flashMode = flashMode
+        }
+        return settings
+    }
+
+    /// Turns on the low-latency capture features the current session
+    /// configuration supports, and nothing it does not: assigning `true` to an
+    /// unsupported one raises an Objective-C exception.
+    ///
+    /// Call inside `beginConfiguration`/`commitConfiguration` once the input
+    /// and output are in the session, and again after every input swap: what
+    /// is supported depends on the camera and format, and a feature that
+    /// became unsupported reverts to off by itself.
+    static func configureLowLatencyCapture(on output: PhotoOutputConfiguring) {
+        output.maxPhotoQualityPrioritization = .balanced
+        // Responsive capture needs zero shutter lag, which is on by default
+        // when supported; make sure of it rather than assume.
+        if output.isZeroShutterLagSupported, !output.isZeroShutterLagEnabled {
+            output.isZeroShutterLagEnabled = true
+        }
+        let responsive = output.isResponsiveCaptureSupported
+        if output.isResponsiveCaptureEnabled != responsive {
+            output.isResponsiveCaptureEnabled = responsive
+        }
+        // Fast capture prioritization only exists on top of responsive capture,
+        // and its support is only known after that one is on.
+        let fast = output.isResponsiveCaptureEnabled && output.isFastCapturePrioritizationSupported
+        if output.isFastCapturePrioritizationEnabled != fast {
+            output.isFastCapturePrioritizationEnabled = fast
+        }
+    }
+
+    /// Tells the output which settings the next photo will use, so the first
+    /// shutter press does not allocate buffers just in time.
+    static func preparePhotoSettings(on output: PhotoOutputConfiguring, flashMode: AVCaptureDevice.FlashMode) {
+        let settings = makePhotoSettings(for: output, flashMode: flashMode)
+        output.setPreparedPhotoSettingsArray([settings], completionHandler: nil)
+    }
+
+    /// Re-prepares the photo settings for the camera now in the session. Runs on `sessionQueue`, after the
+    /// configuration is committed.
+    func preparePhotoOutput() {
+        let hasFlash = cachedHasFlash(for: sessionFacing)
+        let available = CameraService.isFlashAvailable(facing: sessionFacing, hasFlash: hasFlash)
+        let flash = CameraService.effectiveFlashMode(requested: requestedFlashMode, isFlashAvailable: available)
+        CameraService.preparePhotoSettings(on: photoOutput, flashMode: flash)
     }
 }
 
@@ -1220,8 +1339,10 @@ private extension CameraService {
         }
         session.addOutput(photoOutput)
         adoptNativeResolution(of: device)
+        CameraService.configureLowLatencyCapture(on: photoOutput)
         session.commitConfiguration()
         applyPhotoMirroring()
+        preparePhotoOutput()
         resetZoom(on: device)
         resetFocusExposure(on: device)
 
@@ -1403,6 +1524,7 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
+        CaptureTiming.logCaptureFinished()
         // This is the last callback of a capture, so it is where the completion
         // is guaranteed to have run exactly once: `deliver` ignores the second
         // call when processing already answered, and answers here when it
@@ -1548,6 +1670,16 @@ enum CaptureTiming {
     static func begin() {
         #if DEBUG
         state.withLock { $0 = State(start: CFAbsoluteTimeGetCurrent()) }
+        #endif
+    }
+
+    /// DEBUG only: logs the time from the shutter press to `didFinishCapture`,
+    /// the number to compare before and after low-latency capture (TASK-130).
+    static func logCaptureFinished() {
+        #if DEBUG
+        let now = CFAbsoluteTimeGetCurrent()
+        guard let start = state.withLock({ $0.start }) else { return }
+        logger.debug("shutterToDidFinishCapture=\(Int((now - start) * 1000))ms")
         #endif
     }
 

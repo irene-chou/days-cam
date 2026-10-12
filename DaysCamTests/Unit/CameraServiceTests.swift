@@ -1169,3 +1169,125 @@ final class FocusExposurePolicyTests: XCTestCase {
         XCTAssertEqual(device.bias, 0)
     }
 }
+
+
+// MARK: - TASK-130: low-latency capture
+
+/// An output whose support flags are scripted. Assigning `true` to a feature it
+/// reports unsupported is what AVFoundation answers with an exception, so the
+/// fake fails the test instead.
+private final class FakePhotoOutput: PhotoOutputConfiguring {
+    var isZeroShutterLagSupported = true
+    var isZeroShutterLagEnabled = false
+    var isResponsiveCaptureSupported = true
+    var isResponsiveCaptureEnabled = false {
+        didSet { XCTAssertTrue(isResponsiveCaptureSupported || !isResponsiveCaptureEnabled, "responsive set while unsupported") }
+    }
+    var isFastCapturePrioritizationSupported = true
+    var isFastCapturePrioritizationEnabled = false {
+        didSet { XCTAssertTrue(isFastCapturePrioritizationSupported || !isFastCapturePrioritizationEnabled, "fast capture set while unsupported") }
+    }
+    var maxPhotoQualityPrioritization: AVCapturePhotoOutput.QualityPrioritization = .speed
+    var maxPhotoDimensions = CMVideoDimensions(width: 4032, height: 3024)
+    var supportedFlashModes: [AVCaptureDevice.FlashMode] = [.off, .auto, .on]
+    private(set) var preparedArrays: [[AVCapturePhotoSettings]] = []
+
+    func setPreparedPhotoSettingsArray(_ preparedPhotoSettingsArray: [AVCapturePhotoSettings],
+                                       completionHandler: ((Bool, (any Error)?) -> Void)?) {
+        preparedArrays.append(preparedPhotoSettingsArray)
+    }
+}
+
+/// A real `AVCapturePhotoOutput` that only records the prepared settings.
+private final class RecordingPhotoOutput: AVCapturePhotoOutput {
+    private(set) var preparedArrays: [[AVCapturePhotoSettings]] = []
+
+    override func setPreparedPhotoSettingsArray(_ preparedPhotoSettingsArray: [AVCapturePhotoSettings],
+                                                completionHandler: ((Bool, (any Error)?) -> Void)? = nil) {
+        preparedArrays.append(preparedPhotoSettingsArray)
+    }
+}
+
+final class CameraServiceLowLatencyCaptureTests: XCTestCase {
+
+    /// 130.1: supported features are turned on, with quality capped at balanced.
+    func testSupportedFeaturesAreEnabled() {
+        let output = FakePhotoOutput()
+        CameraService.configureLowLatencyCapture(on: output)
+        XCTAssertTrue(output.isZeroShutterLagEnabled)
+        XCTAssertTrue(output.isResponsiveCaptureEnabled)
+        XCTAssertTrue(output.isFastCapturePrioritizationEnabled)
+        XCTAssertEqual(output.maxPhotoQualityPrioritization, .balanced)
+    }
+
+    /// 130.1: nothing unsupported is set, and nothing crashes.
+    func testUnsupportedFeaturesAreNotSet() {
+        let output = FakePhotoOutput()
+        output.isResponsiveCaptureSupported = false
+        output.isFastCapturePrioritizationSupported = false
+        CameraService.configureLowLatencyCapture(on: output)
+        XCTAssertFalse(output.isResponsiveCaptureEnabled)
+        XCTAssertFalse(output.isFastCapturePrioritizationEnabled)
+        XCTAssertEqual(output.maxPhotoQualityPrioritization, .balanced)
+    }
+
+    /// Fast capture needs responsive capture; it is not enabled alone.
+    func testFastCaptureIsNotEnabledWithoutResponsiveCapture() {
+        let output = FakePhotoOutput()
+        output.isResponsiveCaptureSupported = false
+        CameraService.configureLowLatencyCapture(on: output)
+        XCTAssertFalse(output.isFastCapturePrioritizationEnabled)
+    }
+
+    /// 130.1: a camera swap that drops support turns the features off again.
+    func testFeaturesFollowSupportAfterACameraSwap() {
+        let output = FakePhotoOutput()
+        CameraService.configureLowLatencyCapture(on: output)
+        output.isResponsiveCaptureSupported = false
+        output.isFastCapturePrioritizationSupported = false
+        CameraService.configureLowLatencyCapture(on: output)
+        XCTAssertFalse(output.isResponsiveCaptureEnabled)
+        XCTAssertFalse(output.isFastCapturePrioritizationEnabled)
+    }
+
+    /// Capture and preparation share one recipe: balanced, full size, flash only if supported.
+    func testPhotoSettingsAreBalancedFullSizeAndHonourSupportedFlash() {
+        let output = FakePhotoOutput()
+        let settings = CameraService.makePhotoSettings(for: output, flashMode: .on)
+        XCTAssertEqual(settings.photoQualityPrioritization, .balanced)
+        XCTAssertEqual(settings.maxPhotoDimensions.width, 4032)
+        XCTAssertEqual(settings.flashMode, .on)
+
+        output.supportedFlashModes = [.off]
+        XCTAssertEqual(CameraService.makePhotoSettings(for: output, flashMode: .on).flashMode, .off)
+    }
+
+    func testPreparePhotoSettingsSendsOneMatchingSettings() {
+        let output = FakePhotoOutput()
+        CameraService.preparePhotoSettings(on: output, flashMode: .auto)
+        XCTAssertEqual(output.preparedArrays.count, 1)
+        XCTAssertEqual(output.preparedArrays.first?.count, 1)
+        XCTAssertEqual(output.preparedArrays.first?.first?.flashMode, .auto)
+        XCTAssertEqual(output.preparedArrays.first?.first?.photoQualityPrioritization, .balanced)
+    }
+
+    /// 130.2: preparing is redone on request, with the mode last asked for, and
+    /// does nothing before a camera is configured.
+    func testPrepareCaptureRedoesPreparationOnceConfigured() {
+        let output = RecordingPhotoOutput()
+        let service = CameraService(isCaptureSupported: true, photoOutput: output)
+
+        service.prepareCapture(flashMode: .auto)
+        service.drainSessionQueueForTesting()
+        XCTAssertTrue(output.preparedArrays.isEmpty, "no camera configured yet")
+
+        service.markConfiguredForTesting()
+        service.prepareCapture(flashMode: .off)
+        service.drainSessionQueueForTesting()
+        XCTAssertEqual(output.preparedArrays.count, 1, "130.2")
+
+        service.prepareCapture(flashMode: .off)
+        service.drainSessionQueueForTesting()
+        XCTAssertEqual(output.preparedArrays.count, 2, "prepared again, as after a camera switch")
+    }
+}
