@@ -481,6 +481,15 @@ final class CameraScreenModel: ObservableObject {
                     self.saveFailureToastPending = false
                     return
                 }
+                // The 設定檔 sheet covers the screen's toast, and every
+                // add／duplicate／delete／reorder／edit there now looks
+                // successful to `ProfileManagerModel`: use the sheet's own
+                // alert, which stays until dismissed.
+                if self.isProfileManagerPresented {
+                    self.profileManagerModel.lastError = self.profileStore.lastWriteError
+                        ?? ProfileStoreError.writeFailed("")
+                    return
+                }
                 // A flush on the way to the background fails while nobody is
                 // looking, and the toast would time out before they return:
                 // hold it until the app is active again.

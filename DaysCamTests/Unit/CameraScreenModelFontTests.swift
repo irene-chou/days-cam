@@ -512,6 +512,22 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(harness.model.toastState?.id, toastID, "no toast for a successful retry")
     }
 
+    /// #492 (Codex): with the 設定檔 sheet open the screen's toast is hidden
+    /// behind it, so the failure goes to the sheet's own alert instead.
+    func testSaveFailureWhileTheProfileSheetIsOpenShowsTheSheetAlert() async throws {
+        let harness = try makeHarness()
+        harness.model.presentProfileManagement()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        harness.model.profileManagerModel.duplicate(id: harness.profileA.id)
+        await settle()
+
+        XCTAssertEqual(harness.model.profileManagerModel.lastError as? ProfileStoreError == nil, false,
+                       "the sheet's alert has the error")
+        XCTAssertNil(harness.model.toastState, "no toast behind the sheet")
+    }
+
     /// #492 (Codex): a failure that happens while the app is inactive is
     /// held and shown when it becomes active again.
     func testSaveFailureWhileInactiveIsShownWhenTheAppBecomesActive() async throws {
