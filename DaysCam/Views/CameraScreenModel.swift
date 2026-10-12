@@ -200,6 +200,9 @@ final class CameraScreenModel: ObservableObject {
     /// nothing should be shown.
     @Published private(set) var captureError: CaptureAlertError?
 
+    /// Photos that failed since the failure alert was last dismissed.
+    private var unacknowledgedFailureCount = 0
+
     /// The remaining whole seconds of an in-progress timer countdown (PRD 0.2
     /// FR-7.6); `nil` when no countdown is running. Set the instant the
     /// shutter starts one (before the first tick), then ticks down once per
@@ -1344,8 +1347,7 @@ extension CameraScreenModel {
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
                 DispatchQueue.main.async { [weak self] in
-                    self?.captureError = CaptureAlertError(message: "照片處理失敗，請再試一次。",
-                                                           showsSettingsAction: false)
+                    self?.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
                     self?.inFlightSaveCount -= 1
                 }
                 return
@@ -1381,8 +1383,8 @@ extension CameraScreenModel {
                         self.announce("已儲存")
                     case let .failure(error):
                         self.markFlightFailed(id: flightID)
-                        self.captureError = CaptureAlertError(message: error.displayMessage,
-                                                              showsSettingsAction: error.showsSettingsAction)
+                        self.reportPhotoFailure(message: error.displayMessage,
+                                                showsSettingsAction: error.showsSettingsAction)
                     }
                     self.inFlightSaveCount -= 1
                 }
@@ -1441,6 +1443,22 @@ extension CameraScreenModel {
     /// Dismisses a capture-time failure alert (PRD §7.3, TASK-10).
     func dismissCaptureError() {
         captureError = nil
+        unacknowledgedFailureCount = 0
+    }
+
+    /// Shows the failure alert for one photo that was not saved. Failures that
+    /// arrive before the alert is dismissed are counted, so two failed photos
+    /// read "2 張照片未儲存" instead of the second alert hiding the first
+    /// (TASK-129, #469); a single failure keeps its own message.
+    func reportPhotoFailure(message: String, showsSettingsAction: Bool) {
+        let previous = unacknowledgedFailureCount > 0 ? captureError : nil
+        unacknowledgedFailureCount += 1
+        guard unacknowledgedFailureCount > 1 else {
+            captureError = CaptureAlertError(message: message, showsSettingsAction: showsSettingsAction)
+            return
+        }
+        captureError = CaptureAlertError(message: "\(unacknowledgedFailureCount) 張照片未儲存",
+                                         showsSettingsAction: showsSettingsAction || (previous?.showsSettingsAction ?? false))
     }
 
     /// Shows a transient confirmation toast and schedules it to fade out

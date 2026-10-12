@@ -1413,6 +1413,33 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(harness.bakedTexts, ["第 10 天", "第 7 天"], "129.4")
     }
 
+    /// Two failed photos before the alert is dismissed read as a count; after
+    /// dismissing, a new failure shows its own message again.
+    func testTwoFailuresAreCountedInOneAlert() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        for index in 0..<2 {
+            model.beginCapture(profile: a)
+            harness.captures[index](.success(UIImage()))
+            waitUntil { harness.saves.count == index + 1 }
+        }
+        harness.saves[0](.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+        harness.saves[1](.failure(.permissionDenied))
+
+        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
+        XCTAssertEqual(model.captureError?.showsSettingsAction, true, "the settings button is kept if any failure needs it")
+
+        model.dismissCaptureError()
+        model.beginCapture(profile: a)
+        harness.captures[2](.success(UIImage()))
+        waitUntil { harness.saves.count == 3 }
+        harness.saves[2](.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+    }
+
     /// A camera-level failure frees the shutter and leaves nothing in flight.
     func testCameraFailureLeavesNothingInFlight() throws {
         let (store, a, _, clock) = try twoProfiles()
