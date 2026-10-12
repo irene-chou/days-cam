@@ -139,6 +139,13 @@ enum OverlayShadowColorSource: String, Codable, CaseIterable {
     case custom
 }
 
+/// A preset color with its display name (TASK-149, #518), e.g. 底片橘.
+struct NamedOverlayColor: Equatable, Hashable {
+    /// Shown and read by VoiceOver in place of the hex.
+    let name: String
+    let color: OverlayColor
+}
+
 /// How an overlay looks: font, colors, outline, shadow and size
 /// (PRD 0.2 §4.2). Replaces the five fixed themes of 0.1.
 ///
@@ -166,6 +173,57 @@ struct OverlayStyle: Equatable, Hashable, Codable {
         OverlayColor(red8: 0xD1, green8: 0x08, blue8: 0x69),
         OverlayColor(red8: 0xA3, green8: 0x07, blue8: 0xBA)
     ]
+
+    /// The light tint of each `swatches` column, in the same order
+    /// (TASK-149, #518): the swatch mixed 45% with white, each 8-bit
+    /// component `c + (255 - c) × 0.45` rounded half up. The white and
+    /// black columns use the system greys `#E5E5EA` and `#48484A` instead,
+    /// since mixing would repeat white or land on a near-duplicate.
+    /// Constants rather than computed, so the UI and the tests are stable.
+    static let lightSwatches: [OverlayColor] = [
+        OverlayColor(red8: 0xE5, green8: 0xE5, blue8: 0xEA),
+        OverlayColor(red8: 0x48, green8: 0x48, blue8: 0x4A),
+        OverlayColor(red8: 0x92, green8: 0xC6, blue8: 0xF7),
+        OverlayColor(red8: 0xB0, green8: 0xDC, blue8: 0x9F),
+        OverlayColor(red8: 0xFE, green8: 0xE2, blue8: 0xA5),
+        OverlayColor(red8: 0xFE, green8: 0xC0, blue8: 0x8E),
+        OverlayColor(red8: 0xF5, green8: 0x9B, blue8: 0xA2),
+        OverlayColor(red8: 0xE6, green8: 0x77, blue8: 0xAD),
+        OverlayColor(red8: 0xCC, green8: 0x77, blue8: 0xD9)
+    ]
+
+    /// The dark shade of each `swatches` column, in the same order
+    /// (TASK-149, #518): the swatch mixed 35% with black, each component
+    /// `c × 0.65` rounded half up. The white and black columns use the
+    /// system greys `#AEAEB2` and `#1C1C1E` instead.
+    static let darkSwatches: [OverlayColor] = [
+        OverlayColor(red8: 0xAE, green8: 0xAE, blue8: 0xB2),
+        OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E),
+        OverlayColor(red8: 0x24, green8: 0x62, blue8: 0x9C),
+        OverlayColor(red8: 0x49, green8: 0x7D, blue8: 0x34),
+        OverlayColor(red8: 0xA4, green8: 0x84, blue8: 0x3C),
+        OverlayColor(red8: 0xA4, green8: 0x5C, blue8: 0x21),
+        OverlayColor(red8: 0x9A, green8: 0x2F, blue8: 0x38),
+        OverlayColor(red8: 0x88, green8: 0x05, blue8: 0x44),
+        OverlayColor(red8: 0x6A, green8: 0x05, blue8: 0x79)
+    ]
+
+    /// Classic film date-stamp colors, each with the name VoiceOver reads
+    /// (TASK-149, #518).
+    static let filmSwatches: [NamedOverlayColor] = [
+        NamedOverlayColor(name: "底片橘", color: OverlayColor(red8: 0xFF, green8: 0x8A, blue8: 0x1E)),
+        NamedOverlayColor(name: "日期紅", color: OverlayColor(red8: 0xE2, green8: 0x3B, blue8: 0x2E)),
+        NamedOverlayColor(name: "琥珀黃", color: OverlayColor(red8: 0xF5, green8: 0xB7, blue8: 0x00)),
+        NamedOverlayColor(name: "復古綠", color: OverlayColor(red8: 0x8D, green8: 0xB2, blue8: 0x55)),
+        NamedOverlayColor(name: "褪色藍", color: OverlayColor(red8: 0x6E, green8: 0x8F, blue8: 0xB5)),
+        NamedOverlayColor(name: "奶油白", color: OverlayColor(red8: 0xF4, green8: 0xEB, blue8: 0xD0))
+    ]
+
+    /// Every preset color, one tap away on the color page: `swatches`, the
+    /// light and dark rows, then the film colors. No two share a hex, so a
+    /// picker color matching any of them is a preset, not a custom color.
+    static let allPresetColors: [OverlayColor] =
+        swatches + lightSwatches + darkSwatches + filmSwatches.map(\.color)
 
     /// Allowed `strokeWidth`, in points at a 17pt font (TASK-70).
     static let strokeWidthRange = 1.0...6.0
