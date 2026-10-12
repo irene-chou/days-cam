@@ -848,21 +848,28 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testOverlayTextShowsNotStartedForEveryLegalUnitPair() throws {
-        // 15.3: "八種單位組合逐一切換皆顯示尚未開始".
+        // 15.3: "八種單位組合逐一切換皆顯示尚未開始", re-baselined by
+        // TASK-140 (#487): the countdown reads in the checked units.
         let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
         let store = makeProfileStore(now: now)
         var future = try makeFutureProfile(store: store)
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
 
         // The eight 0.1 pairs as their PRD 0.2 §4.3 unit sets.
-        let legacySets: [Set<DisplayUnit>] = [
-            [.day], [.week, .day], [.week], [.month, .day], [.month],
-            [.year, .month, .day], [.year, .month], [.year]
+        let legacySets: [(Set<DisplayUnit>, String)] = [
+            ([.day], "還有 31 天"), ([.week, .day], "還有 4 週又 3 天"), ([.week], "還有 4 週"),
+            ([.month, .day], "還有 1 個月"), ([.month], "還有 1 個月"),
+            ([.year, .month, .day], "還有 1 個月"), ([.year, .month], "還有 1 個月"), ([.year], "還有 31 天")
         ]
-        for units in legacySets {
+        for (units, expected) in legacySets {
             future.displayUnits = units
             try store.update(future)
-            XCTAssertEqual(model.overlayText, "還有 31 天", "\(units)")
+            // The model mirrors the store on the main queue; without this
+            // every iteration would read the first set's profile.
+            let mirrored = expectation(description: "profiles mirrored")
+            DispatchQueue.main.async { mirrored.fulfill() }
+            wait(for: [mirrored], timeout: 1)
+            XCTAssertEqual(model.overlayText, expected, "\(units)")
         }
     }
 
