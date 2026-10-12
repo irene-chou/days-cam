@@ -985,19 +985,16 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertNil(model.captureError)
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
-        // `processCapturedImage` sets this synchronously, before dispatching
-        // to the background queue — same as `capturePhoto()`'s own
-        // assignment does in the real flow.
-        XCTAssertTrue(model.isCapturing)
+        // `processCapturedImage` counts the photo synchronously, before
+        // dispatching to the background queue.
+        XCTAssertEqual(model.inFlightSaveCount, 1)
 
         waitUntil { model.captureError != nil }
         XCTAssertEqual(model.captureError?.message, "照片處理失敗，請再試一次。")
         XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
         // 10.22: the bake-failure branch must not leave the shutter stuck
-        // disabled — a genuine `true` → `false` transition, not merely
-        // "still false" (mutation-verified: deleting the reset here left
-        // this red).
-        waitUntil { model.isCapturing == false }
+        // disabled — a genuine 1 → 0 transition, not merely "still 0".
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
     func testProcessCapturedImageDoesNotCallSaveWhenBakeFails() throws {
@@ -1050,7 +1047,7 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertNil(model.captureError)
         // The thumbnail only changes once the flight lands.
         XCTAssertNil(model.latestThumbnailImage)
-        waitUntil { model.isCapturing == false }
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
     func testLandingASavedFlightReplacesTheThumbnailAndRemovesIt() throws {
@@ -1228,7 +1225,7 @@ final class CameraScreenModelTests: XCTestCase {
         // Issue #148 (S.10): the flight is marked failed and the thumbnail never changes.
         XCTAssertEqual(model.captureFlights.first?.status, .failed)
         XCTAssertNil(model.latestThumbnailImage)
-        waitUntil { model.isCapturing == false }
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
     func testProcessCapturedImageSurfacesCaptureErrorOnSaveFailed() throws {
@@ -1243,10 +1240,10 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
         XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
         XCTAssertNil(model.toastState)
-        waitUntil { model.isCapturing == false }
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
-    func testProcessCapturedImageResetsIsCapturingWhenSaveCompletes() throws {
+    func testProcessCapturedImageDropsTheInFlightCountWhenSaveCompletes() throws {
         // 10.22: `save` must not leave the shutter permanently disabled once
         // it calls back, whichever way it resolves.
         let now = try fixedNow()
@@ -1260,20 +1257,200 @@ final class CameraScreenModelTests: XCTestCase {
                                          })
 
         model.processCapturedImage(UIImage(), context: sampleContext(now))
-        XCTAssertTrue(model.isCapturing) // set synchronously, before backgrounding
+        XCTAssertEqual(model.inFlightSaveCount, 1) // counted synchronously, before backgrounding
 
         wait(for: [completionStored], timeout: 2)
 
         // Not resolved yet: `save`'s own completion is still pending,
-        // deliberately not called above — `isCapturing` must still be
-        // `true` here, or this test would prove nothing about the reset
-        // below actually being *caused* by the completion firing.
+        // deliberately not called above — the count must still be 1 here,
+        // or this test would prove nothing about the drop below actually
+        // being *caused* by the completion firing.
         XCTAssertNotNil(storedCompletion)
-        XCTAssertTrue(model.isCapturing)
+        XCTAssertEqual(model.inFlightSaveCount, 1)
 
         storedCompletion?(.success("asset-1"))
 
-        waitUntil { model.isCapturing == false }
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    // MARK: - TASK-129 (#469) shutter unlocks after capture; bake/save pipeline
+
+    private final class CaptureHarness {
+        var captures: [(Result<UIImage, CameraCaptureError>) -> Void] = []
+        var saves: [(Result<String, PhotoSaveError>) -> Void] = []
+        let lock = NSLock()
+        var bakedTexts: [String] = []
+        var firstBakeGate: DispatchSemaphore?
+    }
+
+    private func makePipelineModel(harness: CaptureHarness, profileStore: ProfileStore, clock: MutableClock)
+        -> CameraScreenModel {
+        let (model, _, _, _) = makeModel(
+            profileStore: profileStore,
+            nowProvider: clock.now,
+            bake: { _, text, _, _, _, _ in
+                harness.lock.lock()
+                let isFirst = harness.bakedTexts.isEmpty
+                harness.bakedTexts.append(text)
+                harness.lock.unlock()
+                if isFirst { harness.firstBakeGate?.wait() }
+                return UIImage()
+            },
+            save: { _, completion in harness.saves.append(completion) },
+            captureImage: { _, completion in harness.captures.append(completion) })
+        return model
+    }
+
+    private func twoProfiles() throws -> (ProfileStore, CameraProfile, CameraProfile, MutableClock) {
+        let day = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
+        let a = CameraProfile(name: "A", startDate: DateFixture.components(2026, 1, 1))
+        let b = CameraProfile(name: "B", startDate: DateFixture.components(2026, 1, 5))
+        let store = makeProfileStore(now: day, seed: [a, b])
+        return (store, store.profiles[0], store.profiles[1], MutableClock(day))
+    }
+
+    /// 129.1: the shutter is free again as soon as the camera hands the
+    /// photo back, even while the first photo is still being saved, and the
+    /// second photo's result never lands on the first one's flight.
+    func testShutterIsFreeWhileTheFirstPhotoIsStillSaving() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        model.beginCapture(profile: a)
+        XCTAssertTrue(model.isShutterBusy, "129.1 busy while the camera is capturing")
+        harness.captures[0](.success(UIImage()))
+        waitUntil { harness.saves.count == 1 }
+        XCTAssertFalse(model.isCapturing)
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        XCTAssertFalse(model.isShutterBusy, "129.1 the shutter can be pressed again")
+
+        model.beginCapture(profile: a)
+        harness.captures[1](.success(UIImage()))
+        waitUntil { harness.saves.count == 2 }
+        let ids = model.captureFlights.map(\.id)
+        XCTAssertEqual(ids.count, 2)
+
+        harness.saves[1](.success("asset-2"))
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .saving, "129.1 first untouched")
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved)
+        harness.saves[0](.success("asset-1"))
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .saved)
+    }
+
+    /// 129.2: two photos in flight keep the shutter disabled; either one
+    /// finishing frees it.
+    func testShutterIsDisabledWithTwoInFlightAndFreedWhenEitherFinishes() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        for index in 0..<2 {
+            model.beginCapture(profile: a)
+            harness.captures[index](.success(UIImage()))
+            waitUntil { harness.saves.count == index + 1 }
+        }
+        XCTAssertEqual(model.inFlightSaveCount, 2)
+        XCTAssertTrue(model.isShutterBusy, "129.2 at the limit")
+
+        harness.saves[1](.success("asset-2")) // the later one finishes first
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        XCTAssertFalse(model.isShutterBusy, "129.2 freed")
+
+        model.beginCapture(profile: a)
+        harness.captures[2](.success(UIImage()))
+        waitUntil { harness.saves.count == 3 }
+        XCTAssertTrue(model.isShutterBusy, "129.2 full again")
+        harness.saves[0](.failure(.saveFailed("x")))
+        XCTAssertFalse(model.isShutterBusy, "129.2 a failure frees it too")
+    }
+
+    /// 129.3: a failed first save and a successful second one each land on
+    /// their own photo.
+    func testEachPhotoReportsItsOwnSaveResult() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
+
+        for index in 0..<2 {
+            model.beginCapture(profile: a)
+            harness.captures[index](.success(UIImage()))
+            waitUntil { harness.saves.count == index + 1 }
+        }
+        let ids = model.captureFlights.map(\.id)
+
+        harness.saves[0](.failure(.saveFailed("磁碟空間不足")))
+        harness.saves[1](.success("asset-2"))
+
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .failed, "129.3 first failed")
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved, "129.3 second saved")
+        XCTAssertNotNil(model.captureError, "129.3 the failure is reported")
+        XCTAssertEqual(announcements, ["已儲存"], "129.3 only the successful photo is announced as saved")
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+    }
+
+    /// 129.4: each photo is baked with the profile and moment it was taken
+    /// with, even when the profile changes while the first is still baking.
+    func testEachPhotoIsBakedWithTheSettingsAtItsOwnCaptureTime() throws {
+        let (store, a, b, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        harness.firstBakeGate = DispatchSemaphore(value: 0)
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        model.beginCapture(profile: a) // Jan 10: A is day 10
+        harness.captures[0](.success(UIImage()))
+        waitUntil { harness.lock.lock(); defer { harness.lock.unlock() }; return harness.bakedTexts.count == 1 }
+
+        // The first photo is still baking; the profile changes and time moves on.
+        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
+        model.beginCapture(profile: b) // Jan 11: B is day 7
+        harness.captures[1](.success(UIImage()))
+        harness.firstBakeGate?.signal()
+        waitUntil { harness.saves.count == 2 }
+
+        XCTAssertEqual(harness.bakedTexts, ["第 10 天", "第 7 天"], "129.4")
+    }
+
+    /// Two failed photos before the alert is dismissed read as a count; after
+    /// dismissing, a new failure shows its own message again.
+    func testTwoFailuresAreCountedInOneAlert() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        for index in 0..<2 {
+            model.beginCapture(profile: a)
+            harness.captures[index](.success(UIImage()))
+            waitUntil { harness.saves.count == index + 1 }
+        }
+        harness.saves[0](.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+        harness.saves[1](.failure(.permissionDenied))
+
+        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
+        XCTAssertEqual(model.captureError?.showsSettingsAction, true, "the settings button is kept if any failure needs it")
+
+        model.dismissCaptureError()
+        model.beginCapture(profile: a)
+        harness.captures[2](.success(UIImage()))
+        waitUntil { harness.saves.count == 3 }
+        harness.saves[2](.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+    }
+
+    /// A camera-level failure frees the shutter and leaves nothing in flight.
+    func testCameraFailureLeavesNothingInFlight() throws {
+        let (store, a, _, clock) = try twoProfiles()
+        let harness = CaptureHarness()
+        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+
+        model.beginCapture(profile: a)
+        harness.captures[0](.failure(.failed("x")))
+
+        XCTAssertFalse(model.isShutterBusy, "129.5 the shutter never stays stuck")
+        XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
     // MARK: - Overlay panel shell (PRD 0.2 FR-8, TASK-22 acceptance 22.4)

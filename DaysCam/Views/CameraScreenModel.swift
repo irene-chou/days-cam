@@ -172,13 +172,36 @@ final class CameraScreenModel: ObservableObject {
     /// comment), so nothing else keeps this alive.
     private var positionDragAdapter: PositionDragAdapter?
 
-    /// True from the moment the shutter is tapped until the photo pipeline
-    /// finishes, success or failure (PRD FR-5.5: disabled while saving).
+    /// True from the moment the shutter fires until AVFoundation hands back
+    /// the photo (or fails), success or failure. Only this span keeps the
+    /// shutter from firing again (PRD FR-5.5, as read by TASK-129, #469);
+    /// baking and saving are counted by `inFlightSaveCount`.
     @Published private(set) var isCapturing = false
+
+    /// How many captured photos are still being baked or saved. Goes up when
+    /// a photo arrives from the camera and down when that photo's bake fails
+    /// or its save calls back, success or failure.
+    @Published private(set) var inFlightSaveCount = 0
+
+    /// The most photos baked or saved at once; at the limit the shutter stays
+    /// disabled so full-resolution images cannot pile up in memory (~100MB
+    /// each, TASK-129 assumption).
+    static let maxInFlightSaves = 2
+
+    /// Whether a capture or a full pipeline keeps the shutter disabled.
+    var isShutterBusy: Bool {
+        isCapturing || inFlightSaveCount >= Self.maxInFlightSaves
+    }
+
+    /// Bakes one photo at a time, in capture order.
+    private let pipelineQueue = DispatchQueue(label: "dayscam.capture-pipeline", qos: .userInitiated)
 
     /// The pending capture-time failure alert, if any (PRD §7.3). `nil` when
     /// nothing should be shown.
     @Published private(set) var captureError: CaptureAlertError?
+
+    /// Photos that failed since the failure alert was last dismissed.
+    private var unacknowledgedFailureCount = 0
 
     /// The remaining whole seconds of an in-progress timer countdown (PRD 0.2
     /// FR-7.6); `nil` when no countdown is running. Set the instant the
@@ -820,7 +843,7 @@ final class CameraScreenModel: ObservableObject {
     /// capture is already in flight (PRD FR-5.5). Single source of truth for
     /// both the button's `.disabled` state and `capturePhoto()`'s own guard.
     var isShutterDisabled: Bool {
-        isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isCapturing
+        isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isShutterBusy
             || isWaitingForFont
     }
 
@@ -1257,7 +1280,10 @@ extension CameraScreenModel {
             guard let self else { return }
             switch result {
             case let .success(image):
+                // The photo is counted as in flight before the capture span
+                // ends, so the shutter never flickers enabled in between.
                 self.processCapturedImage(image, context: context)
+                self.isCapturing = false
             case .failure:
                 // A pre-TASK-9/10 capture-level failure (no hardware, not
                 // running, AVFoundation error). Not one of PRD §7.3's named
@@ -1290,21 +1316,19 @@ extension CameraScreenModel {
     /// `captureContext(for:)` above — is unavailable without real capture
     /// hardware (same boundary `CameraServiceTests` documents). This is what
     /// `CameraScreenModelTests` calls directly to verify the bake-failure,
-    /// save-success and save-failure branches, and that `isCapturing` ends
-    /// up `false` on every one of them (PRD acceptance 10.22).
+    /// save-success and save-failure branches, and that `inFlightSaveCount`
+    /// drops back on every one of them (PRD acceptance 10.22).
     func processCapturedImage(_ image: UIImage, context: CaptureContext) {
-        // Redundant with `capturePhoto()`'s own assignment in the real flow
-        // (already `true` by the time this runs there) — kept here so this
-        // method is self-contained: a test calling it directly exercises the
-        // same `true` → `false` transition production code goes through,
-        // rather than starting from (and asserting against) a value nobody
-        // in the test ever set.
-        isCapturing = true
+        // Counted here, synchronously on the main actor, so a test calling
+        // this directly goes through the same `+1` → `-1` transition as the
+        // real flow. `context` was fixed when the shutter fired, so a profile
+        // switch while this photo is still baking cannot change it.
+        inFlightSaveCount += 1
         let cropRect = self.cropRect
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
-        DispatchQueue.global(qos: .userInitiated).async {
+        pipelineQueue.async {
             // core-dev's reminder: a 12MP photo in a wide-gamut color space
             // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
             // per bake — without this, memory piles up across rapid presses
@@ -1323,9 +1347,8 @@ extension CameraScreenModel {
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
                 DispatchQueue.main.async { [weak self] in
-                    self?.captureError = CaptureAlertError(message: "照片處理失敗，請再試一次。",
-                                                           showsSettingsAction: false)
-                    self?.isCapturing = false
+                    self?.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
+                    self?.inFlightSaveCount -= 1
                 }
                 return
             }
@@ -1360,10 +1383,10 @@ extension CameraScreenModel {
                         self.announce("已儲存")
                     case let .failure(error):
                         self.markFlightFailed(id: flightID)
-                        self.captureError = CaptureAlertError(message: error.displayMessage,
-                                                              showsSettingsAction: error.showsSettingsAction)
+                        self.reportPhotoFailure(message: error.displayMessage,
+                                                showsSettingsAction: error.showsSettingsAction)
                     }
-                    self.isCapturing = false
+                    self.inFlightSaveCount -= 1
                 }
             }
         }
@@ -1420,6 +1443,22 @@ extension CameraScreenModel {
     /// Dismisses a capture-time failure alert (PRD §7.3, TASK-10).
     func dismissCaptureError() {
         captureError = nil
+        unacknowledgedFailureCount = 0
+    }
+
+    /// Shows the failure alert for one photo that was not saved. Failures that
+    /// arrive before the alert is dismissed are counted, so two failed photos
+    /// read "2 張照片未儲存" instead of the second alert hiding the first
+    /// (TASK-129, #469); a single failure keeps its own message.
+    func reportPhotoFailure(message: String, showsSettingsAction: Bool) {
+        let previous = unacknowledgedFailureCount > 0 ? captureError : nil
+        unacknowledgedFailureCount += 1
+        guard unacknowledgedFailureCount > 1 else {
+            captureError = CaptureAlertError(message: message, showsSettingsAction: showsSettingsAction)
+            return
+        }
+        captureError = CaptureAlertError(message: "\(unacknowledgedFailureCount) 張照片未儲存",
+                                         showsSettingsAction: showsSettingsAction || (previous?.showsSettingsAction ?? false))
     }
 
     /// Shows a transient confirmation toast and schedules it to fade out
