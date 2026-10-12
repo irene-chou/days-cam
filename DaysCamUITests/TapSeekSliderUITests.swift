@@ -54,21 +54,21 @@ final class TapSeekSliderUITests: XCTestCase {
     }
 
     /// Waits for `element`, then scrolls the page (slowly, from the left
-    /// margin) until the row sits above the floating collapse button, which
-    /// otherwise covers the right end of the lower shadow rows and would
-    /// close the panel on a tap there.
+    /// margin) just far enough that the row's middle sits well above the
+    /// panel's bottom edge, where a fade hides it although it still counts
+    /// as hittable. Does nothing when the row is already clear of the edge.
     private func settle(_ element: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 3))
-        let collapse = app.buttons["panelCollapseButton"]
+        let screenHeight = app.windows.firstMatch.frame.height
         var tries = 0
-        while collapse.exists, element.frame.maxY > collapse.frame.minY - 4, tries < 10 {
+        while (!element.isHittable || element.frame.midY > screenHeight * 0.85), tries < 4 {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.88))
                 .press(forDuration: 0.1,
                        thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.76)),
                        withVelocity: .slow, thenHoldForDuration: 0.5)
             tries += 1
         }
-        XCTAssertTrue(element.isHittable, "row revealed above the collapse button")
+        XCTAssertTrue(element.isHittable, "row revealed above the panel's bottom edge")
     }
 
     /// 114.1 / 114.4: the size slider seeks on a tap, its ends give the
