@@ -1352,9 +1352,9 @@ extension CameraScreenModel {
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
-        // Only the identity is kept for the timing log, so a pending save
+        // Only the capture's ID is kept for the timing log, so a pending save
         // timeout does not hold the full-resolution photo in memory.
-        let imageKey = ObjectIdentifier(image)
+        let timingID = CaptureTiming.timingID(of: image)
         pipelineQueue.async {
             // core-dev's reminder: a 12MP photo in a wide-gamut color space
             // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
@@ -1373,7 +1373,7 @@ extension CameraScreenModel {
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
-                CaptureTiming.discard(imageKey)
+                CaptureTiming.discard(id: timingID)
                 DispatchQueue.main.async { [weak self] in
                     self?.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
                     self?.inFlightSaveCount -= 1
@@ -1384,7 +1384,7 @@ extension CameraScreenModel {
             // it depends on: a 12MP `UIImage` is not something the thumbnail
             // (88px) or the flight animation (~600px) should hold on to.
             let thumbnail = Self.thumbnail(of: baked)
-            CaptureTiming.mark(.baked, for: imageKey)
+            CaptureTiming.mark(.baked, id: timingID)
             let flightImage = Self.thumbnail(of: baked, maxDimension: Self.flightImageMaxDimension)
             let flightID = UUID()
 
@@ -1401,7 +1401,7 @@ extension CameraScreenModel {
                     // The save never called back: give the place up and say
                     // so, rather than report a save nobody confirmed.
                     slot.settle()
-                    CaptureTiming.discard(imageKey)
+                    CaptureTiming.discard(id: timingID)
                     self.markFlightFailed(id: flightID)
                     self.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
                                             showsSettingsAction: false)
@@ -1426,7 +1426,7 @@ extension CameraScreenModel {
                     slot.settle()
                     switch result {
                     case let .success(assetID):
-                        CaptureTiming.mark(.saved, for: imageKey)
+                        CaptureTiming.mark(.saved, id: timingID)
                         // PRD 0.2 FR-15.1/FR-15.2: record the new asset so
                         // the gallery (TASK-29) can find it later.
                         self.capturedPhotoStore.recordCapturedAsset(assetID)
@@ -1435,7 +1435,7 @@ extension CameraScreenModel {
                         // VoiceOver users hear it instead (issue #148).
                         self.announce("已儲存")
                     case let .failure(error):
-                        CaptureTiming.discard(imageKey)
+                        CaptureTiming.discard(id: timingID)
                         self.markFlightFailed(id: flightID)
                         self.reportPhotoFailure(message: error.displayMessage,
                                                 showsSettingsAction: error.showsSettingsAction)

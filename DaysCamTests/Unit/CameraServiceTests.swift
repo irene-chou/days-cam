@@ -1256,22 +1256,42 @@ final class CameraServiceLowLatencyCaptureTests: XCTestCase {
     func testOverlappingCapturesKeepTheirOwnTiming() {
         let recorder = CaptureTimingRecorder()
         let firstID = UUID(), secondID = UUID()
-        let first = NSObject(), second = NSObject()
-        let firstKey = ObjectIdentifier(first), secondKey = ObjectIdentifier(second)
 
         recorder.begin(id: firstID, at: 0)
-        recorder.markProcessed(id: firstID, photo: firstKey, size: CGSize(width: 4000, height: 3000), at: 0.5)
+        recorder.markProcessed(id: firstID, size: CGSize(width: 4000, height: 3000), at: 0.5)
         recorder.begin(id: secondID, at: 1.0) // pressed while the first is still baking
-        recorder.markProcessed(id: secondID, photo: secondKey, size: CGSize(width: 3000, height: 3000), at: 1.5)
-        XCTAssertNil(recorder.mark(.baked, photo: firstKey, at: 1.5))
-        XCTAssertNil(recorder.mark(.baked, photo: secondKey, at: 2.0))
+        recorder.markProcessed(id: secondID, size: CGSize(width: 3000, height: 3000), at: 1.5)
+        XCTAssertNil(recorder.mark(.baked, id: firstID, at: 1.5))
+        XCTAssertNil(recorder.mark(.baked, id: secondID, at: 2.0))
 
-        let secondLine = recorder.mark(.saved, photo: secondKey, at: 2.5)
-        let firstLine = recorder.mark(.saved, photo: firstKey, at: 3.0)
+        let secondLine = recorder.mark(.saved, id: secondID, at: 2.5)
+        let firstLine = recorder.mark(.saved, id: firstID, at: 3.0)
 
         XCTAssertEqual(firstLine, "processed=500ms baked=1000ms saved=1500ms shutterToBaked=1500ms total=3000ms size=4000x3000", "151.3")
         XCTAssertEqual(secondLine, "processed=500ms baked=500ms saved=500ms shutterToBaked=1000ms total=1500ms size=3000x3000", "151.3")
-        XCTAssertNil(recorder.mark(.saved, photo: firstKey, at: 4.0), "151.3 a finished capture is forgotten")
+        XCTAssertNil(recorder.mark(.saved, id: firstID, at: 4.0), "151.3 a finished capture is forgotten")
+    }
+
+    /// Codex P2 on #532: the ID rides on the image, not on its address, so a
+    /// photo allocated where an earlier one used to live keeps its own ID.
+    func testCaptureIDTravelsOnTheImageNotItsAddress() {
+        #if DEBUG
+        let firstID = UUID(), secondID = UUID()
+        var firstKey: ObjectIdentifier?
+        autoreleasepool {
+            let first = UIImage()
+            CaptureTiming.markProcessed(id: firstID, image: first)
+            firstKey = ObjectIdentifier(first)
+            XCTAssertEqual(CaptureTiming.timingID(of: first), firstID)
+        }
+        // Whether or not this lands on the freed address, it has its own ID.
+        let second = UIImage()
+        CaptureTiming.markProcessed(id: secondID, image: second)
+        XCTAssertEqual(CaptureTiming.timingID(of: second), secondID)
+        XCTAssertNotEqual(CaptureTiming.timingID(of: second), firstID)
+        _ = firstKey
+        XCTAssertNil(CaptureTiming.timingID(of: UIImage()), "an image the camera did not capture has none")
+        #endif
     }
 
     /// 145.1: with slow work already queued, the shutter's start time is
