@@ -230,15 +230,15 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let regular = makeMetrics(width: 393, height: 852, top: 59, bottom: 34)
         XCTAssertFalse(regular.isSmallScreen)
         // TASK-92: 224 + the 44pt open footer row and gaps − the 24pt grabber.
-        XCTAssertEqual(regular.panelContentHeight, 268, "92.2／99.7: the grabber's 24pt came back to the content")
-        XCTAssertEqual(regular.panelHeight, 32 + 268)
+        XCTAssertEqual(regular.panelContentHeight, 260, "92.2／99.7: the grabber's 24pt came back; PR #455 takes 8pt for the top padding")
+        XCTAssertEqual(regular.panelHeight, 8 + 32 + 260)
         XCTAssertEqual(regular.panelVisibleHeight, regular.panelHeight + 34, "92.1: on through the home-indicator band")
         XCTAssertEqual(regular.panelGapAboveBox, 6)
 
         let small = makeMetrics(width: 375, height: 667, top: 20, bottom: 0)
         XCTAssertTrue(small.isSmallScreen)
-        XCTAssertEqual(small.panelContentHeight, 176, "92.2／99.7")
-        XCTAssertEqual(small.panelHeight, 32 + 176)
+        XCTAssertEqual(small.panelContentHeight, 168, "92.2／99.7／PR #455")
+        XCTAssertEqual(small.panelHeight, 8 + 32 + 168)
         XCTAssertEqual(small.panelVisibleHeight, small.panelHeight, "92.12: no band on 4.7-inch")
         XCTAssertEqual(small.panelGapAboveBox, 4)
 
@@ -271,7 +271,7 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         let large = CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: insets, panelTabBarHeight: 38)
         XCTAssertEqual(normal.panelHeight, 300, accuracy: accuracy)
         XCTAssertEqual(large.panelHeight, 306, accuracy: accuracy)
-        XCTAssertEqual(large.panelContentHeight, 268)
+        XCTAssertEqual(large.panelContentHeight, 260)
         XCTAssertEqual(large.panelBottom, normal.panelBottom, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderAreaHeight, normal.panelOpenViewfinderAreaHeight - 6, accuracy: accuracy)
         XCTAssertEqual(large.panelOpenViewfinderFrame(for: .threeByFour).minY, large.headerBottom, accuracy: accuracy)
