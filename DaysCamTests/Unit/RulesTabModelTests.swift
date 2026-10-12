@@ -251,4 +251,76 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.countingRule, .dayZero)
     }
+
+    // MARK: - 137: 時間軸預覽
+
+    private func weddingModel(startDate: DateComponents = DateFixture.components(2027, 1, 16),
+                              countingRule: CountingRule = .dayOne,
+                              showDayCount: Bool = true,
+                              showDate: Bool = false) throws -> RulesTabModel {
+        var profile = baselineProfile(name: "婚禮", startDate: startDate,
+                                      showDayCount: showDayCount, countingRule: countingRule)
+        profile.showName = true
+        profile.showDate = showDate
+        return makeModel(profile: profile, now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 8)), spy: Spy())
+    }
+
+    /// 137.2
+    func testTimelineShowsDayBeforeDayOfAndDayAfter() throws {
+        let model = try weddingModel()
+        XCTAssertEqual(model.overlayPreviewText, "婚禮 還有 96 天")
+        let rows = try XCTUnwrap(model.timelinePreview, "137.2")
+        XCTAssertEqual(rows.map(\.dateLabel), ["1/15", "1/16", "1/17"])
+        XCTAssertEqual(rows.map(\.isStartDay), [false, true, false])
+        XCTAssertEqual(rows.map(\.text), ["婚禮 還有 1 天", "婚禮 第 1 天", "婚禮 第 2 天"], "137.2")
+        XCTAssertEqual(rows[1].spokenText, "1/16 當天 婚禮 第 1 天")
+    }
+
+    /// 137.3
+    func testDayZeroShiftsTheDayOfAndDayAfterRows() throws {
+        let model = try weddingModel(countingRule: .dayZero)
+        let rows = try XCTUnwrap(model.timelinePreview)
+        XCTAssertEqual(rows.map(\.text), ["婚禮 還有 1 天", "婚禮 第 0 天", "婚禮 第 1 天"], "137.3")
+    }
+
+    /// 137.3: switching the rule updates the rows at once.
+    func testChangingTheCountingRuleUpdatesTheTimeline() throws {
+        let model = try weddingModel()
+        model.setCountingRule(.dayZero)
+        XCTAssertEqual(model.timelinePreview?.map(\.text), ["婚禮 還有 1 天", "婚禮 第 0 天", "婚禮 第 1 天"])
+    }
+
+    /// 137.4
+    func testNoTimelineForAPastDate() throws {
+        XCTAssertNil(try weddingModel(startDate: DateFixture.components(2026, 9, 1)).timelinePreview, "137.4")
+    }
+
+    func testNoTimelineForToday() throws {
+        XCTAssertNil(try weddingModel(startDate: DateFixture.components(2026, 10, 12)).timelinePreview)
+    }
+
+    /// 137.5
+    func testNoTimelineWhenTheDayCountIsOff() throws {
+        XCTAssertNil(try weddingModel(showDayCount: false, showDate: true).timelinePreview, "137.5")
+    }
+
+    /// 137.6: every row starts with its own day's date.
+    func testTimelineRowsLeadWithTheirOwnDateWhenDateIsShown() throws {
+        let rows = try XCTUnwrap(try weddingModel(showDate: true).timelinePreview)
+        XCTAssertEqual(rows.map(\.text), ["2027.01.15 婚禮 還有 1 天",
+                                          "2027.01.16 婚禮 第 1 天",
+                                          "2027.01.17 婚禮 第 2 天"], "137.6")
+    }
+
+    /// The tomorrow case: the day before is today and repeats the preview sentence.
+    func testTimelineForTomorrowStillHasThreeRows() throws {
+        let rows = try XCTUnwrap(try weddingModel(startDate: DateFixture.components(2026, 10, 13)).timelinePreview)
+        XCTAssertEqual(rows.map(\.dateLabel), ["10/12", "10/13", "10/14"])
+    }
+
+    func testTimelineFollowsNameAndSwitches() throws {
+        let model = try weddingModel()
+        model.setShowName(false)
+        XCTAssertEqual(model.timelinePreview?.map(\.text), ["還有 1 天", "第 1 天", "第 2 天"])
+    }
 }
