@@ -20,6 +20,7 @@ import SwiftUI
 /// control's own gray track, matching PRD FR-8.4's own wording.
 struct OverlayPanelView: View {
     @ObservedObject var model: CameraScreenModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The usable scrolling area's fixed height below the segmented control
     /// (issue #128, `CameraScreenLayoutMetrics.panelContentHeight`); taller
@@ -202,8 +203,9 @@ struct OverlayPanelView: View {
     // MARK: - First layer (FR-8.4, comp A)
 
     /// The gray track (`rgba(42,38,34,.07)` — `CameraTheme.fill`, already
-    /// documented there for exactly this use), corner radius 10, 2pt inset
-    /// on every side (`D3-tab-options.html:68`, `.A .seg`).
+    /// documented there for exactly this use), corner radius 10, 4pt inset
+    /// left and right and 2pt top and bottom (`D3-tab-options.html:68`,
+    /// `.A .seg`; the sides widened by TASK-154, #531).
     ///
     /// #105 re-checked this against `D2-overlay-panel.html`'s own `.tabs`/
     /// `.tab` rules (`padding:8px 10px`/`6px 4px`, no background, a bottom
@@ -239,7 +241,13 @@ struct OverlayPanelView: View {
                 tabButton(tab)
             }
         }
-        .padding(2)
+        // One white chip behind all three segments that slides to the selected
+        // one (TASK-154, #531), rather than each segment filling itself.
+        .background(alignment: .topLeading) { selectionChip }
+        // 4pt left and right, 2pt top and bottom: the gray edge looks even
+        // around the chip, which is already 5pt taller than its text.
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
         .frame(height: tabBarHeight)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -247,14 +255,62 @@ struct OverlayPanelView: View {
         )
     }
 
+    /// Whether the selection moves with no slide: the system's "Reduce
+    /// Motion", or the UI-test flag that checks that path (Debug only).
+    private var reducesMotion: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestReduceMotion") { return true }
+        #endif
+        return reduceMotion
+    }
+
+    /// The slide's animation: a short spring, or nothing under Reduce Motion.
+    /// `-UITestSlowSegmentSlide` stretches it so a screenshot can catch the
+    /// chip mid-way (Debug only).
+    private var slideAnimation: Animation? {
+        if reducesMotion { return nil }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestSlowSegmentSlide") { return .linear(duration: 4) }
+        #endif
+        return .spring(response: 0.3, dampingFraction: 0.85)
+    }
+
+    /// The white, rounded, drop-shadowed chip (`D3-tab-options.html:70`): one
+    /// third of the track, offset to the selected segment. Hidden from
+    /// accessibility; `-UITestSegmentChip` exposes it to UI tests (Debug only).
+    private var selectionChip: some View {
+        let tabs = OverlayPanelModel.Tab.allCases
+        let index = tabs.firstIndex(of: model.panelModel.selectedTab) ?? 0
+        return GeometryReader { proxy in
+            let width = proxy.size.width / CGFloat(tabs.count)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Self.selectedSegmentShadow, radius: 3, x: 0, y: 1)
+                .frame(width: width, height: proxy.size.height)
+                .offset(x: width * CGFloat(index))
+                .animation(slideAnimation, value: index)
+        }
+        .accessibilityElement()
+        .accessibilityIdentifier("panelTabSelection")
+        .accessibilityHidden(!exposesChipToUITests)
+    }
+
+    private var exposesChipToUITests: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-UITestSegmentChip")
+        #else
+        return false
+        #endif
+    }
+
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,
     /// `D3-tab-options.html:70`) — stated directly, like
     /// `CameraTheme.shutterRing`, since it is used in exactly one place.
     private static let selectedSegmentShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.15)
 
-    /// One of the three equal-width segments (`.A .seg button`): selected
-    /// gets a white, rounded, drop-shadowed chip; unselected stays plain
-    /// text on the shared gray track — no dot, no per-segment border.
+    /// One of the three equal-width segments (`.A .seg button`): plain text
+    /// whose colour follows the selection; the white chip behind it is
+    /// `selectionChip`'s — no dot, no per-segment border.
     private func tabButton(_ tab: OverlayPanelModel.Tab) -> some View {
         let isSelected = model.panelModel.selectedTab == tab
         return Button {
@@ -269,11 +325,7 @@ struct OverlayPanelView: View {
                 .foregroundColor(isSelected ? CameraTheme.ink : CameraTheme.inkSecondary)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isSelected ? Color.white : Color.clear)
-                        .shadow(color: isSelected ? Self.selectedSegmentShadow : .clear, radius: 3, x: 0, y: 1)
-                )
+                .contentShape(Rectangle())
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
