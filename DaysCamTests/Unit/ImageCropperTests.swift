@@ -11,8 +11,6 @@ import XCTest
 /// are not touched here).
 final class ImageCropperTests: XCTestCase {
 
-    private let cropper = ImageCropper()
-
     /// A solid-color image at an exact pixel size, scale 1 — the same
     /// construction `OverlayRendererTests` uses, so no real camera decode is
     /// needed.
@@ -30,25 +28,40 @@ final class ImageCropperTests: XCTestCase {
         CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
     }
 
+    /// Crops `image` to `rect` without `ImageCropper` or `OverlayRenderer`
+    /// (TASK-144 #498, replacing `crop(_:to:)` as the baseline): draw it
+    /// upright at scale 1, then `CGImage.cropping(to:)`.
+    private func referenceCrop(_ image: UIImage, to rect: CGRect) throws -> UIImage {
+        let size = pixelSize(of: image)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        let cropped = try XCTUnwrap(upright.cgImage?.cropping(to: rect))
+        return UIImage(cgImage: cropped, scale: 1, orientation: .up)
+    }
+
     // MARK: - 19.5: 4032x3024 landscape cropped to 1:1
 
-    func test_landscape4032x3024_croppedToOneByOne_is3024Square_horizontallyCentered() {
+    func test_landscape4032x3024_croppedToOneByOne_is3024Square_horizontallyCentered() throws {
         let size = ImageCropper.croppedSize(from: CGSize(width: 4032, height: 3024), to: .oneByOne)
         XCTAssertEqual(size, CGSize(width: 3024, height: 3024))
 
-        let image = makeImage(width: 4032, height: 3024)
-        let cropped = cropper.crop(image, to: .oneByOne)
+        let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: 4032, height: 3024), ratio: .oneByOne)
+        XCTAssertEqual(rect, CGRect(x: 504, y: 0, width: 3024, height: 3024), "horizontally centered")
+        let cropped = try referenceCrop(makeImage(width: 4032, height: 3024), to: rect)
         XCTAssertEqual(pixelSize(of: cropped), CGSize(width: 3024, height: 3024))
     }
 
     // MARK: - 19.6: 3024x4032 portrait cropped to 9:16
 
-    func test_portrait3024x4032_croppedToNineBySixteen_is2268x4032() {
+    func test_portrait3024x4032_croppedToNineBySixteen_is2268x4032() throws {
         let size = ImageCropper.croppedSize(from: CGSize(width: 3024, height: 4032), to: .nineBySixteen)
         XCTAssertEqual(size, CGSize(width: 2268, height: 4032))
 
-        let image = makeImage(width: 3024, height: 4032)
-        let cropped = cropper.crop(image, to: .nineBySixteen)
+        let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: 3024, height: 4032), ratio: .nineBySixteen)
+        let cropped = try referenceCrop(makeImage(width: 3024, height: 4032), to: rect)
         XCTAssertEqual(pixelSize(of: cropped), CGSize(width: 2268, height: 4032))
     }
 
@@ -57,10 +70,9 @@ final class ImageCropperTests: XCTestCase {
     func test_portrait3024x4032_croppedToThreeByFour_isUnchanged() {
         let size = ImageCropper.croppedSize(from: CGSize(width: 3024, height: 4032), to: .threeByFour)
         XCTAssertEqual(size, CGSize(width: 3024, height: 4032))
-
-        let image = makeImage(width: 3024, height: 4032)
-        let cropped = cropper.crop(image, to: .threeByFour)
-        XCTAssertEqual(pixelSize(of: cropped), CGSize(width: 3024, height: 4032))
+        // The whole image: `bake` then draws it uncropped.
+        XCTAssertEqual(ImageCropper.cropRect(forPixelSize: CGSize(width: 3024, height: 4032), ratio: .threeByFour),
+                       CGRect(x: 0, y: 0, width: 3024, height: 4032))
     }
 
     // MARK: - 19.11: margin/font size follow the cropped short edge
@@ -122,13 +134,19 @@ final class ImageCropperTests: XCTestCase {
         }
     }
 
-    // MARK: - 126.2: crop output matches the rect, pixel for pixel
+    // MARK: - 126.2: the rect is a whole-pixel window the image can be cut to
 
-    func test_crop_outputSizeMatchesCropRect() {
-        for ratio in CaptureAspectRatio.allCases {
-            let image = makeImage(width: 400, height: 300)
-            let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: 400, height: 300), ratio: ratio)
-            XCTAssertEqual(pixelSize(of: cropper.crop(image, to: ratio)), rect.size)
+    /// Every ratio, both orientations: at sizes whose crop lands on whole
+    /// pixels (as the camera's 4:3 sizes do), a crop to the rect independent
+    /// of `ImageCropper` is exactly its size.
+    func test_cropRect_isAWholePixelWindowOfTheImage() throws {
+        for (width, height) in [(800, 600), (600, 800)] {
+            let image = makeImage(width: CGFloat(width), height: CGFloat(height))
+            for ratio in CaptureAspectRatio.allCases {
+                let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: width, height: height), ratio: ratio)
+                XCTAssertEqual(rect, rect.integral, "\(ratio) \(width)x\(height)")
+                XCTAssertEqual(pixelSize(of: try referenceCrop(image, to: rect)), rect.size, "\(ratio) \(width)x\(height)")
+            }
         }
     }
 }

@@ -5,11 +5,12 @@ import XCTest
 
 /// Covers TASK-127 acceptance 127.1 (cropping inside `bake` equals
 /// crop-then-bake), 127.2 (8-bit standard range output) and the `nil` crop
-/// path of 127.3.
+/// path of 127.3. The crop-then-bake baseline is `referenceCrop`, which uses
+/// neither `ImageCropper` nor `bake` (TASK-144 #498: `ImageCropper.crop`
+/// is gone).
 final class OverlayRendererCropTests: XCTestCase {
 
     private let renderer = OverlayRenderer()
-    private let cropper = ImageCropper()
     private let style = OverlayStyle(legacyTheme: .classicWhite)
     private let text = "第 10 天"
 
@@ -40,6 +41,20 @@ final class OverlayRendererCropTests: XCTestCase {
         CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
     }
 
+    /// The independent baseline: draw `image` upright at scale 1, then
+    /// `CGImage.cropping(to:)`.
+    private func referenceCrop(_ image: UIImage, to rect: CGRect) throws -> UIImage {
+        let size = normalizedPixelSize(image)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        let cropped = try XCTUnwrap(upright.cgImage?.cropping(to: rect))
+        return UIImage(cgImage: cropped, scale: 1, orientation: .up)
+    }
+
     // MARK: - 127.1
 
     func test_bakeWithCropRect_matchesCropThenBake() throws {
@@ -48,14 +63,14 @@ final class OverlayRendererCropTests: XCTestCase {
             ("portrait", try makePhoto(storedWidth: 800, storedHeight: 600, orientation: .right)),
         ]
         for (name, photo) in photos {
-            for ratio in [CaptureAspectRatio.oneByOne, .nineBySixteen] {
+            for ratio in CaptureAspectRatio.allCases {
                 let label = "\(name) \(ratio)"
                 let rect = ImageCropper.cropRect(forPixelSize: normalizedPixelSize(photo), ratio: ratio)
 
                 let direct = try XCTUnwrap(renderer.bake(image: photo, text: text, style: style,
                                                          placement: .anchor(.bottomTrailing), font: .pingFang,
                                                          cropRect: rect), label)
-                let cropped = cropper.crop(photo, to: ratio)
+                let cropped = try referenceCrop(photo, to: rect)
                 let twoStep = try XCTUnwrap(renderer.bake(image: cropped, text: text, style: style,
                                                           placement: .anchor(.bottomTrailing), font: .pingFang), label)
 
@@ -79,7 +94,7 @@ final class OverlayRendererCropTests: XCTestCase {
         let direct = try XCTUnwrap(renderer.bake(image: photo, text: "", style: style,
                                                  placement: .anchor(.bottomTrailing), font: .pingFang,
                                                  cropRect: rect))
-        let cropped = cropper.crop(photo, to: .oneByOne)
+        let cropped = try referenceCrop(photo, to: rect)
         XCTAssertEqual(normalizedPixelSize(direct), CGSize(width: 600, height: 600))
         let lhs = try XCTUnwrap(PixelGrid(direct))
         let rhs = try XCTUnwrap(PixelGrid(cropped))
