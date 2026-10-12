@@ -236,6 +236,70 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage)
     }
 
+    // MARK: - TASK-115 (#446) font and weight in one save
+
+    /// 115.3: the font and the weight reach the store in a single write.
+    func testApplyFontWithWeightSavesOnce() {
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available])
+        library.weightStates[FontDownloadID(fontID: .songti, weightID: "light")] = .available
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("light", of: .songti)
+        XCTAssertEqual(spy.updated.count, 1, "115.3 一次寫入，不先存預設字重")
+        XCTAssertEqual(spy.updated.last?.style.fontID, .songti)
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "light")
+        XCTAssertEqual(model.profile.style.fontID, .songti)
+        XCTAssertEqual(model.fontList.currentFontID, .songti, "字型頁選取跟著設定檔")
+        XCTAssertEqual(model.fontList.currentWeightID, "light")
+    }
+
+    /// 115.7: after the download finishes, the font and weight are saved once.
+    func testDownloadedWeightOfAnotherFontIsSavedOnceTogether() {
+        let library = FakeFontLibrary([.notoSerifTC: .available])
+        let unit = FontDownloadID(fontID: .songti, weightID: "light")
+        let spy = Spy()
+        let model = makeWeightModel(library: library, spy: spy)
+        model.fontList.listDidAppear()
+        model.fontList.didTapWeight("light", of: .songti)
+        XCTAssertTrue(spy.updated.isEmpty, "下載中不寫設定檔")
+        XCTAssertEqual(model.profile.style.fontID, .notoSerifTC)
+        library.weightStates[unit] = .available
+        library.weightDownloadDidFinish.send(unit)
+        XCTAssertEqual(spy.updated.count, 1)
+        XCTAssertEqual(spy.updated.last?.style.fontID, .songti)
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "light")
+    }
+
+    /// A failed save restores both the font and the weight.
+    func testFailedFontWithWeightSaveRestoresBoth() {
+        struct SaveError: Error {}
+        let library = FakeFontLibrary([.notoSerifTC: .available, .songti: .available])
+        library.weightStates[FontDownloadID(fontID: .songti, weightID: "light")] = .available
+        let spy = Spy()
+        let model = makeWeightModel(library: library, weight: "black", spy: spy)
+        model.fontList.listDidAppear()
+        spy.shouldThrow = SaveError()
+        model.fontList.didTapWeight("light", of: .songti)
+        XCTAssertEqual(model.profile.style.fontID, .notoSerifTC, "字型回復")
+        XCTAssertEqual(model.profile.style.fontWeight, "black", "字重回復")
+        XCTAssertEqual(model.fontList.currentFontID, .notoSerifTC)
+        XCTAssertEqual(model.fontList.currentWeightID, "black")
+        XCTAssertEqual(model.fontList.toast?.text, FontLibraryModel.weightSaveFailedMessage)
+        XCTAssertNotNil(model.lastError)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    func testApplyFontWithWeightForTheCurrentFontIsAWeightChangeAndRejectsUnknownWeights() {
+        let spy = Spy()
+        let model = makeWeightModel(library: FakeFontLibrary([.notoSerifTC: .available]), spy: spy)
+        XCTAssertFalse(model.applyFont(.songti, weightID: "nope"))
+        XCTAssertTrue(spy.updated.isEmpty)
+        XCTAssertTrue(model.applyFont(.notoSerifTC, weightID: "regular"))
+        XCTAssertEqual(spy.updated.count, 1)
+        XCTAssertEqual(spy.updated.last?.style.fontWeight, "regular")
+    }
+
     func testApplyFontWeightIgnoresOtherFontsUnknownIDsAndTheCurrentWeight() {
         let spy = Spy()
         let model = makeWeightModel(library: FakeFontLibrary([.notoSerifTC: .available]), spy: spy)
