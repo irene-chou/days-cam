@@ -337,17 +337,22 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
     /// 89.7: for every font as the selection, only that font carries weight
     /// buttons (`canExpand`), only if it has several weights; every other row
     /// has none (the "N 種字重" text was removed by TASK-111; since TASK-112
-    /// the buttons show only after a tap on the row).
-    func testOnlyTheSelectedMultiWeightRowExpandsForEveryFont() throws {
+    /// the buttons show only after a tap on the row). Since TASK-115 every
+    /// multi-weight row can expand (`canExpand`), but while collapsed only the
+    /// selected one carries its weight buttons.
+    func testOnlyTheSelectedMultiWeightRowCarriesWeightsForEveryFont() throws {
         for selected in OverlayFontID.allCases {
             let library = StandInLibrary()
             let list = FontLibraryModel(profileID: UUID(), currentFontID: selected, library: library,
                                         profiles: { [] }, applyFont: { _, _ in })
             list.listDidAppear()
             let cells = list.sections.flatMap(\.cells)
-            let expanded = cells.filter(\.canExpand).map(\.fontID)
+            let expandable = Set(cells.filter(\.canExpand).map(\.fontID))
+            // PingFang is always on the device; the others only when selected.
+            let multiWeight = Set(FontCatalog.entries.filter { $0.weights.count > 1 }.map(\.fontID))
+            XCTAssertEqual(expandable, multiWeight.intersection([selected, .pingFang]), "115.1 \(selected)")
             let count = FontCatalog.entry(for: selected).weights.count
-            XCTAssertEqual(expanded, count > 1 ? [selected] : [], "\(selected)")
+            XCTAssertEqual(cells.filter { !$0.weights.isEmpty }.map(\.fontID), count > 1 ? [selected] : [], "\(selected)")
             for cell in cells where cell.fontID != selected {
                 XCTAssertEqual(cell.weightCount, FontCatalog.entry(for: cell.fontID).weights.count, "\(cell.fontID)")
                 XCTAssertTrue(cell.weights.isEmpty)

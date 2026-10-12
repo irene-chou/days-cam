@@ -66,13 +66,16 @@ final class OnboardingSpotlightUITests: XCTestCase {
         XCTAssertEqual(advance.label, "知道了", note)
         XCTAssertEqual(target.label, "疊字設定", "\(note): the panel button is the highlighted target")
         XCTAssertFalse(bubbleFrame.intersects(overlayText.frame), "\(note): 96.2 the bubble does not cover the day-count text")
-        XCTAssertLessThan(bubbleFrame.maxX, target.frame.minX, "\(note): 96.2 the bubble is left of the button")
+        // The default profile now prints 我的紀錄 第 1 天 (TASK-119); the longer
+        // text can push the bubble to the geometry's above-the-button fallback.
+        XCTAssertTrue(bubbleFrame.maxX < target.frame.minX || bubbleFrame.maxY <= target.frame.minY,
+                      "\(note): 96.2 the bubble is left of or above the button")
     }
 
     private var bubbleFrame: CGRect { app.descendants(matching: .any)["onboardingBubble"].frame }
     /// The day-count text on the viewfinder (第 1 天 on a fresh profile).
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 '")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
     }
 
     private func assertTourGone(_ note: String) {

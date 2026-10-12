@@ -108,6 +108,9 @@ final class StyleTabModel: ObservableObject {
         fontList.applyWeight = { [weak self] fontID, weightID in
             self?.applyFontWeight(weightID, for: fontID) ?? false
         }
+        fontList.applyFontWithWeight = { [weak self] fontID, weightID in
+            self?.applyFont(fontID, weightID: weightID) ?? false
+        }
 
         // Forward the store's changes so a view observing only this model
         // (not the store separately) still redraws when the recent-colors
@@ -204,6 +207,29 @@ extension StyleTabModel {
         }
         return true
     }
+
+    /// Writes `fontID` and `weightID` together with one save (TASK-115): the
+    /// path of tapping a weight of a font that is not selected yet. Only a
+    /// face the library can already draw reaches here. For the profile's own
+    /// font this is `applyFontWeight`; an unknown weight is ignored.
+    ///
+    /// - Returns: whether the profile now has both. When saving fails the old
+    ///   font and weight are both put back (and `lastError` is set).
+    @discardableResult
+    func applyFont(_ fontID: OverlayFontID, weightID: String) -> Bool {
+        guard FontCatalog.entry(for: fontID).weights.contains(where: { $0.id == weightID }) else { return false }
+        if fontID == profile.style.fontID { return applyFontWeight(weightID, for: fontID) }
+        let previous = profile
+        guard mutate({
+            // Changing `fontID` resets the weight, so the weight comes after.
+            $0.fontID = fontID
+            $0.fontWeight = weightID
+        }) else {
+            profile = previous
+            return false
+        }
+        return true
+    }
 }
 
 // MARK: - 顏色 (FR-10.4, FR-10.6, FR-10.7)
@@ -226,19 +252,20 @@ extension StyleTabModel {
         profile.style.outline == .none
     }
 
-    /// Selects `color` as the text color from a swatch or the recent row.
-    /// Only the RGB changes; the current opacity is kept (TASK-69).
+    /// Selects `color` as the text color from a swatch or the recent row,
+    /// fully opaque: a swatch never carries a hidden opacity, which is set
+    /// only in the color picker (TASK-113, replacing TASK-69's kept opacity).
     func selectTextColor(_ color: OverlayColor) {
-        let picked = color.withOpacity(profile.style.textColor.opacity)
+        let picked = color.withOpacity(1)
         guard picked != profile.style.textColor else { return }
         mutate { $0.textColor = picked }
     }
 
     /// Selects `color` as the outline color from a swatch or the recent row;
-    /// `nil` selects "automatic" (FR-10.6). Only the RGB changes; the current
-    /// outline opacity is kept, and "automatic" is fully opaque.
+    /// `nil` selects "automatic" (FR-10.6). Both are fully opaque (TASK-113);
+    /// only the color picker sets an opacity.
     func selectOutlineColor(_ color: OverlayColor?) {
-        let picked = color.map { $0.withOpacity(profile.style.outlineColor?.opacity ?? 1) }
+        let picked = color.map { $0.withOpacity(1) }
         guard picked != profile.style.outlineColor else { return }
         mutate { $0.outlineColor = picked }
     }
@@ -276,46 +303,6 @@ extension StyleTabModel {
 
     private static func clampingOpacity(_ color: OverlayColor) -> OverlayColor {
         color.withOpacity(min(max(color.opacity, OverlayColor.minimumStorableOpacity), 1))
-    }
-}
-
-// MARK: - 透明度 (TASK-69, #297)
-
-extension StyleTabModel {
-    /// Slider bounds, in percent: the storable minimum up to fully opaque.
-    static let opacityPercentRange =
-        Int((OverlayColor.minimumStorableOpacity * 100).rounded(.up))...100
-
-    /// `color`'s opacity as a whole percent, for the label and the slider.
-    static func opacityPercent(of color: OverlayColor) -> Int {
-        min(max(Int((color.opacity * 100).rounded()), opacityPercentRange.lowerBound),
-            opacityPercentRange.upperBound)
-    }
-
-    /// The text color's opacity in percent.
-    var textOpacityPercent: Int { Self.opacityPercent(of: profile.style.textColor) }
-
-    /// The outline color's opacity in percent ("automatic" is 100).
-    var outlineOpacityPercent: Int {
-        Self.opacityPercent(of: profile.style.outlineColor ?? profile.style.resolvedOutlineColor)
-    }
-
-    /// Sets the text color's opacity from a slider value in percent, clamped
-    /// to `opacityPercentRange`.
-    func setTextOpacityPercent(_ percent: Int) {
-        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
-        guard clamped != textOpacityPercent else { return }
-        mutate { $0.textColor = $0.textColor.withOpacity(Double(clamped) / 100) }
-    }
-
-    /// Sets the outline color's opacity. While the outline color is
-    /// "automatic", this turns it into the explicit automatic color
-    /// (`resolvedOutlineColor`) with that opacity, since "automatic" itself
-    /// has no opacity.
-    func setOutlineOpacityPercent(_ percent: Int) {
-        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
-        guard clamped != outlineOpacityPercent else { return }
-        mutate { $0.outlineColor = $0.resolvedOutlineColor.withOpacity(Double(clamped) / 100) }
     }
 }
 
@@ -367,24 +354,28 @@ extension StyleTabModel {
         mutate { $0.applyShadowPreset(shadow) }
     }
 
-    /// Whether the shadow parameter rows are disabled: there is no shadow to
-    /// tune while it is off (preset 無, TASK-71).
-    var isShadowParametersDisabled: Bool { !profile.style.showsShadow }
+    /// Whether the shadow color section is disabled: there is no shadow to
+    /// color while it is off (preset 無, TASK-71).
+    var isShadowColorDisabled: Bool { !profile.style.showsShadow }
 
-    /// Slider step of the shadow offsets and blur, in points at a 17pt font.
-    static let shadowStep = 1.0
+    /// The opacity a swatch or "follow the text color" gives the shadow
+    /// (TASK-113): the default shadow's 60%, not fully opaque, which would be
+    /// a hard block. Only the color picker sets another value.
+    static let swatchShadowOpacity = OverlayStyle().shadowOpacity
 
     /// Selects the shadow color from a swatch or the recent row: a custom
-    /// color at the current shadow opacity. `nil` follows the text color
-    /// ("跟隨文字色"). Presets never touch the color (TASK-86).
+    /// color at `swatchShadowOpacity`. `nil` follows the text color
+    /// ("跟隨文字顏色"), also at that opacity. Presets never touch the color
+    /// (TASK-86).
     func selectShadowColor(_ color: OverlayColor?) {
         mutate { style in
             guard let color else {
                 style.shadowColorSource = .textColor
+                style.shadowOpacity = Self.swatchShadowOpacity
                 return
             }
             style.shadowColorSource = .custom
-            style.shadowColor = color.withOpacity(style.shadowOpacity)
+            style.shadowColor = color.withOpacity(Self.swatchShadowOpacity)
         }
     }
 
@@ -396,45 +387,6 @@ extension StyleTabModel {
             $0.shadowColorSource = .custom
             $0.shadowColor = picked
         }
-    }
-
-    /// The shadow color's opacity in percent.
-    var shadowOpacityPercent: Int { Self.opacityPercent(of: profile.style.shadowColor) }
-
-    /// Sets the shadow's opacity from a slider value in percent, clamped to
-    /// `opacityPercentRange`.
-    func setShadowOpacityPercent(_ percent: Int) {
-        let clamped = min(max(percent, Self.opacityPercentRange.lowerBound), Self.opacityPercentRange.upperBound)
-        guard clamped != shadowOpacityPercent else { return }
-        mutate { $0.shadowOpacity = Double(clamped) / 100 }
-    }
-
-    /// Sets `shadowOffsetX` from a raw slider value, snapped to `shadowStep`
-    /// and clamped to `OverlayStyle.shadowOffsetRange`.
-    func setShadowOffsetX(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
-        guard clamped != profile.style.shadowOffsetX else { return }
-        mutate { $0.shadowOffsetX = clamped }
-    }
-
-    /// Sets `shadowOffsetY`, like `setShadowOffsetX`.
-    func setShadowOffsetY(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowOffsetRange)
-        guard clamped != profile.style.shadowOffsetY else { return }
-        mutate { $0.shadowOffsetY = clamped }
-    }
-
-    /// Sets `shadowBlur` from a raw slider value, snapped to `shadowStep` and
-    /// clamped to `OverlayStyle.shadowBlurRange`.
-    func setShadowBlur(_ rawValue: Double) {
-        let clamped = Self.snappedShadow(rawValue, in: OverlayStyle.shadowBlurRange)
-        guard clamped != profile.style.shadowBlur else { return }
-        mutate { $0.shadowBlur = clamped }
-    }
-
-    private static func snappedShadow(_ rawValue: Double, in range: ClosedRange<Double>) -> Double {
-        let snapped = (rawValue / shadowStep).rounded() * shadowStep
-        return min(max(snapped, range.lowerBound), range.upperBound)
     }
 }
 

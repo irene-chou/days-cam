@@ -44,12 +44,16 @@ struct StyleTabView: View {
         return (0..<colorColumnCount).map { swatchDiameter / 2 + CGFloat($0) * pitch }
     }
 
-    /// Left/right inset of a page's scroll content (TASK-84): 14 puts sliders
-    /// and swatches 16pt from the panel edge. The font list keeps 10 because
-    /// its rows carry their own inset (#309).
+    /// Left/right inset of a page's scroll content (TASK-84, +4 by TASK-117):
+    /// 18 puts sliders and swatches 20pt from the panel edge. The font list
+    /// keeps 10 because its rows carry their own inset (#309).
     static func contentHorizontalInset(for subTab: StyleTabModel.SubTab) -> CGFloat {
-        subTab == .font ? 10 : 14
+        subTab == .font ? 10 : 18
     }
+
+    /// Space above and below each slider row (TASK-117), on top of the page's
+    /// 12pt stack spacing. Kept on the row, outside the slider itself.
+    static let sliderVerticalPadding: CGFloat = 4
 
     /// Top inset of the whole tab (`.tabbody` padding).
     static let tabTopInset: CGFloat = 4
@@ -239,11 +243,9 @@ struct StyleTabView: View {
     // MARK: - 顏色 (FR-10.4, FR-10.7)
 
     private var colorContent: some View {
+        // No opacity row (TASK-113): the system color picker is the only
+        // place opacity is set.
         VStack(alignment: .leading, spacing: 12) {
-            opacitySlider(label: "文字不透明度",
-                          percent: model.textOpacityPercent,
-                          isDisabled: false,
-                          onChange: { model.setTextOpacityPercent($0) })
             textColorPalette
         }
     }
@@ -289,10 +291,6 @@ struct StyleTabView: View {
                 }
             }
             outlineParameterSlider
-            opacitySlider(label: "外框不透明度",
-                          percent: model.outlineOpacityPercent,
-                          isDisabled: model.isOutlineColorSectionDisabled,
-                          onChange: { model.setOutlineOpacityPercent($0) })
             colorPalette(current: model.profile.style.outlineColor,
                         swatches: model.outlineColorSwatches,
                         showAutoButton: true,
@@ -306,7 +304,7 @@ struct StyleTabView: View {
 
     /// The slider of the chosen outline (TASK-70): 粗細 for 描邊, 留白 for
     /// 底框, nothing for 無, both marked by the "distance" icon. Same row
-    /// layout and spacing as `opacitySlider`.
+    /// layout and spacing as the shadow parameter sliders.
     @ViewBuilder
     private var outlineParameterSlider: some View {
         switch model.profile.style.outline {
@@ -355,7 +353,7 @@ struct StyleTabView: View {
             }
             .frame(width: 24, height: 24, alignment: iconName == nil ? .leading : .center)
             .accessibilityHidden(true)
-            Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
+            TapSeekSlider(value: value, range: range, step: step, isDisabled: isDisabled, onChange: onChange)
                 .tint(CameraTheme.accentControl)
                 .accessibilityLabel(accessibilityName)
                 .accessibilityValue("\(valueText) 點")
@@ -368,16 +366,17 @@ struct StyleTabView: View {
         }
         .opacity(isDisabled ? 0.35 : 1)
         .disabled(isDisabled)
+        .padding(.vertical, Self.sliderVerticalPadding)
     }
 
     // MARK: - 陰影 (FR-10.8, FR-10.10)
 
     private var shadowContent: some View {
         let style = model.profile.style
-        let isDisabled = model.isShadowParametersDisabled
+        let isDisabled = model.isShadowColorDisabled
         return VStack(alignment: .leading, spacing: 12) {
-            // Four quick presets: tapping one fills in the parameters below
-            // (TASK-71); none stays selected once a parameter is changed.
+            // The shape comes only from these four presets (TASK-118); a
+            // profile with custom parameters shows none selected.
             optionRow {
                 ForEach(model.shadowOptions, id: \.self) { shadow in
                     // Isolates the shadow, clearing outline, mirroring
@@ -410,22 +409,6 @@ struct StyleTabView: View {
                         onSelectAuto: { model.selectShadowColor(nil) },
                         onApplyCustom: { model.applyCustomShadowColor($0) },
                         onCommitCustom: { model.commitCustomColor($0) })
-            opacitySlider(label: "陰影不透明度",
-                          percent: model.shadowOpacityPercent,
-                          isDisabled: isDisabled,
-                          onChange: { model.setShadowOpacityPercent($0) })
-            parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "X 偏移", identifier: "shadowOffsetXSlider",
-                            value: style.shadowOffsetX, range: OverlayStyle.shadowOffsetRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowOffsetX($0) })
-            parameterSlider(iconName: "arrow.up.and.down", accessibilityName: "Y 偏移", identifier: "shadowOffsetYSlider",
-                            value: style.shadowOffsetY, range: OverlayStyle.shadowOffsetRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowOffsetY($0) })
-            parameterSlider(iconName: "drop.halffull", accessibilityName: "模糊", identifier: "shadowBlurSlider",
-                            value: style.shadowBlur, range: OverlayStyle.shadowBlurRange,
-                            step: StyleTabModel.shadowStep, isDisabled: isDisabled,
-                            onChange: { model.setShadowBlur($0) })
         }
     }
 
@@ -446,13 +429,13 @@ struct StyleTabView: View {
             // `.zrow{gap:8px}` (#106) — was 12.
             HStack(spacing: 8) {
                 Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-                Slider(
-                    value: Binding(
-                        get: { Double(model.profile.style.sizeScale) },
-                        set: { model.setSizeScale(Int($0.rounded())) }
-                    ),
-                    in: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
-                    step: Double(StyleTabModel.sizeScaleStep)
+                // Tapping the track seeks (TASK-114); the double tap below
+                // still resets, so the first tap of a double tap seeks first.
+                TapSeekSlider(
+                    value: Double(model.profile.style.sizeScale),
+                    range: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
+                    step: Double(StyleTabModel.sizeScaleStep),
+                    onChange: { model.setSizeScale(Int($0.rounded())) }
                 )
                 .tint(CameraTheme.accentControl)
                 .accessibilityLabel("字級")
@@ -461,7 +444,8 @@ struct StyleTabView: View {
             }
             // Simultaneous, so the slider's own drag still works.
             .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
-            Text("拖曳調整，點兩下回到預設大小")
+            .padding(.vertical, Self.sliderVerticalPadding)
+            Text("點或拖曳調整，點兩下回到預設大小")
                 .font(.system(size: 12))
                 .foregroundColor(CameraTheme.inkSecondary)
                 .frame(maxWidth: .infinity)
@@ -603,45 +587,6 @@ struct StyleTabView: View {
     private func isSame(_ color: OverlayColor?, _ swatch: OverlayColor) -> Bool {
         guard let color else { return false }
         return StyleTabModel.hasSameRGB(color, swatch)
-    }
-
-    /// The opacity row of the color, outline and shadow pages (TASK-69, TASK-83):
-    /// a fixed legend (transparent checkerboard half, solid half), the slider,
-    /// and the percentage. The legend does not follow the selected color.
-    private func opacitySlider(label: String, percent: Int,
-                               isDisabled: Bool, onChange: @escaping (Int) -> Void) -> some View {
-        let range = StyleTabModel.opacityPercentRange
-        return HStack(spacing: 10) {
-            opacityLegend
-            Slider(
-                value: Binding(get: { Double(percent) }, set: { onChange(Int($0.rounded())) }),
-                in: Double(range.lowerBound)...Double(range.upperBound),
-                step: 1
-            )
-            .tint(CameraTheme.accentControl)
-            .accessibilityLabel(label)
-            .accessibilityValue("\(percent)%")
-            Text("\(percent)%")
-                .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                .foregroundColor(CameraTheme.ink)
-                .frame(width: 44, alignment: .trailing)
-                .accessibilityHidden(true)
-        }
-        .opacity(isDisabled ? 0.35 : 1)
-        .disabled(isDisabled)
-    }
-
-    /// Fixed opacity legend of the three opacity rows (TASK-83): a half-dashed,
-    /// half-filled circle (`circle.righthalf.filled.inverse`, the user's pick
-    /// on 2026-10-11, replacing the checkerboard disc) in the same 24pt column
-    /// as the other slider icons, in `ink` so it never follows the selected
-    /// color.
-    private var opacityLegend: some View {
-        Image(systemName: "circle.righthalf.filled.inverse")
-            .font(.system(size: 20, weight: .regular))
-            .foregroundColor(CameraTheme.ink)
-            .frame(width: 24, height: 24)
-            .accessibilityHidden(true)
     }
 
     /// Shared option-row metrics for the outline and shadow pages (TASK-87):

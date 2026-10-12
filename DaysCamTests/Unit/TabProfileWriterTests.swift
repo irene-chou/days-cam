@@ -46,7 +46,10 @@ final class TabProfileWriterTests: XCTestCase {
     func testWithoutAdoptingTheStaleBaselineHidesTheChange() throws {
         let store = ProfileStore(directory: directory)
         store.load()
-        let original = try XCTUnwrap(store.profiles.first)
+        var seeded = try XCTUnwrap(store.profiles.first)
+        seeded.showName = false // these cases start from name off
+        try store.update(seeded)
+        let original = seeded
         let writer = TabProfileWriter(baseline: original, profileStore: store)
         var fromEditPage = original
         fromEditPage.showName = true
@@ -63,7 +66,10 @@ final class TabProfileWriterTests: XCTestCase {
     func testAdoptIgnoresAnotherProfile() throws {
         let store = ProfileStore(directory: directory)
         store.load()
-        let original = try XCTUnwrap(store.profiles.first)
+        var seeded = try XCTUnwrap(store.profiles.first)
+        seeded.showName = false // these cases start from name off
+        try store.update(seeded)
+        let original = seeded
         let writer = TabProfileWriter(baseline: original, profileStore: store)
         let other = try store.add(CameraProfile(name: "別人", startDate: DateFixture.components(2026, 1, 1), showName: true))
         writer.adopt(other)

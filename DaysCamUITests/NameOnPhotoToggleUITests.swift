@@ -22,7 +22,7 @@ final class NameOnPhotoToggleUITests: XCTestCase {
     }
     private var preview: XCUIElement { app.staticTexts["rulesPreviewSentence"] }
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 ' OR label CONTAINS ' 第 '")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 ' OR label CONTAINS ' 第 '")).firstMatch
     }
     private func isOn(_ element: XCUIElement) -> Bool { (element.value as? String) == "1" }
 
@@ -35,18 +35,19 @@ final class NameOnPhotoToggleUITests: XCTestCase {
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5), "the edit page opened")
     }
 
-    /// 109.1／109.2: the switch sits under the name, off by default; naming
-    /// the profile 寶寶 and turning it on makes the preview 寶寶 第 1 天 and
+    /// 109.1／109.2: the switch sits under the name, on by default (TASK-119);
+    /// renaming the profile 寶寶 makes the preview 寶寶 第 1 天 and
     /// the viewfinder show the name.
     func testSwitchPutsTheNameOnThePreviewAndThePhoto() {
         openEditPage()
         XCTAssertTrue(nameOnPhoto.waitForExistence(timeout: 5), "109.1 the switch is there")
-        XCTAssertFalse(isOn(nameOnPhoto), "109.1 follows showName (off on a fresh profile)")
+        XCTAssertTrue(isOn(nameOnPhoto), "109.1 follows showName (on on a fresh profile)")
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        XCTAssertTrue(preview.label.contains("我的紀錄 第 1 天"), "119.2 default preview: \(preview.label)")
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.frame.maxY <= nameOnPhoto.frame.minY + 1, "109.1 right under the name row")
         nameField.tap()
-        nameField.typeText("寶寶")
-        nameOnPhoto.tap()
+        nameField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "寶寶")
         XCTAssertTrue(isOn(nameOnPhoto))
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         XCTAssertTrue(preview.label.contains("寶寶") && preview.label.contains("第 1 天"), "109.2 preview: \(preview.label)")
@@ -65,8 +66,7 @@ final class NameOnPhotoToggleUITests: XCTestCase {
     func testContentTabNameSwitchStaysInSync() {
         openEditPage()
         XCTAssertTrue(nameOnPhoto.waitForExistence(timeout: 5))
-        nameOnPhoto.tap()
-        XCTAssertTrue(isOn(nameOnPhoto))
+        XCTAssertTrue(isOn(nameOnPhoto), "119.2 on by default")
         app.navigationBars.firstMatch.buttons.firstMatch.tap()
         let bar = app.navigationBars["設定檔"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
@@ -88,6 +88,6 @@ final class NameOnPhotoToggleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5))
         openEditPage()
         XCTAssertTrue(nameOnPhoto.waitForExistence(timeout: 5))
-        XCTAssertFalse(isOn(nameOnPhoto), "109.3 off after the content tab turned it off")
+        XCTAssertFalse(isOn(nameOnPhoto), "109.3 off after the content tab turned it off (119.3)")
     }
 }

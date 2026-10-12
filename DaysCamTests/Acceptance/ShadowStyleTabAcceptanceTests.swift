@@ -62,33 +62,36 @@ final class ShadowStyleTabAcceptanceTests: XCTestCase {
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2")
         model.applyCustomShadowColor(teal)
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2")
-        model.setShadowOpacityPercent(77)
+        model.applyCustomShadowColor(teal.withOpacity(0.77))
         XCTAssertEqual(model.profile.style.shadowPreset, .hard, "86.2")
-        // The opacity chosen last survives a type switch and a color source flip.
+        // The picker opacity survives a type switch (86.1); a color-source flip
+        // resets it to the default 60% (TASK-113, 113.5).
         model.selectShadow(.soft)
-        XCTAssertEqual(model.shadowOpacityPercent, 77, "86.1")
-        model.selectShadowColor(nil)
-        XCTAssertEqual(model.shadowOpacityPercent, 77)
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.77, accuracy: 0.003, "86.1")
         model.selectShadow(.glow)
-        XCTAssertEqual(model.shadowOpacityPercent, 77)
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.77, accuracy: 0.003, "86.1")
+        model.selectShadowColor(nil)
+        XCTAssertEqual(model.profile.style.shadowOpacity, StyleTabModel.swatchShadowOpacity, accuracy: 0.003, "113.5")
         XCTAssertEqual(model.profile.style.shadowColorSource, .textColor)
+        model.selectShadow(.hard)
+        XCTAssertEqual(model.profile.style.shadowOpacity, StyleTabModel.swatchShadowOpacity, accuracy: 0.003, "113.8")
     }
 
-    /// 86.3 through the sliders.
-    func test863SlidersLeavePresetAndComeBack() throws {
-        let model = makeModel()
-        model.selectShadow(.hard)
-        model.setShadowBlur(3)
+    /// 86.3 with custom parameters: no preset is selected, and the geometry
+    /// alone decides which one is.
+    func test863CustomGeometryShowsNoPresetUntilItMatchesOne() throws {
+        var profile = CameraProfile(name: "qa", startDate: DateComponents(year: 2026, month: 1, day: 1))
+        profile.style.shadowBlur = 3
+        let model = StyleTabModel(profile: profile,
+                                  recentColorsStore: RecentColorsStore(defaults: defaults),
+                                  applyFont: { _, _ in },
+                                  allProfiles: { [] },
+                                  updateProfile: { [unowned self] in saved.append($0) })
         XCTAssertNil(model.profile.style.shadowPreset)
-        model.setShadowOffsetX(0)
-        model.setShadowOffsetY(2)
-        model.setShadowBlur(4)
-        XCTAssertEqual(model.profile.style.shadowPreset, .soft, "geometry alone decides")
-        model.setShadowBlur(0)
-        model.setShadowOffsetX(2)
+        model.selectShadow(.hard)
         XCTAssertEqual(model.profile.style.shadowPreset, .hard)
         // Opacity and color tweaks never create or hide the selection.
-        model.setShadowOpacityPercent(10)
+        model.applyCustomShadowColor(teal.withOpacity(0.1))
         model.selectShadowColor(teal)
         XCTAssertEqual(model.profile.style.shadowPreset, .hard)
     }
@@ -105,14 +108,14 @@ final class ShadowStyleTabAcceptanceTests: XCTestCase {
         XCTAssertFalse(off.showsShadow)
         XCTAssertEqual(off.shadowColor, picked)
         XCTAssertEqual(shape(off), try XCTUnwrap(shapes[.hard]), "shape kept while off")
-        XCTAssertTrue(model.isShadowParametersDisabled)
+        XCTAssertTrue(model.isShadowColorDisabled)
         model.selectShadow(.glow)
         let on = try XCTUnwrap(saved.last).style
         XCTAssertTrue(on.showsShadow)
         XCTAssertEqual(on.shadowColor, picked)
         XCTAssertEqual(on.shadowColorSource, .custom)
         XCTAssertEqual(shape(on), try XCTUnwrap(shapes[.glow]))
-        XCTAssertFalse(model.isShadowParametersDisabled)
+        XCTAssertFalse(model.isShadowColorDisabled)
     }
 
     /// Color or opacity edits while 無 is selected do not turn the shadow on
@@ -121,12 +124,11 @@ final class ShadowStyleTabAcceptanceTests: XCTestCase {
         let model = makeModel()
         model.selectShadow(.soft)
         model.selectShadow(.none)
-        model.selectShadowColor(teal)
-        model.setShadowOpacityPercent(30)
+        model.applyCustomShadowColor(teal.withOpacity(0.3))
         XCTAssertFalse(model.profile.style.showsShadow)
         XCTAssertEqual(model.profile.style.shadowPreset, OverlayShadowPreset.none)
         model.selectShadow(.hard)
-        XCTAssertEqual(model.shadowOpacityPercent, 30)
+        XCTAssertEqual(model.profile.style.shadowOpacity, 0.3, accuracy: 0.003)
         XCTAssertEqual(model.profile.style.shadowColorSource, .custom)
         XCTAssertTrue(StyleTabModel.hasSameRGB(model.profile.style.shadowColor, teal))
     }

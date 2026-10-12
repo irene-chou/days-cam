@@ -26,15 +26,14 @@ struct ImageCropper {
                                height: image.size.height * image.scale)
         guard pixelSize.width >= 1, pixelSize.height >= 1 else { return image }
 
-        let cropSize = Self.croppedSize(from: pixelSize, to: aspectRatio)
+        let cropRect = Self.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
+        let cropSize = cropRect.size
+        let origin = cropRect.origin
         guard cropSize.width < pixelSize.width || cropSize.height < pixelSize.height else {
             // Already the target ratio (19.7): nothing to draw, hand the
             // original back untouched.
             return image
         }
-
-        let origin = CGPoint(x: (pixelSize.width - cropSize.width) / 2,
-                             y: (pixelSize.height - cropSize.height) / 2)
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -47,6 +46,20 @@ struct ImageCropper {
             image.draw(in: CGRect(x: -origin.x, y: -origin.y,
                                   width: pixelSize.width, height: pixelSize.height))
         }
+    }
+
+    /// The centered crop window for an image of `pixelSize` at `ratio`.
+    ///
+    /// Coordinates are in orientation-normalized pixels (the upright image,
+    /// origin at the top-left), the same space `crop(_:to:)` draws in. The
+    /// rect is `croppedSize(from:to:)` centered in `pixelSize`; an image
+    /// already at the target ratio yields the full `pixelSize` rect.
+    static func cropRect(forPixelSize pixelSize: CGSize, ratio aspectRatio: CaptureAspectRatio) -> CGRect {
+        let size = croppedSize(from: pixelSize, to: aspectRatio)
+        return CGRect(x: (pixelSize.width - size.width) / 2,
+                      y: (pixelSize.height - size.height) / 2,
+                      width: size.width,
+                      height: size.height)
     }
 
     /// The pixel size `pixelSize` becomes once cropped to `aspectRatio`.

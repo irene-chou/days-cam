@@ -97,4 +97,38 @@ final class ImageCropperTests: XCTestCase {
             XCTAssertLessThanOrEqual(size.height, 3024)
         }
     }
+
+    // MARK: - 126.1: cropRect is centered with the right aspect ratio
+
+    func test_cropRect_isCenteredWithCorrectRatio_forEveryRatioAndOrientation() {
+        let sizes = [CGSize(width: 4032, height: 3024), CGSize(width: 3024, height: 4032)]
+        for pixelSize in sizes {
+            for ratio in CaptureAspectRatio.allCases {
+                let rect = ImageCropper.cropRect(forPixelSize: pixelSize, ratio: ratio)
+                let message = "\(ratio) on \(pixelSize)"
+                XCTAssertEqual(rect.midX, pixelSize.width / 2, accuracy: 0.001, message)
+                XCTAssertEqual(rect.midY, pixelSize.height / 2, accuracy: 0.001, message)
+                XCTAssertGreaterThanOrEqual(rect.minX, 0, message)
+                XCTAssertGreaterThanOrEqual(rect.minY, 0, message)
+                XCTAssertLessThanOrEqual(rect.maxX, pixelSize.width + 0.001, message)
+                XCTAssertLessThanOrEqual(rect.maxY, pixelSize.height + 0.001, message)
+
+                let shortToLong = min(rect.width, rect.height) / max(rect.width, rect.height)
+                let expected = ratio.shortToLongRatio
+                XCTAssertEqual(shortToLong, expected, accuracy: 0.0001, message)
+                // Orientation follows the input.
+                XCTAssertEqual(rect.width > rect.height, pixelSize.width > pixelSize.height && ratio != .oneByOne, message)
+            }
+        }
+    }
+
+    // MARK: - 126.2: crop output matches the rect, pixel for pixel
+
+    func test_crop_outputSizeMatchesCropRect() {
+        for ratio in CaptureAspectRatio.allCases {
+            let image = makeImage(width: 400, height: 300)
+            let rect = ImageCropper.cropRect(forPixelSize: CGSize(width: 400, height: 300), ratio: ratio)
+            XCTAssertEqual(pixelSize(of: cropper.crop(image, to: ratio)), rect.size)
+        }
+    }
 }

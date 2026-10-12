@@ -105,9 +105,11 @@ final class OutlineSliderUITests: XCTestCase {
         XCTAssertEqual(points(strokeSlider), dragged, "70.4")
     }
 
-    /// The disabled opacity row (outline 無) is audited for the plain chip.
-    func testDisabledOpacityRowShowsForNone() {
-        XCTAssertTrue(app.sliders["外框不透明度"].waitForExistence(timeout: 3))
-        attach("outline-none-disabled-chip")
+    /// 113.1: the outline page has no opacity row any more; opacity lives in
+    /// the color picker only (TASK-113).
+    func testOutlinePageHasNoOpacityRow() {
+        XCTAssertTrue(app.buttons["描邊"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.sliders["外框不透明度"].exists, "113.1")
+        attach("outline-none-no-opacity-row")
     }
 }

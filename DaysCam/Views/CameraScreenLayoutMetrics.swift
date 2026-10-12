@@ -89,6 +89,22 @@ struct CameraScreenLayoutMetrics {
     /// The segmented control's height at the default Dynamic Type size.
     static let defaultPanelTabBarHeight: CGFloat = 32
 
+    /// Top corner radius of the open panel's shape (PRD FR-8.8, design option
+    /// 2 "同色底加陰影", restored by the user's request on PR #451); the bottom
+    /// corners are square since the panel runs off the screen's bottom edge.
+    static let panelTopCornerRadius: CGFloat = 18
+
+    /// Blur radius and vertical offset of the upward shadow along the
+    /// panel's top edge (`CameraTheme.popoverShadow`); negative y = up.
+    static let panelShadowRadius: CGFloat = 18
+    static let panelShadowYOffset: CGFloat = -6
+
+    /// Space between the panel's rounded top edge and the segmented row, so
+    /// the row does not touch the edge or the rounded corners (PR #455, user
+    /// 2026-10-12 「面板須留 padding」「內距改為 8pt」). Taken out of the content area, so
+    /// `panelTop` and the viewfinder stay where they were.
+    static let panelTopPadding: CGFloat = 8
+
     /// Radius of the closed-panel shutter (76pt), used to place the side buttons.
     static let shutterRadius: CGFloat = 38
 
@@ -111,15 +127,6 @@ struct CameraScreenLayoutMetrics {
                 y: footerBase - Self.closedFooterButtonCenterAboveBase)
     }
 
-    /// Where the open panel's collapse button is centered (human decision
-    /// 2026-10-11): exactly where the closed footer's right「疊字設定」key
-    /// sits — `leftFooterButtonCenter` mirrored to the right edge — so the
-    /// thumb that opened the panel closes it without moving.
-    var panelCollapseButtonCenter: CGPoint {
-        CGPoint(x: screenSize.width - footerSideButtonCenterInset,
-                y: footerBase - Self.closedFooterButtonCenterAboveBase)
-    }
-
     /// True for iPhone SE-class heights (< 700pt).
     var isSmallScreen: Bool {
         screenSize.height < Self.smallScreenHeightThreshold
@@ -135,15 +142,18 @@ struct CameraScreenLayoutMetrics {
     /// went away and their 44pt came here, minus a 24pt grabber strip;
     /// TASK-99 (#404) removed the grabber and gave its 24pt back — 268
     /// regular, 176 small — so `panelTop` is unchanged throughout.
+    ///
+    /// PR #455: `panelTopPadding` (8pt) above the segmented row comes out
+    /// of this — 260 regular, 168 small.
     var panelContentHeight: CGFloat {
-        isSmallScreen ? 176 : 268
+        (isSmallScreen ? 176 : 268) - Self.panelTopPadding
     }
 
-    /// Tab bar and usable content area — `panelTop` to `panelBottom`
+    /// Top padding, tab bar and usable content area — `panelTop` to `panelBottom`
     /// (`footerBase`). Not the panel's visible height, which continues to
     /// the screen's bottom edge (`panelVisibleHeight`).
     var panelHeight: CGFloat {
-        panelTabBarHeight + panelContentHeight
+        Self.panelTopPadding + panelTabBarHeight + panelContentHeight
     }
 
     /// `panelTop` to the screen's physical bottom edge: the panel ignores

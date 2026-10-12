@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import UIKit
+import os
 import XCTest
 @testable import DaysCam
 
@@ -446,6 +447,21 @@ final class CameraServiceTests: XCTestCase {
         }
     }
 
+    /// 125.1 (#465): `AVCapturePhoto` and `AVCaptureResolvedPhotoSettings`
+    /// cannot be built in a test, so the racing callers are concurrent
+    /// `cancel()` calls — they go through the same `deliver` guard the
+    /// AVFoundation callbacks use.
+    func testCaptureDelegateAnswersExactlyOnceUnderConcurrentCallers() {
+        for _ in 0..<1000 {
+            let count = OSAllocatedUnfairLock(initialState: 0)
+            let delegate = PhotoCaptureDelegate { _, _ in count.withLock { $0 += 1 } }
+
+            DispatchQueue.concurrentPerform(iterations: 4) { _ in delegate.cancel() }
+
+            XCTAssertEqual(count.withLock { $0 }, 1)
+        }
+    }
+
     func testCaptureDelegateHandsItselfBackSoTheServiceCanReleaseIt() {
         var handedBack: PhotoCaptureDelegate?
         let delegate = PhotoCaptureDelegate { _, source in handedBack = source }
@@ -511,6 +527,43 @@ final class CameraServiceTests: XCTestCase {
 
         XCTAssertEqual(service.facing, .back, "starts on the back camera")
         XCTAssertFalse(service.isFlashAvailable, "the fake device reports no flash unit")
+    }
+
+    private final class CountingFlashProvider: FlashCapabilityProviding {
+        var calls: [CameraFacing] = []
+        var backHasFlash = true
+        func hasFlash(for facing: CameraFacing) -> Bool {
+            calls.append(facing)
+            return facing == .back && backHasFlash
+        }
+    }
+
+    /// 131.1 (#471): repeated reads do not repeat the device lookup.
+    func test_isFlashAvailable_looksUpTheDeviceOncePerSide() {
+        let provider = CountingFlashProvider()
+        let service = CameraService(authorizer: StubAuthorizer(status: .authorized),
+                                    deviceProvider: EmptyDeviceProvider(),
+                                    flashCapabilityProvider: provider,
+                                    isCaptureSupported: false)
+        for _ in 0..<100 { _ = service.isFlashAvailable }
+        XCTAssertEqual(provider.calls, [.back], "131.1")
+    }
+
+    /// 131.2 (#471): the value follows the side after a switch.
+    func test_isFlashAvailable_followsTheFacingAfterASwitch() {
+        let provider = CountingFlashProvider()
+        let service = CameraService(authorizer: StubAuthorizer(status: .authorized),
+                                    deviceProvider: EmptyDeviceProvider(),
+                                    flashCapabilityProvider: provider,
+                                    isCaptureSupported: false)
+        XCTAssertEqual(service.isFlashAvailable, CameraService.isFlashAvailable(facing: .back, hasFlash: true))
+        service.setFacingForTesting(.front)
+        for _ in 0..<100 { _ = service.isFlashAvailable }
+        XCTAssertFalse(service.isFlashAvailable, "131.2 front has no flash")
+        XCTAssertEqual(provider.calls, [.back, .front], "131.1 once per side")
+        service.setFacingForTesting(.back)
+        XCTAssertEqual(service.isFlashAvailable, CameraService.isFlashAvailable(facing: .back, hasFlash: true), "131.2")
+        XCTAssertEqual(provider.calls.count, 2)
     }
 }
 

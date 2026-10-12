@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The overlay panel's shell (PRD 0.2 FR-8): the first-level segmented
 /// control (樣式｜內容｜位置, TASK-37), whichever tab's content is currently
-/// selected, and the floating collapse button in the bottom-right corner
-/// (TASK-99, #404, design option D — it replaced TASK-92's pull-to-dismiss
-/// strip, which the user found awkward).
+/// selected, and the collapse chevron at the end of the segmented row
+/// (TASK-116, #447, design option A — it replaced TASK-99's floating
+/// button; a downward swipe on that row collapses too).
 ///
 /// Expanding/collapsing the panel and resizing the viewfinder are
 /// `CameraScreen`'s job (it owns the layout the panel appears inside of);
@@ -36,7 +36,8 @@ struct OverlayPanelView: View {
     /// no fade (92.12).
     var bottomSafeAreaInset: CGFloat = 0
 
-    /// Collapse the panel: the collapse button, or VoiceOver's escape (99.8).
+    /// Collapse the panel: the chevron, a downward swipe on the segmented
+    /// row, or VoiceOver's escape.
     var onCollapse: () -> Void = {}
 
     /// The segmented control's distance from each screen edge. `CameraScreen`
@@ -45,37 +46,43 @@ struct OverlayPanelView: View {
     /// and the panel above it (human decision 2026-10-11; it was a fixed 2).
     var tabBarHorizontalInset: CGFloat = 6
 
-    /// Distance from the collapse button's center to the screen's right
-    /// edge. `CameraScreen` passes `footerSideButtonCenterInset`, which puts
-    /// the button exactly where the closed footer's「疊字設定」key was
-    /// (`CameraScreenLayoutMetrics.panelCollapseButtonCenter`, human
-    /// decision 2026-10-11); the default only serves previews.
-    var collapseButtonCenterTrailingInset: CGFloat = 71.25
+    /// A downward drag this far (pt) on the segmented row collapses.
+    static let collapseSwipeDistance: CGFloat = 30
+    /// A fast flick whose predicted end travels this far also collapses.
+    static let collapseSwipePredictedDistance: CGFloat = 80
+    /// The chevron's tap target (TASK-116, 116.2).
+    static let collapseButtonTapSide: CGFloat = 44
+    /// Gap between the gray track and the chevron.
+    static let collapseButtonGap: CGFloat = 4
 
-    /// Diameter of the collapse button's white disc (TASK-99, #404; 40 → 48,
-    /// human decision 2026-10-11 「放大一些」).
-    static let collapseButtonDiameter: CGFloat = 48
-    /// The collapse button's tap target — the disc itself, already over 44.
-    static let collapseButtonTapSide: CGFloat = 48
-    /// Distance from the button's center up to `footerBase` (the home
-    /// indicator's top edge): the closed footer's 16 + 38, the same height
-    /// the「疊字設定」key sits at.
-    static let collapseButtonCenterAboveBase: CGFloat = CameraScreenLayoutMetrics.closedFooterButtonCenterAboveBase
-    /// Room every tab leaves under its last row so it can scroll up above
-    /// the button (99.6): the band, the button's top edge above `footerBase`
-    /// (center 54 + half the 48pt target), and 8pt of clearance.
-    static func bottomContentInset(bottomSafeAreaInset: CGFloat) -> CGFloat {
-        bottomSafeAreaInset + collapseButtonCenterAboveBase + collapseButtonTapSide / 2 + 8
+    /// Whether a drag that ended on the segmented row should collapse the
+    /// panel (116.3／116.4): downward past 30pt, or predicted to travel 80pt,
+    /// and more vertical than horizontal. Up, sideways and short drags do
+    /// nothing.
+    static func shouldCollapse(translation: CGSize, predictedEndTranslation: CGSize) -> Bool {
+        guard translation.height > 0, abs(translation.height) > abs(translation.width) else { return false }
+        return translation.height >= collapseSwipeDistance
+            || predictedEndTranslation.height >= collapseSwipePredictedDistance
     }
 
-    /// What every tab keeps clear under its last row (99.6).
+    /// Room every tab leaves under its last row (116.8): the band plus 8pt.
+    static func bottomContentInset(bottomSafeAreaInset: CGFloat) -> CGFloat {
+        bottomSafeAreaInset + 8
+    }
+
+    /// What every tab keeps clear under its last row.
     private var bottomContentInset: CGFloat {
         Self.bottomContentInset(bottomSafeAreaInset: bottomSafeAreaInset)
     }
 
+    /// The chevron grows with Dynamic Type, capped at 22pt.
+    @ScaledMetric(relativeTo: .footnote) private var chevronSize: CGFloat = 17
+
     var body: some View {
         VStack(spacing: 0) {
             segmentedControl
+                // Clear of the rounded top edge (PR #455).
+                .padding(.top, CameraScreenLayoutMetrics.panelTopPadding)
             // The tab body scrolls within whatever space is left, rather
             // than growing the panel or getting clipped, on a tab whose
             // content is taller than the panel (#75, T.8) — e.g. the format
@@ -90,13 +97,12 @@ struct OverlayPanelView: View {
             //
             // The tab body is `contentHeight` of usable area plus the
             // home-indicator band (TASK-92): the scroll view spans both, so
-            // content shows through the band, under `safeAreaFade`. The
-            // collapse button floats over the bottom-right corner (TASK-99).
+            // content shows through the band, under `safeAreaFade`.
             Group {
                 if model.panelModel.selectedTab == .style, let styleTabModel = model.styleTabModel {
                     // The style tab owns its scrolling (fixed sub-tab row above
                     // its own scroll view, TASK-66), so it is not wrapped here;
-                    // it keeps the band and the button clear under its last
+                    // it keeps the band clear under its last
                     // row itself.
                     StyleTabView(model: styleTabModel, availableHeight: contentHeight,
                                  bottomContentInset: bottomContentInset)
@@ -104,7 +110,7 @@ struct OverlayPanelView: View {
                     ScrollView {
                         tabContent
                             // Room for the last row to scroll up above the
-                            // band and the collapse button (99.6).
+                            // band (116.8).
                             .padding(.bottom, bottomContentInset)
                     }
                     // Fades at the edges with more content, and one flash of the
@@ -116,47 +122,63 @@ struct OverlayPanelView: View {
             }
             .frame(height: contentHeight + bottomSafeAreaInset)
             .overlay(alignment: .bottom) { safeAreaFade }
-            .overlay(alignment: .bottomTrailing) { collapseButton }
         }
         // Pinned top-aligned so the segmented control's y position stays
         // identical across every tab (#75, T.7).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // No surface of its own (PRD FR-8.8 as restored by TASK-99): the
-        // panel sits straight on the camera background — no shadow, corner
-        // or border — and runs off the bottom of the screen.
-        .background(CameraTheme.background.ignoresSafeArea(edges: .bottom))
-        // The whole panel answers the escape gesture (99.8); the collapse
-        // button is the visible control.
+        // Same-color surface with an upward shadow along its top edge
+        // (restored on PR #451 at the user's request); it runs off the
+        // bottom of the screen.
+        .background(panelBackground)
+        // The whole panel answers the escape gesture; the chevron is the
+        // visible control.
         .accessibilityAction(.escape) { onCollapse() }
     }
 
-    // MARK: - Collapse button (TASK-99, #404, design option D)
+    // MARK: - Panel surface (FR-8.8, design option 2)
 
-    /// A 48pt white disc with a soft shadow and a `chevron.down`, floating
-    /// over the list in the panel's bottom-right corner, centered where the
-    /// closed footer's「疊字設定」key was: `collapseButtonCenterTrailingInset`
-    /// from the screen's right edge and 54pt above `footerBase` (the band
-    /// below the usable area is `bottomSafeAreaInset` tall). The disc is its
-    /// own 48×48 tap target. It never scrolls and never moves between tabs
-    /// (99.5). The disc and its shadow are a FR-14.2 exception — a button
-    /// floating over a list needs a surface to be seen.
+    /// The panel's own surface: the camera background color, top corners
+    /// rounded, with a soft shadow along the top edge only. The shadow is
+    /// masked to a 100pt band at the top so it never shows at the sides or
+    /// below; the fill is drawn again on top without the shadow. No border.
+    private var panelBackground: some View {
+        let cornerRadius = CameraScreenLayoutMetrics.panelTopCornerRadius
+        let shape = UnevenRoundedRectangle(topLeadingRadius: cornerRadius, bottomLeadingRadius: 0,
+                                           bottomTrailingRadius: 0, topTrailingRadius: cornerRadius,
+                                           style: .continuous)
+        return ZStack {
+            shape
+                .fill(CameraTheme.background)
+                .shadow(color: CameraTheme.popoverShadow,
+                        radius: CameraScreenLayoutMetrics.panelShadowRadius,
+                        x: 0, y: CameraScreenLayoutMetrics.panelShadowYOffset)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .offset(y: cornerRadius - 100)
+                }
+            shape.fill(CameraTheme.background)
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+
+    // MARK: - Collapse button (TASK-116, #447, design option A)
+
+    /// A bare `chevron.down` at the end of the segmented row: no disc, no
+    /// shadow. Its 44pt tap target extends above and below the row without
+    /// changing the row's height.
     private var collapseButton: some View {
-        Button(action: onCollapse) {
-            ZStack {
-                Circle()
-                    .fill(CameraTheme.popoverBackground)
-                    .shadow(color: CameraTheme.popoverShadow, radius: 12, x: 0, y: 4)
-                    .frame(width: Self.collapseButtonDiameter, height: Self.collapseButtonDiameter)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(CameraTheme.ink)
-            }
-            .frame(width: Self.collapseButtonTapSide, height: Self.collapseButtonTapSide)
-            .contentShape(Circle())
+        let side = Self.collapseButtonTapSide
+        return Button(action: onCollapse) {
+            Image(systemName: "chevron.down")
+                .font(.system(size: min(chevronSize, 22), weight: .semibold))
+                .foregroundColor(CameraTheme.ink)
+                .frame(width: side, height: max(side, tabBarHeight))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.trailing, collapseButtonCenterTrailingInset - Self.collapseButtonTapSide / 2)
-        .padding(.bottom, bottomSafeAreaInset + Self.collapseButtonCenterAboveBase - Self.collapseButtonTapSide / 2)
+        .frame(width: side, height: tabBarHeight)
         .accessibilityLabel("收合面板")
         .accessibilityIdentifier("panelCollapseButton")
     }
@@ -191,6 +213,27 @@ struct OverlayPanelView: View {
     /// edit, so its numbers are stale for this one element, not a gap #105
     /// should close.
     private var segmentedControl: some View {
+        HStack(spacing: Self.collapseButtonGap) {
+            segmentTrack
+            collapseButton
+        }
+        // The chevron's right edge sits the same distance from the screen
+        // edge as the track's left edge (2026-10-11 margin, TASK-116).
+        .padding(.horizontal, tabBarHorizontalInset)
+        .contentShape(Rectangle())
+        // A downward swipe on this row collapses on release; the panel does
+        // not follow the finger (116.6) and the list below never sees it.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 10).onEnded { value in
+                if Self.shouldCollapse(translation: value.translation,
+                                       predictedEndTranslation: value.predictedEndTranslation) {
+                    onCollapse()
+                }
+            }
+        )
+    }
+
+    private var segmentTrack: some View {
         HStack(spacing: 0) {
             ForEach(OverlayPanelModel.Tab.allCases, id: \.self) { tab in
                 tabButton(tab)
@@ -202,8 +245,6 @@ struct OverlayPanelView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(CameraTheme.fill)
         )
-        // Same margin at the sides as the gap above the panel (2026-10-11).
-        .padding(.horizontal, tabBarHorizontalInset)
     }
 
     /// The selected-segment shadow (`rgba(60,40,20,.15)`,

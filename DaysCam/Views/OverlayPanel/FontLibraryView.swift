@@ -11,7 +11,6 @@ struct FontListView: View {
     @State private var showsLicense = false
     /// The name and size text follow Dynamic Type, so a row grows with them.
     @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
-    @ScaledMetric(relativeTo: .caption) private var sizeTextSize: CGFloat = 12
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .subheadline) private var weightTextSize: CGFloat = FontListView.weightTextSize
 
@@ -29,6 +28,8 @@ struct FontListView: View {
     static let cardCornerRadius: CGFloat = 12
     /// The selection bar left of the name.
     static let selectionBarWidth: CGFloat = 3
+    /// The chevron's tap area (TASK-115, 115.8): at least 44×44pt.
+    static let chevronHitSize: CGFloat = 44
     /// The `danger` token of the design (`#E0503F`).
     static let danger = Color(red: 0xE0 / 255, green: 0x50 / 255, blue: 0x3F / 255)
 
@@ -73,49 +74,54 @@ struct FontListView: View {
 
     // MARK: - Rows
 
+    /// Runs `change`, animated unless the system asks for reduced motion
+    /// (TASK-112).
+    private func animated(_ change: () -> Void) {
+        if reduceMotion { change() } else { withAnimation(.easeInOut(duration: 0.25), change) }
+    }
+
     @ViewBuilder
     private func cellView(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
-        let button = Button {
-            // Expanding／collapsing the weight buttons animates (TASK-112),
-            // unless the system asks for reduced motion.
-            if cell.canExpand, !reduceMotion {
-                withAnimation(.easeInOut(duration: 0.25)) { model.didTap(cell.fontID) }
-            } else {
-                model.didTap(cell.fontID)
-            }
-        } label: {
-            cell.canExpand ? AnyView(weightsTitle(cell)) : AnyView(cellLabel(cell, showsSeparator: showsSeparator))
+        if cell.canExpand {
+            expandableCellView(cell, showsSeparator: showsSeparator)
+        } else {
+            rowView(cell, showsSeparator: showsSeparator)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(cell.accessibilityLabel)
-        .accessibilityValue(cell.accessibilityValue ?? "")
-        .accessibilityHint(cell.accessibilityHint ?? "")
-        .accessibilityAddTraits(cell.isSelected ? .isSelected : [])
-        let row = Group {
-            if cell.canDelete {
-                button
-                    .contextMenu {
-                        Button("套用") { model.didTap(cell.fontID) }
-                        Button(role: .destructive) {
-                            model.requestDeletion(of: cell.fontID)
-                        } label: {
-                            Label("刪除字型", systemImage: "trash")
-                            if let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
-                                Text("釋放 \(size)")
-                            }
+    }
+
+    /// One row as a single accessibility element; the long-press menu and
+    /// the VoiceOver delete action live here.
+    @ViewBuilder
+    private func rowView(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
+        let row = titleRow(cell, showsSeparator: showsSeparator)
+        if cell.canDelete {
+            row
+                .contextMenu {
+                    Button("套用") { model.didTap(cell.fontID) }
+                    Button(role: .destructive) {
+                        model.requestDeletion(of: cell.fontID)
+                    } label: {
+                        Label("刪除字型", systemImage: "trash")
+                        if let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
+                            Text("釋放 \(size)")
                         }
                     }
-                    .accessibilityAction(named: "刪除字型") { model.requestDeletion(of: cell.fontID) }
-            } else {
-                button
-            }
+                }
+                .accessibilityAction(named: "刪除字型") { model.requestDeletion(of: cell.fontID) }
+        } else {
+            row
         }
-        if cell.canExpand {
-            // The selected multi-weight font: its title row, plus the weight
-            // buttons while expanded (TASK-89 design A, collapsible since
-            // TASK-112 #437). Same tint and leading bar as any selected row.
+    }
+
+    /// A multi-weight font (TASK-115): its title row with the trailing
+    /// chevron, plus the weight buttons while expanded. The selected font is
+    /// the tinted card with the leading bar (TASK-89 design A, TASK-112); an
+    /// unselected one expands into a plain card without a frame on any weight.
+    @ViewBuilder
+    private func expandableCellView(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
+        if cell.isSelected {
             VStack(spacing: 0) {
-                row
+                rowView(cell, showsSeparator: false)
                 if cell.isExpanded {
                     weightButtons(cell)
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -132,16 +138,87 @@ struct FontListView: View {
                     .padding(.leading, 4)
             }
             .padding(.vertical, 6)
+        } else if cell.isExpanded {
+            VStack(spacing: 0) {
+                rowView(cell, showsSeparator: false)
+                weightButtons(cell)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            .clipped()
+            .background(RoundedRectangle(cornerRadius: Self.cardCornerRadius)
+                .fill(CameraTheme.ink.opacity(0.04)))
+            .padding(.vertical, 6)
         } else {
-            row
+            rowView(cell, showsSeparator: showsSeparator)
         }
     }
-    // MARK: - Selected multi-weight font (TASK-89 design A, TASK-112 collapse)
-    /// The selected multi-weight font's title row: the name in the chosen
-    /// weight, the weight's name, a download ring while a face is still
-    /// coming in (112.8), and a chevron for the expand／collapse state. No
-    /// check mark (112.6): the leading bar and tint already say "selected".
-    private func weightsTitle(_ cell: FontLibraryModel.Cell) -> some View {
+
+    // MARK: - Title row (TASK-115)
+
+    /// A font's row: the name area, which applies the font (or, on the
+    /// selected multi-weight row, toggles its weights), and for a multi-weight
+    /// font a separate 44×44pt chevron that only expands. The row is one
+    /// element for VoiceOver: the chevron is folded into the custom action
+    /// "展開字重"／"收合字重" (115.9).
+    private func titleRow(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
+        let tintsRow = cell.isSelected && !cell.canExpand
+        return HStack(spacing: 0) {
+            Button {
+                if cell.canExpand {
+                    animated { model.didTap(cell.fontID) }
+                } else {
+                    model.didTap(cell.fontID)
+                }
+            } label: {
+                nameArea(cell)
+            }
+            .buttonStyle(.plain)
+            if cell.canExpand {
+                Button {
+                    animated { model.toggleExpansion(of: cell.fontID) }
+                } label: {
+                    Image(systemName: cell.isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(CameraTheme.inkTertiary)
+                        .frame(width: Self.chevronHitSize, height: max(Self.chevronHitSize, Self.rowMinHeight))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(minHeight: Self.rowMinHeight)
+        .background(tintsRow ? CameraTheme.active.opacity(0.12) : Color.clear)
+        .overlay(alignment: .leading) {
+            if tintsRow {
+                Capsule()
+                    .fill(CameraTheme.active)
+                    .frame(width: Self.selectionBarWidth)
+                    .padding(.vertical, 12)
+                    .padding(.leading, 4)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showsSeparator {
+                Rectangle()
+                    .fill(CameraTheme.ink.opacity(0.08))
+                    .frame(height: 1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cell.accessibilityLabel)
+        .accessibilityValue(cell.accessibilityValue ?? "")
+        .accessibilityHint(cell.accessibilityHint ?? "")
+        .accessibilityAddTraits(cell.isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { animated { model.didTap(cell.fontID) } }
+        .accessibilityAction(named: cell.expandActionName) {
+            animated { model.toggleExpansion(of: cell.fontID) }
+        }
+    }
+
+    /// The name, then (right to left) the chevron's neighbours: the weight's
+    /// download ring and name on the selected multi-weight row, otherwise the
+    /// size text and state icon.
+    private func nameArea(_ cell: FontLibraryModel.Cell) -> some View {
         HStack(spacing: 8) {
             nameView(cell)
             Spacer(minLength: 8)
@@ -154,13 +231,13 @@ struct FontListView: View {
                     .foregroundColor(CameraTheme.inkSecondary)
                     .fixedSize()
             }
-            Image(systemName: cell.isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(CameraTheme.inkTertiary)
-                .frame(minWidth: Self.statusIconSize)
-                .accessibilityHidden(true)
+            if !(cell.canExpand && cell.isSelected) {
+                statusIcon(cell.status)
+                    .frame(minWidth: cell.canExpand ? nil : Self.statusIconSize)
+            }
         }
-        .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.leading, Self.rowHorizontalPadding)
+        .padding(.trailing, cell.canExpand ? 4 : Self.rowHorizontalPadding)
         .frame(minHeight: Self.rowMinHeight)
         .contentShape(Rectangle())
     }
@@ -172,7 +249,7 @@ struct FontListView: View {
         HStack(spacing: Self.weightButtonSpacing) {
             ForEach(cell.weights) { weight in
                 Button {
-                    model.didTapWeight(weight.weightID)
+                    model.didTapWeight(weight.weightID, of: cell.fontID)
                 } label: {
                     weightLabel(weight)
                 }
@@ -224,42 +301,6 @@ struct FontListView: View {
                 .font(.system(size: 14))
                 .foregroundColor(Self.danger)
         }
-    }
-
-    private func cellLabel(_ cell: FontLibraryModel.Cell, showsSeparator: Bool) -> some View {
-        HStack(spacing: 8) {
-            nameView(cell)
-            Spacer(minLength: 8)
-            if case .notDownloaded = cell.status,
-               let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
-                Text(size)
-                    .font(.system(size: sizeTextSize))
-                    .foregroundColor(CameraTheme.inkTertiary)
-                    .fixedSize()
-            }
-            statusIcon(cell.status)
-                .frame(minWidth: Self.statusIconSize)
-        }
-        .padding(.horizontal, Self.rowHorizontalPadding)
-        .frame(minHeight: Self.rowMinHeight)
-        .background(cell.isSelected ? CameraTheme.active.opacity(0.12) : Color.clear)
-        .overlay(alignment: .leading) {
-            if cell.isSelected {
-                Capsule()
-                    .fill(CameraTheme.active)
-                    .frame(width: Self.selectionBarWidth)
-                    .padding(.vertical, 12)
-                    .padding(.leading, 4)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if showsSeparator {
-                Rectangle()
-                    .fill(CameraTheme.ink.opacity(0.08))
-                    .frame(height: 1)
-            }
-        }
-        .contentShape(Rectangle())
     }
 
     @ViewBuilder
