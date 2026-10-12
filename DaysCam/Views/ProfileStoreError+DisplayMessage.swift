@@ -41,8 +41,6 @@ extension CameraProfileValidationError {
             return "至少需要顯示天數或日期其中一項"
         case .displayUnitsEmpty:
             return "至少要勾選一個天數單位"
-        case .ageWordingRequiresYearUnit:
-            return "歲的措辭只能在勾選年時使用"
         // TASK-17: 0.2 style and position invariants (PRD 0.2 §4.1). The 0.1 UI
         // cannot produce these; wording to be reviewed with the 0.2 panels.
         case .sizeScaleOutOfRange:

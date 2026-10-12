@@ -189,17 +189,10 @@ final class DisplaySettingsModelTests: XCTestCase {
 
     // MARK: - A-5 歲措辭 (11.28–11.31)
 
-    func testAgeWordingDisabledWithoutYear() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isAgeWordingToggleDisabled)
-    }
-
-    func testAgeWordingEnabledOnceYearIsChecked() throws {
+    func testCheckingYearLeavesAgeWordingOff() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.toggleUnit(.year)
-        XCTAssertFalse(model.isAgeWordingToggleDisabled)
         XCTAssertFalse(model.profile.useAgeWording)
     }
 
@@ -212,24 +205,52 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.overlayPreviewText, "1 歲")
     }
 
-    func testUncheckingYearTurnsAgeWordingOffAndDisablesIt() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
-                                                        displayUnits: [.year, .month],
-                                                        useAgeWording: true),
-                              now: try fixedNow(), spy: spy)
-        model.toggleUnit(.year)
-        XCTAssertFalse(model.profile.useAgeWording)
-        XCTAssertTrue(model.isAgeWordingToggleDisabled)
-        XCTAssertFalse(model.overlayPreviewText.contains("歲"))
+    // MARK: - TASK-139 (#486) 年改成歲 independent of the year checkbox
+
+    /// 奶茶, 2023-08-05, photographed 2026-10-12.
+    private func milkTeaModel(displayUnits: Set<DisplayUnit>, useAgeWording: Bool = false,
+                              spy: Spy) throws -> DisplaySettingsModel {
+        makeModel(profile: baselineProfile(name: "奶茶", startDate: DateFixture.components(2023, 8, 5),
+                                           displayUnits: displayUnits, useAgeWording: useAgeWording),
+                  now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10)), spy: spy)
     }
 
-    func testSetUseAgeWordingNoOpsWithoutYear() throws {
+    /// 139.1／139.2: day only, the switch turns on and the overlay is
+    /// unchanged; checking the year then reads 歲.
+    func testAgeWordingTurnsOnWithoutYearAndAppliesOnceYearIsChecked() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy) // units = [.day]
+        let model = try milkTeaModel(displayUnits: [.day], spy: spy)
+        let before = model.overlayPreviewText
         model.setUseAgeWording(true)
-        XCTAssertFalse(model.profile.useAgeWording)
-        XCTAssertTrue(spy.updated.isEmpty)
+        XCTAssertTrue(model.profile.useAgeWording, "139.1")
+        XCTAssertEqual(spy.updated.last?.useAgeWording, true, "139.1 saved")
+        XCTAssertEqual(model.overlayPreviewText, before, "139.1 overlay unchanged")
+        XCTAssertEqual(model.overlayPreviewText, "第 1165 天", "139.1")
+
+        model.toggleUnit(.year)
+        XCTAssertEqual(model.overlayPreviewText, "3 歲 68 天", "139.2")
+    }
+
+    /// 139.3: unchecking and re-checking the year never touches the switch.
+    func testUncheckingAndRecheckingYearKeepsAgeWording() throws {
+        let spy = Spy()
+        let model = try milkTeaModel(displayUnits: [.year, .month], useAgeWording: true, spy: spy)
+        XCTAssertEqual(model.overlayPreviewText, "3 歲 2 個月", "139.3")
+        model.toggleUnit(.year)
+        XCTAssertTrue(model.profile.useAgeWording, "139.3 kept while unchecked")
+        XCTAssertEqual(spy.updated.last?.useAgeWording, true, "139.3 saved as on")
+        model.toggleUnit(.year)
+        XCTAssertTrue(model.profile.useAgeWording, "139.3 kept when re-checked")
+        XCTAssertEqual(model.overlayPreviewText, "3 歲 2 個月", "139.3")
+    }
+
+    /// 139.4: turning the switch off reads 年 again.
+    func testTurningAgeWordingOffReadsYearAgain() throws {
+        let spy = Spy()
+        let model = try milkTeaModel(displayUnits: [.year, .month], useAgeWording: true, spy: spy)
+        model.setUseAgeWording(false)
+        XCTAssertFalse(model.profile.useAgeWording, "139.4")
+        XCTAssertEqual(model.overlayPreviewText, "3 年 2 個月", "139.4")
     }
 
     // MARK: - A-6 持久化 (11.32–11.33)
@@ -399,12 +420,11 @@ final class DisplaySettingsModelTests: XCTestCase {
     }
 
     /// 108.8: with the day count off and no year ticked, 年改成歲 still
-    /// reports 先打開天數 (the day-count rule comes before the year rule).
+    /// reports 先打開天數 (TASK-139 #486 dropped the year rule it used to precede).
     func testAgeWordingTapWithoutYearWhileTheDayCountIsOffIsDayCountOff() throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
         model.setShowDate(true)
         model.setShowDayCount(false)
-        XCTAssertTrue(model.isAgeWordingToggleDisabled, "no year ticked")
         model.setUseAgeWording(true)
         XCTAssertEqual(model.lastRejection?.kind, .dayCountOff, "108.8")
         XCTAssertFalse(model.profile.useAgeWording)

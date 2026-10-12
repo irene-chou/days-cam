@@ -263,15 +263,14 @@ final class CameraProfileTests: XCTestCase {
         expectValidationFailure(profile(displayUnits: []), .displayUnitsEmpty)
     }
 
-    func testAgeWordingRequiresTheYearUnit() {
-        expectValidationFailure(profile(displayUnits: [.day], useAgeWording: true),
-                                .ageWordingRequiresYearUnit)
-        expectValidationFailure(profile(displayUnits: [.month, .week, .day], useAgeWording: true),
-                                .ageWordingRequiresYearUnit)
-        XCTAssertNoThrow(try profile(displayUnits: [.year, .month], useAgeWording: true)
-            .validatedForPersistence(calendar: DateFixture.taipei))
-        XCTAssertNoThrow(try profile(displayUnits: [.year, .week], useAgeWording: true)
-            .validatedForPersistence(calendar: DateFixture.taipei))
+    /// TASK-139 (#486): age wording no longer needs the year unit; every
+    /// unit set is valid with it on or off (139.7, was invariant 5).
+    func testAgeWordingIsValidWithAnyUnitSet() {
+        for mask in 1..<16 {
+            let units = Set(DisplayUnit.allCases.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element))
+            XCTAssertNoThrow(try profile(displayUnits: units, useAgeWording: true)
+                .validatedForPersistence(calendar: DateFixture.taipei), "139.7 \(units)")
+        }
     }
 
     /// The file lists units in year → day order, not `Set` order.
@@ -444,6 +443,37 @@ final class CameraProfileStyleMigrationTests: XCTestCase {
         let reloaded = try makeStore().load()
         XCTAssertEqual(reloaded.map(\.id), loaded.map(\.id), "32.3 after saving")
         XCTAssertEqual(reloaded.map(\.style), loaded.map(\.style), "32.3 after saving")
+    }
+
+    /// 139.5: a file with age wording on and no year checked — invalid
+    /// before TASK-139 (#486) — loads with the record kept and unchanged,
+    /// survives a write-back, and still renders the ordinal day count.
+    func testAgeWordingWithoutYearInAFileLoadsUnchanged() throws {
+        let record = """
+        {"id":"00000000-0000-0000-0000-000000000139","name":"奶茶","startDate":{"year":2023,"month":8,"day":5},\
+        "countingRule":"dayOne","showDayCount":true,"showDate":false,"showName":false,\
+        "displayUnits":["day"],"useAgeWording":true,"position":{"x":0.5,"y":0.5},\
+        "style":{"fontID":"pingFang","textColor":"#FFFFFF","outline":"thickStroke","outlineColor":"#0A84FF","shadow":"glow","sizeScale":100},\
+        "createdAt":789000000,"updatedAt":789000000}
+        """
+        try Data("[\(record)]".utf8).write(to: fileURL, options: [.atomic])
+
+        let store = try makeStore()
+        let loaded = store.load()
+        XCTAssertFalse(store.didRecoverFromCorruption, "139.5 not treated as corrupt")
+        let kept = try XCTUnwrap(loaded.first { $0.name == "奶茶" }, "139.5 record kept")
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertTrue(kept.useAgeWording, "139.5")
+        XCTAssertEqual(kept.displayUnits, [.day], "139.5")
+
+        let capturedAt = try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10))
+        XCTAssertEqual(TemplateRenderer().render(profile: kept, capturedAt: capturedAt, calendar: DateFixture.taipei),
+                       "第 1165 天", "139.5")
+
+        try store.update(kept)
+        let reloaded = try makeStore().load()
+        XCTAssertEqual(reloaded.map(\.useAgeWording), [true], "139.5 after saving")
+        XCTAssertEqual(reloaded.map(\.displayUnits), [[.day]], "139.5 after saving")
     }
 
     /// 32.2: removed and unknown IDs in a file decode as PingFang without

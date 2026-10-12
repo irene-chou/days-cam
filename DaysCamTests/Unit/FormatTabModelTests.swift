@@ -66,18 +66,16 @@ final class FormatTabModelTests: XCTestCase {
         XCTAssertEqual(model.displaySettings.profile.displayUnits, [.year, .week, .day], "24.3")
     }
 
-    // MARK: - 24.4 取消勾年時「年改成歲」自動關閉且 disabled
+    // MARK: - 24.4 → TASK-139 (#486): 取消勾年不再動到「年改成歲」
 
-    func testUncheckingYearTurnsOffAndDisablesAgeWording() throws {
+    func testUncheckingYearLeavesAgeWordingOn() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day], useAgeWording: true),
                               now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.displaySettings.isAgeWordingToggleDisabled)
 
         model.displaySettings.toggleUnit(.year)
 
-        XCTAssertFalse(model.displaySettings.profile.useAgeWording, "24.4")
-        XCTAssertTrue(model.displaySettings.isAgeWordingToggleDisabled, "24.4")
+        XCTAssertTrue(model.displaySettings.profile.useAgeWording, "24.4 → 139.3")
     }
 
     // MARK: - 48.3 單位區永遠可操作
@@ -89,7 +87,6 @@ final class FormatTabModelTests: XCTestCase {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.displaySettings.toggleUnit(.year)
         XCTAssertTrue(model.displaySettings.profile.displayUnits.contains(.year), "48.3")
-        XCTAssertFalse(model.displaySettings.isAgeWordingToggleDisabled, "48.3")
         model.displaySettings.setUseAgeWording(true)
         XCTAssertTrue(model.displaySettings.profile.useAgeWording, "48.3")
     }
