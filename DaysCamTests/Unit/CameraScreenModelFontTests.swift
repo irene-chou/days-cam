@@ -625,11 +625,12 @@ final class CameraScreenModelFontTests: XCTestCase {
     }
 
     /// 122.4: the other profile's choice leaves this profile's pending alone (A-8).
-    func testAnotherProfilesWeightChoiceDoesNotCancelThisProfilesPending() throws {
+    func testAnotherProfilesWeightChoiceDoesNotCancelThisProfilesPending() async throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded, .notoSerifTC: .available])
         harness.library.set(.available, for: .notoSerifTC, weightID: "black")
         harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
         harness.model.selectProfile(id: harness.profileB.id)
+        await settle()   // the style tab is rebuilt for B
         harness.model.styleTabModel?.fontList.didTapWeight("black", of: .notoSerifTC)
 
         harness.library.finishDownload(.xingkai)
