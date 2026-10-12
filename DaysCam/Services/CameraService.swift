@@ -1250,9 +1250,11 @@ extension CameraService {
         if output.isResponsiveCaptureEnabled != responsive {
             output.isResponsiveCaptureEnabled = responsive
         }
-        // Fast capture prioritization only exists on top of responsive capture,
-        // and its support is only known after that one is on.
-        let fast = output.isResponsiveCaptureEnabled && output.isFastCapturePrioritizationSupported
+        // Fast capture follows its own support flag only (TASK-143 #499): a
+        // format can support it without zero shutter lag, so without
+        // responsive capture. Still set after responsive capture, since the
+        // output may only report support once that one is decided.
+        let fast = output.isFastCapturePrioritizationSupported
         if output.isFastCapturePrioritizationEnabled != fast {
             output.isFastCapturePrioritizationEnabled = fast
         }
@@ -1522,6 +1524,12 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
+                     willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        // The exposure is starting: the shutter lag the user feels (TASK-143).
+        CaptureTiming.markWillCapture()
+    }
+
+    func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
         CaptureTiming.logCaptureFinished()
@@ -1658,6 +1666,7 @@ enum CaptureTiming {
 
     private struct State {
         var start: CFAbsoluteTime?
+        var willCapture: CFAbsoluteTime?
         var marks: [Stage: CFAbsoluteTime] = [:]
         var size: CGSize = .zero
     }
@@ -1673,14 +1682,36 @@ enum CaptureTiming {
         #endif
     }
 
-    /// DEBUG only: logs the time from the shutter press to `didFinishCapture`,
-    /// the number to compare before and after low-latency capture (TASK-130).
+    /// DEBUG only: records `willCapturePhotoFor`, the start of the exposure.
+    static func markWillCapture() {
+        #if DEBUG
+        let now = CFAbsoluteTimeGetCurrent()
+        state.withLock { if $0.start != nil { $0.willCapture = now } }
+        #endif
+    }
+
+    /// DEBUG only: logs the shutter lag (press → `willCapturePhotoFor`, the
+    /// number to compare before and after low-latency capture; TASK-143
+    /// #499) and, as a separate stage, press → `didFinishCapture`, which
+    /// also includes the image processing (TASK-130).
     static func logCaptureFinished() {
         #if DEBUG
         let now = CFAbsoluteTimeGetCurrent()
-        guard let start = state.withLock({ $0.start }) else { return }
-        logger.debug("shutterToDidFinishCapture=\(Int((now - start) * 1000))ms")
+        guard let (start, willCapture) = state.withLock({ state in
+            state.start.map { ($0, state.willCapture) }
+        }) else { return }
+        let line = captureFinishedLine(start: start, willCapture: willCapture, finished: now)
+        logger.debug("\(line, privacy: .public)")
         #endif
+    }
+
+    /// The `logCaptureFinished` line; `n/a` when `willCapturePhotoFor` never
+    /// came.
+    static func captureFinishedLine(start: CFAbsoluteTime,
+                                    willCapture: CFAbsoluteTime?,
+                                    finished: CFAbsoluteTime) -> String {
+        func milliseconds(_ end: CFAbsoluteTime) -> String { "\(Int(((end - start) * 1000).rounded()))ms" }
+        return "shutterToWillCapture=\(willCapture.map(milliseconds) ?? "n/a") shutterToDidFinishCapture=\(milliseconds(finished))"
     }
 
     /// Records that `stage` finished now. `size` is the photo's pixel size,

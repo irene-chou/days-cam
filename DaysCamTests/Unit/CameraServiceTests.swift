@@ -1231,12 +1231,24 @@ final class CameraServiceLowLatencyCaptureTests: XCTestCase {
         XCTAssertEqual(output.maxPhotoQualityPrioritization, .balanced)
     }
 
-    /// Fast capture needs responsive capture; it is not enabled alone.
-    func testFastCaptureIsNotEnabledWithoutResponsiveCapture() {
+    /// 143.1: fast capture follows its own support only — a format without
+    /// responsive capture (no zero shutter lag) still gets it.
+    func testFastCaptureIsEnabledWithoutResponsiveCapture() {
         let output = FakePhotoOutput()
+        output.isZeroShutterLagSupported = false
         output.isResponsiveCaptureSupported = false
         CameraService.configureLowLatencyCapture(on: output)
-        XCTAssertFalse(output.isFastCapturePrioritizationEnabled)
+        XCTAssertFalse(output.isResponsiveCaptureEnabled)
+        XCTAssertTrue(output.isFastCapturePrioritizationEnabled, "143.1")
+    }
+
+    /// 143.2: the timing line has the shutter → willCapture stage, with
+    /// didFinishCapture kept as its own stage.
+    func testCaptureTimingLineHasTheShutterLagStage() {
+        XCTAssertEqual(CaptureTiming.captureFinishedLine(start: 10, willCapture: 10.12, finished: 10.5),
+                       "shutterToWillCapture=120ms shutterToDidFinishCapture=500ms", "143.2")
+        XCTAssertEqual(CaptureTiming.captureFinishedLine(start: 10, willCapture: nil, finished: 10.5),
+                       "shutterToWillCapture=n/a shutterToDidFinishCapture=500ms", "143.2 no willCapture")
     }
 
     /// 130.1: a camera swap that drops support turns the features off again.
