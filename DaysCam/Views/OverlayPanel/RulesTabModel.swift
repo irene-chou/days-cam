@@ -182,3 +182,50 @@ extension RulesTabModel {
         mutate { $0.showName = newValue }
     }
 }
+
+// MARK: - 時間軸預覽 (FR-13.7, TASK-137)
+
+extension RulesTabModel {
+    /// Heading of the timeline block.
+    static let timelineTitle = "到了那天之後"
+    /// Marker next to the date's own row.
+    static let timelineStartDayMarker = "當天"
+    /// The line under the date row (FR-13.7).
+    static let dateExplanation = "過去的日子算第幾天，未來的日子倒數還有幾天"
+
+    /// One row of the timeline: a day around the start date and what the
+    /// overlay would print on it.
+    struct TimelineRow: Equatable, Identifiable {
+        /// `M/d`, e.g. `1/16`.
+        let dateLabel: String
+        /// True for the start date itself ("當天").
+        let isStartDay: Bool
+        /// The overlay text for that day, from `TemplateRenderer`.
+        let text: String
+
+        var id: String { dateLabel }
+        /// What VoiceOver reads for the row.
+        var spokenText: String { isStartDay ? "\(dateLabel) \(RulesTabModel.timelineStartDayMarker) \(text)" : "\(dateLabel) \(text)" }
+    }
+
+    /// The day before, the day of and the day after the start date, each
+    /// rendered as if the photo were taken that day; nil unless the day count
+    /// is shown and the start date is still ahead of today.
+    ///
+    /// The text comes from `TemplateRenderer` with the day passed in as
+    /// `capturedAt`, so it follows name, switches, wording and counting rule.
+    var timelinePreview: [TimelineRow]? {
+        guard profile.showDayCount,
+              calculator.rawDayDifference(from: profile.startDate) < 0,
+              let startNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startDateAsDate) else {
+            return nil
+        }
+        return [-1, 0, 1].compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: startNoon) else { return nil }
+            let parts = calendar.dateComponents([.month, .day], from: day)
+            return TimelineRow(dateLabel: "\(parts.month ?? 0)/\(parts.day ?? 0)",
+                               isStartDay: offset == 0,
+                               text: renderer.render(profile: profile, capturedAt: day, calendar: calendar))
+        }
+    }
+}

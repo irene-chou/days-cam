@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The 設定檔 editing form: name, start date and counting rule (PRD 0.2
+/// The 設定檔 editing form: name, date and counting rule (PRD 0.2
 /// FR-13, reshaped by #226 R-8／R-9 for 0.4).
 ///
 /// Stands alone on purpose, like `StyleTabView`: the container that shows it
@@ -51,6 +51,10 @@ struct RulesTabView: View {
             previewSentence
                 .padding(.top, 12)
                 .padding(.horizontal, Self.rowHorizontalPadding)
+            if let rows = model.timelinePreview {
+                timelineBlock(rows)
+                    .padding(.top, 12)
+            }
         }
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
@@ -148,26 +152,73 @@ struct RulesTabView: View {
         .accessibilityIdentifier("nameOnPhotoToggle")
     }
 
-    // MARK: - 起始日 (FR-13.3)
+    // MARK: - 時間軸 (FR-13.7, TASK-137)
+
+    /// 「到了那天之後」: the day before, the day of and the day after a future
+    /// date, with the overlay text each would print. One VoiceOver element.
+    private func timelineBlock(_ rows: [RulesTabModel.TimelineRow]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(RulesTabModel.timelineTitle)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(CameraTheme.inkSecondary)
+            ForEach(rows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    HStack(spacing: 4) {
+                        Text(row.dateLabel)
+                        if row.isStartDay { Text(RulesTabModel.timelineStartDayMarker) }
+                    }
+                    .font(.subheadline.weight(row.isStartDay ? .bold : .regular))
+                    .foregroundColor(row.isStartDay ? CameraTheme.active : CameraTheme.inkSecondary)
+                    .frame(minWidth: 72, alignment: .leading)
+                    Text(row.text)
+                        .font(.subheadline)
+                        .foregroundColor(CameraTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
+                .fill(CameraTheme.fill.opacity(0.6))
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(([RulesTabModel.timelineTitle] + rows.map(\.spokenText)).joined(separator: "，"))
+        .accessibilityIdentifier("rulesTimelinePreview")
+    }
+
+    // MARK: - 日期 (FR-13.3)
 
     /// Any date, past or future (TASK-94 #393, human 2026-10-10): a future
     /// start date reads 還有 N 天 (#250) until the day arrives. The old
     /// upper bound of today (0.1 §7.2 UI layer) is gone.
 
     private var startDateRow: some View {
-        HStack {
-            Text("起始日").foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 10)
-            DatePicker("起始日", selection: Binding(
-                get: { model.startDateAsDate },
-                set: { model.setStartDate($0) }
-            ), displayedComponents: .date)
-            .labelsHidden()
-            .accessibilityIdentifier("startDatePicker")
-            .datePickerStyle(.compact)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("日期").foregroundColor(CameraTheme.inkSecondary)
+                Spacer(minLength: 10)
+                DatePicker("日期", selection: Binding(
+                    get: { model.startDateAsDate },
+                    set: { model.setStartDate($0) }
+                ), displayedComponents: .date)
+                .labelsHidden()
+                .accessibilityIdentifier("startDatePicker")
+                .datePickerStyle(.compact)
+            }
+            .frame(minHeight: Self.rowMinHeight)
+            Text(RulesTabModel.dateExplanation)
+                .font(.system(size: 13))
+                .foregroundColor(CameraTheme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
+                .accessibilityIdentifier("dateExplanation")
         }
         .padding(.horizontal, Self.rowHorizontalPadding)
-        .frame(minHeight: Self.rowMinHeight)
     }
 
     // MARK: - 起算 (FR-13.4)

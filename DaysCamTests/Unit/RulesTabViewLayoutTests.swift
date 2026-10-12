@@ -22,7 +22,8 @@ final class RulesTabViewLayoutTests: XCTestCase {
     func testGroupedBlockIsAtLeastFourMinimumRows() {
         let height = contentSize().height
         XCTAssertGreaterThanOrEqual(height, 12 + 48 * 4 + 12 + 12, "109.7 four rows since TASK-109")
-        XCTAssertLessThanOrEqual(height, 260, "整頁高度過高，量到 \(height)")
+        // TASK-137 added the one-line explanation (13pt + 10pt) under the date row.
+        XCTAssertLessThanOrEqual(height, 290, "整頁高度過高，量到 \(height)")
     }
 
     /// 43.7: the two counting-rule capsules fit in the row at 375pt (and at
