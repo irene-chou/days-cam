@@ -1,5 +1,5 @@
-// Renders each 0.3 font's own name, in that real font, into a template image
-// set under DaysCam/Assets.xcassets/FontPreviews (PRD 0.3 FR-16.4).
+// Renders each 0.3 font's short Chinese name (`displayName`, TASK-148), in that
+// real font, into a template image set under DaysCam/Assets.xcassets/FontPreviews (PRD 0.3 FR-16.4).
 //
 // Usage (macOS, from the repo root):
 //   swift scripts/render-font-previews.swift <dir with the open-source font files> [fontID ...]
@@ -25,14 +25,14 @@ struct Entry {
 }
 
 let entries: [Entry] = [
-    Entry(fontID: "pingFang", name: "蘋方-繁 中粗體", postScriptName: "PingFangTC-Semibold", file: nil),
-    Entry(fontID: "huninn", name: "jf open 粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
+    Entry(fontID: "pingFang", name: "蘋方", postScriptName: "PingFangTC-Semibold", file: nil),
+    Entry(fontID: "huninn", name: "粉圓", postScriptName: "jf-openhuninn-2.1", file: "jf-openhuninn-2.1.ttf",
           sha256: "9d5bf4932d31fe94c18cd8cfddc98bc1b14ce10f4e354c682179db290a99c825"),
-    Entry(fontID: "notoSerifTC", name: "Noto Serif TC Bold", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
+    Entry(fontID: "notoSerifTC", name: "思源宋體", postScriptName: "NotoSerifTC-Bold", file: "NotoSerifTC-Bold.otf",
           sha256: "3ca2b3294ec84b795d0a45695e78e3612a44dce50f9fc776cd40206340a5768d"),
-    Entry(fontID: "iansui", name: "芫荽 Regular", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
+    Entry(fontID: "iansui", name: "芫荽", postScriptName: "Iansui-Regular", file: "Iansui-Regular.ttf",
           sha256: "7f1aa62e9dcbf40d0ce41a5d3f1e5ea602e66c295778ac6fefb6b84d8ed08bd5"),
-    Entry(fontID: "chenyuluoyan", name: "辰宇落雁體 2.0 細體", postScriptName: "ChenYuluoyan-2.0-Thin",
+    Entry(fontID: "chenyuluoyan", name: "辰宇落雁體", postScriptName: "ChenYuluoyan-2.0-Thin",
           file: "ChenYuluoyan-2.0-Thin.ttf",
           sha256: "1289e42a6d1ec995d0cb23aee89efc69fc95749fbd54a610057a3e992dc453db"),
     Entry(fontID: "notoSansTC", name: "思源黑體", postScriptName: "NotoSansTC-Bold", file: "NotoSansTC-Bold.otf",
@@ -95,23 +95,23 @@ let entries: [Entry] = [
           sha256: "51c179e927526a9acd88b7722909e44c958133733ca316e824f812a28713768b"),
     Entry(fontID: "cubic11", name: "俐方體 11 號", postScriptName: "Cubic_11", file: "Cubic_11.ttf",
           sha256: "0193f5f033612496df6b45ee92ac3b335bc6a5a24ff95da55ca87b33e57dcf62"),
-    Entry(fontID: "lantinghei", name: "蘭亭黑-繁 中黑", postScriptName: "FZLTZHB--B51-0", file: nil),
-    Entry(fontID: "liHei", name: "儷黑 Pro", postScriptName: "LiHeiPro", file: nil),
-    Entry(fontID: "hiraginoSans", name: "冬青黑體繁體中文 W6", postScriptName: "HiraginoSansTC-W6", file: nil),
-    Entry(fontID: "yuanti", name: "圓體-繁 粗體", postScriptName: "STYuanti-TC-Bold", file: nil),
-    Entry(fontID: "songti", name: "宋體-繁 粗體", postScriptName: "STSongti-TC-Bold", file: nil),
-    Entry(fontID: "liSong", name: "儷宋 Pro", postScriptName: "LiSongPro", file: nil),
-    Entry(fontID: "kaiti", name: "楷體-繁 粗體", postScriptName: "STKaitiTC-Bold", file: nil),
-    Entry(fontID: "biauKai", name: "標楷體-繁", postScriptName: "BiauKaiTC-Regular", file: nil),
-    Entry(fontID: "hanziPen", name: "翩翩體-繁 粗體", postScriptName: "HanziPenTC-W5", file: nil),
-    Entry(fontID: "hannotate", name: "手札體-繁 粗體", postScriptName: "HannotateTC-W7", file: nil),
-    Entry(fontID: "lingWai", name: "凌慧體-繁 中黑體", postScriptName: "MLingWaiMedium-TC", file: nil),
-    Entry(fontID: "xingkai", name: "行楷-繁 粗體", postScriptName: "STXingkaiTC-Bold", file: nil),
-    Entry(fontID: "weibei", name: "魏碑-繁 粗體", postScriptName: "WeibeiTC-Bold", file: nil),
-    Entry(fontID: "libian", name: "隸變-繁 標準體", postScriptName: "STLibianTC-Regular", file: nil),
-    Entry(fontID: "baoli", name: "報隸-繁 標準體", postScriptName: "STBaoliTC-Regular", file: nil),
-    Entry(fontID: "wawa", name: "娃娃體-繁 標準體", postScriptName: "DFWaWaTC-W5", file: nil),
-    Entry(fontID: "yuppy", name: "雅痞-繁 標準體", postScriptName: "YuppyTC-Regular", file: nil),
+    Entry(fontID: "lantinghei", name: "蘭亭黑", postScriptName: "FZLTZHB--B51-0", file: nil),
+    Entry(fontID: "liHei", name: "儷黑", postScriptName: "LiHeiPro", file: nil),
+    Entry(fontID: "hiraginoSans", name: "冬青黑體", postScriptName: "HiraginoSansTC-W6", file: nil),
+    Entry(fontID: "yuanti", name: "圓體", postScriptName: "STYuanti-TC-Bold", file: nil),
+    Entry(fontID: "songti", name: "宋體", postScriptName: "STSongti-TC-Bold", file: nil),
+    Entry(fontID: "liSong", name: "儷宋", postScriptName: "LiSongPro", file: nil),
+    Entry(fontID: "kaiti", name: "楷體", postScriptName: "STKaitiTC-Bold", file: nil),
+    Entry(fontID: "biauKai", name: "標楷體", postScriptName: "BiauKaiTC-Regular", file: nil),
+    Entry(fontID: "hanziPen", name: "翩翩體", postScriptName: "HanziPenTC-W5", file: nil),
+    Entry(fontID: "hannotate", name: "手札體", postScriptName: "HannotateTC-W7", file: nil),
+    Entry(fontID: "lingWai", name: "凌慧體", postScriptName: "MLingWaiMedium-TC", file: nil),
+    Entry(fontID: "xingkai", name: "行楷", postScriptName: "STXingkaiTC-Bold", file: nil),
+    Entry(fontID: "weibei", name: "魏碑", postScriptName: "WeibeiTC-Bold", file: nil),
+    Entry(fontID: "libian", name: "隸變", postScriptName: "STLibianTC-Regular", file: nil),
+    Entry(fontID: "baoli", name: "報隸", postScriptName: "STBaoliTC-Regular", file: nil),
+    Entry(fontID: "wawa", name: "娃娃體", postScriptName: "DFWaWaTC-W5", file: nil),
+    Entry(fontID: "yuppy", name: "雅痞", postScriptName: "YuppyTC-Regular", file: nil),
 ]
 
 let pointSize: CGFloat = 17

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import DaysCam
 
@@ -74,64 +75,29 @@ final class FontCatalogTests: XCTestCase {
                                    "noto-serif-tc/NotoSerifTC-Black.otf"], "91.1")
     }
 
-    func testFullNamesMatchVerifiedFontMetadata() {
-        let names: [OverlayFontID: String] = [
-            .pingFang: "蘋方-繁 中粗體",
-            .lantinghei: "蘭亭黑-繁 中黑",
-            .liHei: "儷黑 Pro",
-            .hiraginoSans: "冬青黑體繁體中文 W6",
-            .yuanti: "圓體-繁 粗體",
-            .songti: "宋體-繁 粗體",
-            .liSong: "儷宋 Pro",
-            .kaiti: "楷體-繁 粗體",
-            .biauKai: "標楷體-繁",
-            .hanziPen: "翩翩體-繁 粗體",
-            .hannotate: "手札體-繁 粗體",
-            .lingWai: "凌慧體-繁 中黑體",
-            .xingkai: "行楷-繁 粗體",
-            .weibei: "魏碑-繁 粗體",
-            .libian: "隸變-繁 標準體",
-            .baoli: "報隸-繁 標準體",
-            .wawa: "娃娃體-繁 標準體",
-            .yuppy: "雅痞-繁 標準體",
-            .huninn: "jf open 粉圓",
-            .notoSerifTC: "Noto Serif TC Bold",
-            .iansui: "芫荽 Regular",
-            .chenyuluoyan: "辰宇落雁體 2.0 細體",
-            .notoSansTC: "思源黑體",
-            .taipeiSans: "台北黑體",
-            .genSeki: "源石黑體",
-            .chironHei: "昭源黑體",
-            .chocolateSans: "朱古力黑體",
-            .glowSans: "未來熒黑",
-            .genSen: "源泉圓體",
-            .sweiGothic: "獅尾圓體",
-            .chironGoRound: "昭源環方",
-            .genWan: "源雲明體",
-            .genRyu: "源流明體",
-            .sweiSpring: "獅尾四季春",
-            .sweiSugar: "獅尾加糖宋體",
-            .chironSung: "昭源宋體",
-            .cactusSerif: "仙人掌明體",
-            .twSung: "全字庫正宋體",
-            .thenKhung: "宇文天穹",
-            .lxgwWenKai: "霞鶩文楷 TC",
-            .twKai: "全字庫正楷體",
-            .eduKai: "教育部標準楷書",
-            .arphicUKai: "文鼎 PL 中楷",
-            .naikai: "內海字體",
-            .xiaolai: "小賴字體",
-            .yozai: "悠哉字體",
-            .nani: "何某手寫體",
-            .lxgwMarker: "霞鶩漫黑",
-            .kurewa: "苦累蛙圓體",
-            .popGothic: "大波浪圓體",
-            .wdxl: "WD-XL 滑油字",
-            .cubic11: "俐方體 11 號",
-        ]
-        XCTAssertEqual(names.count, FontCatalog.entries.count)
+    /// TASK-148: the list, VoiceOver and the previews use the short Chinese
+    /// name, never the name table's full face name ("-繁", "Bold", "W6", "Pro"...).
+    func testDisplayNamesAreTheShortChineseNames() {
         for entry in FontCatalog.entries {
-            XCTAssertEqual(entry.fullName, names[entry.fontID], "\(entry.fontID)")
+            let name = entry.displayName
+            XCTAssertFalse(name.isEmpty, "\(entry.fontID)")
+            for noise in ["-繁", "Bold", "Regular", "W6", "粗體", "標準體", "中黑", " Pro"] {
+                XCTAssertFalse(name.contains(noise), "148.3 \(entry.fontID) 的簡稱不該帶「\(noise)」：\(name)")
+            }
+        }
+        let expected: [OverlayFontID: String] = [
+            .pingFang: "蘋方", .notoSerifTC: "思源宋體", .notoSansTC: "思源黑體", .genSeki: "源石黑體",
+            .kaiti: "楷體", .songti: "宋體", .biauKai: "標楷體", .huninn: "粉圓",
+        ]
+        for (fontID, name) in expected {
+            XCTAssertEqual(FontCatalog.entry(for: fontID).displayName, name, "148.3")
+        }
+    }
+
+    /// 148.2: every font has its preview image, so no row falls back to text.
+    func testEveryFontHasAPreviewImage() {
+        for fontID in OverlayFontID.allCases {
+            XCTAssertNotNil(UIImage(named: fontID.rawValue), "148.2 \(fontID) 缺預覽圖")
         }
     }
 
