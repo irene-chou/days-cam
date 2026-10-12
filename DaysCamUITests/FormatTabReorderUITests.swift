@@ -77,6 +77,8 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["顯示內容"].exists || app.staticTexts["天數單位"].exists, "141.1 old headings gone")
         let order = [heading, toggle("天數"), divider, unitsHeading, app.buttons["天"], toggle("年改成歲")].map(\.frame.midY)
         XCTAssertEqual(order, order.sorted(), "141.1 照片上寫什麼 → 開關 → 分隔線 → 天數寫法 → 勾選框 → 年改成歲: \(order)")
+        XCTAssertEqual(toggle("年改成歲").frame.maxX, toggle("名稱").frame.maxX, accuracy: 1,
+                       "年改成歲 and 名稱 end on the same right edge")
         app.buttons["週"].tap()
         XCTAssertFalse(countdownNote.exists, "141.5 no note for a past date")
         shot("141.8_past_daycount_on")
@@ -113,6 +115,7 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertTrue(countdownNote.waitForExistence(timeout: 3), "141.5 note")
         XCTAssertEqual(countdownNote.label, "倒數時寫作「年」，到了那天之後才寫「歲」")
         XCTAssertGreaterThan(countdownNote.frame.minY, toggle("年改成歲").frame.minY, "141.5 under the switch")
+        XCTAssertEqual(countdownNote.frame.maxX, toggle("年改成歲").frame.maxX, accuracy: 1, "141.5 same right edge")
         shot("141.8_future_daycount_on")
 
         toggle("日期").tap()

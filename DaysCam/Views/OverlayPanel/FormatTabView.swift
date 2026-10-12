@@ -35,6 +35,18 @@ struct FormatTabView: View {
     @State private var bouncingUnit: DisplayUnit?
     /// The content switch bouncing right now (TASK-108).
     @State private var bouncingSwitch: DisplaySettingsModel.Rejection.ContentSwitch?
+    /// The tab's content width and the 名稱 switch's trailing x in it, so
+    /// 年改成歲 can end on the same right edge (TASK-141 #485): the switch
+    /// row is spread `space-around`, so its last switch sits half a gap in
+    /// from the edge, and that gap depends on the width.
+    @State private var contentWidth: CGFloat = 0
+    @State private var nameSwitchMaxX: CGFloat = 0
+    private static let coordinateSpace = "formatTab"
+    /// Trailing inset that puts 年改成歲's right edge under 名稱's.
+    private var switchTrailingInset: CGFloat {
+        guard contentWidth > 0, nameSwitchMaxX > 0 else { return 0 }
+        return max(0, contentWidth - nameSwitchMaxX)
+    }
     /// The refusal whose hint is showing under the unit row, if any (the
     /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
     private var unitHint: DisplaySettingsModel.Rejection? {
@@ -65,6 +77,8 @@ struct FormatTabView: View {
                 dayCountFormatSection
             }
         }
+        .coordinateSpace(name: Self.coordinateSpace)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { contentWidth = $0 }
         // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
         // #106 R2): each tab owns its own padding rather than a generic one.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
@@ -173,6 +187,8 @@ struct FormatTabView: View {
                              isDisabled: false) {
                     model.displaySettings.setShowName($0)
                 }
+                .onGeometryChange(for: CGFloat.self,
+                                  of: { $0.frame(in: .named(Self.coordinateSpace)).maxX }) { nameSwitchMaxX = $0 }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.rowMinHeight)
@@ -240,6 +256,8 @@ struct FormatTabView: View {
                 Spacer(minLength: 0)
                 ageWordingToggle
             }
+            // Right edge aligned with the 名稱 switch above (TASK-141).
+            .padding(.trailing, switchTrailingInset)
             .frame(minHeight: Self.rowMinHeight)
             // A countdown always reads 年 (TASK-140 #487); say so where the
             // switch promises 歲 (141.5).
@@ -248,6 +266,7 @@ struct FormatTabView: View {
                     // 12pt in the hint rows' color (141.5).
                     .font(.system(size: 12))
                     .foregroundColor(CameraTheme.active)
+                    .padding(.trailing, switchTrailingInset)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .accessibilityIdentifier("countdownAgeNote")
             }
