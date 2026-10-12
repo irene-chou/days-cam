@@ -200,9 +200,19 @@ final class CameraScreenModel: ObservableObject {
 
     /// One photo's place among the in-flight ones. Settled exactly once: by
     /// the save's callback, or by the timeout if that never comes.
-    private final class SaveSlot {
-        var isSettled = false
+    final class SaveSlot {
+        private(set) var isSettled = false
+        /// The pending timeout. Its closure captures the slot, so `settle()`
+        /// must drop it or the two keep each other alive.
         var timeout: DispatchWorkItem?
+
+        /// Marks the slot answered, cancels the timeout and breaks the
+        /// slot ↔ timeout cycle. Every path that ends a save calls this.
+        func settle() {
+            isSettled = true
+            timeout?.cancel()
+            timeout = nil
+        }
     }
 
     /// Bakes one photo at a time, in capture order.
@@ -1390,7 +1400,7 @@ extension CameraScreenModel {
                     guard let self, !slot.isSettled else { return }
                     // The save never called back: give the place up and say
                     // so, rather than report a save nobody confirmed.
-                    slot.isSettled = true
+                    slot.settle()
                     CaptureTiming.discard(imageKey)
                     self.markFlightFailed(id: flightID)
                     self.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
@@ -1413,8 +1423,7 @@ extension CameraScreenModel {
                         }
                         return
                     }
-                    slot.isSettled = true
-                    slot.timeout?.cancel()
+                    slot.settle()
                     switch result {
                     case let .success(assetID):
                         CaptureTiming.mark(.saved, for: imageKey)

@@ -2242,4 +2242,19 @@ final class CameraScreenModelTests: XCTestCase {
         await model.refreshThumbnailFromLibrary(replacingExisting: true)
         XCTAssertNil(model.latestThumbnailImage)
     }
+
+    /// Codex P2 on #532: a settled slot must not stay alive through its own
+    /// timeout closure, or every photo would leak one.
+    func testSettledSaveSlotIsReleased() {
+        weak var weakSlot: CameraScreenModel.SaveSlot?
+        autoreleasepool {
+            let slot = CameraScreenModel.SaveSlot()
+            weakSlot = slot
+            slot.timeout = DispatchWorkItem { _ = slot.isSettled }
+            slot.settle()
+            XCTAssertTrue(slot.isSettled)
+            XCTAssertNil(slot.timeout, "the cycle is broken")
+        }
+        XCTAssertNil(weakSlot, "the slot is freed once settled")
+    }
 }
