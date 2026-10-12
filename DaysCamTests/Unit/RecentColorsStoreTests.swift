@@ -56,6 +56,17 @@ final class RecentColorsStoreTests: XCTestCase {
         XCTAssertEqual(store.recentCustomColors, [])
     }
 
+    /// 149.3: no preset — light, dark or film included — goes into the list.
+    func testEveryPresetColorIsNotAdded() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        for preset in OverlayStyle.allPresetColors {
+            store.add(preset)
+        }
+        XCTAssertEqual(store.recentCustomColors, [], "149.3")
+        store.add(try hex("#123456"))
+        XCTAssertEqual(store.recentCustomColors, [try hex("#123456")], "a custom color still is")
+    }
+
     /// A picker color that rounds to the same 8-bit hex is the same color.
     func testColorsAreComparedByHexValue() throws {
         let store = RecentColorsStore(defaults: defaults)

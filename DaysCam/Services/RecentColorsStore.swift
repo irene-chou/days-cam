@@ -29,11 +29,13 @@ final class RecentColorsStore: ObservableObject {
     /// Records a color chosen with the system color picker (FR-10.7).
     ///
     /// Moves it to the front, dropping any earlier copy; drops the oldest when
-    /// more than `capacity` remain. A color equal to one of the preset
-    /// swatches is ignored, since it is already one tap away.
+    /// more than `capacity` remain. A color equal to any preset — the
+    /// swatches, their light and dark rows or the film colors
+    /// (`OverlayStyle.allPresetColors`, TASK-149) — is ignored, since it is
+    /// already one tap away.
     func add(_ color: OverlayColor) {
         let hex = color.hexString
-        guard !OverlayStyle.swatches.contains(where: { $0.hexString == hex }),
+        guard !OverlayStyle.allPresetColors.contains(where: { $0.hexString == hex }),
               let normalized = OverlayColor(hex: hex) else { return }
 
         var updated = recentCustomColors.filter { $0.hexString != hex }
