@@ -311,8 +311,7 @@ extension ProfileStore {
 
         var updated = profiles
         updated.append(candidate)
-        profiles = updated
-        scheduleWrite(updated)
+        try commit(updated)
         // A new profile becomes the active one (PRD FR-1.10).
         select(id: candidate.id)
         return candidate
@@ -321,18 +320,14 @@ extension ProfileStore {
     /// Like `update(_:)`, but returns only once the change is on disk, for an
     /// explicit user action that must not be reported as done while the save
     /// has failed (font apply, #492). Throws `writeFailed` on a disk failure;
-    /// memory is not rolled back, the change stays queued for the next write,
-    /// and the failure is returned to the caller instead of being published
-    /// to `lastWriteError` (the caller reports it).
+    /// the change is then rolled back in memory too, since the caller tells
+    /// the user it did not happen, and the failure is returned to the caller
+    /// instead of being published to `lastWriteError`.
     @discardableResult
     func updateAndWait(_ profile: CameraProfile) throws -> CameraProfile {
+        let previous = profiles
         let (stored, updated) = try applyUpdate(profile)
-        let pendingWork = writeState.withLock { state -> DispatchWorkItem? in
-            defer { state.scheduled = nil; state.snapshot = updated }
-            return state.scheduled
-        }
-        pendingWork?.cancel()
-        if let failure = writePending(publishFailure: false) { throw failure }
+        try commit(updated, previous: previous)
         return stored
     }
 
@@ -372,8 +367,7 @@ extension ProfileStore {
 
         var updated = profiles
         updated.removeAll { $0.id == id }
-        profiles = updated
-        scheduleWrite(updated)
+        try commit(updated)
         resolveSelection()
     }
 
@@ -405,8 +399,7 @@ extension ProfileStore {
         }
         let insertionIndex = destination - source.count(in: 0..<destination)
         updated.insert(contentsOf: moving, at: insertionIndex)
-        profiles = updated
-        scheduleWrite(updated)
+        try commit(updated)
     }
 
     /// Inserts a copy of the profile named `id` directly after it: a new
@@ -449,8 +442,7 @@ extension ProfileStore {
 
         var updated = profiles
         updated.insert(duplicated, at: index + 1)
-        profiles = updated
-        scheduleWrite(updated)
+        try commit(updated)
         return duplicated
     }
 
@@ -535,6 +527,32 @@ extension ProfileStore {
         }
         pendingWork?.cancel()
         writePending()
+    }
+
+    /// Makes `updated` the stored profiles and writes it to disk before
+    /// returning: for every explicit user action (add, delete, duplicate,
+    /// reorder, font apply), which must not be reported as done while the save
+    /// has failed (#492, human decision 2026-10-12). Only continuous
+    /// adjustments (sliders, drags) go through `scheduleWrite`.
+    ///
+    /// On a disk failure memory goes back to `previous` and `writeFailed` is
+    /// thrown to the caller, which reports it; nothing is published to
+    /// `lastWriteError`.
+    fileprivate func commit(_ updated: [CameraProfile], previous: [CameraProfile]? = nil) throws {
+        let before = previous ?? profiles
+        profiles = updated
+        let pendingWork = writeState.withLock { state -> DispatchWorkItem? in
+            defer { state.scheduled = nil; state.snapshot = updated }
+            return state.scheduled
+        }
+        pendingWork?.cancel()
+        if let failure = writePending(publishFailure: false) {
+            // Back to what the caller saw before; any earlier edit that was
+            // still waiting for its debounce stays queued for the next write.
+            profiles = before
+            writeState.withLock { $0.snapshot = before }
+            throw failure
+        }
     }
 
     /// Queues `snapshot` as the next write. Memory is already up to date; the

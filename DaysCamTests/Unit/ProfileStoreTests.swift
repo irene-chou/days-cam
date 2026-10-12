@@ -514,10 +514,10 @@ final class ProfileStoreTests: XCTestCase {
         edited.name = "改名"
         try store.update(edited)
         XCTAssertNotNil(store.lastWriteError, "the blocked write is observable")
-        try store.add(profile(name: "新"))
+        XCTAssertThrowsError(try store.add(profile(name: "新")), "an explicit add reports the blocked write")
         XCTAssertEqual(try Data(contentsOf: fileURL), original, "original never overwritten")
         XCTAssertTrue(try partialBackups().isEmpty)
-        XCTAssertEqual(store.profiles.map(\.name), ["改名", "新"], "memory is not rolled back")
+        XCTAssertEqual(store.profiles.map(\.name), ["改名"], "the add is rolled back, the queued edit is kept")
 
         fileManager.failsCopy = false
         store.flush()
@@ -528,7 +528,7 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(backups.count, 1)
         let backup = try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(backups.first)))
         XCTAssertEqual(backup, original, "backup holds the original, written before the overwrite")
-        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名", "新"])
+        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名"])
     }
 
     /// #477: two loads in the same second keep separate backups.
@@ -726,24 +726,71 @@ final class ProfileStoreTests: XCTestCase {
         wait(for: [done], timeout: 2)
     }
 
-    /// #492: an explicit action can wait for the disk and learn of a failure.
-    func testUpdateAndWaitThrowsOnAFailedWriteAndKeepsMemoryAndRetries() throws {
+    /// #492: an explicit action can wait for the disk and learn of a failure;
+    /// the change is then rolled back, since the caller says it did not happen.
+    func testUpdateAndWaitThrowsOnAFailedWriteAndRollsBack() throws {
         let recorder = WriteRecorder()
         let manual = ManualScheduler()
         let store = makeDebouncedStore(recorder: recorder, manual: manual)
         store.load()
         var edited = try XCTUnwrap(store.profiles.first)
+        let originalName = edited.name
         edited.name = "套用"
         recorder.failing = true
         XCTAssertThrowsError(try store.updateAndWait(edited)) { error in
             guard case .writeFailed? = error as? ProfileStoreError else { return XCTFail("\(error)") }
         }
         XCTAssertNil(store.lastWriteError, "the caller reports it, it is not published")
-        XCTAssertEqual(store.profiles.first?.name, "套用", "no rollback")
+        XCTAssertEqual(store.profiles.first?.name, originalName, "rolled back")
 
         recorder.failing = false
         store.flush()
-        XCTAssertEqual(makeStore(at: Date()).load().first?.name, "套用", "retried")
+        XCTAssertEqual(makeStore(at: Date()).load().first?.name, originalName, "the failed change is not written later")
+    }
+
+    /// Human decision 2026-10-12: add, delete, duplicate and reorder are
+    /// explicit actions, written before they return.
+    func testAddDeleteDuplicateAndMoveWriteBeforeReturning() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        let first = try XCTUnwrap(store.profiles.first)
+
+        let added = try store.add(CameraProfile(name: "新增", startDate: DateFixture.components(2026, 1, 1)))
+        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), [first.name, "新增"], "add")
+
+        let copy = try store.duplicate(id: first.id)
+        XCTAssertTrue(makeStore(at: Date()).load().contains { $0.id == copy.id }, "duplicate")
+
+        try store.move(fromOffsets: IndexSet(integer: 2), toOffset: 0)
+        XCTAssertEqual(makeStore(at: Date()).load().first?.id, added.id, "move")
+
+        try store.delete(id: added.id)
+        XCTAssertFalse(makeStore(at: Date()).load().contains { $0.id == added.id }, "delete")
+        XCTAssertTrue(manual.items.isEmpty, "none of them waited for a debounce")
+    }
+
+    /// A failed explicit action throws, leaves memory and selection as they
+    /// were, and is not reported as done.
+    func testFailedAddDeleteDuplicateAndMoveRollBack() throws {
+        let recorder = WriteRecorder()
+        let manual = ManualScheduler()
+        let store = makeDebouncedStore(recorder: recorder, manual: manual)
+        store.load()
+        _ = try store.add(CameraProfile(name: "第二個", startDate: DateFixture.components(2026, 1, 1)))
+        let before = store.profiles
+        let selected = store.selectedProfileID
+        recorder.failing = true
+
+        XCTAssertThrowsError(try store.add(CameraProfile(name: "寫不進去", startDate: DateFixture.components(2026, 1, 1))))
+        XCTAssertThrowsError(try store.duplicate(id: before[0].id))
+        XCTAssertThrowsError(try store.move(fromOffsets: IndexSet(integer: 1), toOffset: 0))
+        XCTAssertThrowsError(try store.delete(id: before[1].id))
+
+        XCTAssertEqual(store.profiles, before, "memory unchanged")
+        XCTAssertEqual(store.selectedProfileID, selected, "selection unchanged")
+        XCTAssertNil(store.lastWriteError)
     }
 
     func testUpdateAndWaitWritesBeforeReturning() throws {

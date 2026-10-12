@@ -80,4 +80,110 @@ final class TabProfileWriterTests: XCTestCase {
         XCTAssertTrue(stored.showDate)
         XCTAssertFalse(stored.showName, "the other profile's showName was not merged in")
     }
+
+    // MARK: - #492: explicit choices wait for the disk, sliders debounce
+
+    private final class FailingWriter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _failing = false
+        var failing: Bool { get { lock.withLock { _failing } } set { lock.withLock { _failing = newValue } } }
+        func write(_ data: Data, to url: URL) throws {
+            if failing { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: [.atomic])
+        }
+    }
+
+    private final class HeldWork {
+        var items: [DispatchWorkItem] = []
+        var scheduler: ProfileStore.Scheduler { { [self] _, work in items.append(work) } }
+    }
+
+    func testContinuousAdjustmentClassification() throws {
+        var base = CameraProfile(name: "寶寶", startDate: DateFixture.components(2026, 1, 1))
+        func classify(_ change: (inout CameraProfile) -> Void) -> Bool {
+            var updated = base
+            change(&updated)
+            return TabProfileWriter.isContinuousAdjustment(from: base, to: updated)
+        }
+        XCTAssertTrue(classify { $0.style.sizeScale = 120 })
+        XCTAssertTrue(classify { $0.style.strokeWidth = 4 })
+        XCTAssertTrue(classify { $0.style.boxPadding = 20 })
+        XCTAssertTrue(classify { $0.style.shadowBlur = 9 })
+        XCTAssertTrue(classify { $0.position = .custom(x: 0.4, y: 0.6) })
+        XCTAssertFalse(classify { $0.style.fontID = .huninn })
+        XCTAssertFalse(classify { $0.style.fontWeight = "light" })
+        XCTAssertFalse(classify { $0.name = "新名字" })
+        XCTAssertFalse(classify { $0.showDate.toggle() })
+        XCTAssertFalse(classify { $0.position = .anchor(.topLeading) })
+        XCTAssertFalse(classify { $0.style.sizeScale = 120; $0.name = "混合" }, "a mixed change is explicit")
+        base.position = .custom(x: 0.1, y: 0.1)
+        XCTAssertTrue(classify { $0.position = .custom(x: 0.2, y: 0.2) })
+    }
+
+    /// The P1 of #492 round 4: a font choice must not read as applied when the
+    /// save fails, and the store must not keep it either.
+    func testExplicitChoiceFailsWhenTheWriteFailsAndTheStoreIsRolledBack() throws {
+        let failing = FailingWriter()
+        let held = HeldWork()
+        let store = ProfileStore(directory: directory, scheduler: held.scheduler, dataWriter: failing.write)
+        store.load()
+        let original = try XCTUnwrap(store.profiles.first)
+        let writer = TabProfileWriter(baseline: original, profileStore: store)
+        failing.failing = true
+
+        var chosen = original
+        chosen.style.fontID = .huninn
+        XCTAssertThrowsError(try writer.write(chosen))
+        XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.fontID, original.style.fontID, "rolled back")
+
+        failing.failing = false
+        var again = original
+        again.style.fontID = .huninn
+        try writer.write(again)
+        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.fontID, .huninn, "written before returning")
+    }
+
+    func testSliderAdjustmentIsDebouncedNotWrittenAtOnce() throws {
+        let held = HeldWork()
+        let store = ProfileStore(directory: directory, scheduler: held.scheduler)
+        store.load()
+        let original = try XCTUnwrap(store.profiles.first)
+        let writer = TabProfileWriter(baseline: original, profileStore: store)
+        var slid = original
+        slid.style.sizeScale = 130
+        try writer.write(slid)
+        XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.sizeScale, 130, "memory is current")
+        XCTAssertNotEqual(ProfileStore(directory: directory).load().first?.style.sizeScale, 130, "not on disk yet")
+        store.flush()
+        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.sizeScale, 130)
+    }
+
+    /// #492 round 4 P1: through the style tab, a weight that could not be saved
+    /// is not reported as applied, and the tab and the store both go back.
+    func testStyleTabWeightIsNotAppliedWhenTheWriteFails() throws {
+        let failing = FailingWriter()
+        let held = HeldWork()
+        let store = ProfileStore(directory: directory, scheduler: held.scheduler, dataWriter: failing.write)
+        store.load()
+        var seeded = try XCTUnwrap(store.profiles.first)
+        seeded.style.fontID = .notoSerifTC
+        try store.updateAndWait(seeded)
+        let writer = TabProfileWriter(baseline: seeded, profileStore: store)
+        let suite = try XCTUnwrap(UserDefaults(suiteName: "TabProfileWriterTests-\(UUID().uuidString)"))
+        let model = StyleTabModel(profile: seeded, recentColorsStore: RecentColorsStore(defaults: suite),
+                                  applyFont: { _, _ in }, allProfiles: { store.profiles },
+                                  updateProfile: writer.write)
+        let before = seeded.style.resolvedFontWeight.id
+        let other = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).weights.first { $0.id != before }?.id)
+        failing.failing = true
+
+        XCTAssertFalse(model.applyFontWeight(other, for: .notoSerifTC), "not reported as applied")
+        XCTAssertEqual(model.profile.style.resolvedFontWeight.id, before, "tab went back")
+        XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.resolvedFontWeight.id, before, "store went back")
+        XCTAssertNotNil(model.lastError)
+
+        failing.failing = false
+        XCTAssertTrue(model.applyFontWeight(other, for: .notoSerifTC))
+        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.resolvedFontWeight.id, other)
+    }
 }

@@ -1697,8 +1697,36 @@ final class TabProfileWriter {
             // `updateProfile` failure.
             throw ProfileStoreError.profileNotFound(id: updated.id)
         }
-        try profileStore.update(Self.merging(updated, from: baseline, onto: latest))
+        let merged = Self.merging(updated, from: baseline, onto: latest)
+        if Self.isContinuousAdjustment(from: baseline, to: updated) {
+            try profileStore.update(merged)
+        } else {
+            // An explicit choice (font, weight, name, switches...): written
+            // before the tab reports it as applied (#492, human decision
+            // 2026-10-12). A failure rolls the store back and reaches the tab.
+            try profileStore.updateAndWait(merged)
+        }
         baseline = updated
+    }
+
+    /// Whether the only changes from `baseline` to `updated` are slider, drag
+    /// or color-picker values, which arrive many times a second and are
+    /// written after a debounce (#464). Everything else is an explicit choice.
+    static func isContinuousAdjustment(from baseline: CameraProfile, to updated: CameraProfile) -> Bool {
+        var probe = baseline
+        probe.style.sizeScale = updated.style.sizeScale
+        probe.style.strokeWidth = updated.style.strokeWidth
+        probe.style.boxPadding = updated.style.boxPadding
+        probe.style.shadowOffsetX = updated.style.shadowOffsetX
+        probe.style.shadowOffsetY = updated.style.shadowOffsetY
+        probe.style.shadowBlur = updated.style.shadowBlur
+        probe.style.autoOutlineOpacity = updated.style.autoOutlineOpacity
+        probe.style.textColor = updated.style.textColor
+        probe.style.outlineColor = updated.style.outlineColor
+        probe.style.shadowColor = updated.style.shadowColor
+        if case .custom = updated.position { probe.position = updated.position }
+        probe.updatedAt = updated.updatedAt
+        return probe == updated
     }
 
     /// Advances `baseline` to the store's current record when the tab's own
