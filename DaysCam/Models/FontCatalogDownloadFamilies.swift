@@ -25,6 +25,12 @@ extension FontCatalog {
         let fontID: OverlayFontID
         let displayName: String
         let category: FontSection
+        /// The face's full name from the font's name table, Traditional Chinese
+        /// record first, version dropped (PRD-0.3 FR-16.4, TASK-78): the list
+        /// row, VoiceOver and the preview image of a single-weight font.
+        let fullName: String
+        /// The family name from the name table, for a row with several weights.
+        let listName: String
         let defaultWeightID: String
         /// Source and attribution the license page shows under the name, for
         /// fonts whose license asks for it (全字庫, 教育部標準楷書, 文鼎 PL 中楷).
@@ -59,11 +65,11 @@ extension FontCatalog {
     }
 
     private static func family(_ fontID: OverlayFontID, _ displayName: String, _ category: FontSection,
-                               defaultWeight: String, sourceNote: String? = nil,
+                               fullName: String, listName: String, defaultWeight: String, sourceNote: String? = nil,
                                faces: [DownloadFace]) -> DownloadFamily {
         precondition(faces.contains { $0.id == defaultWeight }, "\(fontID): default weight is not a face")
         return DownloadFamily(fontID: fontID, displayName: displayName, category: category,
-                              defaultWeightID: defaultWeight, sourceNote: sourceNote, faces: faces)
+                              fullName: fullName, listName: listName, defaultWeightID: defaultWeight, sourceNote: sourceNote, faces: faces)
     }
 
     private static func face(_ id: String, _ weightName: String, _ postScriptName: String,
@@ -77,7 +83,7 @@ extension FontCatalog {
     // MARK: - Families (docs/fonts-manifest.md)
 
     static let downloadFamilies: [DownloadFamily] = [
-        family(.notoSansTC, "思源黑體", .hei, defaultWeight: "bold", faces: [
+        family(.notoSansTC, "思源黑體", .hei, fullName: "Noto Sans TC Bold", listName: "Noto Sans TC", defaultWeight: "bold", faces: [
             face("regular", "標準", "NotoSansTC-Regular",
                  path: "noto-sans-tc/NotoSansTC-Regular.otf", bytes: 5_683_368,
                  sha256: "5bab0cb3c1cf89dde07c4a95a4054b195afbcfe784d69d75c340780712237537",
@@ -97,7 +103,7 @@ extension FontCatalog {
                  copyright: "© 2014-2021 Adobe (http://www.adobe.com/).",
                  licenses: ["notoSansTC-OFL.txt"])
         ]),
-        family(.taipeiSans, "台北黑體", .hei, defaultWeight: "bold", faces: [
+        family(.taipeiSans, "台北黑體", .hei, fullName: "Taipei Sans TC Beta Bold", listName: "Taipei Sans TC Beta", defaultWeight: "bold", faces: [
             face("light", "細", "TaipeiSansTCBeta-Light",
                  path: "taipei-sans-tc/TaipeiSansTCBeta-Light.ttf", bytes: 20_279_264,
                  sha256: "d69a9ea6a77f694c3a1a1fb766c764aa74cb3e2c4c69f1b532edf98b3f2bb662",
@@ -117,7 +123,7 @@ extension FontCatalog {
                  copyright: "Taipei Sans TC Beta is a modified font of Source Han Sans.",
                  licenses: ["taipeiSans-OFL.txt"])
         ]),
-        family(.genSeki, "源石黑體", .hei, defaultWeight: "bold", faces: [
+        family(.genSeki, "源石黑體", .hei, fullName: "源石黑體月 B", listName: "源石黑體月", defaultWeight: "bold", faces: [
             face("regular", "標準", "GenSekiGothic2TW-R",
                  path: "gen-seki-gothic/GenSekiGothic2TW-R.otf", bytes: 16_501_448,
                  sha256: "bb3cccb9594a5a9c759a92bbbf147eb87826b8317d07d20f48ee7ebdcec684fa",
@@ -137,7 +143,7 @@ extension FontCatalog {
                  copyright: "Copyright 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font\nName 'Source'. Source is a trademark of Adobe in the United States\nand/or other countries.",
                  licenses: ["genSeki-OFL.txt"])
         ]),
-        family(.chironHei, "昭源黑體", .hei, defaultWeight: "bold", faces: [
+        family(.chironHei, "昭源黑體", .hei, fullName: "Chiron Hei HK Bold", listName: "Chiron Hei HK", defaultWeight: "bold", faces: [
             face("regular", "標準", "ChironHeiHK-Regular",
                  path: "chiron-hei-hk/ChironHeiHK-R.otf", bytes: 16_164_592,
                  sha256: "72f68279a78a118b469bc683a1ab12364a5a3c244ee592da441d4a3cb0eda4b1",
@@ -157,7 +163,7 @@ extension FontCatalog {
                  copyright: "© 2014-2025 Adobe (http://www.adobe.com/).",
                  licenses: ["chironHei-OFL.txt"])
         ]),
-        family(.chocolateSans, "朱古力黑體", .hei, defaultWeight: "regular", faces: [
+        family(.chocolateSans, "朱古力黑體", .hei, fullName: "朱古力黑體", listName: "朱古力黑體", defaultWeight: "regular", faces: [
             face("regular", "標準", "ChocolateClassicalSans-Regular",
                  path: "chocolate-classical-sans/ChocolateClassicalSans-Regular.ttf", bytes: 12_183_000,
                  sha256: "e6345f3d92c7a9b7044c31a87d9b61f50220b08c0f1dcc2736e94c2aa587ce03",
@@ -165,7 +171,7 @@ extension FontCatalog {
                  copyright: "Copyright 2025 The Chocolate Classical Sans Project Authors (https://github.com/MoonlitOwen/ChocolateSans)",
                  licenses: ["chocolateSans-OFL.txt"])
         ]),
-        family(.glowSans, "未來熒黑", .hei, defaultWeight: "bold", faces: [
+        family(.glowSans, "未來熒黑", .hei, fullName: "未來熒黑 Normal Bold", listName: "未來熒黑", defaultWeight: "bold", faces: [
             face("regular", "標準", "GlowSansTC-Normal-Regular",
                  path: "glow-sans-tc/GlowSansTC-Normal-Regular.otf", bytes: 8_926_856,
                  sha256: "cbd6843ab96acc9bb92048dd426232ece37f79068cc9e48c40e8d48e9fd0ee59",
@@ -185,7 +191,7 @@ extension FontCatalog {
                  copyright: "Glow Sans (c) 2021 Project Welai",
                  licenses: ["glowSans-OFL.txt", "glowSans-MIT.txt"])
         ]),
-        family(.genSen, "源泉圓體", .yuan, defaultWeight: "bold", faces: [
+        family(.genSen, "源泉圓體", .yuan, fullName: "源泉圓體月 B", listName: "源泉圓體月", defaultWeight: "bold", faces: [
             face("regular", "標準", "GenSenRounded2TW-R",
                  path: "gen-sen-rounded/GenSenRounded2TW-R.otf", bytes: 16_177_104,
                  sha256: "092285878f1d9441c790e5d6a98e806bd508602ad0a8a55511b6fb0a71a25fed",
@@ -205,7 +211,7 @@ extension FontCatalog {
                  copyright: "Copyright 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font\nName 'Source'. Source is a trademark of Adobe in the United States\nand/or other countries.",
                  licenses: ["genSen-OFL.txt"])
         ]),
-        family(.sweiGothic, "獅尾圓體", .yuan, defaultWeight: "bold", faces: [
+        family(.sweiGothic, "獅尾圓體", .yuan, fullName: "獅尾圓體-Bold", listName: "獅尾圓體", defaultWeight: "bold", faces: [
             face("regular", "標準", "SweiGothicCJKtc-Regular",
                  path: "swei-gothic/SweiGothicCJKtc-Regular.ttf", bytes: 16_193_916,
                  sha256: "0cb199c63ec23fda70905decf82e1a7f3657092a653323063e9e5f50adfc3f7f",
@@ -225,7 +231,7 @@ extension FontCatalog {
                  copyright: "Copyright (c) 2020, Chun yu Yao",
                  licenses: ["sweiGothic-OFL.txt"])
         ]),
-        family(.chironGoRound, "昭源環方", .yuan, defaultWeight: "bold", faces: [
+        family(.chironGoRound, "昭源環方", .yuan, fullName: "Chiron GoRound TC Bold", listName: "Chiron GoRound TC", defaultWeight: "bold", faces: [
             face("regular", "標準", "ChironGoRoundTC-Regular",
                  path: "chiron-go-round-tc/ChironGoRoundTC-400R.otf", bytes: 19_635_772,
                  sha256: "519253233cbca3c2b97b818949e803ccf08f937d75431bedf59e167b00bf4b65",
@@ -245,7 +251,7 @@ extension FontCatalog {
                  copyright: "© 2014-2025 Adobe (http://www.adobe.com/).",
                  licenses: ["chironGoRound-OFL.txt"])
         ]),
-        family(.genWan, "源雲明體", .song, defaultWeight: "semibold", faces: [
+        family(.genWan, "源雲明體", .song, fullName: "源雲明體月 SB", listName: "源雲明體月", defaultWeight: "semibold", faces: [
             face("regular", "標準", "GenWanMin2TW-R",
                  path: "gen-wan-min/GenWanMin2TW-R.otf", bytes: 22_772_928,
                  sha256: "4c1cea221f35ccfd7c27e295238012d3b48e57d149b92b4eb7d71aeb25d798cf",
@@ -265,7 +271,7 @@ extension FontCatalog {
                  copyright: "Copyright 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font\nName 'Source'. Source is a trademark of Adobe in the United States\nand/or other countries.",
                  licenses: ["genWan-OFL.txt"])
         ]),
-        family(.genRyu, "源流明體", .song, defaultWeight: "bold", faces: [
+        family(.genRyu, "源流明體", .song, fullName: "源流明體月 B", listName: "源流明體月", defaultWeight: "bold", faces: [
             face("regular", "標準", "GenRyuMin2TW-R",
                  path: "gen-ryu-min/GenRyuMin2TW-R.otf", bytes: 16_449_288,
                  sha256: "d244c6115431b2a18b5dfb0066e08381f56e6a33532915a0f517dd3f7063b646",
@@ -285,7 +291,7 @@ extension FontCatalog {
                  copyright: "Copyright 2014-2019 Adobe (http://www.adobe.com/), with Reserved Font\nName 'Source'. Source is a trademark of Adobe in the United States\nand/or other countries.",
                  licenses: ["genRyu-OFL.txt"])
         ]),
-        family(.sweiSpring, "獅尾四季春", .song, defaultWeight: "bold", faces: [
+        family(.sweiSpring, "獅尾四季春", .song, fullName: "獅尾四季春-Bold", listName: "獅尾四季春", defaultWeight: "bold", faces: [
             face("regular", "標準", "SweiSpringCJKtc-Regular",
                  path: "swei-spring/SweiSpringCJKtc-Regular.ttf", bytes: 17_357_244,
                  sha256: "8278b3f032b7bac5494d28ab1ddbe6b98959142a3e04a2b527c50c654dad6b80",
@@ -305,7 +311,7 @@ extension FontCatalog {
                  copyright: "字型檔與授權檔都沒有填寫著作權人（授權檔是未填寫的 SIL OFL 1.1 範本）。作者：Max（https://github.com/max32002/swei-spring）。",
                  licenses: ["sweiSpring-OFL.txt"])
         ]),
-        family(.sweiSugar, "獅尾加糖宋體", .song, defaultWeight: "bold", faces: [
+        family(.sweiSugar, "獅尾加糖宋體", .song, fullName: "獅尾加糖宋體-Bold", listName: "獅尾加糖宋體", defaultWeight: "bold", faces: [
             face("regular", "標準", "SweiSugarCJKtc-Regular",
                  path: "swei-sugar/SweiSugarCJKtc-Regular.ttf", bytes: 28_960_864,
                  sha256: "2e930dbafa3f5878df4de9fb773c5a4c9da0b658dd9219d62fd1a928db61447a",
@@ -325,7 +331,7 @@ extension FontCatalog {
                  copyright: "字型檔與授權檔都沒有填寫著作權人（授權檔是未填寫的 SIL OFL 1.1 範本）。作者：max32002（https://github.com/max32002/swei-sugar）。",
                  licenses: ["sweiSugar-OFL.txt"])
         ]),
-        family(.chironSung, "昭源宋體", .song, defaultWeight: "bold", faces: [
+        family(.chironSung, "昭源宋體", .song, fullName: "Chiron Sung HK Bold", listName: "Chiron Sung HK", defaultWeight: "bold", faces: [
             face("regular", "標準", "ChironSungHK-Regular",
                  path: "chiron-sung-hk/ChironSungHK-R.otf", bytes: 24_164_960,
                  sha256: "d53da9ffb3593a6dcce34f9e4a5d94369c7e619efa1b3d9a60717c7d72aa65d0",
@@ -345,7 +351,7 @@ extension FontCatalog {
                  copyright: "© 2017-2024 Adobe (http://www.adobe.com/).",
                  licenses: ["chironSung-OFL.txt"])
         ]),
-        family(.cactusSerif, "仙人掌明體", .song, defaultWeight: "regular", faces: [
+        family(.cactusSerif, "仙人掌明體", .song, fullName: "仙人掌明體", listName: "仙人掌明體", defaultWeight: "regular", faces: [
             face("regular", "標準", "CactusClassicalSerif-Regular",
                  path: "cactus-classical-serif/CactusClassicalSerif-Regular.ttf", bytes: 28_502_932,
                  sha256: "ecbd58961db922392d7fecfafa3681fefaeec0c399b860ab6940ba700f7da055",
@@ -353,7 +359,7 @@ extension FontCatalog {
                  copyright: "Copyright 2025 The Cactus Serif Project Authors (https://github.com/MoonlitOwen/CactusSerif)",
                  licenses: ["cactusSerif-OFL.txt"])
         ]),
-        family(.twSung, "全字庫正宋體", .song, defaultWeight: "regular", sourceNote: "來源：全字庫（數位發展部，https://www.cns11643.gov.tw/）。授權：政府資料開放授權條款第 1 版或 SIL OFL 1.1，二擇一；使用時須註明來源。", faces: [
+        family(.twSung, "全字庫正宋體", .song, fullName: "全字庫正宋體", listName: "全字庫正宋體", defaultWeight: "regular", sourceNote: "來源：全字庫（數位發展部，https://www.cns11643.gov.tw/）。授權：政府資料開放授權條款第 1 版或 SIL OFL 1.1，二擇一；使用時須註明來源。", faces: [
             face("regular", "標準", "TW-Sung-98_1",
                  path: "tw-sung/TW-Sung-98_1.ttf", bytes: 35_320_040,
                  sha256: "9a3b74fe1a69fe1b3470b5ed780bf678c42a25cef93a13f280a5f31f795f0c56",
@@ -361,7 +367,7 @@ extension FontCatalog {
                  copyright: "(c)2026 Ministry of Digital Affairs. You can use any of the following terms as needed. 1. Open Government Data License, version 1.0(https://data.gov.tw/en/license). 2. the SIL Open Font License, version 1.1. (https://scripts.sil.org/OFL)\n(c)2026數位發展部。使用者可依需求擇一使用以下條款：1.「政府資料開放授權條款-第一版」(https://data.gov.tw/license) ；2. 「開源字型授權1.1版(OFL 1.1) 」(https://scripts.sil.org/OFL)",
                  licenses: ["twSung-OGDL.txt", "twSung-OFL.txt"])
         ]),
-        family(.thenKhung, "宇文天穹", .song, defaultWeight: "regular", faces: [
+        family(.thenKhung, "宇文天穹", .song, fullName: "宇文天穹", listName: "宇文天穹", defaultWeight: "regular", faces: [
             face("regular", "標準", "UoqMunThenKhung-Regular",
                  path: "uoqmun-thenkhung/UoqMunThenKhung-Regular.ttf", bytes: 4_901_688,
                  sha256: "943a23eb10d40ca85ee08491c0e3fb3adbc4bd111ef1f93526a4f766a8e66fbd",
@@ -369,7 +375,7 @@ extension FontCatalog {
                  copyright: "Copyright 2025 The UoqMunThenKhung Project Authors (https://github.com/MoonlitOwen/ThenKhung)",
                  licenses: ["thenKhung-OFL.txt"])
         ]),
-        family(.lxgwWenKai, "霞鶩文楷 TC", .kai, defaultWeight: "medium", faces: [
+        family(.lxgwWenKai, "霞鶩文楷 TC", .kai, fullName: "LXGW WenKai TC Medium", listName: "霞鶩文楷 TC", defaultWeight: "medium", faces: [
             face("regular", "標準", "LXGWWenKaiTC-Regular",
                  path: "lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf", bytes: 15_267_616,
                  sha256: "b1a0795862c1415bf3f393ea50b2a4ea6275012cf5bad3f94feeb1222f555731",
@@ -383,7 +389,7 @@ extension FontCatalog {
                  copyright: "Copyright 2022-2026 LXGW (https://github.com/lxgw/LxgwWenkaiTC)\nCopyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)",
                  licenses: ["lxgwWenKai-OFL.txt"])
         ]),
-        family(.twKai, "全字庫正楷體", .kai, defaultWeight: "regular", sourceNote: "來源：全字庫（數位發展部，https://www.cns11643.gov.tw/）。授權：政府資料開放授權條款第 1 版或 SIL OFL 1.1，二擇一；使用時須註明來源。", faces: [
+        family(.twKai, "全字庫正楷體", .kai, fullName: "全字庫正楷體", listName: "全字庫正楷體", defaultWeight: "regular", sourceNote: "來源：全字庫（數位發展部，https://www.cns11643.gov.tw/）。授權：政府資料開放授權條款第 1 版或 SIL OFL 1.1，二擇一；使用時須註明來源。", faces: [
             face("regular", "標準", "TW-Kai-98_1",
                  path: "tw-kai/TW-Kai-98_1.ttf", bytes: 36_925_608,
                  sha256: "d5e8d7d8743c5cf816bdeb393a443f65105a8130266a04c19560e1d3401b28f0",
@@ -391,7 +397,7 @@ extension FontCatalog {
                  copyright: "(c)2026 Ministry of Digital Affairs. You can use any of the following terms as needed. 1. Open Government Data License, version 1.0(https://data.gov.tw/en/license). 2. the SIL Open Font License, version 1.1. (https://scripts.sil.org/OFL)\n(c)2026數位發展部。使用者可依需求擇一使用以下條款：1.「政府資料開放授權條款-第一版」(https://data.gov.tw/license) ；2. 「開源字型授權1.1版(OFL 1.1) 」(https://scripts.sil.org/OFL)",
                  licenses: ["twKai-OGDL.txt", "twKai-OFL.txt"])
         ]),
-        family(.eduKai, "教育部標準楷書", .kai, defaultWeight: "regular", sourceNote: "著作權人：中華民國教育部。依創用 CC 姓名標示─禁止改作 3.0 台灣版授權，原檔散布、未經修改；引用請標示「中華民國教育部」。", faces: [
+        family(.eduKai, "教育部標準楷書", .kai, fullName: "教育部標準楷書", listName: "教育部標準楷書", defaultWeight: "regular", sourceNote: "著作權人：中華民國教育部。依創用 CC 姓名標示─禁止改作 3.0 台灣版授權，原檔散布、未經修改；引用請標示「中華民國教育部」。", faces: [
             face("regular", "標準", "TW-MOE-Std-Kai",
                  path: "edu-kai/edukai-5.0.ttf", bytes: 15_820_500,
                  sha256: "99ae11cc1ba0ee14d43da5336f2c555b17a3bf551f7203f42da4f7fbdfcf7b7b",
@@ -399,7 +405,7 @@ extension FontCatalog {
                  copyright: "(c) This license allows for redistribution, commercial and non-commercial, as long as it is passed along unchanged and in whole, with credit to MOE.\n(c)本字形檔採用創用CC姓名標示-禁止改作3.0 臺灣版授權。如需引用，請標示中華民國教育部。",
                  licenses: ["eduKai-CCBYND.txt"])
         ]),
-        family(.arphicUKai, "文鼎 PL 中楷", .kai, defaultWeight: "regular", sourceNote: "文鼎 PL 中楷（AR PL UKai TW），依 Arphic Public License 授權，原檔散布、未經修改；授權全文如下。", faces: [
+        family(.arphicUKai, "文鼎 PL 中楷", .kai, fullName: "AR PL UKai TW", listName: "AR PL UKai TW", defaultWeight: "regular", sourceNote: "文鼎 PL 中楷（AR PL UKai TW），依 Arphic Public License 授權，原檔散布、未經修改；授權全文如下。", faces: [
             face("regular", "標準", "UKaiTW",
                  path: "arphic-ukai/ukai.ttc", bytes: 17_151_049,
                  sha256: "cfc758e69386a21bade8cb3b373fda20d7f2fac6e8904ced2ded98588b63e274",
@@ -407,7 +413,7 @@ extension FontCatalog {
                  copyright: "This font is derieved from the \"AR PL \" and \"AR PL \" fonts. ((c) Copyright 1994-1999, Arphic Technology Co., Ltd.)\n\nModifications have been made to add, replace and modify glyphs, change encoding and add bitmap representations. ((c) Copyright 2003-2007 Arne Goetje <arne@ubuntu.com>)\n\nThis font is published as par",
                  licenses: ["arphicUKai-APL.txt"])
         ]),
-        family(.naikai, "內海字體", .handwriting, defaultWeight: "bold", faces: [
+        family(.naikai, "內海字體", .handwriting, fullName: "内海フォント-Bold", listName: "內海字體", defaultWeight: "bold", faces: [
             face("regular", "標準", "NaikaiFont-Regular",
                  path: "naikai/NaikaiFont-Regular.ttf", bytes: 26_254_192,
                  sha256: "d3320b822131540d5e3cc9737f7b458aeb1c0ca76fe89aeaa1b76001f54e503e",
@@ -427,7 +433,7 @@ extension FontCatalog {
                  copyright: "Nozomi Seto\n內海字體",
                  licenses: ["naikai-OFL.txt"])
         ]),
-        family(.xiaolai, "小賴字體", .handwriting, defaultWeight: "regular", faces: [
+        family(.xiaolai, "小賴字體", .handwriting, fullName: "Xiaolai", listName: "小賴字體", defaultWeight: "regular", faces: [
             face("regular", "標準", "Xiaolai",
                  path: "xiaolai/Xiaolai-Regular.ttf", bytes: 22_220_806,
                  sha256: "e2f68daf0e72777a8cf58bc83de1b98634b251e537ddbfca24b0ae50d1802da2",
@@ -435,7 +441,7 @@ extension FontCatalog {
                  copyright: "Copyright 2020-2024 LXGW (https://github.com/lxgw/kose-font)\nCopyright 2014 Nozomi Seto (https://ja.osdn.net/projects/setofont/)",
                  licenses: ["xiaolai-OFL.txt"])
         ]),
-        family(.yozai, "悠哉字體", .handwriting, defaultWeight: "medium", faces: [
+        family(.yozai, "悠哉字體", .handwriting, fullName: "Yozai Medium", listName: "Yozai", defaultWeight: "medium", faces: [
             face("regular", "標準", "Yozai-Regular",
                  path: "yozai/Yozai-Regular.ttf", bytes: 15_605_374,
                  sha256: "25071998a0fe6a72f54c235e714986d259633e5ff670b1a2b5e264387f3316ac",
@@ -449,7 +455,7 @@ extension FontCatalog {
                  copyright: "Copyright 2020, 2024 LXGW (https://github.com/lxgw/yozai-font)\nOriginal Font Data Copyright (C) Y.OzVox.",
                  licenses: ["yozai-OFL.txt"])
         ]),
-        family(.nani, "何某手寫體", .handwriting, defaultWeight: "bold", faces: [
+        family(.nani, "何某手寫體", .handwriting, fullName: "何某手寫-Bold", listName: "何某手寫", defaultWeight: "bold", faces: [
             face("regular", "標準", "NaniFont-Regular",
                  path: "nanifont/NaniFont-Regular.ttf", bytes: 17_799_572,
                  sha256: "3fb7b030f853f2efc4d97dd28fae08a6fa93a565fc91a8f585897e0d53716c1c",
@@ -463,7 +469,7 @@ extension FontCatalog {
                  copyright: "Copyright (c) 2016-2020, Nanigashitei.",
                  licenses: ["nani-OFL.txt"])
         ]),
-        family(.lxgwMarker, "霞鶩漫黑", .handwriting, defaultWeight: "regular", faces: [
+        family(.lxgwMarker, "霞鶩漫黑", .handwriting, fullName: "LXGW Marker Gothic Regular", listName: "LXGW Marker Gothic", defaultWeight: "regular", faces: [
             face("regular", "標準", "LXGWMarkerGothic-Regular",
                  path: "lxgw-marker-gothic/LXGWMarkerGothic-Regular.ttf", bytes: 3_179_616,
                  sha256: "9a1e46379442856b9fc64de1d9bd4120903780990e28d99fd6415cadee78a47d",
@@ -471,7 +477,7 @@ extension FontCatalog {
                  copyright: "Copyright 2024 The LXGW Marker Gothic Project Authors (https://github.com/lxgw/LxgwMarkerGothic)",
                  licenses: ["lxgwMarker-OFL.txt"])
         ]),
-        family(.kurewa, "苦累蛙圓體", .handwriting, defaultWeight: "bold", faces: [
+        family(.kurewa, "苦累蛙圓體", .handwriting, fullName: "苦累蛙圓體 CJK TC-Bold", listName: "苦累蛙圓體 CJK TC", defaultWeight: "bold", faces: [
             face("regular", "標準", "KurewaGothicCjkTc-Regular",
                  path: "kurewa-gothic/KurewaGothicCjkTc-Regular.ttf", bytes: 31_158_716,
                  sha256: "da6d76a895ac0a8ba80edeb5b99dec0b0e8e205040244e37ba0a39054fa5289e",
@@ -485,7 +491,7 @@ extension FontCatalog {
                  copyright: "Copyright 2021 The Kurewa Project Authors (https://github.com/max32002/kurewa-gothic)",
                  licenses: ["kurewa-OFL.txt"])
         ]),
-        family(.popGothic, "大波浪圓體", .cute, defaultWeight: "bold", faces: [
+        family(.popGothic, "大波浪圓體", .cute, fullName: "大波浪圓體 CJK TC-Bold", listName: "大波浪圓體 CJK TC", defaultWeight: "bold", faces: [
             face("regular", "標準", "PopGothicCjkTc-Regular",
                  path: "pop-gothic/PopGothicCjkTc-Regular.ttf", bytes: 8_371_820,
                  sha256: "3094ba8fa82bebdfbe4fd168c7460f1023d7bf8a515696a3dedc960f74bbba4a",
@@ -499,7 +505,7 @@ extension FontCatalog {
                  copyright: "Copyright 2021 The PopGothic Project Authors (https://github.com/max32002/pop-gothic)",
                  licenses: ["popGothic-OFL.txt"])
         ]),
-        family(.wdxl, "WD-XL 滑油字", .cute, defaultWeight: "regular", faces: [
+        family(.wdxl, "WD-XL 滑油字", .cute, fullName: "WD-XL 滑油字 TC", listName: "WD-XL 滑油字 TC", defaultWeight: "regular", faces: [
             face("regular", "標準", "WD-XLLubrifontTC-Regular",
                  path: "wd-xl-lubrifont/WD-XLLubrifontTC-Regular.otf", bytes: 6_161_104,
                  sha256: "51c179e927526a9acd88b7722909e44c958133733ca316e824f812a28713768b",
@@ -507,7 +513,7 @@ extension FontCatalog {
                  copyright: "Copyright 2020-2025 The WD-XL Lubrifont Project Authors (https://github.com/NightFurySL2001/WD-XL-font)\n版權 2020-2025 WD-XL 滑油字計劃作者 (https://github.com/NightFurySL2001/WD-XL-font)",
                  licenses: ["wdxl-OFL.txt"])
         ]),
-        family(.cubic11, "俐方體 11 號", .cute, defaultWeight: "regular", faces: [
+        family(.cubic11, "俐方體 11 號", .cute, fullName: "俐方體11號", listName: "俐方體11號", defaultWeight: "regular", faces: [
             face("regular", "標準", "Cubic_11",
                  path: "cubic-11/Cubic_11.ttf", bytes: 2_773_732,
                  sha256: "0193f5f033612496df6b45ee92ac3b335bc6a5a24ff95da55ca87b33e57dcf62",

@@ -466,4 +466,39 @@ jsDelivr 不服務、由 raw 下載的 19 個檔案：
 
 ### 預覽圖
 
-30 套的預覽圖（`DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`）用 `scripts/render-font-previews.swift` 產生：把 30 個預設字重的原檔放進同一個資料夾，`swift scripts/render-font-previews.swift <資料夾> <fontID ...>`。圖上的文字是顯示名稱（例如「思源黑體」），字型取各套的預設字重。
+30 套的預覽圖（`DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`）用 `scripts/render-font-previews.swift` 產生：把 30 個預設字重的原檔放進同一個資料夾，`swift scripts/render-font-previews.swift <資料夾> <fontID ...>`。圖上的文字是清單名稱（FR-16.4，見下表），字型取各套的預設字重。
+
+清單名稱取自預設字重原檔 `name` 表：第 4 筆（完整名稱）繁中（0x404）紀錄優先、沒有或與英文相同時用英文，不含版本號；多字重的家族在列上只顯示家族名（第 16 筆，沒有則第 1 筆，同樣繁中優先），字重由展開後的按鈕顯示。顯示名稱（`displayName`，toast、授權頁用）仍是中文簡稱。
+
+| fontID | 顯示名稱 | 清單／VoiceOver／預覽圖（完整名稱） | 多字重列（家族名） |
+|---|---|---|---|
+| `notoSansTC` | 思源黑體 | Noto Sans TC Bold | Noto Sans TC |
+| `taipeiSans` | 台北黑體 | Taipei Sans TC Beta Bold | Taipei Sans TC Beta |
+| `genSeki` | 源石黑體 | 源石黑體月 B | 源石黑體月 |
+| `chironHei` | 昭源黑體 | Chiron Hei HK Bold | Chiron Hei HK |
+| `chocolateSans` | 朱古力黑體 | 朱古力黑體 | — |
+| `glowSans` | 未來熒黑 | 未來熒黑 Normal Bold | 未來熒黑 |
+| `genSen` | 源泉圓體 | 源泉圓體月 B | 源泉圓體月 |
+| `sweiGothic` | 獅尾圓體 | 獅尾圓體-Bold | 獅尾圓體 |
+| `chironGoRound` | 昭源環方 | Chiron GoRound TC Bold | Chiron GoRound TC |
+| `genWan` | 源雲明體 | 源雲明體月 SB | 源雲明體月 |
+| `genRyu` | 源流明體 | 源流明體月 B | 源流明體月 |
+| `sweiSpring` | 獅尾四季春 | 獅尾四季春-Bold | 獅尾四季春 |
+| `sweiSugar` | 獅尾加糖宋體 | 獅尾加糖宋體-Bold | 獅尾加糖宋體 |
+| `chironSung` | 昭源宋體 | Chiron Sung HK Bold | Chiron Sung HK |
+| `cactusSerif` | 仙人掌明體 | 仙人掌明體 | — |
+| `twSung` | 全字庫正宋體 | 全字庫正宋體 | — |
+| `thenKhung` | 宇文天穹 | 宇文天穹 | — |
+| `lxgwWenKai` | 霞鶩文楷 TC | LXGW WenKai TC Medium | 霞鶩文楷 TC |
+| `twKai` | 全字庫正楷體 | 全字庫正楷體 | — |
+| `eduKai` | 教育部標準楷書 | 教育部標準楷書 | — |
+| `arphicUKai` | 文鼎 PL 中楷 | AR PL UKai TW | — |
+| `naikai` | 內海字體 | 内海フォント-Bold | 內海字體 |
+| `xiaolai` | 小賴字體 | Xiaolai | — |
+| `yozai` | 悠哉字體 | Yozai Medium | Yozai |
+| `nani` | 何某手寫體 | 何某手寫-Bold | 何某手寫 |
+| `lxgwMarker` | 霞鶩漫黑 | LXGW Marker Gothic Regular | — |
+| `kurewa` | 苦累蛙圓體 | 苦累蛙圓體 CJK TC-Bold | 苦累蛙圓體 CJK TC |
+| `popGothic` | 大波浪圓體 | 大波浪圓體 CJK TC-Bold | 大波浪圓體 CJK TC |
+| `wdxl` | WD-XL 滑油字 | WD-XL 滑油字 TC | — |
+| `cubic11` | 俐方體 11 號 | 俐方體11號 | — |
