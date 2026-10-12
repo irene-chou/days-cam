@@ -14,6 +14,37 @@ enum OverlayFontID: String, Codable, CaseIterable {
     case notoSerifTC
     case iansui
     case chenyuluoyan
+    // TASK-142 (#494): 30 downloadable families, in type order: 黑 圓 宋 楷 手寫 可愛.
+    case notoSansTC
+    case taipeiSans
+    case genSeki
+    case chironHei
+    case chocolateSans
+    case glowSans
+    case genSen
+    case sweiGothic
+    case chironGoRound
+    case genWan
+    case genRyu
+    case sweiSpring
+    case sweiSugar
+    case chironSung
+    case cactusSerif
+    case twSung
+    case thenKhung
+    case lxgwWenKai
+    case twKai
+    case eduKai
+    case arphicUKai
+    case naikai
+    case xiaolai
+    case yozai
+    case nani
+    case lxgwMarker
+    case kurewa
+    case popGothic
+    case wdxl
+    case cubic11
     case lantinghei
     case liHei
     case hiraginoSans

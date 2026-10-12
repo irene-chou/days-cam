@@ -47,6 +47,9 @@ final class FontWeightAcceptanceTests: XCTestCase {
                 XCTAssertEqual(entry.weights.map(\.id), expected.faces.map(\.id), "\(fontID) ids and order")
                 XCTAssertEqual(entry.weights.map(\.postScriptName), expected.faces.map(\.postScript), "\(fontID)")
                 XCTAssertEqual(entry.defaultWeight.id, expected.defaultID, "\(fontID) default")
+            } else if FontCatalog.downloadFamiliesByID[fontID] != nil {
+                // TASK-142 families have their own table (FontCatalogDownloadFamiliesTests, 142.1).
+                continue
             } else {
                 XCTAssertEqual(entry.weights.count, 1, "\(fontID) not on the list stays single-weight")
             }

@@ -107,9 +107,11 @@ final class OverlayStyleTests: XCTestCase {
 
     /// 32.1 / 40.1: the raw values, in PRD 0.3 §4.1 order plus TASK-40's
     /// `chenyuluoyan`, are what files store.
-    func testFontIDsAreTheTwentyTwoInOrder() {
+    func testFontIDsAreTheFiftyTwoInOrder() {
         XCTAssertEqual(OverlayFontID.allCases.map(\.rawValue),
-                       ["pingFang", "huninn", "notoSerifTC", "iansui", "chenyuluoyan", "lantinghei", "liHei", "hiraginoSans",
+                       ["pingFang", "huninn", "notoSerifTC", "iansui", "chenyuluoyan",
+                        "notoSansTC", "taipeiSans", "genSeki", "chironHei", "chocolateSans", "glowSans", "genSen", "sweiGothic", "chironGoRound", "genWan", "genRyu", "sweiSpring", "sweiSugar", "chironSung", "cactusSerif", "twSung", "thenKhung", "lxgwWenKai", "twKai", "eduKai", "arphicUKai", "naikai", "xiaolai", "yozai", "nani", "lxgwMarker", "kurewa", "popGothic", "wdxl", "cubic11",
+                        "lantinghei", "liHei", "hiraginoSans",
                         "yuanti", "songti", "liSong", "kaiti", "biauKai", "hanziPen", "hannotate", "lingWai",
                         "xingkai", "weibei", "libian", "baoli", "wawa", "yuppy"],
                        "32.1 / 40.1")
