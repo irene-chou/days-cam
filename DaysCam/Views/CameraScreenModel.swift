@@ -245,6 +245,11 @@ final class CameraScreenModel: ObservableObject {
     /// unit test (same boundary `CameraServiceTests` documents).
     private let captureImage: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void
 
+    /// Tells the camera which flash mode the next photo will use, so the photo
+    /// output can prepare for it (TASK-130). Defaults to
+    /// `cameraService.prepareCapture`; injectable so tests can see the calls.
+    private let prepareCapture: (FlashMode) -> Void
+
     /// Bumped whenever the calendar day changes or the app returns to the
     /// foreground (TASK-14). `overlayText` already recomputes from the live
     /// clock on every access, so nothing about *that* was ever stale — the
@@ -316,6 +321,7 @@ final class CameraScreenModel: ObservableObject {
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
          },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
+         prepareCapture: ((FlashMode) -> Void)? = nil,
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
@@ -392,6 +398,9 @@ final class CameraScreenModel: ObservableObject {
         self.captureImage = captureImage ?? { [cameraService] flashMode, completion in
             cameraService.capturePhoto(flashMode: flashMode, completion: completion)
         }
+        self.prepareCapture = prepareCapture ?? { [cameraService] flashMode in
+            cameraService.prepareCapture(flashMode: flashMode)
+        }
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profiles = profileStore.profiles
         self.selectedProfileID = profileStore.selectedProfileID
@@ -402,6 +411,7 @@ final class CameraScreenModel: ObservableObject {
         bindToZoomModel()
         bindToFocusModel()
         bindToCaptureSettingsStore()
+        bindToFlashMode()
         bindToPanelModel()
         bindToClockNotifications()
         bindToFontLibrary()
@@ -621,6 +631,16 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// Prepares the photo output for the flash mode now selected and for each
+    /// later change (TASK-130). The current value is delivered at once; the
+    /// camera remembers it until its session is configured.
+    private func bindToFlashMode() {
+        captureSettingsStore.$flashMode
+            .removeDuplicates()
+            .sink { [weak self] flashMode in self?.prepareCapture(flashMode) }
+            .store(in: &cancellables)
+    }
+
     /// Same reasoning as `bindToCameraService`: `CameraScreen` and
     /// `OverlayPanelView` observe only this model and read `panelModel`'s
     /// state through it, so opening/closing the panel or switching tabs would
@@ -670,6 +690,7 @@ final class CameraScreenModel: ObservableObject {
     /// Called when the screen appears. Permission is requested here, not at
     /// app launch (PRD §2.2).
     func onAppear() {
+        prepareCapture(captureSettingsStore.flashMode)
         cameraService.start()
     }
 
