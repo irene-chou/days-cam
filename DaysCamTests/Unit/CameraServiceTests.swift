@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import UIKit
+import os
 import XCTest
 @testable import DaysCam
 
@@ -443,6 +444,21 @@ final class CameraServiceTests: XCTestCase {
         switch results.first {
         case .failure(let error): XCTAssertEqual(error, .notRunning)
         default: XCTFail("expected a failure, got \(String(describing: results.first))")
+        }
+    }
+
+    /// 125.1 (#465): `AVCapturePhoto` and `AVCaptureResolvedPhotoSettings`
+    /// cannot be built in a test, so the racing callers are concurrent
+    /// `cancel()` calls — they go through the same `deliver` guard the
+    /// AVFoundation callbacks use.
+    func testCaptureDelegateAnswersExactlyOnceUnderConcurrentCallers() {
+        for _ in 0..<1000 {
+            let count = OSAllocatedUnfairLock(initialState: 0)
+            let delegate = PhotoCaptureDelegate { _, _ in count.withLock { $0 += 1 } }
+
+            DispatchQueue.concurrentPerform(iterations: 4) { _ in delegate.cancel() }
+
+            XCTAssertEqual(count.withLock { $0 }, 1)
         }
     }
 
