@@ -28,6 +28,16 @@ struct OverlayRenderer {
     ///
     /// An empty `text` draws nothing at all, not even an empty background box.
     ///
+    /// `cropRect`, when given, is the window to keep, in orientation-normalized
+    /// pixels (`ImageCropper.cropRect(forPixelSize:ratio:)`). Cropping, rotating
+    /// upright and printing then happen in one drawing pass: the canvas is
+    /// `cropRect.size`, the photo is drawn at a negative offset, and the text is
+    /// laid out in the cropped canvas, exactly as if the photo had been cropped
+    /// first. `nil` keeps the whole photo.
+    ///
+    /// The output is rendered in the standard range (8 bits per component), so
+    /// wide-gamut or HDR sources do not double the bitmap's memory.
+    ///
     /// Returns nil only when the image has no pixels to draw into; the caller
     /// treats nil as a baking failure and does not save the photo.
     ///
@@ -36,26 +46,32 @@ struct OverlayRenderer {
     /// was drawing with (PRD 0.3 FR-5.14). It is used both to fit the size and
     /// to draw, so the two cannot disagree.
     func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement,
-              font: ResolvedOverlayFont) -> UIImage? {
-        let pixelSize = CGSize(width: image.size.width * image.scale,
-                               height: image.size.height * image.scale)
-        guard pixelSize.width >= 1, pixelSize.height >= 1 else { return nil }
+              font: ResolvedOverlayFont, cropRect: CGRect? = nil) -> UIImage? {
+        let sourceSize = CGSize(width: image.size.width * image.scale,
+                                height: image.size.height * image.scale)
+        guard sourceSize.width >= 1, sourceSize.height >= 1 else { return nil }
+        let window = cropRect.map { $0.intersection(CGRect(origin: .zero, size: sourceSize)) }
+            ?? CGRect(origin: .zero, size: sourceSize)
+        guard !window.isNull, window.width >= 1, window.height >= 1 else { return nil }
+        let pixelSize = window.size
 
         // Already upright, already one point per pixel, nothing to print: the
         // input already is the answer, and handing it back is the only way to
         // guarantee every pixel is untouched.
-        if text.isEmpty, image.imageOrientation == .up, image.scale == 1 {
+        if text.isEmpty, image.imageOrientation == .up, image.scale == 1, cropRect == nil {
             return image
         }
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
+        format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: pixelSize, format: format)
 
         return renderer.image { rendererContext in
             // `UIImage.draw` honors `imageOrientation`, so this single call is
-            // the normalisation to `.up`.
-            image.draw(in: CGRect(origin: .zero, size: pixelSize))
+            // the normalisation to `.up`; the negative offset is the crop.
+            image.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
+                                  width: sourceSize.width, height: sourceSize.height))
 
             guard !text.isEmpty else { return }
             let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
