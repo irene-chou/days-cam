@@ -60,6 +60,12 @@ final class ProfileStore: ObservableObject {
     /// reads it yet.
     private(set) var droppedUndecodableRecordCount = 0
 
+    /// True while the original file still has to be copied to a
+    /// `.partial-` backup before anything may overwrite it (#477). Every write
+    /// retries the copy first and fails with `writeFailed` if it still cannot
+    /// be made, so the undecodable records are never lost without a copy.
+    private(set) var isPartialBackupPending = false
+
     private let directory: URL
     private let calendar: Calendar
     private let now: () -> Date
@@ -108,6 +114,7 @@ extension ProfileStore {
         didRecoverFromCorruption = false
         didSeedFreshInstall = false
         droppedUndecodableRecordCount = 0
+        isPartialBackupPending = false
 
         guard fileManager.fileExists(atPath: fileURL.path) else {
             didSeedFreshInstall = true
@@ -158,11 +165,11 @@ extension ProfileStore {
         // Persist the cleaned-up records so the repair happens once, not on
         // every launch.
         if droppedCount > 0 {
-            // Rewriting drops the undecodable records for good, so keep the
-            // original first; if it cannot be kept, leave the file alone.
-            if keepPartialBackup() {
-                try? persist(repaired)
-            }
+            // Rewriting drops the undecodable records for good, so `persist`
+            // keeps the original first. If the copy fails the file is left
+            // alone and every later write retries it.
+            isPartialBackupPending = true
+            try? persist(repaired)
         } else if repaired != decoded {
             try? persist(repaired)
         }
@@ -187,9 +194,11 @@ extension ProfileStore {
     /// is rewritten without its undecodable records. Returns whether the copy
     /// exists.
     private func keepPartialBackup() -> Bool {
-        let stamp = Int(now().timeIntervalSince1970)
-        let destination = directory.appendingPathComponent("\(Self.fileName).partial-\(stamp)")
-        try? fileManager.removeItem(at: destination)
+        // Milliseconds plus a random suffix: two loads in the same second must
+        // not overwrite each other's backup.
+        let stamp = Int(now().timeIntervalSince1970 * 1000)
+        let suffix = UUID().uuidString.prefix(8)
+        let destination = directory.appendingPathComponent("\(Self.fileName).partial-\(stamp)-\(suffix)")
         do {
             try fileManager.copyItem(at: fileURL, to: destination)
             return true
@@ -433,6 +442,12 @@ private extension ProfileStore {
     func persist(_ profiles: [CameraProfile]) throws {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            if isPartialBackupPending {
+                guard keepPartialBackup() else {
+                    throw ProfileStoreError.writeFailed("could not back up the original profiles file")
+                }
+                isPartialBackupPending = false
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(profiles)

@@ -480,6 +480,55 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(reopened.droppedUndecodableRecordCount, 0)
     }
 
+    /// A file manager whose `copyItem` fails while `failsCopy` is set.
+    private final class CopyFailingFileManager: FileManager {
+        var failsCopy = true
+        override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+            if failsCopy { throw CocoaError(.fileWriteOutOfSpace) }
+            try super.copyItem(at: srcURL, to: dstURL)
+        }
+    }
+
+    /// #477: a failed backup must not let a later write destroy the original.
+    func testFailedBackupBlocksWritesUntilTheBackupSucceeds() throws {
+        try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [1])
+        let original = try Data(contentsOf: fileURL)
+        let fileManager = CopyFailingFileManager()
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
+                                 now: { Date() }, defaults: defaults, fileManager: fileManager)
+
+        let loaded = store.load()
+        XCTAssertEqual(loaded.map(\.name), ["甲"])
+        XCTAssertTrue(store.isPartialBackupPending)
+        XCTAssertEqual(try Data(contentsOf: fileURL), original, "file untouched after failed backup")
+
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "改名"
+        XCTAssertThrowsError(try store.update(edited))
+        XCTAssertThrowsError(try store.add(profile(name: "新")))
+        XCTAssertEqual(try Data(contentsOf: fileURL), original, "original never overwritten")
+        XCTAssertTrue(try partialBackups().isEmpty)
+
+        fileManager.failsCopy = false
+        try store.update(edited)
+        XCTAssertFalse(store.isPartialBackupPending)
+        let backups = try partialBackups()
+        XCTAssertEqual(backups.count, 1)
+        let backup = try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(backups.first)))
+        XCTAssertEqual(backup, original, "backup holds the original, written before the overwrite")
+        XCTAssertEqual(makeStore(at: Date()).load().map(\.name), ["改名"])
+    }
+
+    /// #477: two loads in the same second keep separate backups.
+    func testBackupsFromTheSameSecondDoNotOverwriteEachOther() throws {
+        let instant = try XCTUnwrap(DateFixture.date(2026, 3, 5, hour: 10))
+        for _ in 0..<2 {
+            try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [1])
+            makeStore(at: instant).load()
+        }
+        XCTAssertEqual(try partialBackups().count, 2)
+    }
+
     /// 134.2
     func testEveryRecordUndecodableBehavesLikeCorruption() throws {
         try writeProfiles([profile(name: "甲"), profile(name: "乙")], breaking: [0, 1])
