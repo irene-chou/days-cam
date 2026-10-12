@@ -189,7 +189,7 @@ enum OverlayMetrics {
     static func resolvedFont(state: FontState, postScriptName: String) -> ResolvedOverlayFont {
         guard state.isAvailable,
               postScriptName != FontCatalog.pingFangPostScriptName,
-              UIFont(name: postScriptName, size: referenceFontSize) != nil else {
+              FontFaceCache.shared.baseFont(named: postScriptName) != nil else {
             return .pingFang
         }
         return ResolvedOverlayFont(postScriptName: postScriptName)
@@ -230,8 +230,57 @@ struct ResolvedOverlayFont: Hashable, Sendable {
     /// system font only guards against a crash. Measuring and drawing both
     /// call this, so they still agree.
     func font(ofSize size: CGFloat) -> UIFont {
-        UIFont(name: postScriptName, size: size)
-            ?? UIFont(name: FontCatalog.pingFangPostScriptName, size: size)
+        let cache = FontFaceCache.shared
+        return (cache.baseFont(named: postScriptName) ?? cache.baseFont(named: FontCatalog.pingFangPostScriptName))
+            .map { $0.withSize(size) }
             ?? UIFont.systemFont(ofSize: size, weight: .semibold)
+    }
+}
+
+extension OverlayMetrics {
+    /// Forgets every cached font lookup, including "this name does not load".
+    ///
+    /// Call it whenever a font's registration state changes (a download was
+    /// registered, a file was unregistered); until then a name that failed
+    /// to load before the font was registered keeps resolving to PingFang.
+    static func invalidateFontCache() {
+        FontFaceCache.shared.invalidate()
+    }
+}
+
+/// Caches whether a PostScript name loads, and the face at the reference size,
+/// so resolving and drawing do not call `UIFont(name:size:)` (and up to three
+/// fallback lookups) every time. Other sizes come from `withSize`.
+///
+/// Thread-safe: baking asks for fonts from a background queue.
+final class FontFaceCache: @unchecked Sendable {
+    static let shared = FontFaceCache()
+
+    private let lock = NSLock()
+    private let load: @Sendable (String) -> UIFont?
+    /// `nil` value means the name was looked up and does not load.
+    private var faces: [String: UIFont?] = [:]
+
+    /// - Parameter load: how a name becomes a face at the reference size;
+    ///   tests substitute a counting loader.
+    init(load: @escaping @Sendable (String) -> UIFont? = { UIFont(name: $0, size: OverlayMetrics.referenceFontSize) }) {
+        self.load = load
+    }
+
+    /// The face for `postScriptName` at the reference size, or nil if it does not load.
+    func baseFont(named postScriptName: String) -> UIFont? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = faces[postScriptName] { return cached }
+        let font = load(postScriptName)
+        faces[postScriptName] = .some(font)
+        return font
+    }
+
+    /// Drops every cached result.
+    func invalidate() {
+        lock.lock()
+        faces.removeAll()
+        lock.unlock()
     }
 }
