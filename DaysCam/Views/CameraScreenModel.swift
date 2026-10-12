@@ -426,6 +426,9 @@ final class CameraScreenModel: ObservableObject {
         }
     }
 
+    /// Shown when the profile file could not be written.
+    static let profileSaveFailedMessage = "無法儲存設定"
+
     private func bindToProfileStore() {
         profileStore.$profiles
             .receive(on: DispatchQueue.main)
@@ -445,6 +448,18 @@ final class CameraScreenModel: ObservableObject {
                     self.formatWriter?.adopt(latest)
                     formatTabModel.displaySettings.applyExternalChanges(from: latest)
                 }
+            }
+            .store(in: &cancellables)
+        // Profile writes are debounced (#464), so a failed save no longer
+        // surfaces as a throw from `update`; this is where the user hears of
+        // it. `removeDuplicates` shows one failure once — a retry that fails
+        // again is the same error — and a successful retry (nil) re-arms it.
+        profileStore.$lastWriteError
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                guard error != nil else { return }
+                self?.showToast(message: Self.profileSaveFailedMessage)
             }
             .store(in: &cancellables)
         profileStore.$selectedProfileID

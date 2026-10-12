@@ -472,18 +472,37 @@ final class CameraScreenModelFontTests: XCTestCase {
         XCTAssertEqual(storedFont(harness.profileB.id, in: harness.store), .pingFang, "35.7")
     }
 
-    /// Since #464 `ProfileStore.update` no longer reports a disk failure by
-    /// throwing: memory is updated at once and the write happens later. The
-    /// failure surfaces through `lastWriteError` (and the write is retried).
-    func testFailedFileWriteAfterTheDownloadSurfacesThroughTheStore() throws {
+    /// Since #464 a disk failure no longer throws from `ProfileStore.update`;
+    /// it arrives as `lastWriteError`, and the model must still tell the user.
+    func testFailedFileWriteShowsTheSaveFailedToast() async throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
         harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
         harness.library.finishDownload(.xingkai)
+        await settle()
 
-        XCTAssertNotNil(harness.store.lastWriteError, "the failed write is observable")
-        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .xingkai, "memory is not rolled back")
+        XCTAssertNotNil(harness.store.lastWriteError)
+        XCTAssertEqual(harness.model.toastState?.message, CameraScreenModel.profileSaveFailedMessage,
+                       "寫入失敗不可報成已套用")
+    }
+
+    /// A retry that succeeds clears the error and shows nothing new.
+    func testSuccessfulRetryShowsNoFurtherToast() async throws {
+        let harness = try makeHarness(states: [.xingkai: .notDownloaded])
+        harness.model.applyFont(.xingkai, profileID: harness.profileA.id)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        harness.library.finishDownload(.xingkai)
+        await settle()
+        XCTAssertNotNil(harness.store.lastWriteError)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let toastBefore = harness.model.toastState?.id
+        harness.store.flush()
+        await settle()
+
+        XCTAssertNil(harness.store.lastWriteError, "retry cleared the error")
+        XCTAssertEqual(harness.model.toastState?.id, toastBefore, "no toast for a successful retry")
     }
 
     func testDownloadFinishingForADeletedProfileWritesNothing() throws {
