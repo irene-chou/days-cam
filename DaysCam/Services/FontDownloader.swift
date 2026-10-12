@@ -114,6 +114,22 @@ enum FontFileVerifier {
     }
 }
 
+/// Remembers that a font file already passed the full SHA-256 check, so launch
+/// can skip re-hashing it (PRD 0.3 §4.2).
+enum FontVerificationMarker {
+    /// File size + modification date + the hash the file was verified against,
+    /// or `nil` if the file's attributes cannot be read.
+    ///
+    /// Cheap (two attributes, no file read). A file whose size or date changed
+    /// since the marker was recorded no longer matches and must be re-verified.
+    static func make(fileAt url: URL, sha256: String) -> String? {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let size = values.fileSize,
+              let modified = values.contentModificationDate else { return nil }
+        return "\(size)|\(modified.timeIntervalSinceReferenceDate)|\(sha256)"
+    }
+}
+
 // MARK: - Registering
 
 /// Registers a font file with CoreText for this process. Injected so unit tests

@@ -212,6 +212,9 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
         defaults.set(legacy.map { $0.fontID.rawValue }.sorted(), forKey: Self.downloadedSystemFontIDsKey)
     }
 
+    /// `UserDefaults` key mapping stored font file names to their verification marker.
+    static let verificationMarkersKey = "fontVerificationMarkers"
+
     private let directory: URL
     private let fetcher: FontFileFetching
     private let registrar: FontRegistering
@@ -221,6 +224,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
     private let launchTimeout: TimeInterval
     private let entryProvider: (OverlayFontID) -> FontCatalogEntry
     private let units: [FontDownloadID]
+    private let verifyFile: @Sendable (URL, OpenSourceFontAsset) -> Bool
 
     private var operations: [FontDownloadID: Operation] = [:]
     private var hasPreparedAtLaunch = false
@@ -246,6 +250,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
          defaults: UserDefaults = .standard,
          fileManager: FileManager = .default,
          launchTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
+         verifyFile: @escaping @Sendable (URL, OpenSourceFontAsset) -> Bool = FontFileVerifier.isValid(fileAt:for:),
          entryProvider: @escaping (OverlayFontID) -> FontCatalogEntry = FontCatalog.entry(for:)) {
         self.directory = directory ?? Self.defaultDirectory(fileManager: fileManager)
         self.fetcher = fetcher
@@ -254,6 +259,7 @@ final class FontLibrary: ObservableObject, FontAvailabilityProviding {
         self.defaults = defaults
         self.fileManager = fileManager
         self.launchTimeout = launchTimeout
+        self.verifyFile = verifyFile
         self.entryProvider = entryProvider
         units = OverlayFontID.allCases.flatMap { id in
             entryProvider(id).weights.map { FontDownloadID(fontID: id, weightID: $0.id) }
@@ -553,12 +559,13 @@ private extension FontLibrary {
                     }
                 }
                 guard isCurrent(operation, for: fontID) else { return }
+                let verifyFile = self.verifyFile
                 let isValid = await Task.detached(priority: .utility) {
-                    FontFileVerifier.isValid(fileAt: temporaryURL, for: asset)
+                    verifyFile(temporaryURL, asset)
                 }.value
                 guard isCurrent(operation, for: fontID) else { return }
                 if isValid {
-                    install(fontID, from: temporaryURL, operation: operation)
+                    await install(fontID, from: temporaryURL, asset: asset, operation: operation)
                     return
                 }
                 try? fileManager.removeItem(at: temporaryURL)
@@ -588,8 +595,12 @@ private extension FontLibrary {
         setState(.downloading(progress: clamped), for: fontID)
     }
 
-    /// Moves a verified file into place, excludes it from backup and registers it.
-    func install(_ fontID: FontDownloadID, from temporaryURL: URL, operation: Operation) {
+    /// Moves a verified file into place, excludes it from backup, records its
+    /// verification marker and registers it (off the main thread).
+    func install(_ fontID: FontDownloadID,
+                 from temporaryURL: URL,
+                 asset: OpenSourceFontAsset,
+                 operation: Operation) async {
         let destination = storedFileURL(for: fontID)
         do {
             if fileManager.fileExists(atPath: destination.path) {
@@ -606,11 +617,22 @@ private extension FontLibrary {
             fail(fontID, operation: operation, reason: .other)
             return
         }
-        guard registrar.register(fontAt: destination) else {
+        let registrar = self.registrar
+        let registered = await Task.detached(priority: .utility) {
+            registrar.register(fontAt: destination)
+        }.value
+        guard isCurrent(operation, for: fontID) else {
+            // Cancelled or deleted while registering: leave nothing behind.
+            if registered { registrar.unregister(fontAt: destination) }
+            try? fileManager.removeItem(at: destination)
+            return
+        }
+        guard registered else {
             try? fileManager.removeItem(at: destination)
             fail(fontID, operation: operation, reason: .other)
             return
         }
+        storeMarker(FontVerificationMarker.make(fileAt: destination, sha256: asset.sha256), for: fontID)
         operations[fontID] = nil
         setState(.available, for: fontID)
         notifyCompletion(fontID)
@@ -633,14 +655,50 @@ private extension FontLibrary {
                 self?.finishPreparation(fontID, operation: operation, outcome: .missing)
                 return
             }
-            let isValid = await Task.detached(priority: .utility) {
-                FontFileVerifier.isValid(fileAt: url, for: asset)
+            let storedMarker = self?.storedMarker(for: fontID)
+            let verifyFile = self?.verifyFile
+            let registrar = self?.registrar
+            // Marker check, fallback verification and registration all stay
+            // off the main thread.
+            let result = await Task.detached(priority: .utility) { () -> PreparationResult in
+                let current = FontVerificationMarker.make(fileAt: url, sha256: asset.sha256)
+                var newMarker: String?
+                if current == nil || current != storedMarker {
+                    guard verifyFile?(url, asset) == true else {
+                        return PreparationResult(outcome: .corrupt, newMarker: nil)
+                    }
+                    newMarker = current
+                }
+                guard registrar?.register(fontAt: url) == true else {
+                    return PreparationResult(outcome: .registrationFailed, newMarker: nil)
+                }
+                return PreparationResult(outcome: .valid, newMarker: newMarker)
             }.value
-            self?.finishPreparation(fontID, operation: operation, outcome: isValid ? .valid : .corrupt)
+            if let newMarker = result.newMarker { self?.storeMarker(newMarker, for: fontID) }
+            self?.finishPreparation(fontID, operation: operation, outcome: result.outcome)
         }
     }
 
-    enum PreparationOutcome { case missing, corrupt, valid }
+    struct PreparationResult: Sendable {
+        let outcome: PreparationOutcome
+        let newMarker: String?
+    }
+
+    /// `valid` means verified *and* already registered.
+    /// The stored verification marker for `fontID`'s file, if any.
+    func storedMarker(for fontID: FontDownloadID) -> String? {
+        defaults.dictionary(forKey: Self.verificationMarkersKey)?[storedFileURL(for: fontID).lastPathComponent] as? String
+    }
+
+    /// Saves (or with `nil`, clears) the marker recorded after a successful SHA-256 check.
+    func storeMarker(_ marker: String?, for fontID: FontDownloadID) {
+        var markers = defaults.dictionary(forKey: Self.verificationMarkersKey) ?? [:]
+        let name = storedFileURL(for: fontID).lastPathComponent
+        if let marker { markers[name] = marker } else { markers.removeValue(forKey: name) }
+        defaults.set(markers, forKey: Self.verificationMarkersKey)
+    }
+
+    enum PreparationOutcome: Sendable { case missing, corrupt, registrationFailed, valid }
 
     func finishPreparation(_ fontID: FontDownloadID, operation: Operation, outcome: PreparationOutcome) {
         guard isCurrent(operation, for: fontID) else { return }
@@ -649,16 +707,12 @@ private extension FontLibrary {
         switch outcome {
         case .missing:
             setState(.notDownloaded, for: fontID)
-        case .corrupt:
+        case .corrupt, .registrationFailed:
             try? fileManager.removeItem(at: url)
+            storeMarker(nil, for: fontID)
             setState(.failed(.other), for: fontID)
         case .valid:
-            if registrar.register(fontAt: url) {
-                setState(.available, for: fontID)
-            } else {
-                try? fileManager.removeItem(at: url)
-                setState(.failed(.other), for: fontID)
-            }
+            setState(.available, for: fontID)
         }
     }
 }
