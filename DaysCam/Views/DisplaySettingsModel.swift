@@ -168,7 +168,7 @@ extension DisplaySettingsModel {
     /// Whether the date switch is the last of 天數／日期 still on.
     var isDateTheLastContentSwitch: Bool { profile.showDate && !profile.showDayCount }
 
-    /// Whether the 天數寫法 controls are inert: the day count is off, so the
+    /// Whether the 天數單位 controls are inert: the day count is off, so the
     /// units have nothing to format. The view collapses the section then
     /// (FR-11.5 as revised by TASK-141 #485); `toggleUnit`／`setUseAgeWording`
     /// still ignore a call as a backstop (107.4).
@@ -222,15 +222,4 @@ extension DisplaySettingsModel {
         guard !areUnitsInert else { return }
         mutate { $0.useAgeWording = newValue }
     }
-
-    /// Whether to explain under 年改成歲 that a countdown reads 年 (141.5):
-    /// age wording is on and the start date is still ahead, where years
-    /// always read 年 (TASK-140 #487). Same `rawDayDifference < 0` test as
-    /// the renderer, as of `calculator`'s clock.
-    var showsCountdownAgeNote: Bool {
-        profile.useAgeWording && calculator.rawDayDifference(from: profile.startDate) < 0
-    }
-
-    /// The note shown when `showsCountdownAgeNote` is true.
-    static let countdownAgeNote = "倒數時寫作「年」，到了那天之後才寫「歲」"
 }

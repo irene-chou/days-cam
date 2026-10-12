@@ -1,7 +1,7 @@
 import XCTest
 
-/// TASK-141 (#485): the content tab reads 照片上寫什麼 → divider → 天數寫法
-/// → 年改成歲; with the day count off 天數寫法 collapses and the switches
+/// TASK-141 (#485): the content tab reads 顯示內容 → divider → 天數單位
+/// → 年改成歲; with the day count off 天數單位 collapses and the switches
 /// above stay put. With `DAYSCAM_UI_SHOT_DIR` in the test runner's
 /// environment the B′ screenshots are also written there for the PR.
 final class FormatTabReorderUITests: XCTestCase {
@@ -58,8 +58,9 @@ final class FormatTabReorderUITests: XCTestCase {
     private var divider: XCUIElement {
         app.descendants(matching: .any).matching(identifier: "formatDivider").firstMatch
     }
+    /// The countdown note under 年改成歲 was dropped (PR #497, 2026-10-13).
     private var countdownNote: XCUIElement {
-        app.staticTexts["countdownAgeNote"]
+        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "倒數時寫作")).firstMatch
     }
     /// On a short screen (iPhone SE) 年改成歲 sits below the fold of the
     /// panel's scroll view; scroll it up as a finger would.
@@ -71,16 +72,14 @@ final class FormatTabReorderUITests: XCTestCase {
     /// the day count off, switches unmoved, ticks kept.
     func testOrderAndCollapseOnAPastStartDate() {
         launch(startDay: "2023-08-05")
-        let heading = app.staticTexts["照片上寫什麼"]
-        let unitsHeading = app.staticTexts["天數寫法"]
+        let heading = app.staticTexts["顯示內容"]
+        let unitsHeading = app.staticTexts["天數單位"]
         XCTAssertTrue(heading.exists && unitsHeading.exists, "141.1 headings")
-        XCTAssertFalse(app.staticTexts["顯示內容"].exists || app.staticTexts["天數單位"].exists, "141.1 old headings gone")
         let order = [heading, toggle("天數"), divider, unitsHeading, app.buttons["天"], toggle("年改成歲")].map(\.frame.midY)
-        XCTAssertEqual(order, order.sorted(), "141.1 照片上寫什麼 → 開關 → 分隔線 → 天數寫法 → 勾選框 → 年改成歲: \(order)")
+        XCTAssertEqual(order, order.sorted(), "141.1 顯示內容 → 開關 → 分隔線 → 天數單位 → 勾選框 → 年改成歲: \(order)")
         XCTAssertEqual(toggle("年改成歲").frame.maxX, toggle("名稱").frame.maxX, accuracy: 1,
                        "年改成歲 and 名稱 end on the same right edge")
         app.buttons["週"].tap()
-        XCTAssertFalse(countdownNote.exists, "141.5 no note for a past date")
         shot("141.8_past_daycount_on")
 
         let switchFrames = ["天數", "日期", "名稱"].map { toggle($0).frame }
@@ -103,30 +102,20 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["週"].isSelected && app.buttons["天"].isSelected, "141.2 ticks kept")
     }
 
-    /// 141.5 on a future start date with 歲 on: the note shows under
-    /// 年改成歲, and goes with 歲 off.
-    func testCountdownNoteOnAFutureStartDate() {
+    /// A future start date with 歲 on: no countdown note under 年改成歲
+    /// (141.5 dropped, PR #497); also takes the future-date B′ shots.
+    func testNoCountdownNoteOnAFutureStartDate() {
         launch(startDay: "2027-01-16")
-        XCTAssertFalse(countdownNote.exists, "141.5 歲 off")
         revealAgeWording()
         toggle("年改成歲").coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertTrue(isOn(toggle("年改成歲")))
         app.buttons["月"].tap()
-        XCTAssertTrue(countdownNote.waitForExistence(timeout: 3), "141.5 note")
-        XCTAssertEqual(countdownNote.label, "倒數時寫作「年」，到了那天之後才寫「歲」")
-        XCTAssertGreaterThan(countdownNote.frame.minY, toggle("年改成歲").frame.minY, "141.5 under the switch")
-        XCTAssertEqual(countdownNote.frame.maxX, toggle("年改成歲").frame.maxX, accuracy: 1, "141.5 same right edge")
+        XCTAssertFalse(countdownNote.exists, "no countdown note")
         shot("141.8_future_daycount_on")
 
         toggle("日期").tap()
         toggle("天數").tap()
-        XCTAssertFalse(countdownNote.exists, "collapsed with the rest")
+        XCTAssertFalse(app.buttons["月"].exists, "141.2 collapsed")
         shot("141.8_future_daycount_off")
-
-        toggle("天數").tap()
-        XCTAssertTrue(countdownNote.waitForExistence(timeout: 3))
-        revealAgeWording()
-        toggle("年改成歲").coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
-        XCTAssertFalse(countdownNote.exists, "141.5 歲 off")
     }
 }

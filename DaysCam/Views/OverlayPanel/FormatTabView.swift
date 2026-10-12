@@ -9,10 +9,10 @@ import SwiftUI
 /// `FormatTabModel` wrapping the active profile's `DisplaySettingsModel`.
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
-/// sections now sit on one page. TASK-141 (#485): 照片上寫什麼 (天數、日期、
-/// 名稱) on top, then a divider and 天數寫法 (units, 年改成歲) — what goes on
+/// sections now sit on one page. TASK-141 (#485): 顯示內容 (天數、日期、
+/// 名稱) on top, then a divider and 天數單位 (units, 年改成歲) — what goes on
 /// the photo first, then how the day count reads. With the day count off
-/// the 天數寫法 section is not shown; the switches above it stay put.
+/// the 天數單位 section is not shown; the switches above it stay put.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
@@ -63,7 +63,7 @@ struct FormatTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeading("照片上寫什麼")
+            sectionHeading("顯示內容")
             displayContentSection
             // Collapsed, not dimmed, while the day count is off (TASK-141
             // #485, replacing FR-11.5's "look as usual"): the switch that
@@ -73,7 +73,7 @@ struct FormatTabView: View {
                 Divider()
                     .padding(.vertical, 8)
                     .accessibilityIdentifier("formatDivider")
-                sectionHeading("天數寫法")
+                sectionHeading("天數單位")
                 dayCountFormatSection
             }
         }
@@ -137,7 +137,7 @@ struct FormatTabView: View {
             .accessibilityIdentifier(identifier)
     }
 
-    /// Small heading above the 照片上寫什麼 and 天數寫法 sections (13pt, secondary ink).
+    /// Small heading above the 顯示內容 and 天數單位 sections (13pt, secondary ink).
     private func sectionHeading(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13))
@@ -145,7 +145,7 @@ struct FormatTabView: View {
             .padding(.bottom, 2)
     }
 
-    // MARK: - 照片上寫什麼 (FR-11.1, FR-11.2)
+    // MARK: - 顯示內容 (FR-11.1, FR-11.2)
 
     private var displayContentSection: some View {
         // No gap between rows: each row is at least `rowMinHeight` tall with
@@ -228,7 +228,7 @@ struct FormatTabView: View {
         .accessibilityLabel(label)
     }
 
-    // MARK: - 天數寫法 (FR-11.3–FR-11.5)
+    // MARK: - 天數單位 (FR-11.3–FR-11.5)
 
     private var dayCountFormatSection: some View {
         // No gap between rows; each row is at least `rowMinHeight` tall and
@@ -259,17 +259,6 @@ struct FormatTabView: View {
             // Right edge aligned with the 名稱 switch above (TASK-141).
             .padding(.trailing, switchTrailingInset)
             .frame(minHeight: Self.rowMinHeight)
-            // A countdown always reads 年 (TASK-140 #487); say so where the
-            // switch promises 歲 (141.5).
-            if model.displaySettings.showsCountdownAgeNote {
-                Text(DisplaySettingsModel.countdownAgeNote)
-                    // 12pt in the hint rows' color (141.5).
-                    .font(.system(size: 12))
-                    .foregroundColor(CameraTheme.active)
-                    .padding(.trailing, switchTrailingInset)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .accessibilityIdentifier("countdownAgeNote")
-            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dayCountUnits")

@@ -457,26 +457,4 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setShowDayCount(false)
         XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount))
     }
-
-    // MARK: - TASK-141 (#485) 141.5 countdown note under 年改成歲
-
-    func testCountdownAgeNoteNeedsAgeWordingAndAFutureStart() throws {
-        let now = try fixedNow() // 2026-01-10
-        let future = makeModel(profile: baselineProfile(startDate: DateFixture.components(2026, 1, 11),
-                                                        useAgeWording: true),
-                               now: now, spy: Spy())
-        XCTAssertTrue(future.showsCountdownAgeNote, "141.5 future, 歲 on")
-        future.setUseAgeWording(false)
-        XCTAssertFalse(future.showsCountdownAgeNote, "141.5 歲 off")
-
-        let today = makeModel(profile: baselineProfile(startDate: DateFixture.components(2026, 1, 10),
-                                                       useAgeWording: true),
-                              now: now, spy: Spy())
-        XCTAssertFalse(today.showsCountdownAgeNote, "141.5 the start date itself is not a countdown")
-        let past = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
-                                                      useAgeWording: true),
-                             now: now, spy: Spy())
-        XCTAssertFalse(past.showsCountdownAgeNote, "141.5 past")
-        XCTAssertEqual(DisplaySettingsModel.countdownAgeNote, "倒數時寫作「年」，到了那天之後才寫「歲」")
-    }
 }

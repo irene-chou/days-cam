@@ -29,13 +29,13 @@ final class LastUnitFeedbackUITests: XCTestCase {
 
     /// 108.1／108.2: 天 alone is enabled and stays checked when tapped; the
     /// hint appears and stays until another checkbox is tapped (141.4);
-    /// 年改成歲 and 照片上寫什麼 do not move.
+    /// 年改成歲 and 顯示內容 do not move.
     func testLastUnitStaysCheckedWithAHintAndNothingMoves() {
         let day = app.buttons["天"]
         XCTAssertTrue(day.isEnabled, "108.1 not disabled")
         XCTAssertTrue(day.isSelected, "108.1 checked")
         let ageRowBefore = app.staticTexts["年改成歲"].frame
-        let contentHeadingBefore = app.staticTexts["照片上寫什麼"].frame
+        let contentHeadingBefore = app.staticTexts["顯示內容"].frame
         // The hint line is always laid out (108.2); it carries the text only
         // while showing, so the checks read its label.
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
@@ -45,7 +45,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let shown = NSPredicate(format: "label == '至少保留一個單位'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
         XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 the age-wording row did not move")
-        XCTAssertEqual(app.staticTexts["照片上寫什麼"].frame, contentHeadingBefore, "108.2 the content heading did not move")
+        XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
         app.buttons["週"].tap()
@@ -85,7 +85,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the same hint")
     }
 
-    /// 108.8 → TASK-141 (#485): with the day count off the 天數寫法 section
+    /// 108.8 → TASK-141 (#485): with the day count off the 天數單位 section
     /// is not there to tap; turning the day count on brings it back.
     func testUnitSectionIsCollapsedWhileTheDayCountIsOff() {
         toggle("日期").tap()
