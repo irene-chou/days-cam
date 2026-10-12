@@ -17,7 +17,7 @@ final class OverlayTextTapUITests: XCTestCase {
 
     /// The day-count text on the viewfinder (第 1 天 on a fresh profile).
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 '")).firstMatch
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
     }
     private var styleTab: XCUIElement { app.buttons["樣式"] }
     private var focusReticle: XCUIElementQuery {

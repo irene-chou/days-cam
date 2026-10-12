@@ -28,6 +28,9 @@ final class ProfileStore: ObservableObject {
     /// Maximum number of profiles (PRD FR-1.7).
     static let profileLimit = 20
     static let fileName = "profiles.json"
+
+    /// Name of the profile a fresh install (or a rebuilt, unreadable store) starts with.
+    static let defaultProfileName = "我的紀錄"
     /// `UserDefaults` key holding the profile to restore on next launch.
     static let lastUsedProfileIDKey = "lastUsedProfileID"
 
@@ -150,8 +153,9 @@ extension ProfileStore {
     private func seedDefaultProfile() {
         let today = calendar.dateComponents([.year, .month, .day], from: now())
         let timestamp = now()
-        let seeded = CameraProfile(name: "預設",
+        let seeded = CameraProfile(name: Self.defaultProfileName,
                                    startDate: today,
+                                   showName: true,
                                    createdAt: timestamp,
                                    updatedAt: timestamp)
         profiles = [seeded]

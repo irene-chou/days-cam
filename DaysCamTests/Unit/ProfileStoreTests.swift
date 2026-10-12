@@ -77,27 +77,28 @@ final class ProfileStoreTests: XCTestCase {
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
         let seeded = try XCTUnwrap(makeStore(at: instant).load().first)
 
-        XCTAssertEqual(seeded.name, "預設", "3.2")
+        XCTAssertEqual(seeded.name, ProfileStore.defaultProfileName, "3.2")
+        XCTAssertEqual(ProfileStore.defaultProfileName, "我的紀錄", "119.1")
         XCTAssertEqual(seeded.startDate, DateFixture.components(2026, 1, 10), "3.2")
         XCTAssertEqual(seeded.countingRule, .dayOne, "3.2")
         XCTAssertTrue(seeded.showDayCount, "3.2")
         XCTAssertFalse(seeded.showDate, "3.2")
-        XCTAssertFalse(seeded.showName, "3.2")
+        XCTAssertTrue(seeded.showName, "119.1 name is shown by default")
         XCTAssertEqual(seeded.displayUnits, [.day], "3.2")
         XCTAssertFalse(seeded.useAgeWording, "3.2")
         XCTAssertEqual(seeded.position, .anchor(.bottomTrailing), "3.2")
         XCTAssertEqual(seeded.style, OverlayStyle(legacyTheme: .classicWhite), "3.2")
     }
 
-    /// The seeded profile must print 第 1 天 on its first day, which is the
-    /// whole point of seeding it (PRD G-1).
+    /// The seeded profile must print 我的紀錄 第 1 天 on its first day, which is
+    /// the whole point of seeding it (PRD G-1, TASK-119).
     func testSeededProfileRendersDayOneOnTheDayItWasSeeded() throws {
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
         let seeded = try XCTUnwrap(makeStore(at: instant).load().first)
         let rendered = TemplateRenderer().render(profile: seeded,
                                                  capturedAt: instant,
                                                  calendar: DateFixture.taipei)
-        XCTAssertEqual(rendered, "第 1 天")
+        XCTAssertEqual(rendered, "\(ProfileStore.defaultProfileName) 第 1 天", "119.1")
     }
 
     func testLastUsedProfileIdentifierPointsAtTheSeededProfile() throws {
@@ -385,6 +386,8 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 1, "3.28")
         XCTAssertEqual(loaded.first?.startDate, DateFixture.components(2026, 3, 5), "3.28 reseeded for today")
         XCTAssertTrue(store.didRecoverFromCorruption, "3.28")
+        XCTAssertEqual(loaded.first?.name, ProfileStore.defaultProfileName, "119.5")
+        XCTAssertEqual(loaded.first?.showName, true, "119.5")
 
         let saved = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             .filter { $0.hasPrefix("\(ProfileStore.fileName).corrupt-") }

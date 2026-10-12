@@ -47,7 +47,7 @@ final class PanelOpenViewfinderUITests: XCTestCase {
             seen.append(label)
             attach("98.8_panel-open_\(label)")
             // The overlay text is still above the panel on every ratio (98.6).
-            let text = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '第 '")).firstMatch
+            let text = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
             XCTAssertTrue(text.exists, "\(label): the day-count text is on screen")
             XCTAssertLessThan(text.frame.maxY, app.buttons["樣式"].frame.minY, "\(label): 98.6 the text is above the panel")
             ratioButton.tap()

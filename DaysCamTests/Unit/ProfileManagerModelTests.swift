@@ -28,7 +28,7 @@ final class ProfileManagerModelTests: XCTestCase {
     private func makeStore() throws -> ProfileStore {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults)
-        store.load() // seeds "預設"
+        store.load() // seeds ProfileStore.defaultProfileName
         return store
     }
 
@@ -86,7 +86,7 @@ final class ProfileManagerModelTests: XCTestCase {
         let second = try addProfile("小寶", to: store)
         let model = try makeModel(store: store)
 
-        XCTAssertEqual(model.rows.map(\.name), ["預設", "小寶"])
+        XCTAssertEqual(model.rows.map(\.name), [ProfileStore.defaultProfileName, "小寶"])
         XCTAssertEqual(model.rows.filter(\.isCurrent).map(\.id), [second.id])
     }
 
@@ -136,7 +136,7 @@ final class ProfileManagerModelTests: XCTestCase {
 
         model.addProfile()
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔"])
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "新設定檔"])
         XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(model.selectedProfileID, store.profiles.last?.id)
         XCTAssertEqual(store.profiles.last?.startDate, DateFixture.components(2026, 1, 10))
@@ -157,7 +157,7 @@ final class ProfileManagerModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 2)
         model.path = []
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設"], "106.1 nothing left behind")
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName], "106.1 nothing left behind")
         XCTAssertEqual(store.selectedProfileID, original, "106.1 back on the original profile")
         XCTAssertEqual(model.selectedProfileID, original)
     }
@@ -198,7 +198,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.rulesModel(for: added).setName("小寶")
         model.path = []
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶"], "106.4 kept")
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶"], "106.4 kept")
         XCTAssertEqual(store.selectedProfileID, added.id, "106.4 switched to it")
         let kept = try XCTUnwrap(store.profiles.last)
         XCTAssertEqual(kept.startDate, DateFixture.components(2026, 1, 10), "106.4 start date is today")
@@ -223,7 +223,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.rulesModel(for: added).setCountingRule(.dayZero)
         model.path = []
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔"], "106.5")
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "新設定檔"], "106.5")
         XCTAssertEqual(store.profiles.last?.countingRule, .dayZero)
     }
 
@@ -238,7 +238,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.rulesModel(for: added).setStartDate(try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8)))
         model.path = []
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔", "新設定檔 2"], "106.5")
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "新設定檔", "新設定檔 2"], "106.5")
     }
 
     /// 106.3: the draft's rules model shows an empty name with the automatic
@@ -262,7 +262,7 @@ final class ProfileManagerModelTests: XCTestCase {
         rules.setName("")
         rules.endEditingName()
         XCTAssertEqual(rules.nameDraft, "小寶", "A-5 applies once named")
-        XCTAssertEqual(model.rulesModel(for: store.profiles[0]).nameDraft, "預設", "existing profiles are unaffected")
+        XCTAssertEqual(model.rulesModel(for: store.profiles[0]).nameDraft, ProfileStore.defaultProfileName, "existing profiles are unaffected")
     }
 
     /// 106.7: the limit still applies; nothing is drafted at twenty.
@@ -313,7 +313,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.rulesModel(for: store.profiles[0]).setName("改名")
 
         XCTAssertEqual(written.map(\.name), ["改名"])
-        XCTAssertEqual(store.profiles[0].name, "預設", "must not bypass the injected writer")
+        XCTAssertEqual(store.profiles[0].name, ProfileStore.defaultProfileName, "must not bypass the injected writer")
     }
 
     func testAddNumbersDuplicateNames() throws {
@@ -323,7 +323,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.addProfile()
         model.addProfile()
 
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "新設定檔", "新設定檔 2"])
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "新設定檔", "新設定檔 2"])
     }
 
     // MARK: - Select / duplicate / move
@@ -350,7 +350,7 @@ final class ProfileManagerModelTests: XCTestCase {
 
         model.duplicate(id: first.id)
 
-        XCTAssertEqual(model.rows.map(\.name), ["預設", "預設 副本", "小寶"])
+        XCTAssertEqual(model.rows.map(\.name), [ProfileStore.defaultProfileName, "\(ProfileStore.defaultProfileName) 副本", "小寶"])
         XCTAssertEqual(model.selectedProfileID, first.id)
     }
 
@@ -362,9 +362,9 @@ final class ProfileManagerModelTests: XCTestCase {
 
         model.move(fromOffsets: IndexSet(integer: 2), toOffset: 0)
 
-        XCTAssertEqual(model.rows.map(\.name), ["阿公", "預設", "小寶"])
+        XCTAssertEqual(model.rows.map(\.name), ["阿公", ProfileStore.defaultProfileName, "小寶"])
         let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
-        XCTAssertEqual(reloaded.load().map(\.name), ["阿公", "預設", "小寶"])
+        XCTAssertEqual(reloaded.load().map(\.name), ["阿公", ProfileStore.defaultProfileName, "小寶"])
     }
 
     // MARK: - 26.6 Delete
@@ -377,10 +377,10 @@ final class ProfileManagerModelTests: XCTestCase {
         let first = model.profiles[0].id
 
         model.move(id: first, toIndex: 3) // dropped below the last row
-        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", ProfileStore.defaultProfileName])
 
         model.move(id: second.id, toIndex: 2) // down one slot
-        XCTAssertEqual(store.profiles.map(\.name), ["阿公", "小寶", "預設"])
+        XCTAssertEqual(store.profiles.map(\.name), ["阿公", "小寶", ProfileStore.defaultProfileName])
         model.move(id: UUID(), toIndex: 0)
         XCTAssertEqual(store.profiles.count, 3)
     }
@@ -427,13 +427,13 @@ final class ProfileManagerModelTests: XCTestCase {
         let before = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
 
         model.move(id: model.profiles[1].id, toFinalIndex: 1) // 76.2: dropped back in place
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶", "阿公"])
         let after = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
         XCTAssertEqual(before, after, "原位放手不寫入")
 
         model.move(id: model.profiles[0].id, toFinalIndex: 2) // 76.4: order survives a restart
         let reloaded = ProfileStore(directory: directory, calendar: DateFixture.taipei, defaults: defaults)
-        XCTAssertEqual(reloaded.load().map(\.name), ["小寶", "阿公", "預設"])
+        XCTAssertEqual(reloaded.load().map(\.name), ["小寶", "阿公", ProfileStore.defaultProfileName])
     }
 
     func testMoveToFinalIndexMatchesWhereTheDragShowedTheRow() throws {
@@ -444,11 +444,11 @@ final class ProfileManagerModelTests: XCTestCase {
         let first = model.profiles[0].id
 
         model.move(id: first, toFinalIndex: 2) // 57.1: down two slots
-        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", "預設"])
+        XCTAssertEqual(store.profiles.map(\.name), ["小寶", "阿公", ProfileStore.defaultProfileName])
         model.move(id: first, toFinalIndex: 0) // 57.2: back to the top
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶", "阿公"])
         model.move(id: first, toFinalIndex: 0) // same slot: no change
-        XCTAssertEqual(store.profiles.map(\.name), ["預設", "小寶", "阿公"])
+        XCTAssertEqual(store.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶", "阿公"])
     }
 
     func testDeletingTheCurrentProfileSelectsThePreviousRow() throws {
@@ -461,7 +461,7 @@ final class ProfileManagerModelTests: XCTestCase {
         model.requestDeletion(of: third.id)
         model.confirmDeletion()
 
-        XCTAssertEqual(model.rows.map(\.name), ["預設", "小寶"])
+        XCTAssertEqual(model.rows.map(\.name), [ProfileStore.defaultProfileName, "小寶"])
         XCTAssertEqual(store.selectedProfileID, model.profiles[1].id)
         XCTAssertEqual(model.selectedProfileID, model.profiles[1].id)
         XCTAssertNil(model.lastError)
