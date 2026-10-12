@@ -25,10 +25,17 @@ struct ImageCropper {
     /// origin at the top-left), the same space `bake(..., cropRect:)` draws in. The
     /// rect is `croppedSize(from:to:)` centered in `pixelSize`; an image
     /// already at the target ratio yields the full `pixelSize` rect.
+    ///
+    /// For every supported camera size the origin and the size are whole
+    /// pixels, so `bake` can rely on drawing without resampling. An odd trim
+    /// would centre the window on a half pixel (5712×4284 → 9:16 starts at
+    /// 535.5), and drawing at that offset interpolates every row, softening
+    /// the whole photo; the origin is floored instead, which keeps the size
+    /// and stays inside the image (TASK-146 #505).
     static func cropRect(forPixelSize pixelSize: CGSize, ratio aspectRatio: CaptureAspectRatio) -> CGRect {
         let size = croppedSize(from: pixelSize, to: aspectRatio)
-        return CGRect(x: (pixelSize.width - size.width) / 2,
-                      y: (pixelSize.height - size.height) / 2,
+        return CGRect(x: ((pixelSize.width - size.width) / 2).rounded(.down),
+                      y: ((pixelSize.height - size.height) / 2).rounded(.down),
                       width: size.width,
                       height: size.height)
     }
