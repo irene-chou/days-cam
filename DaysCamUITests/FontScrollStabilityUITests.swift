@@ -38,14 +38,15 @@ final class FontScrollStabilityUITests: XCTestCase {
         }
     }
 
-    /// One slow drag inside the list area (below the sub-tab icons, above the
-    /// screen's bottom edge), so the gesture never starts on the camera view
-    /// above, where a downward drag would collapse the panel. `up` moves the
-    /// content up.
+    /// One slow drag inside the list area (below the sub-tab icons, well above
+    /// the screen's bottom edge), so the gesture never starts on the camera
+    /// view above, where a downward drag would collapse the panel, nor in the
+    /// home-indicator strip, where iOS 26 takes the touch for itself. `up`
+    /// moves the content up.
     private func drag(up: Bool) {
         let height = app.windows.firstMatch.frame.height
         let listTop = app.buttons["字型"].frame.maxY + 8
-        let listBottom = height - 20
+        let listBottom = height - 80
         let length = min(140, listBottom - listTop - 6)
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let startY = up ? listBottom : listTop
@@ -75,7 +76,13 @@ final class FontScrollStabilityUITests: XCTestCase {
             XCTAssertLessThanOrEqual(now.heading, last.heading + 0.5, "150.2 \(label) heading rose at down#\(step)")
             XCTAssertLessThanOrEqual(now.license, last.license + 0.5, "150.2 \(label) license rose at down#\(step)")
             if step % 6 == 0 { attach("150.9_\(label)_down\(String(format: "%02d", step))") }
-            if abs(now.license - last.license) < 0.5 { reachedBottom = true; break }
+            if abs(now.license - last.license) < 0.5 {
+                // The list starts at the top, so a drag that moves nothing at
+                // once means the gesture missed the list, not the bottom.
+                XCTAssertGreaterThan(step, 1, "150.2 \(label) first drag did not scroll")
+                reachedBottom = true
+                break
+            }
             last = now
         }
         XCTAssertTrue(reachedBottom, "150.2 \(label) reached the bottom")
