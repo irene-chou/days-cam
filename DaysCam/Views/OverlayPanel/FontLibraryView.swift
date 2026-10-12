@@ -11,7 +11,6 @@ struct FontListView: View {
     @State private var showsLicense = false
     /// The name and size text follow Dynamic Type, so a row grows with them.
     @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
-    @ScaledMetric(relativeTo: .caption) private var sizeTextSize: CGFloat = 12
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .subheadline) private var weightTextSize: CGFloat = FontListView.weightTextSize
 
@@ -230,13 +229,6 @@ struct FontListView: View {
                 Text(weightName)
                     .font(.system(size: 13))
                     .foregroundColor(CameraTheme.inkSecondary)
-                    .fixedSize()
-            }
-            if case .notDownloaded = cell.status,
-               let size = FontCatalog.entry(for: cell.fontID).downloadSizeText {
-                Text(size)
-                    .font(.system(size: sizeTextSize))
-                    .foregroundColor(CameraTheme.inkTertiary)
                     .fixedSize()
             }
             if !(cell.canExpand && cell.isSelected) {

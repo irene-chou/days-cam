@@ -388,7 +388,8 @@ final class FontLibraryModel: ObservableObject {
                                : library.state(for: entry.fontID)
         let isMultiWeight = entry.weights.count > 1
         let isMultiWeightSelected = isSelected && isMultiWeight
-        let canExpand = isExpandable(entry)
+        let rowStatus = status(of: entry.fontID, state: state)
+        let canExpand = isExpandable(entry, rowStatus: rowStatus)
         let isExpanded = canExpand && expandedFontID == entry.fontID
         let pendingStatus: Status? = {
             guard isMultiWeight, !isExpanded, let unit = pendingWeight, unit.fontID == entry.fontID else { return nil }
@@ -401,7 +402,7 @@ final class FontLibraryModel: ObservableObject {
                     name: Self.listName(of: entry),
                     state: state,
                     isSelected: isSelected,
-                    status: status(of: entry.fontID, state: state),
+                    status: rowStatus,
                     canDelete: entry.source == .openSource && hasDownloadedFace(entry),
                     weights: isMultiWeightSelected || isExpanded
                         ? weightCells(of: entry, selected: isSelected ? selectedWeight : nil) : [],
@@ -414,10 +415,17 @@ final class FontLibraryModel: ObservableObject {
     }
 
     /// Whether the font's row can expand its weights (TASK-115): several
-    /// weights, and the font is selected or already on the device.
-    private func isExpandable(_ entry: FontCatalogEntry) -> Bool {
+    /// weights, and the row is the selected one or shows no download state.
+    /// A row with a download arrow, ring or retry icon (the default face, or
+    /// for the selected font its stored face, is not on the device) shows
+    /// that icon alone: no chevron, no expanding.
+    private func isExpandable(_ entry: FontCatalogEntry, rowStatus: Status) -> Bool {
         guard entry.weights.count > 1 else { return false }
-        return entry.fontID == currentFontID || hasDownloadedFace(entry)
+        if entry.fontID == currentFontID { return true }
+        switch rowStatus {
+        case .none, .justCompleted: return true
+        case .notDownloaded, .downloading, .preparing, .failed: return false
+        }
     }
 
     /// Whether any face of the font is on the device: deleting removes them all.
@@ -530,7 +538,8 @@ final class FontLibraryModel: ObservableObject {
     /// weight buttons without applying the font. Expanding one row collapses
     /// the one that was open. Single-weight fonts have no chevron.
     func toggleExpansion(of fontID: OverlayFontID) {
-        guard isExpandable(FontCatalog.entry(for: fontID)) else { return }
+        let entry = FontCatalog.entry(for: fontID)
+        guard isExpandable(entry, rowStatus: status(of: fontID, state: library.state(for: fontID))) else { return }
         expandedFontID = expandedFontID == fontID ? nil : fontID
     }
 

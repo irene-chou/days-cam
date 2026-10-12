@@ -25,12 +25,13 @@ final class FontRowChevronUITests: XCTestCase {
         app.buttons["字型"].tap()
     }
 
-    /// A font gets a chevron only once it is on the device, so these tests need
-    /// `notoSerifTC-regular.otf` copied into the app's Application Support/Fonts
-    /// (a download needs the network) and `TEST_RUNNER_DAYSCAM_UI_NOTO_SEEDED=1`.
+    /// A font gets a chevron only once its default face is on the device, so
+    /// these tests need `notoSerifTC.otf` (Bold) and `notoSerifTC-regular.otf`
+    /// copied into the app's Application Support/Fonts (a download needs the
+    /// network) and `TEST_RUNNER_DAYSCAM_UI_NOTO_SEEDED=1`.
     private func requireSeededNoto() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DAYSCAM_UI_NOTO_SEEDED"] == "1",
-                          "seed notoSerifTC-regular.otf and set DAYSCAM_UI_NOTO_SEEDED=1")
+                          "seed notoSerifTC.otf and notoSerifTC-regular.otf and set DAYSCAM_UI_NOTO_SEEDED=1")
     }
 
     private var pingFang: XCUIElement { app.buttons["蘋方-繁"] }
@@ -113,7 +114,7 @@ final class FontRowChevronUITests: XCTestCase {
         XCTAssertTrue(weight("bold").exists && weight("black").exists)
         XCTAssertFalse(weight("regular").isSelected || weight("bold").isSelected || weight("black").isSelected,
                        "115.2 no yellow frame")
-        XCTAssertTrue(noto.label.contains("未下載"), "115.8 the chevron did not start applying/downloading the font")
+        XCTAssertFalse(noto.isSelected, "115.8 the chevron did not apply the font")
         tapChevron(of: noto)
         XCTAssertFalse(weight("regular").waitForExistence(timeout: 2), "the chevron collapses it again")
         scrollToTop()
@@ -160,5 +161,16 @@ final class FontRowChevronUITests: XCTestCase {
         XCTAssertTrue(noto.waitForExistence(timeout: 5))
         XCTAssertTrue(noto.isSelected, "115.3 still selected after relaunch")
         XCTAssertEqual(noto.value as? String, "標準", "115.3 the weight is kept")
+    }
+
+    /// B′ shot: a font with only a non-default face on the device shows its
+    /// download icon alone (no chevron, no size). Needs `notoSerifTC-regular.otf`
+    /// without `notoSerifTC.otf` and `TEST_RUNNER_DAYSCAM_UI_NOTO_PARTIAL=1`.
+    func testPartiallyDownloadedFontShowsOnlyTheDownloadIcon() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["DAYSCAM_UI_NOTO_PARTIAL"] == "1",
+                          "seed only notoSerifTC-regular.otf and set DAYSCAM_UI_NOTO_PARTIAL=1")
+        scroll(noto)
+        XCTAssertTrue(noto.label.contains("未下載"))
+        attach("115.4_partial-download-icon-only")
     }
 }

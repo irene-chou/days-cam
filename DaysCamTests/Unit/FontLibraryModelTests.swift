@@ -998,15 +998,20 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertNil(try self.cell(.notoSerifTC, in: model).accessibilityHint)
     }
 
-    /// A font with only one face on the device (the default not downloaded)
-    /// is on the device, so it has a chevron and the other faces show download icons.
-    func testFontWithOneFaceOnTheDeviceCanExpand() throws {
+    /// A row that shows a download icon shows only that: no chevron, even when
+    /// another face of the font is on the device, and also while it downloads or failed.
+    func testRowWithADownloadIconHasNoChevron() throws {
         let library = FakeFontLibrary()
         library.weightStates[noto("regular")] = .available
         let model = makeModel(library: library, current: .pingFang)
-        XCTAssertTrue(try cell(.notoSerifTC, in: model).canExpand)
-        model.toggleExpansion(of: .notoSerifTC)
-        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.status), [.none, .notDownloaded, .notDownloaded])
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).status, .notDownloaded)
+        XCTAssertFalse(try cell(.notoSerifTC, in: model).canExpand, "預設字重未下載：只有下載 icon")
+        for state in [FontState.downloading(progress: 0.4), .preparing, .failed(.other)] {
+            library.states[.notoSerifTC] = state
+            XCTAssertFalse(try cell(.notoSerifTC, in: model).canExpand, "\(state)")
+        }
+        library.states[.notoSerifTC] = .available
+        XCTAssertTrue(try cell(.notoSerifTC, in: model).canExpand, "預設字重在裝置上就有 chevron")
     }
 }
 
