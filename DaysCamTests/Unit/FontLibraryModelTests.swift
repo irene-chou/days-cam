@@ -809,14 +809,17 @@ final class FontWeightListTests: XCTestCase {
         FontDownloadID(fontID: .songti, weightID: weightID)
     }
 
-    /// 115.1: every multi-weight row can expand (chevron); single-weight can not.
-    func testEveryMultiWeightRowCanExpand() throws {
-        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .huninn: .available]))
+    /// 115.1: a multi-weight row that is selected or on the device has a
+    /// chevron; single-weight and not-downloaded fonts do not.
+    func testOnlyOnDeviceMultiWeightRowsCanExpand() throws {
+        let model = makeModel(library: FakeFontLibrary([.notoSerifTC: .available, .huninn: .available]), current: .pingFang)
         for entry in FontCatalog.entries {
-            XCTAssertEqual(try cell(entry.fontID, in: model).canExpand, entry.weights.count > 1, "\(entry.fontID)")
+            let expected = entry.weights.count > 1 && [.pingFang, .notoSerifTC].contains(entry.fontID)
+            XCTAssertEqual(try cell(entry.fontID, in: model).canExpand, expected, "\(entry.fontID)")
         }
-        XCTAssertFalse(try cell(.songti, in: model).isSelected)
-        XCTAssertEqual(try cell(.songti, in: model).expandActionName, "展開字重", "115.9")
+        XCTAssertFalse(try cell(.songti, in: model).canExpand, "115.1 未下載的多字重字型沒有 chevron")
+        XCTAssertFalse(try cell(.notoSerifTC, in: model).isSelected)
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).expandActionName, "展開字重", "115.9")
     }
 
     /// 115.2: an unselected row expands with no framed weight, changes nothing.
@@ -894,7 +897,7 @@ final class FontWeightListTests: XCTestCase {
     /// 115.7: a missing weight of an unselected font downloads first and applies
     /// font and weight together only when that exact face finishes.
     func testMissingWeightOfAnotherFontDownloadsThenAppliesBoth() {
-        let library = FakeFontLibrary([.pingFang: .available])
+        let library = FakeFontLibrary([.pingFang: .available, .notoSerifTC: .available])
         let calls = Calls()
         let model = makeModel(library: library, current: .pingFang, calls: calls)
         model.toggleExpansion(of: .notoSerifTC)
@@ -983,15 +986,27 @@ final class FontWeightListTests: XCTestCase {
         XCTAssertEqual(calls.fontWeights, [songti("light")])
     }
 
-    /// 115.7: a not-downloaded font keeps its chevron and shows download icons.
-    func testNotDownloadedFontStillShowsAChevronAndDownloadIcons() throws {
+    /// 115.1／115.7: a font not downloaded yet has no chevron and cannot expand.
+    func testNotDownloadedFontHasNoChevronAndCannotExpand() throws {
         let model = makeModel(library: FakeFontLibrary(), current: .pingFang)
         let cell = try cell(.notoSerifTC, in: model)
-        XCTAssertTrue(cell.canExpand, "115.7 chevron on a not-downloaded font")
+        XCTAssertFalse(cell.canExpand, "未下載的字型沒有 chevron")
         XCTAssertEqual(cell.status, .notDownloaded)
         model.toggleExpansion(of: .notoSerifTC)
-        let expanded = try self.cell(.notoSerifTC, in: model)
-        XCTAssertEqual(expanded.weights.map(\.status), [.notDownloaded, .notDownloaded, .notDownloaded], "115.7 每個字重有下載圖示")
+        XCTAssertNil(model.expandedFontID, "不能展開")
+        XCTAssertTrue(try self.cell(.notoSerifTC, in: model).weights.isEmpty)
+        XCTAssertNil(try self.cell(.notoSerifTC, in: model).accessibilityHint)
+    }
+
+    /// A font with only one face on the device (the default not downloaded)
+    /// is on the device, so it has a chevron and the other faces show download icons.
+    func testFontWithOneFaceOnTheDeviceCanExpand() throws {
+        let library = FakeFontLibrary()
+        library.weightStates[noto("regular")] = .available
+        let model = makeModel(library: library, current: .pingFang)
+        XCTAssertTrue(try cell(.notoSerifTC, in: model).canExpand)
+        model.toggleExpansion(of: .notoSerifTC)
+        XCTAssertEqual(try cell(.notoSerifTC, in: model).weights.map(\.status), [.none, .notDownloaded, .notDownloaded])
     }
 }
 

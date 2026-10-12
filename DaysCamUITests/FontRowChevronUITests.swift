@@ -25,6 +25,14 @@ final class FontRowChevronUITests: XCTestCase {
         app.buttons["字型"].tap()
     }
 
+    /// A font gets a chevron only once it is on the device, so these tests need
+    /// `notoSerifTC-regular.otf` copied into the app's Application Support/Fonts
+    /// (a download needs the network) and `TEST_RUNNER_DAYSCAM_UI_NOTO_SEEDED=1`.
+    private func requireSeededNoto() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["DAYSCAM_UI_NOTO_SEEDED"] == "1",
+                          "seed notoSerifTC-regular.otf and set DAYSCAM_UI_NOTO_SEEDED=1")
+    }
+
     private var pingFang: XCUIElement { app.buttons["蘋方-繁"] }
     /// 思源宋體 sits first in the 可下載 section; its label carries the state.
     private var noto: XCUIElement {
@@ -98,7 +106,8 @@ final class FontRowChevronUITests: XCTestCase {
 
     /// 115.2／115.8: the chevron of an unselected row expands it, shows every
     /// weight unframed, and leaves the selected font alone.
-    func testChevronExpandsAnUnselectedRowWithoutApplying() {
+    func testChevronExpandsAnUnselectedRowWithoutApplying() throws {
+        try requireSeededNoto()
         tapChevron(of: noto)
         XCTAssertTrue(weight("regular").waitForExistence(timeout: 3), "115.2 expanded")
         XCTAssertTrue(weight("bold").exists && weight("black").exists)
@@ -114,7 +123,8 @@ final class FontRowChevronUITests: XCTestCase {
     }
 
     /// 115.4: expanding another row collapses the open one.
-    func testOnlyOneRowStaysExpanded() {
+    func testOnlyOneRowStaysExpanded() throws {
+        try requireSeededNoto()
         tapChevron(of: noto)
         XCTAssertTrue(weight("regular").waitForExistence(timeout: 3))
         scrollToTop()
@@ -126,15 +136,13 @@ final class FontRowChevronUITests: XCTestCase {
 
     /// 115.3 end to end, with the B′ shots: choosing a usable weight of an
     /// unselected font applies font and weight together, keeps the card open
-    /// and frames that weight. The face must already be on the device (copy
-    /// `notoSerifTC-regular.otf` into the app's Application Support/Fonts);
-    /// otherwise the test is skipped, since a download needs the network.
+    /// and frames that weight (needs the seeded face, see `requireSeededNoto`).
     func testChoosingAWeightOfAnotherFontAppliesBoth() throws {
+        try requireSeededNoto()
         XCTAssertTrue(pingFang.waitForExistence(timeout: 5))
         attach("115.1_font-page-initial")
         tapChevron(of: noto)
         XCTAssertTrue(weight("regular").waitForExistence(timeout: 3))
-        try XCTSkipIf(weight("regular").label.contains("下載"), "seed notoSerifTC-regular.otf to run this test")
         scroll(noto)
         attach("115.2_unselected-row-expanded")
         scroll(weight("regular"))

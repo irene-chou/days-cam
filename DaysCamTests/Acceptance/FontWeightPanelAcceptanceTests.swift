@@ -348,8 +348,9 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
             list.listDidAppear()
             let cells = list.sections.flatMap(\.cells)
             let expandable = Set(cells.filter(\.canExpand).map(\.fontID))
+            // PingFang is always on the device; the others only when selected.
             let multiWeight = Set(FontCatalog.entries.filter { $0.weights.count > 1 }.map(\.fontID))
-            XCTAssertEqual(expandable, multiWeight, "115.1 \(selected)")
+            XCTAssertEqual(expandable, multiWeight.intersection([selected, .pingFang]), "115.1 \(selected)")
             let count = FontCatalog.entry(for: selected).weights.count
             XCTAssertEqual(cells.filter { !$0.weights.isEmpty }.map(\.fontID), count > 1 ? [selected] : [], "\(selected)")
             for cell in cells where cell.fontID != selected {
