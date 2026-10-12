@@ -10,7 +10,7 @@
 3. **順序**：守門測試 → 葉節點 `@Observable` → `@MainActor` 補齊 → 拆 `CameraScreenModel`（呈現 → 縮圖 → 字型 → 疊字編輯 → 拍攝）→ `CameraScreenModel` 本身轉 `@Observable` → strict concurrency `targeted` → `complete`。
 4. **與進行中卡片的衝突**：TASK-122（#458）、TASK-128（#468）、TASK-129（#469）都改 `CameraScreenModel.swift`；TASK-124（#464）、TASK-134（#474）改 `ProfileStore`；TASK-125／130／131 改 `CameraService`；TASK-132 改 `FontLibrary`。拆分步驟必須排在它們之後（見 §7）。
 5. **`DaysCamCore` SPM**：現在不做。等 strict concurrency `complete` 後再評估，最小版本只放純計算（見 §6）。
-6. **135.2**：Lead 已於 rinclaw 試跑 `targeted`，並行相關 22 條（11 條 Swift 6 會變 error），集中在 `CameraScreenModel`（10）與 `FontLibrary`（6），見 §5.1。
+6. **135.2**：Lead 已於模擬器主機試跑 `targeted`，並行相關 22 條（11 條 Swift 6 會變 error），集中在 `CameraScreenModel`（10）與 `FontLibrary`（6），見 §5.1。
 
 ---
 
@@ -228,7 +228,7 @@ func update(id: UUID, _ change: (inout CameraProfile) -> Void) throws -> CameraP
 
 ### 5.1 135.2 試編譯
 
-**結果（Lead 2026-10-12，rinclaw Xcode 26.3，main 2af1e1c＋本文件，`build-for-testing`、`SWIFT_STRICT_CONCURRENCY=targeted`，log `/tmp/task135-targeted.log`）**：編譯成功；去重後 55 條 warning，其中**並行相關 22 條**（其餘 33 條為 unused result、`#Preview` previewDevice、AppIntents metadata、iOS 17 deprecation 等既有警告）。其中 11 條已標「Swift 6 會變 error」。
+**結果（Lead 2026-10-12，模擬器主機 Xcode 26.3，main 2af1e1c＋本文件，`build-for-testing`、`SWIFT_STRICT_CONCURRENCY=targeted`，log `/tmp/task135-targeted.log`）**：編譯成功；去重後 55 條 warning，其中**並行相關 22 條**（其餘 33 條為 unused result、`#Preview` previewDevice、AppIntents metadata、iOS 17 deprecation 等既有警告）。其中 11 條已標「Swift 6 會變 error」。
 
 | 檔案 | 條數 | 類別 |
 |---|---|---|
@@ -281,7 +281,7 @@ sed -E 's#^.*/DaysCam/##; s#:[0-9]+:[0-9]+: warning: # | #' targeted.txt \
 | S3 | 改 `complete`，逐檔清警告；`CameraService` 依 O7 定出隔離邊界 | Lead＋core-device 主修 | 每個擁有者的修正可單獨合併，設定變更最後一個 PR | 高（相機並行） |
 | S4（選做） | Swift 6 language mode；另評估 Xcode 26 的 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`（App target 預設 main actor，可大量省掉手動標註） | Lead | 是 | 中 |
 
-注意：rinclaw 的 Xcode 上限是 26.3，任何新設定都要在 26.3 驗證過。
+注意：模擬器主機的 Xcode 上限是 26.3，任何新設定都要在 26.3 驗證過。
 
 ---
 
@@ -291,7 +291,7 @@ sed -E 's#^.*/DaysCam/##; s#:[0-9]+:[0-9]+: warning: # | #' targeted.txt \
 
 | | 內容 |
 |---|---|
-| 利 | 純邏輯測試可在 macOS 主機 `swift test` 跑，不佔 rinclaw 模擬器名額；增量編譯較快；模組邊界強制分層（UI 不能偷用 internal）；strict concurrency 可在套件先開 `complete` |
+| 利 | 純邏輯測試可在 macOS 主機 `swift test` 跑，不佔模擬器主機名額；增量編譯較快；模組邊界強制分層（UI 不能偷用 internal）；strict concurrency 可在套件先開 `complete` |
 | 弊 | 對外型別都要 `public` 並依 AGENTS 補英文文件註解，改動面大；`project.yml` 要加 local package；測試 target 拆分；檔案所有權表路徑全改；與進行中的 core-style／core-device 卡衝突機率高；`OverlayRenderer`、`OverlayMetrics`、`FontLibrary` 依賴 UIKit／CoreText，拆不進去，邊界不如預期乾淨 |
 
 **建議：現在不做。** S3（`complete`）完成後再評估；若做，先只放 `Models/`＋`DayCountCalculator`＋`TemplateRenderer`（日期／天數計算的核心，也是最需要大量測試的部分）。

@@ -25,7 +25,7 @@
 任務：TASK-XX／Issue URL（目標、驗收、依賴、相關檔案見卡片）
 角色：core-style／core-device／ui-shell／ui-panel／qa
 風險：normal／high＋原因；假設與容易誤判的事項
-執行位置：rinclaw（名額）或本機；模擬器名稱
+執行位置：模擬器主機（名額）或本機；模擬器名稱
 交付：PR URL、head SHA、驗證命令／結果、待人類確認
 ```
 

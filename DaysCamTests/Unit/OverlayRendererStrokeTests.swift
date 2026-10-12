@@ -80,7 +80,7 @@ final class OverlayRendererStrokeTests: XCTestCase {
             fontSize = pointSize
             let radius = max(1, Int(6 * fontSize / 17) - 2) // Exclude raster hinting and the antialiased outside boundary (up to 2px).
             // Explicit types: the untyped closure pair times out the type
-            // checker on Xcode 26.3 (rinclaw).
+            // checker on Xcode 26.3 (Intel simulator host).
             let radiusSquared: Int = radius * radius
             let offsets: [(Int, Int)] = (-radius...radius).flatMap { (y: Int) -> [(Int, Int)] in
                 (-radius...radius).compactMap { (x: Int) -> (Int, Int)? in
@@ -209,7 +209,7 @@ final class OverlayRendererStrokeTests: XCTestCase {
         let font = try XCTUnwrap(UIFont(name: "PingFangTC-Semibold", size: fontSize))
         let text = "👨‍👩‍👧‍👦"
         // The renderer leaves a glyph alone when Core Text has no outline for
-        // it. Some simulator runtimes (rinclaw's iOS 26.3 Intel one) ship an
+        // it. Some simulator runtimes (the iOS 26.3 Intel one) ship an
         // Apple Color Emoji without the pictures: every emoji falls back to
         // one outlined placeholder glyph, which is not a bitmap and gets a
         // stroke like any other outline. Skip there (#427).
