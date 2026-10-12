@@ -286,22 +286,20 @@ struct FormatTabView: View {
                                      set: { model.displaySettings.setUseAgeWording($0) }))
                 .tint(CameraTheme.accentControl)
                 .labelsHidden()
-                // Stays tappable while the day count is off even without
-                // the year ticked, so the tap reaches the model and gets
-                // the 先打開天數 feedback (108.8); the dimmed look for "no
-                // year" is kept below.
-                .disabled(model.displaySettings.isAgeWordingToggleDisabled && !model.displaySettings.areUnitsInert)
+                // Always enabled, never dimmed, whatever is checked: it
+                // renames the year checkbox instead (TASK-139 #486).
         }
-        .opacity(model.displaySettings.isAgeWordingToggleDisabled ? 0.4 : 1)
         // One element, like the display switches, so VoiceOver reads the
         // label with the switch and a tap anywhere on the row is the switch.
         .accessibilityElement(children: .combine)
         .accessibilityLabel("年改成歲")
     }
 
+    /// The checkbox label; the year reads 歲 while `useAgeWording` is on,
+    /// checked or not (TASK-139 #486).
     private func unitName(_ unit: DisplayUnit) -> String {
         switch unit {
-        case .year: return "年"
+        case .year: return model.displaySettings.profile.useAgeWording ? "歲" : "年"
         case .month: return "月"
         case .week: return "週"
         case .day: return "天"

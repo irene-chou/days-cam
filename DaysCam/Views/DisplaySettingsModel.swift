@@ -191,8 +191,8 @@ extension DisplaySettingsModel {
     /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, TASK-27).
     ///
     /// Unchecking the last remaining unit is refused (`lastRejection`,
-    /// TASK-108): `displayUnits` may never be empty. Unchecking the year also
-    /// turns `useAgeWording` off (FR-11.4).
+    /// TASK-108): `displayUnits` may never be empty. `useAgeWording` is left
+    /// alone either way (FR-11.4 as amended by TASK-139 #486).
     func toggleUnit(_ unit: DisplayUnit) {
         // With the day count off the units have nothing to format: the tap
         // changes nothing (107.4; the feedback is TASK-108's 108.8).
@@ -205,12 +205,7 @@ extension DisplaySettingsModel {
                 reject(.lastUnit(unit))
                 return
             }
-            mutate { profile in
-                profile.displayUnits.remove(unit)
-                if unit == .year {
-                    profile.useAgeWording = false
-                }
-            }
+            mutate { $0.displayUnits.remove(unit) }
         } else {
             mutate { $0.displayUnits.insert(unit) }
         }
@@ -224,22 +219,15 @@ extension DisplaySettingsModel {
         profile.displayUnits.contains(unit) && profile.displayUnits.count == 1
     }
 
-    /// Whether the "歲措辭" toggle should be disabled: it only applies to the
-    /// year unit (FR-2.9, 0.2 FR-11.4).
-    var isAgeWordingToggleDisabled: Bool {
-        !profile.displayUnits.contains(.year)
-    }
-
-    /// Sets `useAgeWording`. A no-op while the year is not checked — the
-    /// view is expected to disable the toggle in that state already; this is
-    /// the defensive backstop (FR-2.9).
+    /// Sets `useAgeWording`, whether or not the year is checked: the switch
+    /// only renames the year unit 年 → 歲 (FR-11.4 as amended by TASK-139
+    /// #486; it used to need the year checked).
     func setUseAgeWording(_ newValue: Bool) {
         guard newValue != profile.useAgeWording else { return }
         guard !areUnitsInert else {
             reject(.dayCountOff)
             return
         }
-        guard profile.displayUnits.contains(.year) else { return }
         mutate { $0.useAgeWording = newValue }
     }
 }

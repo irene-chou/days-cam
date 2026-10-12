@@ -22,9 +22,6 @@ enum CameraProfileValidationError: Error, Equatable {
     case displaySwitchesAllOff
     /// `displayUnits` is empty (PRD 0.2 §4.1, replacing 0.1 invariant 4).
     case displayUnitsEmpty
-    /// `useAgeWording` is on while `displayUnits` lacks `.year`
-    /// (PRD 0.2 §4.1, replacing 0.1 invariant 5).
-    case ageWordingRequiresYearUnit
     /// `style.sizeScale` is outside 70...160 or not a multiple of 5 (PRD 0.2 §4.1).
     case sizeScaleOutOfRange(Int)
     /// `position` is `.custom` with `x` or `y` outside 0...1 (PRD 0.2 §4.1).
@@ -209,9 +206,9 @@ extension CameraProfile {
             throw CameraProfileValidationError.displayUnitsEmpty
         }
 
-        if useAgeWording && !displayUnits.contains(.year) {
-            throw CameraProfileValidationError.ageWordingRequiresYearUnit
-        }
+        // `useAgeWording` without `.year` is valid: the switch only renames
+        // the year unit and is independent of it (TASK-139 #486, dropping
+        // 0.1 invariant 5).
 
         guard style.hasValidSizeScale else {
             throw CameraProfileValidationError.sizeScaleOutOfRange(style.sizeScale)
