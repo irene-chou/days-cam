@@ -21,7 +21,9 @@ final class AlbumAccessUITests: XCTestCase {
     /// Waits up to `timeout` for `target`, answering the system Photos prompt
     /// with full access if it shows first. The prompt is the real library's,
     /// not the faked outcome under test, so answering it changes nothing here.
-    private func allowPhotosPromptIfShown(until target: XCUIElement, timeout: TimeInterval = 15) -> Bool {
+    /// The timeout covers a cold simulator: when this class runs first in a CI
+    /// shard, the first springboard query alone can take ~16 s.
+    private func allowPhotosPromptIfShown(until target: XCUIElement, timeout: TimeInterval = 30) -> Bool {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.buttons.matching(
             NSPredicate(format: "label IN %@", ["允許完整取用", "Allow Full Access"])).firstMatch
