@@ -1,11 +1,14 @@
-# 開源字型清單（0.3）
+# 開源字型清單
 
-App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-32），由 TASK-31 產生；換版本時新增 `dayscam-fonts` 的 tag 並同步本表。
+App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`／`FontCatalogDownloadFamilies`，換版本時新增 `dayscam-fonts` 的 tag 並同步本表與程式。
 
-- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v4`（TASK-142 起；`v1`～`v3` 保留不覆寫。`v2` 含 `v1` 的三個原檔加辰宇落雁體，`v3` 含 `v2` 全部檔案加思源宋體 Regular／Black，`v4` 含 `v3` 全部檔案加 30 套 63 個字重檔，路徑與 SHA-256 與 `v3` 相同的檔案不變）
+- 下載點：公開 repo [`irene-chou/dayscam-fonts`](https://github.com/irene-chou/dayscam-fonts)，tag `v4`。舊 tag `v1`～`v3` 保留不覆寫；每個新 tag 包含前一版全部檔案，路徑與 SHA-256 相同的檔案不變，已下載的使用者不需重新下載。
 - 主要網址：`https://cdn.jsdelivr.net/gh/irene-chou/dayscam-fonts@v4/<路徑>`
 - 備援網址：`https://raw.githubusercontent.com/irene-chou/dayscam-fonts/v4/<路徑>`
-- 2026-10-06 已對 `v1` 的 6 個網址完整下載驗證，大小與 SHA-256 一致（驗收 31.1，紀錄見 #162）；`v2` 的 8 個網址待 tag 推上後驗證（驗收 40.5，#219）；2026-10-10 以 `curl -sIL` 確認 `v3` 的 Regular、Black 與粉圓在 jsDelivr／raw 皆回 200，raw 的 content-length 與本表 bytes 相同（驗收 91.3，#384）
+- jsDelivr 不服務超過 20 MiB 的檔案（回 403），這些檔案由備援網址下載；`FontLibrary` 對主要網址的任何非 2xx 都改試備援。`v4` 全部網址已實測下載，大小與 SHA-256 一致。
+- 原檔不子集化、不改名（PRD-0.3 A-1）。單檔超過 30 MB 的（內海 SemiBold／Bold、苦累蛙 Bold、全字庫正楷／正宋）照放，因為是使用者自選下載。
+- 思源宋體 OTF 取自 notofonts/noto-cjk `f8d157532fbfaeda587e826d4cd5b21a49186f7c` 的 `Serif/SubsetOTF/TC/`；預設字重為 `bold`。
+- **不含**清松手寫體、莫大毛筆、正風毛筆（授權待作者確認）。
 
 | fontID | 顯示名稱 | 路徑 | bytes | SHA-256 | PostScript | 字型版本 | App 內授權檔 |
 |---|---|---|---|---|---|---|---|
@@ -79,9 +82,48 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
 | `wdxl` | WD-XL 滑油字 | `wd-xl-lubrifont/WD-XLLubrifontTC-Regular.otf` | 6161104 | `51c179e927526a9acd88b7722909e44c958133733ca316e824f812a28713768b` | `WD-XLLubrifontTC-Regular` | 2.100 | `wdxl-OFL.txt` |
 | `cubic11` | 俐方體 11 號 | `cubic-11/Cubic_11.ttf` | 2773732 | `0193f5f033612496df6b45ee92ac3b335bc6a5a24ff95da55ca87b33e57dcf62` | `Cubic_11` | 1.451 | `cubic11-OFL.txt` |
 
+## 類型與字重
+
+清單把可下載字型依 catalog 順序（黑、圓、宋、楷、手寫、可愛）排列；類型記在 `FontCatalog.downloadFamilies`。預設字重是新選取時用的那一個：有 Bold 取 Bold，其餘取最粗的。下表列 v4 新增的 30 套。
+
+| 類型 | 字型 | 字重（預設以 ★ 標示） | 預設字重 PostScript | 預設字重大小 |
+|---|---|---|---|---|
+| 黑 | 思源黑體 | 標準、粗★、特粗 | `NotoSansTC-Bold` | 5.8 MB |
+| 黑 | 台北黑體 | 細、標準、粗★ | `TaipeiSansTCBeta-Bold` | 21.7 MB |
+| 黑 | 源石黑體 | 標準、粗★、特粗 | `GenSekiGothic2TW-B` | 15.0 MB |
+| 黑 | 昭源黑體 | 標準、粗★、特粗 | `ChironHeiHK-Bold` | 17.1 MB |
+| 黑 | 朱古力黑體 | 標準★ | `ChocolateClassicalSans-Regular` | 12.2 MB |
+| 黑 | 未來熒黑 | 標準、粗★、特粗 | `GlowSansTC-Normal-Bold` | 9.0 MB |
+| 圓 | 源泉圓體 | 標準、粗★、特粗 | `GenSenRounded2TW-B` | 15.8 MB |
+| 圓 | 獅尾圓體 | 標準、粗★、特粗 | `SweiGothicCJKtc-Bold` | 15.8 MB |
+| 圓 | 昭源環方 | 標準、粗★、特粗 | `ChironGoRoundTC-Bold` | 20.5 MB |
+| 宋 | 源雲明體 | 標準、中粗、半粗★ | `GenWanMin2TW-SB` | 22.6 MB |
+| 宋 | 源流明體 | 標準、粗★、特粗 | `GenRyuMin2TW-B` | 16.2 MB |
+| 宋 | 獅尾四季春 | 標準、粗★、特粗 | `SweiSpringCJKtc-Bold` | 17.3 MB |
+| 宋 | 獅尾加糖宋體 | 標準、粗★、特粗 | `SweiSugarCJKtc-Bold` | 29.0 MB |
+| 宋 | 昭源宋體 | 標準、粗★、特粗 | `ChironSungHK-Bold` | 26.6 MB |
+| 宋 | 仙人掌明體 | 標準★ | `CactusClassicalSerif-Regular` | 28.5 MB |
+| 宋 | 全字庫正宋體 | 標準★ | `TW-Sung-98_1` | 35.3 MB |
+| 宋 | 宇文天穹 | 標準★ | `UoqMunThenKhung-Regular` | 4.9 MB |
+| 楷 | 霞鶩文楷 TC | 標準、中粗★ | `LXGWWenKaiTC-Medium` | 15.0 MB |
+| 楷 | 全字庫正楷體 | 標準★ | `TW-Kai-98_1` | 36.9 MB |
+| 楷 | 教育部標準楷書 | 標準★ | `TW-MOE-Std-Kai` | 15.8 MB |
+| 楷 | 文鼎 PL 中楷 | 標準★ | `UKaiTW` | 17.2 MB |
+| 手寫 | 內海字體 | 標準、半粗、粗★ | `NaikaiFont-Bold` | 38.6 MB |
+| 手寫 | 小賴字體 | 標準★ | `Xiaolai` | 22.2 MB |
+| 手寫 | 悠哉字體 | 標準、中粗★ | `Yozai-Medium` | 15.2 MB |
+| 手寫 | 何某手寫體 | 標準、粗★ | `NaniFont-Bold` | 18.5 MB |
+| 手寫 | 霞鶩漫黑 | 標準★ | `LXGWMarkerGothic-Regular` | 3.2 MB |
+| 手寫 | 苦累蛙圓體 | 標準、粗★ | `KurewaGothicCjkTc-Bold` | 36.5 MB |
+| 可愛 | 大波浪圓體 | 標準、粗★ | `PopGothicCjkTc-Bold` | 10.3 MB |
+| 可愛 | WD-XL 滑油字 | 標準★ | `WD-XLLubrifontTC-Regular` | 6.2 MB |
+| 可愛 | 俐方體 11 號 | 標準★ | `Cubic_11` | 2.8 MB |
+
+磁碟路徑：預設字重為 `<fontID>.<ext>`，其他字重為 `<fontID>-<weightID>.<ext>`。系統字型的持久化：舊 `downloadedSystemFontIDs` 只代表預設 face，`downloadedSystemFontWeights` 記錄非預設的 `<fontID>/<weightID>`，讀取時相容舊紀錄。
+
 ## 著作權聲明（授權頁顯示用）
 
-逐字取自**字型檔的 copyright 欄位**（`kCTFontCopyrightNameKey`），不改寫。粉圓與芫荽的字型欄位和授權檔首段內容一致；思源宋體的上游 LICENSE 沒有著作權行，所以一律以字型檔欄位為準（粉圓欄位中的 `(x)` 是原文，照錄）。
+逐字取自**字型檔的 copyright 欄位**（`kCTFontCopyrightNameKey`），不改寫；英文在前、繁中（若有）在後，`\r\n` 一律寫成換行，各檔相同者只列一次。粉圓的 `(x)` 是原文，照錄。字型檔欄位是空的，改取隨檔授權檔（或發行 zip 內授權檔）首段的著作權行：源石黑體、源泉圓體、源雲明體、源流明體（發行 zip 的 `SIL_Open_Font_License_1.1.txt`）、仙人掌明體（上游 `license.md`）；獅尾四季春、獅尾加糖宋體的字型與授權檔都沒有著作權人（授權檔是未填寫的 OFL 範本），授權頁寫明這一點與作者。思源宋體三個字重的 copyright 相同，授權頁逐 face 列檔名與 copyright。
 
 - **粉圓**：
 
@@ -97,17 +139,12 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
   ```
 - **思源宋體**：`© 2017-2024 Adobe (http://www.adobe.com/).`
 - **芫荽**：`Copyright 2025 The Iansui Project Authors (https://github.com/ButTaiwan/iansui)`
-- **辰宇落雁體**：字型檔有英文與繁中兩筆 copyright 記錄，兩行都列（英文在前）。先前紀錄為上游 repo 沒有附授權檔；TASK-89 查證的固定 commit `6e36815b0bec9f4f948298698d00b27a5f0b65c1` 已有 [license.txt](https://github.com/Chenyu-otf/chenyuluoyan_thin/blob/6e36815b0bec9f4f948298698d00b27a5f0b65c1/license.txt)。既有 `chenyuluoyan-OFL.txt` 由 Lead 依字型內嵌聲明與 OFL 1.1 全文整理（與 `dayscam-fonts@v2` 的 `chenyuluoyan/OFL.txt` 逐字相同）。
+- **辰宇落雁體**：字型檔有英文與繁中兩筆 copyright 記錄，兩行都列（英文在前）。`chenyuluoyan-OFL.txt` 依字型內嵌聲明與 OFL 1.1 全文整理（與 `dayscam-fonts` 的 `chenyuluoyan/OFL.txt` 逐字相同）；上游固定 commit `6e36815b0bec9f4f948298698d00b27a5f0b65c1` 的 [license.txt](https://github.com/Chenyu-otf/chenyuluoyan_thin/blob/6e36815b0bec9f4f948298698d00b27a5f0b65c1/license.txt) 另有著作權段落，不覆寫既有檔案。
 
   ```
   Copyright (c) 2022, Wang, Li-Yu & Liu, Wei-Chen.
   (c) 2022 王立宇、劉韋辰 版權所有。
   ```
-
-### TASK-142 的 30 套
-
-字型檔的 copyright 欄位逐字照錄，英文在前、繁中（若有）在後，`\r\n` 一律寫成換行；各檔相同者只列一次。字型檔欄位是空的有 7 套，改取該套隨檔授權檔（或發行 zip 內授權檔）首段的著作權行，照錄：源石黑體、源泉圓體、源雲明體、源流明體（發行 zip 的 `SIL_Open_Font_License_1.1.txt`）、仙人掌明體（上游 `license.md`）；獅尾四季春、獅尾加糖宋體的字型與授權檔都沒有著作權人（授權檔是未填寫的 OFL 範本），授權頁寫明這一點與作者。
-
 - **思源黑體**：
 
   ```
@@ -323,149 +360,18 @@ App 下載的開源字型與授權資料。數值寫死在 `FontCatalog`（TASK-
   あらゆる改変の有無に関わらず、また商業的な利用であっても、自由にご利用、複製、再配布することができますが、全て無保証とさせていただきます。
   ```
 
-## 預覽圖
-
-`swift scripts/render-font-previews.swift <四個開源字型檔所在資料夾>` 產生 `DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`（17pt、@2x／@3x 模板圖）。開源字型直接從檔案建立（先比對 SHA-256），不會畫到 Mac 上安裝的同名字型；系統字型經 CoreText 比對。取得的字型名稱不符 PRD-0.3 §4.1 時以非零狀態結束。
-
-**TASK-148（#515）**：字型頁、VoiceOver 與預覽圖一律使用中文簡稱 `FontCatalogEntry.displayName`（系統字型與開源字型一起），取代 TASK-78 的「清單用 `fullName`」與 TASK-142（#510，已關閉）的「清單名稱照 name table 原樣」；`fullName` 已移除，字型的正式名稱只在授權頁的 copyright／授權全文出現。預覽圖以簡稱、17pt、210pt 文字寬換行，保留 4pt 透明邊界（保留負 side bearing 與下緣字形），列表使用原始點尺寸。腳本的名稱與 `displayName` 相同；本次重畫了簡稱與原完整名稱不同的 22 套（蘋方、粉圓、思源宋體、芫荽、辰宇落雁體與 17 套系統字型），其餘 30 套 TASK-142 家族原本就以簡稱繪製，字串與字型都沒變，圖不需重畫。下載版本與 PostScript 名稱不變。
-
-~~TASK-78：字型頁與 VoiceOver 使用 `FontCatalogEntry.fullName`（作廢，見上）。~~
-
-## TASK-89 字重下載與上游授權紀錄
-
-- 名單依 Issue #362 最後的查證表與 Lead 裁定；思源宋體預設仍為 `bold`，新增 Regular／Black 不覆寫 Bold 或既有 v2 tag。
-- 新增 OTF 取自 notofonts/noto-cjk `f8d157532fbfaeda587e826d4cd5b21a49186f7c` 的 `Serif/SubsetOTF/TC/`，原檔不改寫放進 `dayscam-fonts@v3`（#378）。TASK-91 起 App 一律從 `v3` 下載全部開源字型，不再直接連上游 URL；檔案路徑、bytes、SHA-256 與 `v2` 相同，已下載的使用者不需重新下載。
-- 三個 Noto OTF 各自的 copyright 均為 `© 2017-2024 Adobe (http://www.adobe.com/).`；[上游 Serif/LICENSE](https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/LICENSE) 為 SIL OFL 1.1，與 App 的 `notoSerifTC-OFL.txt` 一併保留，授權頁須逐 face 列檔名與 copyright。
-- 辰宇 Thin 固定 commit 的上游 `license.txt` 另有上游著作權段落；App 現有逐字字型內嵌英文／繁中 copyright 與 OFL 全文繼續保留，不以新查證覆寫舊 tag。
-- Default face 的磁碟路徑仍為 `<fontID>.<ext>`；其他字重為 `<fontID>-<weightID>.<ext>`。系統 matching 與持久化改按指定 face，舊 `downloadedSystemFontIDs` 僅代表預設 face；新 `downloadedSystemFontWeights` 記錄非預設的 `<fontID>/<weightID>`，讀取時相容舊紀錄。
-
-## TASK-142 新增的 30 套（v4，#494）
-
-使用者 2026-10-12 裁決「PR#460 裡找到的字型全部加入」。名單、選定字重與來源見 [`research/fonts-tc-2.md`](research/fonts-tc-2.md) §2；每個檔案的 bytes 與 SHA-256 與該文件 §6 相同（台北黑體以 §6 為準），原檔不子集化、不改名（PRD-0.3 A-1）。**不含**清松手寫體、莫大毛筆、正風毛筆（授權待作者確認，§5 第 1–2 項）。
-
-### 類型與字重
-
-清單目前把這些字型放在「可下載」組，依 catalog 順序（黑、圓、宋、楷、手寫、可愛）；類型記在 `FontCatalog.downloadFamilies`，待 TASK-120（#453）改為組內依類型排序時使用。預設字重是新選取時用的那一個：有 Bold 取 Bold，其餘取最粗的。
-
-| 類型 | 字型 | 字重（預設以 ★ 標示） | 預設字重 PostScript | 預設字重大小 |
-|---|---|---|---|---|
-| 黑 | 思源黑體 | 標準、粗★、特粗 | `NotoSansTC-Bold` | 5.8 MB |
-| 黑 | 台北黑體 | 細、標準、粗★ | `TaipeiSansTCBeta-Bold` | 21.7 MB |
-| 黑 | 源石黑體 | 標準、粗★、特粗 | `GenSekiGothic2TW-B` | 15.0 MB |
-| 黑 | 昭源黑體 | 標準、粗★、特粗 | `ChironHeiHK-Bold` | 17.1 MB |
-| 黑 | 朱古力黑體 | 標準★ | `ChocolateClassicalSans-Regular` | 12.2 MB |
-| 黑 | 未來熒黑 | 標準、粗★、特粗 | `GlowSansTC-Normal-Bold` | 9.0 MB |
-| 圓 | 源泉圓體 | 標準、粗★、特粗 | `GenSenRounded2TW-B` | 15.8 MB |
-| 圓 | 獅尾圓體 | 標準、粗★、特粗 | `SweiGothicCJKtc-Bold` | 15.8 MB |
-| 圓 | 昭源環方 | 標準、粗★、特粗 | `ChironGoRoundTC-Bold` | 20.5 MB |
-| 宋 | 源雲明體 | 標準、中粗、半粗★ | `GenWanMin2TW-SB` | 22.6 MB |
-| 宋 | 源流明體 | 標準、粗★、特粗 | `GenRyuMin2TW-B` | 16.2 MB |
-| 宋 | 獅尾四季春 | 標準、粗★、特粗 | `SweiSpringCJKtc-Bold` | 17.3 MB |
-| 宋 | 獅尾加糖宋體 | 標準、粗★、特粗 | `SweiSugarCJKtc-Bold` | 29.0 MB |
-| 宋 | 昭源宋體 | 標準、粗★、特粗 | `ChironSungHK-Bold` | 26.6 MB |
-| 宋 | 仙人掌明體 | 標準★ | `CactusClassicalSerif-Regular` | 28.5 MB |
-| 宋 | 全字庫正宋體 | 標準★ | `TW-Sung-98_1` | 35.3 MB |
-| 宋 | 宇文天穹 | 標準★ | `UoqMunThenKhung-Regular` | 4.9 MB |
-| 楷 | 霞鶩文楷 TC | 標準、中粗★ | `LXGWWenKaiTC-Medium` | 15.0 MB |
-| 楷 | 全字庫正楷體 | 標準★ | `TW-Kai-98_1` | 36.9 MB |
-| 楷 | 教育部標準楷書 | 標準★ | `TW-MOE-Std-Kai` | 15.8 MB |
-| 楷 | 文鼎 PL 中楷 | 標準★ | `UKaiTW` | 17.2 MB |
-| 手寫 | 內海字體 | 標準、半粗、粗★ | `NaikaiFont-Bold` | 38.6 MB |
-| 手寫 | 小賴字體 | 標準★ | `Xiaolai` | 22.2 MB |
-| 手寫 | 悠哉字體 | 標準、中粗★ | `Yozai-Medium` | 15.2 MB |
-| 手寫 | 何某手寫體 | 標準、粗★ | `NaniFont-Bold` | 18.5 MB |
-| 手寫 | 霞鶩漫黑 | 標準★ | `LXGWMarkerGothic-Regular` | 3.2 MB |
-| 手寫 | 苦累蛙圓體 | 標準、粗★ | `KurewaGothicCjkTc-Bold` | 36.5 MB |
-| 可愛 | 大波浪圓體 | 標準、粗★ | `PopGothicCjkTc-Bold` | 10.3 MB |
-| 可愛 | WD-XL 滑油字 | 標準★ | `WD-XLLubrifontTC-Regular` | 6.2 MB |
-| 可愛 | 俐方體 11 號 | 標準★ | `Cubic_11` | 2.8 MB |
-
-### 授權與來源的特殊處理
+## 授權與來源的特殊處理
 
 - **全字庫正宋體、正楷體**：字型內嵌聲明為「(c)2026 數位發展部；使用者可依需求擇一使用『政府資料開放授權條款－第 1 版』或 OFL 1.1」，兩份全文都附（`twSung-OGDL.txt`／`-OFL.txt`，正楷同）。授權頁在名稱下註明來源「全字庫（數位發展部）」。
-- **教育部標準楷書**：CC BY-ND 3.0 TW，須標示「中華民國教育部」且不得改作；App 只下載、不修改原檔。授權頁在名稱下標示著作權人，並附 CC BY-ND 3.0 TW 全文（`eduKai-CCBYND.txt`，取自 creativecommons.org 的繁中版條款，標頭加上教育部說明文件的標示要求）。字型內部版本 5.00（2023-12），教育部說明文件寫 5.1（調查 §5 第 6 項，使用者已接受）。
-- **文鼎 PL 中楷**：Arphic Public License，授權全文取自字型 `name` 表第 13 筆（6888 字元；與 Debian 套件 `copyright` 檔內的 APL 條文逐字相同，比對時忽略空白）。檔案是 `ukai.ttc`（含 4 個字面，字型內 PostScript 名稱 `UKaiTW` 是台灣字面），App 以整個集合註冊，存檔副檔名為 `.ttc`。copyleft 授權與 App Store 散布條款是否相容為調查 §5 第 5 項，使用者已接受。
-- **未來熒黑**：字型內嵌 OFL、repo 的 `LICENSE` 是 MIT（調查 §2.1 註 2）；兩份都附。字型缺「值告填巔慎教清真鎮顛」10 字（4798／4808），這些字畫蘋方（見 142.4 紀錄）。
-- **台北黑體**：沒有隨檔授權檔，OFL 1.1 全文以字型 `name` 表內嵌的聲明（OFL 1.1）加官方下載頁的聲明組成（`taipeiSans-OFL.txt`，標頭寫明衍生自 Source Han Sans）。只有 Google 雲端硬碟的 Beta 檔，無版本化 release；檔案已存進 `dayscam-fonts@v4`，以 SHA-256 為準。
+- **教育部標準楷書**：CC BY-ND 3.0 TW，須標示「中華民國教育部」且不得改作；App 只下載、不修改原檔。授權頁在名稱下標示著作權人，並附 CC BY-ND 3.0 TW 全文（`eduKai-CCBYND.txt`，取自 creativecommons.org 的繁中版條款，標頭加上教育部說明文件的標示要求）。字型內部版本 5.00（2023-12），教育部說明文件寫 5.1，已接受。
+- **文鼎 PL 中楷**：Arphic Public License，授權全文取自字型 `name` 表第 13 筆（與 Debian 套件 `copyright` 檔內的 APL 條文逐字相同）。檔案是 `ukai.ttc`（含 4 個字面，`UKaiTW` 是台灣字面），App 以整個集合註冊，存檔副檔名為 `.ttc`。copyleft 授權與 App Store 散布條款的相容性已由使用者接受。
+- **未來熒黑**：字型內嵌 OFL、repo 的 `LICENSE` 是 MIT，兩份都附。字型缺「值告填巔慎教清真鎮顛」10 字，這些字由 CoreText 退回蘋方；觀景窗與烘焙用同一個 `UIFont`，結果一致。
+- **台北黑體**：沒有隨檔授權檔，OFL 1.1 全文以字型 `name` 表內嵌的聲明加官方下載頁的聲明組成（`taipeiSans-OFL.txt`，標頭寫明衍生自 Source Han Sans）。只有 Google 雲端硬碟的 Beta 檔，無版本化 release；檔案已存進 `dayscam-fonts@v4`，以 SHA-256 為準。
 - **獅尾圓體／四季春／加糖宋體**：repo 的 OFL 是未填寫著作權人的範本，字型 `name` 表的 RFN 也是佔位字；授權意思明確是 OFL 1.1，原樣附上。
 - **其餘**：OFL 1.1 全文取自各上游 repo／release 的授權檔（`dayscam-fonts` 各資料夾的 `OFL.txt` 與 App 內 `<fontID>-OFL.txt` 逐字相同）。
 
-### 大檔與 jsDelivr 實測
+## 預覽圖
 
-單檔超過 30 MB 的有內海字體 SemiBold／Bold、苦累蛙圓體 Bold、全字庫正楷體、全字庫正宋體（照放，因為是使用者自選下載）。
+`swift scripts/render-font-previews.swift <字型檔資料夾> [fontID ...]` 產生 `DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`（17pt、@2x／@3x 模板圖），字型取各套的預設字重。開源字型直接從檔案建立（先比對 SHA-256），不會畫到 Mac 上安裝的同名字型；系統字型經 CoreText 比對。取得的字型名稱不符 PRD-0.3 §4.1 時以非零狀態結束。
 
-#### `v4` 的 63 個網址實測（2026-10-12，tag 推上後）
-
-- **raw（備援）**：63 個網址全部回 200，`content-length` 等於本表 bytes。其中 19 個 jsDelivr 不服務的檔案已用 `curl` 從 raw 完整下載，大小與 SHA-256 全部通過。
-- **jsDelivr（主要）**：44 個檔案（最大 20,659,344 bytes）回 200，已完整下載，大小與 SHA-256 全部通過。
-- **jsDelivr 對 19 個檔案回 403**（回應內文「File size exceeded the configured limit of 20 MB」）：全部是超過 20 MiB（20,971,520 bytes）的檔案，最小 21,737,516 bytes，與 20 MiB 上限吻合；調查標 ⚠ 的 5 個大檔（內海 SemiBold／Bold、苦累蛙 Bold、全字庫正楷／正宋）都在其中。這些檔案由 App 的備援網址（raw）下載；`FontLibrary` 對主要網址的任何非 2xx 都改試備援（`FontDownloader` 把非 2xx 視為 `FontFetchError.other`），XCTest `test_acceptance_142_3_everyFaceDownloadsAndDeletes` 以「jsDelivr 拒絕 > 20 MiB」的假網路證明這 19 個檔案都由 raw 下載成功。
-- tag 剛推上時，jsDelivr 第一次請求有幾個 20 MiB 以下的小檔回過 403，數分鐘內重試即 200（冷啟動）；App 遇到時同樣會走 raw 備援，不影響下載。
-
-jsDelivr 不服務、由 raw 下載的 19 個檔案：
-
-| 路徑 | bytes | MB |
-|---|---|---|
-| `taipei-sans-tc/TaipeiSansTCBeta-Bold.ttf` | 21737516 | 21.7 |
-| `xiaolai/Xiaolai-Regular.ttf` | 22220806 | 22.2 |
-| `gen-wan-min/GenWanMin2TW-SB.otf` | 22614524 | 22.6 |
-| `gen-wan-min/GenWanMin2TW-M.otf` | 22710256 | 22.7 |
-| `gen-wan-min/GenWanMin2TW-R.otf` | 22772928 | 22.8 |
-| `chiron-sung-hk/ChironSungHK-R.otf` | 24164960 | 24.2 |
-| `chiron-sung-hk/ChironSungHK-H.otf` | 24661440 | 24.7 |
-| `naikai/NaikaiFont-Regular.ttf` | 26254192 | 26.3 |
-| `chiron-sung-hk/ChironSungHK-B.otf` | 26585108 | 26.6 |
-| `cactus-classical-serif/CactusClassicalSerif-Regular.ttf` | 28502932 | 28.5 |
-| `swei-sugar/SweiSugarCJKtc-Regular.ttf` | 28960864 | 29.0 |
-| `swei-sugar/SweiSugarCJKtc-Bold.ttf` | 28989908 | 29.0 |
-| `swei-sugar/SweiSugarCJKtc-Black.ttf` | 29001120 | 29.0 |
-| `kurewa-gothic/KurewaGothicCjkTc-Regular.ttf` | 31158716 | 31.2 |
-| `tw-sung/TW-Sung-98_1.ttf` | 35320040 | 35.3 |
-| `kurewa-gothic/KurewaGothicCjkTc-Bold.ttf` | 36472060 | 36.5 |
-| `tw-kai/TW-Kai-98_1.ttf` | 36925608 | 36.9 |
-| `naikai/NaikaiFont-SemiBold.ttf` | 37776240 | 37.8 |
-| `naikai/NaikaiFont-Bold.ttf` | 38622668 | 38.6 |
-
-### 142.4 烘焙與觀景窗一致性
-
-用 #73 §C（`docs/research/fonts-tc.md`）的方法：真的 `OverlayRenderer.bake`（1200 × 1600 照片、白字、無外框無陰影）烘焙「2026.10.11 我的紀錄 第 128 天」，與觀景窗畫法（SwiftUI `Text`＋`Font(uiFont)`，同字級）比較；用 CoreText 逐段列出實際用的字型。每套取最粗字重，在 rinclaw 的 iOS 26.3 模擬器（iPhone 16 Pro Max）執行；程式放在 `docs/research/fonts-tc-2/scripts/bake-probe-tests.swift.txt`（平常不跑）。
-
-結果：**30 套全部整串由該字型畫出，沒有任何一段退回蘋方；烘焙與觀景窗的墨跡寬度逐像素相同；每套的寬度都與蘋方（915）不同。** 比較圖放在 PR 的 `qa-screenshots` 分支。
-
-| 字型 | 最粗字重 | PostScript | 烘焙寬 | 觀景窗寬 |
-|---|---|---|---|---|
-| notoSansTC | black | `NotoSansTC-Black` | 940 | 940 |
-| taipeiSans | bold | `TaipeiSansTCBeta-Bold` | 921 | 921 |
-| genSeki | black | `GenSekiGothic2TW-H` | 939 | 939 |
-| chironHei | black | `ChironHeiHK-Heavy` | 937 | 937 |
-| chocolateSans | regular | `ChocolateClassicalSans-Regular` | 888 | 888 |
-| glowSans | black | `GlowSansTC-Normal-Heavy` | 909 | 909 |
-| genSen | black | `GenSenRounded2TW-H` | 937 | 937 |
-| sweiGothic | black | `SweiGothicCJKtc-Black` | 938 | 938 |
-| chironGoRound | black | `ChironGoRoundTC-Heavy` | 937 | 937 |
-| genWan | semibold | `GenWanMin2TW-SB` | 887 | 887 |
-| genRyu | black | `GenRyuMin2TW-H` | 903 | 903 |
-| sweiSpring | black | `SweiSpringCJKtc-Black` | 941 | 941 |
-| sweiSugar | black | `SweiSugarCJKtc-Black` | 926 | 926 |
-| chironSung | black | `ChironSungHK-Heavy` | 926 | 926 |
-| cactusSerif | regular | `CactusClassicalSerif-Regular` | 851 | 851 |
-| twSung | regular | `TW-Sung-98_1` | 951 | 951 |
-| thenKhung | regular | `UoqMunThenKhung-Regular` | 931 | 931 |
-| lxgwWenKai | medium | `LXGWWenKaiTC-Medium` | 964 | 964 |
-| twKai | regular | `TW-Kai-98_1` | 947 | 947 |
-| eduKai | regular | `TW-MOE-Std-Kai` | 947 | 947 |
-| arphicUKai | regular | `UKaiTW` | 949 | 949 |
-| naikai | bold | `NaikaiFont-Bold` | 946 | 946 |
-| xiaolai | regular | `Xiaolai` | 944 | 944 |
-| yozai | medium | `Yozai-Medium` | 931 | 931 |
-| nani | bold | `NaniFont-Bold` | 906 | 906 |
-| lxgwMarker | regular | `LXGWMarkerGothic-Regular` | 864 | 864 |
-| kurewa | bold | `KurewaGothicCjkTc-Bold` | 852 | 852 |
-| popGothic | bold | `PopGothicCjkTc-Bold` | 1073 | 1073 |
-| wdxl | regular | `WD-XLLubrifontTC-Regular` | 672 | 672 |
-| cubic11 | regular | `Cubic_11` | 940 | 940 |
-
-**未來熒黑缺字（照實記錄，不擋）**：字型缺「值告填巔慎教清真鎮顛」，這些字由 CoreText 退回 `PingFangTC-Semibold`，其餘文字仍是未來熒黑（實測分段：`值告填巔慎教清真鎮顛=PingFangTC-Semibold| 第 128 天=GlowSansTC-Normal-Heavy`）。觀景窗與烘焙使用同一個 `UIFont`，退回的結果一致。
-
-### 預覽圖
-
-30 套的預覽圖（`DaysCam/Assets.xcassets/FontPreviews/<fontID>.imageset`）用 `scripts/render-font-previews.swift` 產生：把 30 個預設字重的原檔放進同一個資料夾，`swift scripts/render-font-previews.swift <資料夾> <fontID ...>`。圖上的文字是顯示名稱（例如「思源黑體」），字型取各套的預設字重。
+字型頁、VoiceOver 與預覽圖一律使用中文簡稱 `FontCatalogEntry.displayName`；字型的正式名稱只在授權頁的 copyright／授權全文出現。預覽圖以簡稱、17pt、210pt 文字寬換行，保留 4pt 透明邊界（保留負 side bearing 與下緣字形），列表使用原始點尺寸。

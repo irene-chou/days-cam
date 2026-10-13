@@ -103,7 +103,7 @@ final class OverlayStyleTests: XCTestCase {
     // MARK: - Fonts
 
     // 0.2's 17.1 (ten Latin names) and 17.12 (every 0.2 font ships with iOS)
-    // are replaced by TASK-32 32.1 in `FontCatalogTests` (TASKS-0.3 事先預告 1).
+    // are replaced by TASK-32 32.1 in `FontCatalogTests` (`docs/CONVENTIONS.md` 易誤判處 1).
 
     /// 32.1 / 40.1: the raw values, in PRD 0.3 §4.1 order plus TASK-40's
     /// `chenyuluoyan`, are what files store.

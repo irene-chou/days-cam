@@ -6,7 +6,7 @@ import XCTest
 /// concern (`RulesTabView`'s `#Preview`); here it only covers the labels'
 /// text and order.
 ///
-/// Fixture matches the shared TASKS-0.2 scenario: start date 2026-01-01,
+/// Fixture matches the shared scenario in `docs/CONVENTIONS.md`: start date 2026-01-01,
 /// `.dayOne`, `DAYSCAM_FAKE_TODAY` fixed at 2026-01-10, so `n = 10`.
 @MainActor
 final class RulesTabModelTests: XCTestCase {

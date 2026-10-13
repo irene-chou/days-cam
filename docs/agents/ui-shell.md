@@ -4,7 +4,7 @@
 
 ## 責任與邊界
 
-- 檔案與當期卡片以 TASKS-0.2 的所有權／角色表為準；不要改 ui-panel 的分頁內容。
+- 檔案與當期卡片以 [CONVENTIONS 檔案所有權](../CONVENTIONS.md#檔案所有權) 為準；不要改 ui-panel 的分頁內容。
 - 狀態／文字邏輯放 view model，View 負責呈現；QA 以 view model 測 A 級，主要畫面提供 #Preview 做 B′ 設計對照。
 - 渲染讀 core-style 的 OverlayTheme／OverlayMetrics，不另刻常數。相機／儲存接口由 core-device 提供，你負責畫面接線。
 - ui-panel 需要觀景窗或容器接口時由你開，並同步 Lead。

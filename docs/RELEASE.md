@@ -1,33 +1,21 @@
 # DaysCam 上架（App Store）
 
-> 擁有者：Lead。這頁只放 DaysCam 專屬的決策、檢查表與要填的資料；Apple 端的通用操作看官方文件，一次性問題在 chat 處理。agent 在雲端無法建置 iOS、簽名或登入 App Store Connect，標「人類」的項目要在有 Xcode 的 Mac 上執行。
+> 擁有者：Lead。這頁只放 DaysCam 專屬的決策、建置步驟、回歸清單與商店資料；Apple 端的通用操作看官方文件，一次性問題在 chat 處理。agent 在雲端無法建置 iOS、簽名或登入 App Store Connect，標「人類」的項目要在有 Xcode 的 Mac 上執行。
 
-## 決策紀錄
+## 決策
 
-| 日期 | 決定 | 影響 |
-|---|---|---|
-| 2026-10-10 | 第一版只上 iPhone | `TARGETED_DEVICE_FAMILY: "1"`、移除 iPad 方向設定；日後上 iPad 要升次版並補 13 吋截圖 |
-| 2026-10-10 | 裝置顯示名稱維持「DaysCam」；商店名稱用「DaysCam 天數相機」 | 不加 `CFBundleDisplayName` |
-| 2026-10-10 | 免費、全地區 | MVP 排除 IAP（PRD 排除項） |
-| 2026-10-10 | 隱私權政策與支援頁放 GitHub Pages | 網址見下表 |
-| 2026-10-10 | 出口管制申報 `ITSAppUsesNonExemptEncryption = false` | 只用 HTTPS 下載字型，屬豁免 |
-| 2026-10-12 | Apple Developer Program 已開通，Team ID 維持 `W5937V2WUF`；版本升 1.0.0 | `project.yml`、`scripts/ExportOptions.plist` 不必改 Team；`MARKETING_VERSION: "1.0.0"`（`chore/bump-1.0.0`） |
-
-## 送審前檢查表
-
-| 項目 | 狀態 | 依據 |
-|---|---|---|
-| 隱私清單 `DaysCam/PrivacyInfo.xcprivacy` | ✅ | 不追蹤、不收集；申報 UserDefaults（CA92.1）與 FileTimestamp（C617.1，字型驗證標記只讀 App 容器內字型檔的修改日期）。Archive 後用 Organizer 的 Generate Privacy Report 核對，多出別的類別就交 Lead 改程式 |
-| 出口管制、權限用途說明 | ✅ | `project.yml` `info.properties` |
-| Release 不含除錯時鐘與 UI 測試旗標 | ✅ | `DAYSCAM_FAKE_TODAY`、`-UITest*` 都在 `#if DEBUG`（TASKS 0.1 §10.4） |
-| App 圖示 | ✅ | `AppIcon.png` 1024×1024、無 alpha、未預切圓角（#383） |
-| 字型授權 | ✅ | OFL／Apache 全文內建於字型頁；下載的是字型檔不是程式碼 |
-| 版本號 `1.0.0` | ✅ | `chore/bump-1.0.0`（CI 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
-| Apple Developer Program 會員 | ✅ | 2026-10-12 開通，Team ID 與 `W5937V2WUF` 相同，`project.yml` 與 `scripts/ExportOptions.plist` 不必改 |
-| TestFlight 實機驗收 | ⏳ 人類 | 下方「實機驗收」 |
-| 截圖、商店資料 | ⏳ 人類 | 下方「要填的資料」 |
+| 決定 | 影響 |
+|---|---|
+| 第一版只上 iPhone | `TARGETED_DEVICE_FAMILY: "1"`、移除 iPad 方向設定；日後上 iPad 要升次版並補 13 吋截圖 |
+| 裝置顯示名稱「DaysCam」；商店名稱「DaysCam 天數相機」 | 不加 `CFBundleDisplayName` |
+| 免費、全地區 | MVP 排除 IAP（PRD 排除項） |
+| 隱私權政策與支援頁放 GitHub Pages | 網址見下表 |
+| 出口管制申報 `ITSAppUsesNonExemptEncryption = false` | 只用 HTTPS 下載字型，屬豁免 |
+| Apple Developer Program Team ID `W5937V2WUF` | `project.yml`、`scripts/ExportOptions.plist` 使用此 Team |
 
 ## 建置與上傳
+
+版本規則：功能升次版、修正升修訂版（`chore/bump-<版本>`，CI 全套測試），每次上傳 `CURRENT_PROJECT_VERSION` +1。送審前用 Organizer 的 Generate Privacy Report 核對 `PrivacyInfo.xcprivacy`（只申報 UserDefaults CA92.1、FileTimestamp C617.1），多出別的類別交 Lead 改程式。
 
 GUI：Xcode 選「Any iOS Device (arm64)」→ Product → Archive → Organizer → Distribute App → App Store Connect，自動簽名。
 
@@ -45,7 +33,7 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 
 ## 實機驗收（B 級，TestFlight）
 
-結果記到升版 PR。
+每版上傳後跑一次，結果記到升版 PR。
 
 | # | 情境 | 期望 |
 |---|---|---|
@@ -68,8 +56,8 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | 名稱 | DaysCam 天數相機 |
 | 主要語言 | 繁體中文 |
 | 類別 | 攝影與錄影 |
-| 副標 | 每張照片都記得第幾天（2026-10-12 人類選定；原案「把日子印在照片上」） |
-| 宣傳文字 | 寶寶出生、開始健身、搬進新家……設定一個起始日，之後按下快門，天數就直接印在照片上。離線、免帳號，照片只存在你的相簿。（2026-10-12 人類選定；原案「拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。」） |
+| 副標 | 每張照片都記得第幾天 |
+| 宣傳文字 | 寶寶出生、開始健身、搬進新家……設定一個起始日，之後按下快門，天數就直接印在照片上。離線、免帳號，照片只存在你的相簿。 |
 | 關鍵字 | 天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera |
 | 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/> |
 | 支援 URL | <https://irene-chou.github.io/dayscam-privacy/> |
@@ -93,6 +81,5 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 
 ## 上架後
 
-- README 路線圖加「1.0 已上架（日期）」。
 - 退件或當機需要改程式時走 `fix/` 分支，升修訂版，build 號 +1，重新 Archive。
 - App Store Connect 的「當機」與「TestFlight 回饋」由 Lead 轉成 Issue。

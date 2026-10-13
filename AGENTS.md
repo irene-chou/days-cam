@@ -1,12 +1,12 @@
 # DaysCam — 共用 agent 規範
 
-拍照時將日期／天數烘焙進照片的 iOS App；目前為 0.2 介面改版，並練習 Claude + Codex 協作。以下【硬規則】適用所有角色；技術與風格預設可由任務卡說明調整。
+拍照時將日期／天數烘焙進照片的 iOS App；目前為 1.0 上架版，並練習 Claude + Codex 協作。以下【硬規則】適用所有角色；技術與風格預設可由任務卡說明調整。
 
 ## 開工入口
 
-- 先讀本檔，再依 [閱讀矩陣](docs/AGENT-READING-MAP.md) 讀角色與單張任務；不要預設通讀所有 PRD／TASKS。
+- 先讀本檔，再依 [閱讀矩陣](docs/AGENT-READING-MAP.md) 讀角色與單張任務；不要預設通讀所有 PRD；任務卡是 GitHub issue。
 - Claude：需求／規格／Lead、所有開發（ui-panel／ui-shell／core-style／core-device）、QA 與查證；Codex：只做 GitHub PR code review（connector `@codex review`），不派任何實作、修正或 QA 工作（2026-10-10 使用者裁定）。review 不分作者，由全新 session 的 agent 執行；高風險卡需 Claude 與 Codex 都 approve，並另開獨立 QA。詳細分工見 [WORKFLOW](docs/WORKFLOW.md)。
-- `CLAUDE.md` 匯入本檔；兩家的角色入口共用 `docs/agents/`，0.2 所有權以 [任務表](docs/TASKS-0.2-ui-redesign.md#檔案所有權) 為準。
+- `CLAUDE.md` 匯入本檔；兩家的角色入口共用 `docs/agents/`，檔案所有權以 [CONVENTIONS](docs/CONVENTIONS.md#檔案所有權) 為準。
 
 ## 技術與風格
 
@@ -41,7 +41,7 @@
 - 以繁體中文提出有具體觸發條件、影響及檔案行號的問題；區分必修與建議，不將個人風格當成阻擋。
 - 拍攝時間須顯式傳入計算與烘焙；不可改讀 EXIF／檔案建立時間。日期模式不可讀 startDate；startDate 僅存年月日，時間／時區依 PRD §6。
 - 遷移不得遺失設定檔；存檔只請求 addOnly，瀏覽才請求 readWrite；唯一例外是使用者在圖庫頁開啟「存到 DaysCam 相簿」後，才請求 readWrite（#281）。相機並行、權限與儲存失敗不得報成成功。
-- 0.2 取代的舊 UI／主題／單位軌道不可誤報回歸；先查 [事先預告](docs/TASKS-0.2-ui-redesign.md#事先預告會讓你誤判的地方)，沿用的文字輸出與邏輯驗收仍須成立。
+- 0.2 取代的舊 UI／主題／單位軌道不可誤報回歸；先查 [易誤判處](docs/CONVENTIONS.md#易誤判處不要報成回歸)，沿用的文字輸出與邏輯驗收仍須成立。
 
 ## 範圍限制【硬規則】
 

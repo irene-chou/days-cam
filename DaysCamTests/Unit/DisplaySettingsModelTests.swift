@@ -8,7 +8,7 @@ import XCTest
 /// Fixture matches TASK-11's acceptance table exactly: start date
 /// 2026-01-01, `.dayOne`, `DAYSCAM_FAKE_TODAY` fixed at 2026-01-10, so
 /// `n = 10`, year track `(0,0,9)`, month track `(0,9)`, week track `(1,3)`
-/// (all already verified in TASKS.md 11.1–11.33).
+/// (TASK-11 acceptance 11.1–11.33).
 @MainActor
 final class DisplaySettingsModelTests: XCTestCase {
     private func fixedNow() throws -> Date {

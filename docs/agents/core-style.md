@@ -4,7 +4,7 @@
 
 ## 責任與邊界
 
-- 檔案與當期卡片以 TASKS-0.2 的所有權／角色表為準；Unit 測試隨來源檔歸屬。不要改 ui-shell 的 OverlayTextView，接口變動在 PR 交接。
+- 檔案與當期卡片以 [CONVENTIONS 檔案所有權](../CONVENTIONS.md#檔案所有權) 為準；Unit 測試隨來源檔歸屬。不要改 ui-shell 的 OverlayTextView，接口變動在 PR 交接。
 - 天數／日期變更必讀 PRD 0.1 §6 與所沿用的文字驗收；日期不讀 startDate、拍攝時刻參數化、startDate 只存年月日、時區採 Calendar.autoupdatingCurrent。
 - 樣式／序列化變更需驗舊資料可讀、不遺失設定；與 core-device 的 ProfileStore／測試夾具接口先交 Lead 協調。
 

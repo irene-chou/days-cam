@@ -4,12 +4,12 @@
 
 ## 路線圖與規格
 
-| 階段 | 範圍 | 規格與任務 |
+| 階段 | 範圍 | 規格 |
 |---|---|---|
-| 0.1 MVP | 即時拍照、設定檔、日期／天數文字、九宮格位置、儲存 | [PRD](docs/PRD.md)、[TASK-01～16](docs/TASKS.md) |
-| 0.2 介面改版 | 相機工具、疊字面板、字型與色彩、天數單位、拖曳定位、照片瀏覽 | [PRD-0.2](docs/PRD-0.2-ui-redesign.md)、[TASK-17～30](docs/TASKS-0.2-ui-redesign.md) |
-| 0.3 繁中字型 | 蘋方內建、開源與系統字型點了才下載 | [PRD-0.3](docs/PRD-0.3-fonts.md)、[TASK-31～36](docs/TASKS-0.3-fonts.md) |
-| 0.4 面板改版（進行中） | 面板與設定檔流程調整 | Issue [#226](https://github.com/irene-chou/days-cam/issues/226) 與各 TASK issue |
+| 0.1 MVP | 即時拍照、設定檔、日期／天數文字、九宮格位置、儲存 | [PRD](docs/PRD.md) |
+| 0.2 介面改版 | 相機工具、疊字面板、字型與色彩、天數單位、拖曳定位、照片瀏覽 | [PRD-0.2](docs/PRD-0.2-ui-redesign.md) |
+| 0.3 繁中字型 | 蘋方內建、開源與系統字型點了才下載 | [PRD-0.3](docs/PRD-0.3-fonts.md) |
+| 0.4 面板改版 | 面板與設定檔流程調整 | Issue [#226](https://github.com/irene-chou/days-cam/issues/226) 與各 TASK issue；任務卡一律為 GitHub issue |
 | 1.0 上架 | 首版 App Store 上架，只上 iPhone | [RELEASE](docs/RELEASE.md) |
 
 新版未覆蓋的規格沿用前一版。MVP 排除訂閱／IAP、雲端帳號同步、多語系、社群分享與 Widget。發佈（簽名、TestFlight、商店資料）步驟與現況見 [RELEASE](docs/RELEASE.md)，是否上架由人類決定。

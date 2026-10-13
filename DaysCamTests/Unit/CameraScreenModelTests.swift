@@ -1998,7 +1998,7 @@ final class CameraScreenModelTests: XCTestCase {
         let seedDay = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 23, minute: 59, second: 59))
         let clock = MutableClock(seedDay)
         // Started 2026-01-01, dayOne: Jan 10 is 第 10 天, Jan 11 is 第 11 天
-        // (the shared fixture `docs/TASKS-0.2-ui-redesign.md` uses).
+        // (the shared fixture in `docs/CONVENTIONS.md`).
         let store = makeProfileStore(now: seedDay, seed: [
             CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
         ])

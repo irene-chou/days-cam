@@ -9,7 +9,7 @@ description: 以 Lead 身分把人類的需求整理成 DaysCam 任務卡（GitH
 
 ## 0. 開工
 
-1. 讀 `AGENTS.md`（硬規則），以及 `docs/TASKS-0.2-ui-redesign.md` 的〈檔案所有權〉和〈事先預告〉。
+1. 讀 `AGENTS.md`（硬規則），以及 `docs/CONVENTIONS.md`（檔案所有權、驗收分級、易誤判處）。
 2. 看最近開的 issue 和 PR，確認同一件事沒有人開過卡、也沒有 PR 在做：
    ```sh
    gh api "repos/irene-chou/days-cam/issues?state=all&per_page=15&sort=created" \

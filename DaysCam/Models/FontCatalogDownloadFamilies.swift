@@ -1,7 +1,7 @@
 import Foundation
 
 /// The open-source families TASK-142 (#494) added to the library: 30 fonts
-/// researched in `docs/research/fonts-tc-2.md` (TASK-121), each with one to
+/// researched in TASK-121, each with one to
 /// three faces. Values are written out from `docs/fonts-manifest.md`; change
 /// both together.
 ///
