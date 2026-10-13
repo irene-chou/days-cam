@@ -15,7 +15,7 @@
 
 ## 建置與上傳
 
-版本規則：功能升次版、修正升修訂版（`chore/bump-<版本>`，CI 全套測試），每次上傳 `CURRENT_PROJECT_VERSION` +1。送審前用 Organizer 的 Generate Privacy Report 核對 `PrivacyInfo.xcprivacy`（只申報 UserDefaults CA92.1、FileTimestamp C617.1），多出別的類別交 Lead 改程式。
+版本規則：功能升次版、修正升修訂版（`chore/bump-<版本>`，CI 全套測試），每次上傳 `CURRENT_PROJECT_VERSION` +1（`chore/build-<號>`，同樣跑 CI 全套）。送審前用 Organizer 的 Generate Privacy Report 核對 `PrivacyInfo.xcprivacy`（只申報 UserDefaults CA92.1、FileTimestamp C617.1），多出別的類別交 Lead 改程式。
 
 GUI：Xcode 選「Any iOS Device (arm64)」→ Product → Archive → Organizer → Distribute App → App Store Connect，自動簽名。
 

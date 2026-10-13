@@ -54,7 +54,7 @@
 3. 單元測試放 `DaysCamTests/Unit/<來源檔名>Tests.swift`，歸來源檔擁有者。QA 只能寫 `DaysCamTests/Acceptance/` 的版本化程式；測試輸出與專用截圖 worktree 可寫。
 4. **各角色獨立模擬器**：每個角色用自己的模擬器（`iPhone 16 <角色>`，SE 截圖用 `iPhone SE <角色>`）與 DerivedData `/tmp/dayscam-dd-<worktree識別>-<角色>`。先用 `xcrun simctl list devices available` 查名稱與 UUID，**查無才**以 `xcrun simctl create` 建立；create 不會檢查重名，不能盲目建多台。每次測試／截圖跑完立即 `xcrun simctl shutdown <自己的 UUID>`，不要讓模擬器開著等下一輪（人類要手動驗收、Lead 指定保留者除外）。執行機器與並行名額由 Lead 指派，不寫在專案文件。
 5. **實機測試**：需要人類在實機操作的驗收（B 級，或 B′ 中無法自動化的手勢），由開發者用 `xcodebuild -destination "platform=iOS,id=<裝置 UDID>"` 建置，`xcrun devicectl device install app` 安裝到人類已配對的 iPhone（`xcrun devicectl list devices` 查 UDID），準備好待驗資料後通知人類操作。
-6. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`，單元測試與 4 個 UI 分片平行）執行，其他 PR 不跑 CI、也不跑全套（節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
+6. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`、build 號 `chore/build-<號>`）由 CI（`swift.yml`，單元測試與 4 個 UI 分片平行）執行，其他 PR 不跑 CI、也不跑全套（節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
 
 ```sh
 # worktree 根目錄
