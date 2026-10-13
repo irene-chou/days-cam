@@ -83,19 +83,11 @@ jobs:
         xcrun simctl install "$UDID" "$APP"
         xcrun simctl privacy "$UDID" grant photos com.irenechou.DaysCam
 
-    # ShadowLegacyGoldenAcceptanceTests compares SHA-256 digests of baked
-    # pixels captured on one developer simulator runtime. Shadows and
-    # translucent colours rasterise slightly differently on other runtimes
-    # (only the shadowless opaque fixtures match on the runner), so the
-    # digests cannot hold here. It is a one-off snapshot bound to that
-    # runtime and also misfires locally on iOS 27; run it by hand on the
-    # runtime it was captured on. Follow-up (tolerance or same-runtime
-    # comparison) is tracked from PR #530.
     - name: Test
       run: |
         set -o pipefail
         if [ "${{ matrix.suite }}" = unit ]; then
-          SELECTION="-only-testing:DaysCamTests -skip-testing:DaysCamTests/ShadowLegacyGoldenAcceptanceTests"
+          SELECTION="-only-testing:DaysCamTests"
         else
           SELECTION=$(python3 scripts/ui-test-shard.py "${{ matrix.shard }}" "$UI_SHARD_COUNT")
         fi

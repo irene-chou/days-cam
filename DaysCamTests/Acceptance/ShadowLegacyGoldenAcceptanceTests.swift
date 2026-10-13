@@ -1,13 +1,18 @@
 import XCTest
 import UIKit
-import CryptoKit
 @testable import DaysCam
 
-/// TASK-86 independent QA, 86.5. Compiles against both origin/main (fca680c)
-/// and the TASK-86 branch. `golden` holds SHA-256 digests of the baked pixels
-/// that origin/main itself produced for hand-written pre-0.5 and 0.6 profile
-/// files, loaded through `ProfileStore` and baked by `OverlayRenderer`. The
-/// branch must reproduce every digest.
+/// TASK-86 independent QA, 86.5: hand-written pre-0.5 and 0.6 profile files,
+/// loaded through `ProfileStore` and baked by `OverlayRenderer`, must draw the
+/// shadow they drew before the shadow parameters existed.
+///
+/// The first version compared SHA-256 digests captured on one simulator
+/// runtime; blur and blending differ between runtimes, so they only held
+/// there (#535). Now the expected pixels are drawn on the running runtime by
+/// a reference written here: the text without any shadow, then Core
+/// Graphics' own shadow of it, with the parameters 0.5 drew (frozen below)
+/// times `decorationScale`. Both sides rasterise with the same runtime, so
+/// only a real change in what is drawn makes them differ.
 final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
     private var defaults = UserDefaults.standard
@@ -28,11 +33,46 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    /// A shadow in points at a 17pt font, and its color with alpha.
+    private struct ExpectedShadow {
+        let offsetX: CGFloat
+        let offsetY: CGFloat
+        let blur: CGFloat
+        let red8: Int
+        let green8: Int
+        let blue8: Int
+        let alpha8: Int
+    }
+
     private struct Fixture {
         let key: String
         let textColor: String
         let outline: String
         let shadowFields: String
+        /// What the file should draw without its shadow.
+        let expectedOutline: OverlayOutline
+        /// What its shadow should be; nil for none.
+        let expectedShadow: ExpectedShadow?
+    }
+
+    /// The three shadows 0.2–0.5 stored by name, as 0.5 drew them (TASK-71
+    /// 71.2, TASK-86). Written out on purpose: a change to the presets or to
+    /// the migration has to fail here.
+    private static func legacyShadow(_ name: String, textColor: String) -> ExpectedShadow? {
+        // Glow takes the text's RGB; `#RRGGBB` or `#RRGGBBAA`.
+        let rgb = Int(textColor.dropFirst().prefix(6), radix: 16) ?? 0
+        switch name {
+        case "soft":
+            return ExpectedShadow(offsetX: 0, offsetY: 2, blur: 4, red8: 0, green8: 0, blue8: 0, alpha8: 153)
+        case "hard":
+            return ExpectedShadow(offsetX: 2, offsetY: 2, blur: 0, red8: 0, green8: 0, blue8: 0, alpha8: 191)
+        case "glow":
+            return ExpectedShadow(offsetX: 0, offsetY: 0, blur: 8,
+                                  red8: (rgb >> 16) & 0xFF, green8: (rgb >> 8) & 0xFF, blue8: rgb & 0xFF,
+                                  alpha8: 230)
+        default:
+            return nil
+        }
     }
 
     private let fixtures: [Fixture] = {
@@ -40,47 +80,41 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
         for name in ["soft", "hard", "glow", "none"] {
             for color in ["#FFFFFF", "#FF6B9D80", "#1C1C1E"] {
                 list.append(Fixture(key: "pre05-\(name)-\(color)", textColor: color, outline: "none",
-                                    shadowFields: "\"shadow\":\"\(name)\","))
+                                    shadowFields: "\"shadow\":\"\(name)\",",
+                                    expectedOutline: .none,
+                                    expectedShadow: legacyShadow(name, textColor: color)))
             }
         }
         // Old shadow together with an old outline.
         list.append(Fixture(key: "pre05-glow-thinStroke", textColor: "#FFFFFF", outline: "thinStroke",
-                            shadowFields: "\"shadow\":\"glow\","))
+                            shadowFields: "\"shadow\":\"glow\",",
+                            expectedOutline: .stroke,
+                            expectedShadow: legacyShadow("glow", textColor: "#FFFFFF")))
         list.append(Fixture(key: "pre05-hard-solidBox", textColor: "#FFFFFF", outline: "solidBox",
-                            shadowFields: "\"shadow\":\"hard\","))
+                            shadowFields: "\"shadow\":\"hard\",",
+                            expectedOutline: .box,
+                            expectedShadow: legacyShadow("hard", textColor: "#FFFFFF")))
         // New-format files store parameters verbatim and must bake unchanged.
         list.append(Fixture(key: "new-custom-green-25", textColor: "#FFFFFF", outline: "none",
-                            shadowFields: "\"showsShadow\":true,\"shadowColorSource\":\"custom\",\"shadowColor\":\"#00C85040\",\"shadowOffsetX\":3,\"shadowOffsetY\":-2,\"shadowBlur\":6,"))
+                            shadowFields: "\"showsShadow\":true,\"shadowColorSource\":\"custom\",\"shadowColor\":\"#00C85040\",\"shadowOffsetX\":3,\"shadowOffsetY\":-2,\"shadowBlur\":6,",
+                            expectedOutline: .none,
+                            expectedShadow: ExpectedShadow(offsetX: 3, offsetY: -2, blur: 6,
+                                                           red8: 0x00, green8: 0xC8, blue8: 0x50, alpha8: 0x40)))
         list.append(Fixture(key: "new-follow-text-25", textColor: "#FF6B9D", outline: "none",
-                            shadowFields: "\"showsShadow\":true,\"shadowColorSource\":\"textColor\",\"shadowColor\":\"#00000040\",\"shadowOffsetX\":0,\"shadowOffsetY\":0,\"shadowBlur\":8,"))
+                            shadowFields: "\"showsShadow\":true,\"shadowColorSource\":\"textColor\",\"shadowColor\":\"#00000040\",\"shadowOffsetX\":0,\"shadowOffsetY\":0,\"shadowBlur\":8,",
+                            expectedOutline: .none,
+                            expectedShadow: ExpectedShadow(offsetX: 0, offsetY: 0, blur: 8,
+                                                           red8: 0xFF, green8: 0x6B, blue8: 0x9D, alpha8: 0x40)))
         list.append(Fixture(key: "new-shadow-off", textColor: "#FFFFFF", outline: "none",
-                            shadowFields: "\"showsShadow\":false,\"shadowColorSource\":\"custom\",\"shadowColor\":\"#FF0000FF\",\"shadowOffsetX\":2,\"shadowOffsetY\":2,\"shadowBlur\":0,"))
+                            shadowFields: "\"showsShadow\":false,\"shadowColorSource\":\"custom\",\"shadowColor\":\"#FF0000FF\",\"shadowOffsetX\":2,\"shadowOffsetY\":2,\"shadowBlur\":0,",
+                            expectedOutline: .none,
+                            expectedShadow: nil))
         return list
     }()
 
-    /// Digests produced by origin/main fca680c (one stroked fixture re-captured, see below).
-    private let golden: [String: String] = [
-        "new-custom-green-25": "86f26ada5031d90caa01ef5e08dcf654379565af0201b8324a3ee1ff36a5e254",
-        "new-follow-text-25": "f5b00b53b35658907c07c4fded38bf18c32097a0c0bbedf33df6d21397528b4f",
-        "new-shadow-off": "8910e79bbf784de02184c082abc9437b044207127332cd18fd1390d4d942af4d",
-        "pre05-glow-#1C1C1E": "da7ebbcdab4c801921d5c4bcef97a72793eb4a06ebf9d5df6359e1a98f804a4a",
-        "pre05-glow-#FF6B9D80": "c26b760f730dd31018b3b1e5c7629d9939c5a567c06bdb02b82b3dbbdd3520bf",
-        "pre05-glow-#FFFFFF": "1c63628bcbc5ccd807a3d4ce0a35140d1f710eb16a184ea3d3192f6823b4fdde",
-        // Re-captured on main after TASK-80's segmented stroke geometry
-        // (ab6fae6, PR #367) landed on top of fca680c: it changes every
-        // stroked pixel, not the shadow; the other digests still match fca680c.
-        "pre05-glow-thinStroke": "5817d384ecee1bbc6080bcd53c4b86aea483beaebe608d575b29d90c714e1f14",
-        "pre05-hard-#1C1C1E": "dd7ef8c3f3fd3685bf6718df9b8e5d52151d254474251b3d56545cd47b0fa2b6",
-        "pre05-hard-#FF6B9D80": "a91bdf98cd12cc485361c2dca3bcdd49c9da5d6c35661a69491773ab87fc5d93",
-        "pre05-hard-#FFFFFF": "4a3dc762c2a4df42888aed79d769a21173406d3b28093e1e92bd964c0ef3c2d7",
-        "pre05-hard-solidBox": "1da2858115a3503e0f9c4c9df492aa3bc41cc6d06d51db036dec94710940009f",
-        "pre05-none-#1C1C1E": "3c47677728762e7642f2d612ae5ec1e9e9af56ed094c9bf9321a72cc340bb312",
-        "pre05-none-#FF6B9D80": "d7a65e5af9ac853b340ff6a56adc7c6cc87e54eee7bcdc5c7043c16539da67bf",
-        "pre05-none-#FFFFFF": "8910e79bbf784de02184c082abc9437b044207127332cd18fd1390d4d942af4d",
-        "pre05-soft-#1C1C1E": "d6bb0376248c14b03e16e5d30b3eca66ba45a3e8375162a47fe5ca0b49261e14",
-        "pre05-soft-#FF6B9D80": "206c54182d62888f5734b90311a6a76430e3acb3c58de58ce590c625c026ccef",
-        "pre05-soft-#FFFFFF": "5ab3fbdce017487daef097dfd7553d6116d80fd7c5dcaefe6945efcea0f9e15f"
-    ]
+    private let text = "第 10 天"
+    private let placement = OverlayPlacement.custom(x: 0.5, y: 0.5)
+    private let canvas = CGSize(width: 600, height: 800)
 
     private func record(_ fixture: Fixture) -> String {
         """
@@ -97,34 +131,133 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        return UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800), format: format).image { context in
+        return UIGraphicsImageRenderer(size: canvas, format: format).image { context in
             UIColor(white: 0.85, alpha: 1).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+            context.fill(CGRect(origin: .zero, size: canvas))
             UIColor(white: 0.25, alpha: 1).setFill()
             context.fill(CGRect(x: 300, y: 0, width: 300, height: 800))
         }
     }
 
-    func test86BakedPixelsMatchOriginMainDigests() throws {
-        let input = background()
-        let renderer = OverlayRenderer()
-        var failures: [String] = []
-        for fixture in fixtures {
-            try Data(record(fixture).utf8).write(to: directory.appendingPathComponent(ProfileStore.fileName),
-                                                 options: [.atomic])
-            let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
-            let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
-                                     now: { instant }, defaults: defaults,
-                                     scheduler: ProfileStore.immediateScheduler)
-            let style = try XCTUnwrap(store.load().first).style
-            let baked = try XCTUnwrap(renderer.bake(image: input, text: "第 10 天", style: style,
-                                                    placement: .custom(x: 0.5, y: 0.5), font: .pingFang))
-            let grid = try XCTUnwrap(PixelGrid(baked))
-            let digest = SHA256.hash(data: Data(grid.bytes)).map { String(format: "%02x", $0) }.joined()
-            if golden[fixture.key] != digest {
-                failures.append("\"\(fixture.key)\": \"\(digest)\",")
+    /// The fixture's style as `ProfileStore` loads it from the file.
+    private func loadedStyle(_ fixture: Fixture) throws -> OverlayStyle {
+        try Data(record(fixture).utf8).write(to: directory.appendingPathComponent(ProfileStore.fileName),
+                                             options: [.atomic])
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei,
+                                 now: { instant }, defaults: defaults,
+                                 scheduler: ProfileStore.immediateScheduler)
+        return try XCTUnwrap(store.load().first).style
+    }
+
+    private func baked(_ style: OverlayStyle, on input: UIImage) throws -> PixelGrid {
+        let image = try XCTUnwrap(OverlayRenderer().bake(image: input, text: text, style: style,
+                                                         placement: placement, font: .pingFang))
+        return try XCTUnwrap(PixelGrid(image))
+    }
+
+    /// What the fixture should bake to, drawn without the renderer's shadow
+    /// code: the text with its expected outline and no shadow, baked onto a
+    /// transparent canvas, then drawn over the photo once with Core Graphics'
+    /// shadow at the expected parameters times `decorationScale`, the way
+    /// 0.5 cast one shadow for the whole decorated text.
+    private func reference(_ fixture: Fixture, on input: UIImage) throws -> PixelGrid {
+        // 0.5's thin stroke and solid box, written out (TASK-70).
+        let textStyle = OverlayStyle(textColor: try XCTUnwrap(OverlayColor(hex: fixture.textColor)),
+                                     outline: fixture.expectedOutline,
+                                     strokeWidth: 2,
+                                     boxPadding: 12,
+                                     shadow: OverlayShadowPreset.none)
+        let clear = UIGraphicsImageRendererFormat()
+        clear.scale = 1
+        clear.opaque = false
+        let transparent = UIGraphicsImageRenderer(size: canvas, format: clear).image { _ in }
+        let ink = try XCTUnwrap(OverlayRenderer().bake(image: transparent, text: text, style: textStyle,
+                                                       placement: placement, font: .pingFang))
+        let fontSize = OverlayRenderer.fittedFontSize(for: text, style: textStyle, frameSize: canvas,
+                                                      font: .pingFang)
+        let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: canvas, format: format).image { context in
+            input.draw(at: .zero)
+            if let shadow = fixture.expectedShadow {
+                let color = UIColor(red: CGFloat(shadow.red8) / 255, green: CGFloat(shadow.green8) / 255,
+                                    blue: CGFloat(shadow.blue8) / 255, alpha: CGFloat(shadow.alpha8) / 255)
+                // A positive y offset falls downward in a UIKit renderer
+                // context, as the profile's offsets read.
+                context.cgContext.setShadow(offset: CGSize(width: shadow.offsetX * scale,
+                                                           height: shadow.offsetY * scale),
+                                            blur: shadow.blur * scale, color: color.cgColor)
+            }
+            ink.draw(at: .zero)
+        }
+        return try XCTUnwrap(PixelGrid(image))
+    }
+
+    /// Largest channel difference still counted as equal. The reference
+    /// draws the text through a transparent canvas, whose premultiplied
+    /// 8-bit alpha can round a glyph edge by one step; measured on iOS 26.0
+    /// and 27.0, shadowless fixtures differ by at most 1 and shadowed ones
+    /// not at all. Half a point of shadow offset or blur moves pixels by 2
+    /// or more (`test535ComparisonCatchesShadowChanges`).
+    private let allowedChannelDifference = 1
+
+    /// The largest difference of any RGB channel at any pixel.
+    private func maxChannelDifference(_ lhs: PixelGrid, _ rhs: PixelGrid) -> Int {
+        guard lhs.width == rhs.width, lhs.height == rhs.height else { return 255 }
+        var result = 0
+        for offset in stride(from: 0, to: lhs.bytes.count, by: 4) {
+            for component in 0..<3 {
+                result = max(result, abs(Int(lhs.bytes[offset + component]) - Int(rhs.bytes[offset + component])))
             }
         }
-        XCTAssertTrue(failures.isEmpty, "DIGESTS\n" + failures.joined(separator: "\n"))
+        return result
+    }
+
+    func test86BakedPixelsMatchReferenceDrawing() throws {
+        let input = background()
+        var failures: [String] = []
+        for fixture in fixtures {
+            let difference = maxChannelDifference(try baked(try loadedStyle(fixture), on: input),
+                                                  try reference(fixture, on: input))
+            if difference > allowedChannelDifference {
+                failures.append("\(fixture.key): max channel difference \(difference)")
+            }
+        }
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
+
+    /// The comparison is not so loose that it misses a real change: moving,
+    /// blurring or darkening any fixture's shadow a little must fail it.
+    func test535ComparisonCatchesShadowChanges() throws {
+        let input = background()
+        var missed: [String] = []
+        for fixture in fixtures where fixture.expectedShadow != nil {
+            let style = try loadedStyle(fixture)
+            let expected = try reference(fixture, on: input)
+            var changes: [(String, OverlayStyle)] = []
+            var changed = style
+            changed.shadowBlur += 1
+            changes.append(("blur +1", changed))
+            changed = style
+            changed.shadowOffsetX += 1
+            changes.append(("offsetX +1", changed))
+            changed = style
+            changed.shadowOffsetY += 1
+            changes.append(("offsetY +1", changed))
+            changed = style
+            changed.shadowOpacity += 0.05
+            changes.append(("opacity +0.05", changed))
+            for (label, change) in changes {
+                let difference = maxChannelDifference(try baked(change, on: input), expected)
+                if difference <= allowedChannelDifference {
+                    missed.append("\(fixture.key) \(label): max channel difference \(difference)")
+                }
+            }
+        }
+        XCTAssertTrue(missed.isEmpty, "Changes not caught:\n" + missed.joined(separator: "\n"))
     }
 }
