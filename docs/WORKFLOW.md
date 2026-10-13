@@ -22,7 +22,7 @@
 **交接流程**：Claude 寫卡 → 開發者（Claude subagent，依卡片類型用 core-style／core-device／ui-shell／ui-panel 角色）領取、開 draft PR、實作、自驗、補齊描述後轉 ready → 全新 session review（Claude bot Action＋`@codex review`）→ 開發者在**同一個 session** 修正 → Lead 核對 gate、收斂人工事項並合併。開發者在 PR 寫明自己的 SHA、驗證結果與驗收對照，PR 本身就是交接紀錄。Lead 以 Claude 的 Agent 工具派卡；訊息格式如下：
 
 ```text
-任務：TASK-XX／Issue URL（目標、驗收、依賴、相關檔案見卡片）
+任務：#N（Issue URL；目標、驗收、依賴、相關檔案見卡片）
 角色：core-style／core-device／ui-shell／ui-panel／qa
 風險：normal／high＋原因；假設與容易誤判的事項
 執行位置：模擬器主機（名額）或本機；模擬器名稱
@@ -66,7 +66,7 @@ xcodegen generate && \
     -only-testing:DaysCamTests/<相關測試class> test
 ```
 
-PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體指令、結果與假設；不要只寫「已測試」。開發者自驗 A 級，在 PR 列出「驗收編號 → 測試名稱或證據」對照表，供 reviewer 核對。
+任務卡以 issue 號碼識別，不再編 `TASK-N`；驗收在卡內編 1、2、3…，在別處引用寫 `#<issue>-<驗收>`（例如 `#537-3`）。舊卡的 `TASK-N`／`155.x` 照舊保留。PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體指令、結果與假設；不要只寫「已測試」。開發者自驗 A 級，在 PR 列出「驗收編號 → 測試名稱或證據」對照表，供 reviewer 核對。
 
 ## Review
 
