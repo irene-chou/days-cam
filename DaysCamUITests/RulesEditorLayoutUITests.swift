@@ -108,9 +108,11 @@ final class RulesEditorLayoutUITests: XCTestCase {
         day.tap()
         let dismiss = app.otherElements["PopoverDismissRegion"].firstMatch
         if dismiss.waitForExistence(timeout: 3) { dismiss.tap() }
-        // The calendar must be gone before the page underneath is touched.
-        if nextMonth.exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+        // The calendar must be gone before the page underneath is touched. The
+        // fallback tap goes to the inert 起算 label: on iOS 26 the bottom of the
+        // screen is 複製這個設定檔, which leaves the editor.
+        if !nextMonth.waitForNonExistence(timeout: 2) {
+            app.staticTexts["起算"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         XCTAssertTrue(nextMonth.waitForNonExistence(timeout: 5), "calendar closed")
 

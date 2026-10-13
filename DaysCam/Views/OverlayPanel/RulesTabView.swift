@@ -211,7 +211,7 @@ struct RulesTabView: View {
                             if row.isStartDay { Text(RulesTabModel.timelineStartDayMarker) }
                         }
                         .font(.subheadline.weight(row.isEmphasized ? .bold : .regular))
-                        .foregroundColor(row.isEmphasized ? CameraTheme.ink : CameraTheme.inkSecondary)
+                        .foregroundColor(dateLabelColor(for: row))
                         .frame(minWidth: 72, alignment: .leading)
                         Text(row.text)
                             .font(.subheadline.weight(row.isToday ? .bold : .regular))
@@ -236,6 +236,12 @@ struct RulesTabView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(model.dayPreviewSpokenText)
         .accessibilityIdentifier("rulesDayPreview")
+    }
+
+    /// The start day's date label takes the theme color so the target day stands out (#544).
+    private func dateLabelColor(for row: RulesTabModel.DayPreviewRow) -> Color {
+        if row.isStartDay { return CameraTheme.active }
+        return row.isToday ? CameraTheme.ink : CameraTheme.inkSecondary
     }
 }
 
