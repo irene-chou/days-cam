@@ -47,21 +47,29 @@ final class DefaultProfileNameUITests: XCTestCase {
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         XCTAssertEqual(nameField.value as? String, "我的紀錄", "119.2 name")
-        let toggle = app.switches["寫在照片上"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "1", "119.2 on")
-        let preview = app.staticTexts["rulesPreviewSentence"]
+        XCTAssertFalse(app.switches["寫在照片上"].exists, "155.1 the edit page has no such switch")
+        let preview = app.descendants(matching: .any)["rulesDayPreview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         XCTAssertTrue(preview.label.contains("我的紀錄 第 1 天"), "119.2 preview: \(preview.label)")
         shot("PR_119.2_iPhone16_edit")
 
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "0")
         app.navigationBars.firstMatch.buttons.firstMatch.tap()
         let bar = app.navigationBars["設定檔"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
         let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 600)))
+        XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5))
+        // 155.1／119.2: the 內容 tab's 名稱 switch is on by default and turns off.
+        app.buttons["疊字設定"].tap()
+        let content = app.buttons["內容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 5))
+        content.tap()
+        let nameSwitch = app.switches["名稱"]
+        XCTAssertTrue(nameSwitch.waitForExistence(timeout: 5))
+        XCTAssertEqual(nameSwitch.value as? String, "1", "119.2 on")
+        nameSwitch.tap()
+        XCTAssertEqual(nameSwitch.value as? String, "0")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5))
         XCTAssertTrue(overlayText.waitForExistence(timeout: 3))
         XCTAssertTrue(overlayText.label.hasPrefix("第 "), "119.3 back to day count only: \(overlayText.label)")

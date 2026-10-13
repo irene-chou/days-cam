@@ -1,16 +1,17 @@
 import SwiftUI
 
 /// The 設定檔 editing form: name, date and counting rule (PRD 0.2
-/// FR-13, reshaped by #226 R-8／R-9 for 0.4).
+/// FR-13, reshaped by #226 R-8／R-9 for 0.4, TASK-155 for 1.0).
 ///
 /// Stands alone on purpose, like `StyleTabView`: the container that shows it
 /// (today the panel's 內容 tab, from TASK-44 the profile edit page) builds a
 /// `RulesTabModel` from the active profile and drops this view in.
 ///
-/// Three rows in an iOS grouped-list block (名稱｜起始日｜起算), then one
-/// preview sentence. The counting-rule choice is a pair of plain buttons
-/// rather than a native segmented control — a real `Picker(.segmented)`
-/// clipped the longer "當天算第 1 天" label at narrow widths (25.6).
+/// Three rows in an iOS grouped-list block (名稱｜日期｜起算), each with its
+/// label above its value, then a 天數預覽 block. The counting-rule choice is
+/// a hand-drawn segmented control rather than a native `Picker(.segmented)` —
+/// the native one clipped the longer "當天算第 1 天" label at narrow widths
+/// (25.6).
 struct RulesTabView: View {
     @ObservedObject var model: RulesTabModel
     @FocusState private var isNameFieldFocused: Bool
@@ -26,19 +27,19 @@ struct RulesTabView: View {
     /// view appears (#226 R-7: a freshly created profile).
     var focusesNameOnAppear: Bool = false
 
-    /// Minimum height of each of the three rows, content vertically centered.
+    /// Minimum height of a row; also the height of the edit page's action rows.
     static let rowMinHeight: CGFloat = 48
     /// Corner radius of the grouped block.
     static let blockCornerRadius: CGFloat = 12
     /// Horizontal inset of row content inside the grouped block.
     static let rowHorizontalPadding: CGFloat = 16
+    /// Vertical inset of each row inside the grouped block.
+    static let rowVerticalPadding: CGFloat = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
                 nameRow
-                rowDivider
-                nameOnPhotoRow
                 rowDivider
                 startDateRow
                 rowDivider
@@ -48,13 +49,8 @@ struct RulesTabView: View {
                 RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
                     .fill(CameraTheme.fill)
             )
-            previewSentence
-                .padding(.top, 12)
-                .padding(.horizontal, Self.rowHorizontalPadding)
-            if let rows = model.timelinePreview {
-                timelineBlock(rows)
-                    .padding(.top, 12)
-            }
+            dayPreviewBlock
+                .padding(.top, 16)
         }
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
@@ -94,100 +90,33 @@ struct RulesTabView: View {
         Divider().padding(.leading, Self.rowHorizontalPadding)
     }
 
-    /// 「今天會顯示為 」＋ bold `overlayPreviewText` (the actual overlay,
-    /// TASK-109); wraps, at most 3 lines.
-    private var previewSentence: some View {
-        (Text("今天會顯示為 ").foregroundColor(CameraTheme.inkSecondary)
-            + Text(model.overlayPreviewText).bold().foregroundColor(CameraTheme.ink))
-            .font(.subheadline)
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("rulesPreviewSentence")
+    /// Small gray label above a row's value.
+    private func rowLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundColor(CameraTheme.inkSecondary)
     }
 
     // MARK: - 名稱 (FR-13.2, A-5)
 
     private var nameRow: some View {
-        HStack {
-            Text("名稱").foregroundColor(CameraTheme.inkSecondary)
-            // `.rr{gap:10px}` (#106) — was 12.
-            Spacer(minLength: 10)
+        VStack(alignment: .leading, spacing: 4) {
+            rowLabel("名稱")
             TextField(model.namePlaceholder, text: Binding(
                 get: { model.nameDraft },
                 set: { model.setName($0) }
             ), selection: $nameSelection)
-            .multilineTextAlignment(.trailing)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundColor(CameraTheme.ink)
+            .multilineTextAlignment(.leading)
             .focused($isNameFieldFocused)
             .submitLabel(.done)
             .onSubmit { model.endEditingName() }
             .accessibilityLabel("名稱")
         }
-        .padding(.horizontal, Self.rowHorizontalPadding)
-        .frame(minHeight: Self.rowMinHeight)
-    }
-
-    // MARK: - 寫在照片上 (FR-13.1, TASK-109)
-
-    /// Indent of the 寫在照片上 row's label, one level under 名稱, so it reads
-    /// as "the name → whether it goes onto the photo" (D-7 proposal 4).
-    static let subRowIndent: CGFloat = 16
-
-    /// The 名稱 switch of the content tab, repeated right under the name
-    /// (TASK-109, #423): the two are the same `showName` and stay in sync.
-    private var nameOnPhotoRow: some View {
-        HStack {
-            Text("寫在照片上").foregroundColor(CameraTheme.inkSecondary)
-                .padding(.leading, Self.subRowIndent)
-            Spacer(minLength: 10)
-            Toggle("", isOn: Binding(get: { model.profile.showName },
-                                     set: { model.setShowName($0) }))
-                .tint(CameraTheme.accentControl)
-                .labelsHidden()
-        }
-        .padding(.horizontal, Self.rowHorizontalPadding)
-        .frame(minHeight: Self.rowMinHeight)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("寫在照片上")
-        .accessibilityIdentifier("nameOnPhotoToggle")
-    }
-
-    // MARK: - 時間軸 (FR-13.7, TASK-137)
-
-    /// 「到了那天之後」: the day before, the day of and the day after a future
-    /// date, with the overlay text each would print. One VoiceOver element.
-    private func timelineBlock(_ rows: [RulesTabModel.TimelineRow]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(RulesTabModel.timelineTitle)
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(CameraTheme.inkSecondary)
-            ForEach(rows) { row in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    HStack(spacing: 4) {
-                        Text(row.dateLabel)
-                        if row.isStartDay { Text(RulesTabModel.timelineStartDayMarker) }
-                    }
-                    .font(.subheadline.weight(row.isStartDay ? .bold : .regular))
-                    .foregroundColor(row.isStartDay ? CameraTheme.active : CameraTheme.inkSecondary)
-                    .frame(minWidth: 72, alignment: .leading)
-                    Text(row.text)
-                        .font(.subheadline)
-                        .foregroundColor(CameraTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, Self.rowHorizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
-                .fill(CameraTheme.fill.opacity(0.6))
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(([RulesTabModel.timelineTitle] + rows.map(\.spokenText)).joined(separator: "，"))
-        .accessibilityIdentifier("rulesTimelinePreview")
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.vertical, Self.rowVerticalPadding)
     }
 
     // MARK: - 日期 (FR-13.3)
@@ -195,12 +124,10 @@ struct RulesTabView: View {
     /// Any date, past or future (TASK-94 #393, human 2026-10-10): a future
     /// start date reads 還有 N 天 (#250) until the day arrives. The old
     /// upper bound of today (0.1 §7.2 UI layer) is gone.
-
     private var startDateRow: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 4) {
+            rowLabel("日期")
             HStack {
-                Text("日期").foregroundColor(CameraTheme.inkSecondary)
-                Spacer(minLength: 10)
                 DatePicker("日期", selection: Binding(
                     get: { model.startDateAsDate },
                     set: { model.setStartDate($0) }
@@ -208,32 +135,36 @@ struct RulesTabView: View {
                 .labelsHidden()
                 .accessibilityIdentifier("startDatePicker")
                 .datePickerStyle(.compact)
+                Spacer(minLength: 10)
+                Text(model.todayShortText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(CameraTheme.active)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("rulesDateShortText")
             }
-            .frame(minHeight: Self.rowMinHeight)
-            Text(RulesTabModel.dateExplanation)
-                .font(.system(size: 13))
-                .foregroundColor(CameraTheme.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 10)
-                .accessibilityIdentifier("dateExplanation")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.vertical, Self.rowVerticalPadding)
     }
 
     // MARK: - 起算 (FR-13.4)
 
     private var countingRuleRow: some View {
-        HStack {
-            Text("起算").foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 10)
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            rowLabel("起算")
+            HStack(spacing: 0) {
                 countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
                 countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
             }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CameraTheme.fill)
+            )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Self.rowHorizontalPadding)
-        .frame(minHeight: Self.rowMinHeight)
+        .padding(.vertical, Self.rowVerticalPadding)
     }
 
     private func countingRuleButton(_ rule: CountingRule, label: String) -> some View {
@@ -241,25 +172,70 @@ struct RulesTabView: View {
         return Button {
             model.setCountingRule(rule)
         } label: {
-            // `.fixedSize` keeps the full label on screen — never truncated
-            // or clipped — which is exactly what a native segmented control
-            // failed to do at narrow widths in the D-4 review (25.6).
+            // Two equal cells filling the row, one line each, never clipped:
+            // at 375pt a cell is ~150pt wide against ~90pt of text (25.6).
             Text(label)
                 .font(.footnote.weight(isSelected ? .semibold : .regular))
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule().fill(isSelected ? CameraTheme.active.opacity(0.18) : Color.clear)
-                )
-                // Unselected uses the same secondary/t2 shade as the font
-                // chips (`StyleTabView.fontRow`) — this is a selectable
-                // option chip, not the second-layer nav row (which uses the
-                // dimmer tertiary/t3 shade instead).
-                .foregroundColor(isSelected ? CameraTheme.active : CameraTheme.inkSecondary)
+                .foregroundColor(isSelected ? CameraTheme.ink : CameraTheme.inkSecondary)
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(.systemBackground))
+                            .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
+                    }
+                }
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - 天數預覽 (FR-13.7, TASK-155)
+
+    /// 「天數預覽」: today's row, then (for a future date) the day before, the
+    /// day of and the day after. Not interactive; one VoiceOver element.
+    private var dayPreviewBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(RulesTabModel.dayPreviewTitle)
+                .font(.footnote)
+                .foregroundColor(CameraTheme.inkSecondary)
+                .padding(.horizontal, Self.rowHorizontalPadding)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(model.dayPreviewRows) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(spacing: 4) {
+                            Text(row.dateLabel)
+                            if row.isStartDay { Text(RulesTabModel.timelineStartDayMarker) }
+                        }
+                        .font(.subheadline.weight(row.isEmphasized ? .bold : .regular))
+                        .foregroundColor(row.isEmphasized ? CameraTheme.ink : CameraTheme.inkSecondary)
+                        .frame(minWidth: 72, alignment: .leading)
+                        Text(row.text)
+                            .font(.subheadline.weight(row.isToday ? .bold : .regular))
+                            .foregroundColor(CameraTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, Self.rowHorizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
+                    .fill(CameraTheme.fill.opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
+                    .strokeBorder(CameraTheme.ink.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(model.dayPreviewSpokenText)
+        .accessibilityIdentifier("rulesDayPreview")
     }
 }
 
@@ -315,7 +291,7 @@ private enum DateFixtureForPreview {
         .background(Color(.systemBackground))
 }
 
-#Preview("單位勾年月、日期開：預覽句仍只顯示天數 · iPhone SE 寬度 (375pt)") {
+#Preview("單位勾年月、日期開：預覽仍印名稱＋天數 · iPhone SE 寬度 (375pt)") {
     RulesTabView(model: previewModel(unitsAndDate: true))
         .frame(width: 375)
         .padding(.vertical, 12)
