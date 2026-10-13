@@ -23,7 +23,8 @@ final class RulesTabViewLayoutTests: XCTestCase {
     /// single 今天 row, and stays under a ceiling that catches a runaway layout.
     func testPageHoldsThreeStackedRowsAndThePreview() {
         let height = contentSize().height
-        XCTAssertGreaterThanOrEqual(height, 12 + 58 * 3 + 16 + 16 + 40 + 12, "155 three rows and the preview")
+        let floor: CGFloat = 12 + 58 * 3 + 16 + 16 + 40 + 12
+        XCTAssertGreaterThanOrEqual(height, floor, "155 three rows and the preview")
         // Measured 317.7 at 375pt (TASK-155: stacked rows + preview block).
         XCTAssertLessThanOrEqual(height, 340, "整頁高度過高，量到 \(height)")
     }
