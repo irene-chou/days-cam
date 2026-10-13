@@ -1,6 +1,6 @@
 # Claude + Codex 工作流程
 
-此文件承接 [AGENTS.md](../AGENTS.md)。按工作階段讀對應節；目前在**開發分工與 review gate 的試行期**，見文末 Pilot。
+此文件承接 [AGENTS.md](../AGENTS.md)。按工作階段讀對應節。
 
 ## 分工與交接
 
@@ -9,13 +9,13 @@
 | 工作 | 預設執行者／模型 | 交付 |
 |---|---|---|
 | 需求、設計稿、任務卡、Lead | Claude 主 session／Opus（不另開 `lead-spec` subagent） | PRD／Issue／任務卡、驗收、依賴、所有權；開卡時查程式碼，把相關檔案與 symbol 寫進卡片 |
-| 邏輯開發（日期、渲染、相機、持久化） | Codex `core-style`、`core-device`／GPT-6 Astra low | 實作、XCTest、自驗 A 級、PR |
+| 邏輯開發（日期、渲染、相機、持久化） | Claude `core-style`、`core-device` | 實作、XCTest、自驗 A 級、PR |
 | UI 開發（面板、畫面骨架、對照設計稿調整） | Claude `ui-panel`、`ui-shell`／Sonnet | 實作、XCTest、自驗 A 級、B′ Preview 截圖、PR |
 | Review（兼核對驗收） | 全新 session 的 agent，不分作者：Claude Action 自動 review 所有非 draft PR；高風險另加 Codex connector | 必修／建議；逐條確認每個 A 級驗收都有測試或證據 |
-| 獨立 QA | 僅 `risk: high`，由沒寫這張卡的那家執行 `qa` | 指定 SHA 的獨立驗收與證據 |
+| 獨立 QA | 僅 `risk: high`，由沒參與開發的全新 session 執行 `qa` | 指定 SHA 的獨立驗收與證據 |
 | 高風險 review／爭議 | Claude `risk-reviewer`／Opus | 問題、影響、建議、未驗證處 |
 
-模型是可調整的起點；Codex ID 已對照本機 2026-10-03 模型清單。不可用時在 app 選擇可用模型並調整角色 TOML，不改走 API key。只有依賴已滿足且擁有檔案不重疊時，才同時開兩位 developer；同一時間只有一個 agent 操作 Xcode 視窗。
+模型是可調整的起點。只有依賴已滿足且擁有檔案不重疊時，才同時開兩位 developer；同一時間只有一個 agent 操作 Xcode 視窗。
 
 高風險包含相機／AVFoundation／並行、持久化與資料遷移、可能遺失照片或設定、跨模組介面。Lead 在任務卡寫 `risk: high` 與原因，PR 加 `risk:high` label（`qa-status.yml` 依此決定是否需要 qa），加開獨立 QA；必要時再派 `risk-reviewer`。一般任務標 `risk: normal`。
 
@@ -29,24 +29,23 @@
 交付：PR URL、head SHA、驗證命令／結果、待人類確認
 ```
 
-- 2026-10-10 起 **不再用 `codex exec` 派任何工作**（開發、修 review、查證、QA 都不行）；Codex 只透過 GitHub connector 做 PR review。`.codex/agents/` 的角色檔保留作為紀錄。
+- **不用 `codex exec` 派任何工作**（開發、修 review、查證、QA 都不行）；Codex 只透過 GitHub connector 做 PR review。`.codex/agents/` 的角色檔保留作為紀錄。
 - 長任務用背景 subagent 執行，完成後讀回報核對 PR URL 與 SHA；review 修正送回同一個 subagent（SendMessage）沿用 session。
 
 共享 Markdown 任務由 Lead 記錄領取狀態，其他角色在 PR／Issue 回報；遇到跨角色接口，請擁有者修改並同步 Lead。不貼整段聊天，不安裝自動撿單服務。
 
 ## 額度不足
 
-兩家都可能用完額度。角色是責任邊界，不綁定廠商；兩邊都保留全部角色入口（`.claude/agents/`、`.codex/agents/`），讓另一家能接手。
+兩家都可能用完額度。開發只由 Claude 執行；Codex 額度只影響 review。
 
 1. **依複雜度選模型，快到上限時只開簡單卡**：平時照上表依卡片複雜度選模型，不全面降級。剩餘額度不多（尚未用完）時，只開小模型能做完的簡單卡；高風險卡等重置後再做。額度已用完時，同家降級通常無效（同家模型大多共用額度，除非某模型另有獨立上限），直接換家或等重置。
 2. **開工前先估量**：剩餘額度明顯不夠完成一張卡時，先不要開工；做到一半中斷，接手方要整份重讀，最浪費。
-3. **中斷時留檢查點**：被迫中斷時，先 push WIP commit，開或更新 draft PR，寫明已完成／未完成的驗收編號與下一步，另一家可以直接接續。
-4. **換家開發**：同一張卡改由另一家的對應角色接手，在 PR 註明「額度接手」。review 照常由全新 session 執行，哪一家都可以。
-5. **review 的替代路徑**：
+3. **中斷時留檢查點**：被迫中斷時，先 push WIP commit，開或更新 draft PR，寫明已完成／未完成的驗收編號與下一步，額度重置後可直接接續。
+4. **review 的替代路徑**：
    - 一般卡：只需一個 approve。Claude 額度用完時 Action 會失敗或沒有結果，改用 `@codex review`；Codex 額度用完時用 Action 或 Claude `risk-reviewer` 全新 session。不需 `quota-fallback`。
    - 高風險卡：需兩家 approve，優先等額度重置。等不了時加 `quota-fallback` label，依 AGENTS 的額度不足例外合併：有額度那家的 approve 即可（不需人類另外同意），由 Lead 記錄；qa gate 照舊。
-6. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
-7. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑，作為之後調整分工比例的依據。
+5. **錯開重置時間**：大型開發排在剛重置之後；額度低的時段做不吃 token 的事，例如寫卡、人工驗收、整理截圖。
+6. **記錄**：每次觸發替代路徑，在 PR 記錄哪一家、何時用完、改走哪條路徑。
 
 ## 開發
 
@@ -54,8 +53,8 @@
 2. 各自 worktree，分支 `feature/task-XX-<簡述>`；修正／文件用對應前綴。一張卡一個 PR，必要時分 core／UI 半邊。高風險 QA 新增驗收測試用 `chore/qa-task-XX`。
 3. 單元測試放 `DaysCamTests/Unit/<來源檔名>Tests.swift`，歸來源檔擁有者。QA 只能寫 `DaysCamTests/Acceptance/` 的版本化程式；測試輸出與專用截圖 worktree 可寫。
 4. **各角色獨立模擬器**：每個角色用自己的模擬器（`iPhone 16 <角色>`，SE 截圖用 `iPhone SE <角色>`）與 DerivedData `/tmp/dayscam-dd-<worktree識別>-<角色>`。先用 `xcrun simctl list devices available` 查名稱與 UUID，**查無才**以 `xcrun simctl create` 建立；create 不會檢查重名，不能盲目建多台。每次測試／截圖跑完立即 `xcrun simctl shutdown <自己的 UUID>`，不要讓模擬器開著等下一輪（人類要手動驗收、Lead 指定保留者除外）。執行機器與並行名額由 Lead 指派，不寫在專案文件。
-5. **實機測試**（2026-10-08 人類決定）：需要人類在實機操作的驗收（B 級，或 B′ 中無法自動化的手勢），由開發者用 `xcodebuild -destination "platform=iOS,id=<裝置 UDID>"` 建置，`xcrun devicectl device install app` 安裝到人類已配對的 iPhone（`xcrun devicectl list devices` 查 UDID），準備好待驗資料後通知人類操作。
-6. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`）執行，其他 PR 不跑 CI、也不跑全套（2026-10-05 人類決定，節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
+5. **實機測試**：需要人類在實機操作的驗收（B 級，或 B′ 中無法自動化的手勢），由開發者用 `xcodebuild -destination "platform=iOS,id=<裝置 UDID>"` 建置，`xcrun devicectl device install app` 安裝到人類已配對的 iPhone（`xcrun devicectl list devices` 查 UDID），準備好待驗資料後通知人類操作。
+6. 送出／修正前，在自己的模擬器跑改動相關的測試 class；完整測試**只在升版 PR**（分支 `chore/bump-<版本>`）由 CI（`swift.yml`，單元測試與 4 個 UI 分片平行）執行，其他 PR 不跑 CI、也不跑全套（節省 macOS runner 分鐘數）；需要時 Lead 可在 Actions 手動觸發。升版 PR 的 CI 失敗，由 Lead 依失敗測試的所有權派修。獨立 DerivedData 防止平行執行互踩。純文件／角色設定 PR 做引用、設定與規則檢查，無須 iOS 產品測試，但仍須滿足 qa gate。
 
 ```sh
 # worktree 根目錄
@@ -135,23 +134,11 @@ Markdown 表格內的 shell 指令不可含 `|`；跳脫後 agent 照原文執�
 
 ## 啟動與設定
 
-1. 合併本 PR 後，Claude／Codex 的工作 checkout 都同步最新 main；Codex 使用 ChatGPT 帳戶登入，確認帳戶訂閱與 Code Review 可用額度。
+1. Codex 使用 ChatGPT 帳戶登入，確認帳戶訂閱與 Code Review 可用額度。
 2. Claude：Lead 在主 session 進行；UI 卡用 `.claude/agents/ui-panel.md`／`ui-shell.md`，邏輯卡用 `core-style.md`／`core-device.md`；高風險用 `risk-reviewer.md`，獨立 QA 用 `qa.md`。
-3. Codex：2026-10-10 起只做 GitHub PR code review（connector），不再以 `codex exec` 派任何工作；`.codex/agents/*.toml` 保留作紀錄，不使用。
+3. Codex：只做 GitHub PR code review（connector）；`.codex/agents/*.toml` 保留作紀錄，不使用。
 4. 角色檔是工作規範，不會自行安裝 Xcode MCP、建立 worktree 或派工。
 5. GitHub connector：在 [Codex Code Review 設定](https://app.chatgpt.com/settings/code-review) 選 `irene-chou/days-cam`，**關閉 Automatic review**，只用手動 `@codex review`，避免連 Codex 自己開的 PR 也被重複 review。
-6. repo 中的角色 TOML 不控制雲端 review；connector 讀適用的 AGENTS.md。這次沒有新增 API action／key，也沒有變更帳戶端開關。
+6. repo 中的角色 TOML 不控制雲端 review；connector 讀適用的 AGENTS.md。
 
 [Codex subagent 官方設定](https://learn.chatgpt.com/docs/agent-configuration/subagents) 說明 project TOML 與模型繼承；[GitHub review 官方設定](https://learn.chatgpt.com/docs/third-party/github) 說明 trigger、`@codex review` 與 Code Review Rules。以實際帳戶可用功能為準。
-
-## Pilot 與切換任務
-
-**目標**：驗證開發分工與不分作者的 review gate。各用一張一般風險卡走完「Claude 開發 → 全新 session review」與「Codex 開發 → 全新 session review」。Lead 挑正常產品任務，不為試行製造無效 PR。
-
-- [ ] 建立 `quota-fallback`、`risk:high` label；connector 已改為手動觸發，記錄設定人與日期。
-- [ ] 兩個 pilot PR 各記錄：PR URL、review URL、bot 身分／state／commit_id、CI 結果、qa 狀態、修正輪數、兩邊額度前後差。沒量測的欄位寫「未量測」。
-- [ ] 至少一次修正 push 後重審，確認舊 review／qa 不會當成最新結果。
-- [ ] 確認含 Claude Code 署名的 PR 也會觸發 Claude Action。
-- [ ] 跑完約 5 張卡後，依額度紀錄檢討 UI／邏輯的分配比例。
-
-本清單未勾選即表示 pilot 尚未完成。

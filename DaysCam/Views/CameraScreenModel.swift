@@ -7,8 +7,8 @@ import UIKit
 /// switcher (TASK-13), the management panel entry (TASK-26), the shutter's
 /// capture state machine (TASK-10) and the cross-midnight/foreground refresh
 /// (TASK-14). `CameraScreen` only lays out whatever this model currently
-/// says — see `docs/TASKS.md`'s note on why UI-level acceptance criteria
-/// live here rather than in the view.
+/// says, so UI-level acceptance criteria are tested here rather than in
+/// the view.
 ///
 /// Like `ProfileManagerModel`, this is one of the boundary types
 /// that does depend on `ProfileStore`'s concrete type — a screen-level model

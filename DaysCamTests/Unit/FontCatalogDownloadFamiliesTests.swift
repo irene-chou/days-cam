@@ -3,10 +3,10 @@ import XCTest
 @testable import DaysCam
 
 /// Covers TASK-142 (#494) 142.1, 142.2, 142.3 and 142.5: the 30 open-source
-/// families of `docs/research/fonts-tc-2.md` §2 in the font library.
+/// families of `docs/fonts-manifest.md` in the font library.
 ///
-/// The expected table is written out here from the §6 appendix (file name,
-/// bytes, SHA-256) and §2 (type, selected weights), independently of
+/// The expected table is written out here from the manifest (file name, bytes,
+/// SHA-256, type, selected weights), independently of
 /// `FontCatalog`, so a wrong catalog value cannot pass itself.
 @MainActor
 final class FontCatalogDownloadFamiliesTests: XCTestCase {

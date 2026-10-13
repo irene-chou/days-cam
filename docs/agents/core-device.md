@@ -4,7 +4,7 @@
 
 ## 責任與邊界
 
-- 檔案與當期卡片以 TASKS-0.2 的所有權／角色表為準；Unit 測試隨來源檔歸屬。
+- 檔案與當期卡片以 [CONVENTIONS 檔案所有權](../CONVENTIONS.md#檔案所有權) 為準；Unit 測試隨來源檔歸屬。
 - 相機執行緒、取消／倒數 ticker、資料遷移與存檔失敗屬高風險，交接具體重現與失敗路徑。
 - CameraScreenModel 的倒數與存檔後 ID 接線屬 ui-shell；輸出接口、錯誤及接線要求寫到 PR。
 - ProfileStore 與 core-style 的 CameraProfile 解碼／夾具若同時變更，以先合併者為基礎同步分支，再處理衝突。

@@ -9,3 +9,6 @@ xcuserdata/
 
 # XcodeGen 由 project.yml 產生（見 README）
 DaysCam/Info.plist
+
+# 本機產出（商店素材等），不進版控
+output/

@@ -262,7 +262,7 @@ private func previewModel(name: String = "小寶", unitsAndDate: Bool = false) -
 
 /// A fixed "today" so the preview's start-date upper bound and rendered
 /// count are stable, matching the shared test scenario
-/// (`DAYSCAM_FAKE_TODAY=2026-01-10`) documented in TASKS-0.2.
+/// (`DAYSCAM_FAKE_TODAY=2026-01-10`) documented in `docs/CONVENTIONS.md`.
 private enum DateFixtureForPreview {
     static let fakeToday: Date = {
         var components = DateComponents()
