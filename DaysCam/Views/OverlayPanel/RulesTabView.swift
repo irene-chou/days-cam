@@ -138,7 +138,7 @@ struct RulesTabView: View {
                 Spacer(minLength: 10)
                 Text(model.todayShortText)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(CameraTheme.inkSecondary)
+                    .foregroundColor(CameraTheme.active)
                     .lineLimit(1)
                     .accessibilityIdentifier("rulesDateShortText")
             }
