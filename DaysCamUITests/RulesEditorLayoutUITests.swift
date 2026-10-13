@@ -73,6 +73,26 @@ final class RulesEditorLayoutUITests: XCTestCase {
         XCTAssertTrue(preview.label.contains("我的紀錄 第 1 天"), "155.7 \(preview.label)")
         XCTAssertFalse(preview.label.contains("當天"), "155.7 a past date has only the 今天 row")
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "rulesDayPreview").count, 1, "155.10")
+
+        // A real past date (the 15th of last month): one 今天 row, 第 N 天 with N > 1.
+        picker.tap()
+        let previousMonth = app.buttons["上個月"].exists ? app.buttons["上個月"] : app.buttons["Previous Month"]
+        XCTAssertTrue(previousMonth.waitForExistence(timeout: 5))
+        previousMonth.tap()
+        let day = app.buttons.matching(NSPredicate(format: "label CONTAINS '15日' OR label CONTAINS ' 15'")).firstMatch
+        XCTAssertTrue(day.waitForExistence(timeout: 3))
+        day.tap()
+        let dismiss = app.otherElements["PopoverDismissRegion"].firstMatch
+        if dismiss.waitForExistence(timeout: 3) { dismiss.tap() }
+        if previousMonth.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+        }
+        XCTAssertTrue(previousMonth.waitForNonExistence(timeout: 5), "calendar closed")
+        XCTAssertTrue(shortText.waitForExistence(timeout: 3))
+        XCTAssertTrue(shortText.label.hasPrefix("第 "), "155.2 \(shortText.label)")
+        XCTAssertNotEqual(shortText.label, "第 1 天", "a past date, not today")
+        XCTAssertFalse(preview.label.contains("當天"), "155.7 \(preview.label)")
+        XCTAssertEqual(preview.label.components(separatedBy: "，").count, 2, "155.7 title + 今天 only: \(preview.label)")
         attach("155.12_edit-past-date")
     }
 
