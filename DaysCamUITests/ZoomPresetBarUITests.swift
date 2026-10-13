@@ -9,7 +9,7 @@ final class ZoomPresetBarUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestZoomPresets"]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestZoomPresets", "-captureAspectRatio", "threeByFour"]
         app.launch()
     }
 
@@ -28,7 +28,8 @@ final class ZoomPresetBarUITests: XCTestCase {
         roundButton.tap()
         let two = app.buttons["zoomPreset-焦段 2 倍"]
         XCTAssertTrue(two.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["zoomPreset-焦段 0.5 倍"].exists)
+        // Tap at once: on a slow runner one more query can outlast the
+        // 3-second auto-collapse. `testAutoCollapses` checks the 0.5 preset.
         two.tap()
         XCTAssertTrue(roundButton.waitForExistence(timeout: 3))
         XCTAssertEqual(roundButton.label, "焦段，目前 2 倍")
@@ -41,6 +42,7 @@ final class ZoomPresetBarUITests: XCTestCase {
         roundButton.tap()
         let two = app.buttons["zoomPreset-焦段 2 倍"]
         XCTAssertTrue(two.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["zoomPreset-焦段 0.5 倍"].exists)
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: two)
         waitForExpectations(timeout: 6)

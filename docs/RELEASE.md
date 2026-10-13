@@ -11,6 +11,7 @@
 | 2026-10-10 | 免費、全地區 | MVP 排除 IAP（PRD 排除項） |
 | 2026-10-10 | 隱私權政策與支援頁放 GitHub Pages | 網址見下表 |
 | 2026-10-10 | 出口管制申報 `ITSAppUsesNonExemptEncryption = false` | 只用 HTTPS 下載字型，屬豁免 |
+| 2026-10-12 | Apple Developer Program 已開通，Team ID 維持 `W5937V2WUF`；版本升 1.0.0 | `project.yml`、`scripts/ExportOptions.plist` 不必改 Team；`MARKETING_VERSION: "1.0.0"`（`chore/bump-1.0.0`） |
 
 ## 送審前檢查表
 
@@ -21,8 +22,8 @@
 | Release 不含除錯時鐘與 UI 測試旗標 | ✅ | `DAYSCAM_FAKE_TODAY`、`-UITest*` 都在 `#if DEBUG`（TASKS 0.1 §10.4） |
 | App 圖示 | ✅ | `AppIcon.png` 1024×1024、無 alpha、未預切圓角（#383） |
 | 字型授權 | ✅ | OFL／Apache 全文內建於字型頁；下載的是字型檔不是程式碼 |
-| 版本號 `1.0.0` | ⏳ | 由 Lead 開 `chore/bump-1.0.0`（觸發 `swift.yml` 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
-| Apple Developer Program 會員 | ⏳ 人類 | 若付費團隊的 Team ID 與 `W5937V2WUF` 不同，Lead 同步改 `project.yml` 的 `DEVELOPMENT_TEAM` 與 `scripts/ExportOptions.plist` 的 `teamID` |
+| 版本號 `1.0.0` | ✅ | `chore/bump-1.0.0`（CI 全套測試），合併後打 tag `v1.0.0`。之後功能升次版、修正升修訂版，每次上傳 `CURRENT_PROJECT_VERSION` +1 |
+| Apple Developer Program 會員 | ✅ | 2026-10-12 開通，Team ID 與 `W5937V2WUF` 相同，`project.yml` 與 `scripts/ExportOptions.plist` 不必改 |
 | TestFlight 實機驗收 | ⏳ 人類 | 下方「實機驗收」 |
 | 截圖、商店資料 | ⏳ 人類 | 下方「要填的資料」 |
 
@@ -67,8 +68,8 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | 名稱 | DaysCam 天數相機 |
 | 主要語言 | 繁體中文 |
 | 類別 | 攝影與錄影 |
-| 副標 | 把日子印在照片上 |
-| 宣傳文字 | 拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。 |
+| 副標 | 每張照片都記得第幾天（2026-10-12 人類選定；原案「把日子印在照片上」） |
+| 宣傳文字 | 寶寶出生、開始健身、搬進新家……設定一個起始日，之後按下快門，天數就直接印在照片上。離線、免帳號，照片只存在你的相簿。（2026-10-12 人類選定；原案「拍照時就把「第 N 天」或日期寫進照片，不用事後編輯。」） |
 | 關鍵字 | 天數,日期相機,紀念日,寶寶,打卡,倒數,日期浮水印,day counter,date stamp,timestamp camera |
 | 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/> |
 | 支援 URL | <https://irene-chou.github.io/dayscam-privacy/> |

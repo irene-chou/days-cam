@@ -10,9 +10,16 @@ final class RetapFocusQATests: XCTestCase {
     private func launch() {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestZoomPresets"]
+        // The tap points assume the default 3:4 viewfinder with the panel
+        // closed. The ratio lives in the standard defaults, so a test that
+        // left 1:1 behind puts the overlay text under (0.8, 0.65), and that
+        // tap opens the panel; pin the ratio and start from fresh profiles.
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestZoomPresets",
+                                "-UITestFreshProfiles", UUID().uuidString,
+                                "-captureAspectRatio", "threeByFour"]
         app.launch()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the overlay panel must start closed")
     }
 
     private func query(_ identifier: String) -> XCUIElementQuery {
@@ -45,8 +52,11 @@ final class RetapFocusQATests: XCTestCase {
         let sunCenter: CGPoint?
     }
 
-    /// Samples as fast as the accessibility API allows for `duration` seconds.
-    private func sample(for duration: TimeInterval) -> [Sample] {
+    /// Samples as fast as the accessibility API allows for `duration` seconds,
+    /// then keeps going until there are `minimum` samples or `timeout` seconds
+    /// have passed. Each query is slower on a CI runner, so a fixed window
+    /// alone can end with too few samples; later samples are judged the same.
+    private func sample(for duration: TimeInterval, minimum: Int = 0, timeout: TimeInterval = 5) -> [Sample] {
         let start = Date()
         var out: [Sample] = []
         repeat {
@@ -60,6 +70,7 @@ final class RetapFocusQATests: XCTestCase {
                     sunCenter: sunFrame.map { CGPoint(x: $0.midX, y: $0.midY) }))
             }
         } while Date().timeIntervalSince(start) < duration
+            || (out.count < minimum && Date().timeIntervalSince(start) < timeout)
         return out
     }
 
@@ -78,7 +89,7 @@ final class RetapFocusQATests: XCTestCase {
         let centerA = CGPoint(x: pointA.midX, y: pointA.midY)
         shot("88.1_a-before-retap")
         b.tap()
-        let samples = sample(for: 0.6)
+        let samples = sample(for: 0.6, minimum: 4)
         let centerB = b.screenPoint
         XCTAssertGreaterThan(samples.count, 3, "too few samples to judge")
         print("QA370 far samples: \(samples.count) first t=\(samples.first?.t ?? -1)")
