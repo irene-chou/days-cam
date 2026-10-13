@@ -1,7 +1,7 @@
 import XCTest
 
-/// TASK-137 (#483): the edit page's 日期 row has its explanation line, and a
-/// future date shows the 「到了那天之後」 timeline. Screenshots are attached and
+/// TASK-137 (#483) as reshaped by TASK-155 (#537): a future date adds the
+/// day-before／day-of／day-after rows to the 天數預覽 block. Screenshots are attached and
 /// also written to `DAYSCAM_UI_SHOT_DIR` when the runner's environment sets it.
 final class DateTimelineUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -16,7 +16,7 @@ final class DateTimelineUITests: XCTestCase {
     }
 
     private var picker: XCUIElement { app.descendants(matching: .any)["startDatePicker"] }
-    private var timeline: XCUIElement { app.descendants(matching: .any)["rulesTimelinePreview"] }
+    private var timeline: XCUIElement { app.descendants(matching: .any)["rulesDayPreview"] }
 
     private func openEditor() {
         let profiles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
@@ -30,7 +30,7 @@ final class DateTimelineUITests: XCTestCase {
 
     /// Drags the edit page's content up from the middle of the form.
     private func scrollForm() {
-        let start = app.staticTexts["dateExplanation"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let start = picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
     }
 
@@ -47,9 +47,9 @@ final class DateTimelineUITests: XCTestCase {
         }
     }
 
-    func testExplanationAlwaysShownAndTimelineOnlyForFutureDate() {
-        XCTAssertTrue(app.staticTexts["過去的日子算第幾天，未來的日子倒數還有幾天"].exists, "137.1")
-        XCTAssertFalse(timeline.exists, "137.4 today has no timeline")
+    func testTimelineRowsOnlyForFutureDate() {
+        XCTAssertTrue(timeline.exists, "155.7 the preview is always there")
+        XCTAssertFalse(timeline.label.contains("當天"), "137.4 today has no timeline rows")
         attach("137.1_137.4_date-today-explanation-only")
 
         picker.tap()
@@ -65,7 +65,7 @@ final class DateTimelineUITests: XCTestCase {
         if dismiss.waitForExistence(timeout: 3) { dismiss.tap() }
 
         XCTAssertTrue(timeline.waitForExistence(timeout: 5), "137.2 a future date shows the timeline")
-        XCTAssertTrue(timeline.label.hasPrefix("到了那天之後"), timeline.label)
+        XCTAssertTrue(timeline.label.hasPrefix("天數預覽，今天"), timeline.label)
         XCTAssertTrue(timeline.label.contains("當天"), timeline.label)
         // Scroll the edit page up from the middle of the form (137.8).
         scrollForm()

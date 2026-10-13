@@ -158,74 +158,86 @@ extension RulesTabModel {
     }
 }
 
-// MARK: - 預覽 (FR-13.1, #227)
+// MARK: - 天數預覽 (FR-13.1, FR-13.7, TASK-155)
 
 extension RulesTabModel {
-    /// The overlay text this profile prints today, e.g. 「2026.10.11 寶寶
-    /// 5 週又 6 天」 — exactly what the viewfinder shows, with the profile's
-    /// own date／name switches and units (TASK-109, #423; the user's
-    /// 2026-10-11 decision reverses #227's days-only preview). A
-    /// counting-rule change (25.4) still shows in it end-to-end.
-    var overlayPreviewText: String {
-        renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar)
-    }
-}
-
-// MARK: - 寫在照片上 (FR-13.1, TASK-109)
-
-extension RulesTabModel {
-    /// Sets `showName` — the same setting as the content tab's 名稱 switch
-    /// (TASK-109, #423): whether the name goes onto the photo, decided right
-    /// where the name is typed.
-    func setShowName(_ newValue: Bool) {
-        guard newValue != profile.showName else { return }
-        mutate { $0.showName = newValue }
-    }
-}
-
-// MARK: - 時間軸預覽 (FR-13.7, TASK-137)
-
-extension RulesTabModel {
-    /// Heading of the timeline block.
-    static let timelineTitle = "到了那天之後"
-    /// Marker next to the date's own row.
+    /// Heading above the preview block.
+    static let dayPreviewTitle = "天數預覽"
+    /// Label of the first row.
+    static let dayPreviewTodayLabel = "今天"
+    /// Marker next to the start date's own row.
     static let timelineStartDayMarker = "當天"
-    /// The line under the date row (FR-13.7).
-    static let dateExplanation = "過去的日子算第幾天，未來的日子倒數還有幾天"
 
-    /// One row of the timeline: a day around the start date and what the
-    /// overlay would print on it.
-    struct TimelineRow: Equatable, Identifiable {
-        /// `M/d`, e.g. `1/16`.
+    /// One row of the preview: a day and what the overlay would print on it.
+    struct DayPreviewRow: Equatable, Identifiable {
+        /// 「今天」, or `M/d` for a day around the start date, e.g. `1/16`.
         let dateLabel: String
         /// True for the start date itself ("當天").
         let isStartDay: Bool
-        /// The overlay text for that day, from `TemplateRenderer`.
+        /// True for the 今天 row.
+        let isToday: Bool
+        /// The text for that day, from `TemplateRenderer`.
         let text: String
 
-        var id: String { dateLabel }
+        var id: String { isToday ? "today" : dateLabel }
+        /// Today's row and the start day's row are the emphasized ones.
+        var isEmphasized: Bool { isToday || isStartDay }
         /// What VoiceOver reads for the row.
         var spokenText: String { isStartDay ? "\(dateLabel) \(RulesTabModel.timelineStartDayMarker) \(text)" : "\(dateLabel) \(text)" }
     }
 
+    /// The profile with the three display switches forced to name on, date
+    /// off, day count on: the preview always prints 「名稱＋天數」 whatever the
+    /// content tab says. Units, wording and counting rule stay the profile's.
+    private var previewProfile: CameraProfile {
+        var copy = profile
+        copy.showName = true
+        copy.showDate = false
+        copy.showDayCount = true
+        return copy
+    }
+
+    /// What the preview prints today, e.g. 「寶寶 5 週又 6 天」.
+    var overlayPreviewText: String {
+        renderer.render(profile: previewProfile, capturedAt: calculator.now(), calendar: calendar)
+    }
+
+    /// Today's count without the name, for the short text beside the date
+    /// picker: 「還有 73 天」 or 「第 41 天」.
+    var todayShortText: String {
+        var copy = previewProfile
+        copy.showName = false
+        return renderer.render(profile: copy, capturedAt: calculator.now(), calendar: calendar)
+    }
+
     /// The day before, the day of and the day after the start date, each
-    /// rendered as if the photo were taken that day; nil unless the day count
-    /// is shown and the start date is still ahead of today.
-    ///
-    /// The text comes from `TemplateRenderer` with the day passed in as
-    /// `capturedAt`, so it follows name, switches, wording and counting rule.
-    var timelinePreview: [TimelineRow]? {
-        guard profile.showDayCount,
-              calculator.rawDayDifference(from: profile.startDate) < 0,
+    /// rendered as if the photo were taken that day; nil unless the start
+    /// date is still ahead of today.
+    var timelinePreview: [DayPreviewRow]? {
+        guard calculator.rawDayDifference(from: profile.startDate) < 0,
               let startNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startDateAsDate) else {
             return nil
         }
+        let forced = previewProfile
         return [-1, 0, 1].compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: offset, to: startNoon) else { return nil }
             let parts = calendar.dateComponents([.month, .day], from: day)
-            return TimelineRow(dateLabel: "\(parts.month ?? 0)/\(parts.day ?? 0)",
-                               isStartDay: offset == 0,
-                               text: renderer.render(profile: profile, capturedAt: day, calendar: calendar))
+            return DayPreviewRow(dateLabel: "\(parts.month ?? 0)/\(parts.day ?? 0)",
+                                 isStartDay: offset == 0,
+                                 isToday: false,
+                                 text: renderer.render(profile: forced, capturedAt: day, calendar: calendar))
         }
+    }
+
+    /// All preview rows: 今天 first, then the timeline around a future date.
+    var dayPreviewRows: [DayPreviewRow] {
+        let today = DayPreviewRow(dateLabel: Self.dayPreviewTodayLabel, isStartDay: false, isToday: true,
+                                  text: overlayPreviewText)
+        return [today] + (timelinePreview ?? [])
+    }
+
+    /// The whole preview block as one VoiceOver sentence.
+    var dayPreviewSpokenText: String {
+        ([Self.dayPreviewTitle] + dayPreviewRows.map(\.spokenText)).joined(separator: "，")
     }
 }

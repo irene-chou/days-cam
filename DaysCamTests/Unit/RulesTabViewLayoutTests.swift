@@ -17,25 +17,28 @@ final class RulesTabViewLayoutTests: XCTestCase {
         return hosting.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
     }
 
-    /// 43.7: at 375pt the three rows are never truncated, so the page is at
-    /// least the floor of three 48pt rows plus the preview sentence.
-    func testGroupedBlockIsAtLeastFourMinimumRows() {
+    /// 43.7／155: at 375pt the three label-above-value rows and the 天數預覽
+    /// block are never truncated, so the page is at least three stacked rows
+    /// (label 16 + value 22 + 2×10 inset) plus the preview title and its
+    /// single 今天 row, and stays under a ceiling that catches a runaway layout.
+    func testPageHoldsThreeStackedRowsAndThePreview() {
         let height = contentSize().height
-        XCTAssertGreaterThanOrEqual(height, 12 + 48 * 4 + 12 + 12, "109.7 four rows since TASK-109")
-        // TASK-137 added the one-line explanation (13pt + 10pt) under the date row.
-        XCTAssertLessThanOrEqual(height, 290, "整頁高度過高，量到 \(height)")
+        XCTAssertGreaterThanOrEqual(height, 12 + 58 * 3 + 16 + 16 + 40 + 12, "155 three rows and the preview")
+        // Measured 317.7 at 375pt (TASK-155: stacked rows + preview block).
+        XCTAssertLessThanOrEqual(height, 340, "整頁高度過高，量到 \(height)")
     }
 
-    /// 43.7: the two counting-rule capsules fit in the row at 375pt (and at
-    /// 320pt, narrower than any supported device) without wrapping the page.
-    func testCountingRuleCapsulesFitAtNarrowWidth() {
-        let labels = [RulesTabModel.countingRuleDayOneLabel, RulesTabModel.countingRuleDayZeroLabel]
+    /// 25.6／155.5: each of the two equal 起算 cells fits its label at 375pt (and
+    /// at 320pt, narrower than any supported device) on one line.
+    func testCountingRuleCellsFitAtNarrowWidth() {
         let font = UIFont.preferredFont(forTextStyle: .footnote)
-        let capsules = labels.reduce(CGFloat(0)) { total, label in
-            total + (label as NSString).size(withAttributes: [.font: font]).width + 20
+        for width: CGFloat in [375, 320] {
+            // width - 2×14 outer inset - 2×16 row inset - 2×2 track padding, halved.
+            let cell = (width - 2 * 14 - 2 * RulesTabView.rowHorizontalPadding - 4) / 2
+            for label in [RulesTabModel.countingRuleDayOneLabel, RulesTabModel.countingRuleDayZeroLabel] {
+                let text = (label as NSString).size(withAttributes: [.font: font]).width
+                XCTAssertLessThanOrEqual(text + 8, cell, "\(label) 在 \(width)pt 需完整顯示")
+            }
         }
-        // 375 - 2×16 row inset - label "起算" (~40) - gap - capsule gap.
-        let available: CGFloat = 375 - 2 * RulesTabView.rowHorizontalPadding - 40 - 10 - 8
-        XCTAssertLessThanOrEqual(capsules, available, "起算兩顆膠囊需完整顯示")
     }
 }
