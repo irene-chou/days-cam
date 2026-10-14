@@ -15,7 +15,7 @@
 
 ## 建置與上傳
 
-版本規則：功能升次版、修正升修訂版（`chore/bump-<版本>`，CI 全套測試），每次上傳 `CURRENT_PROJECT_VERSION` +1（`chore/build-<號>`，同樣跑 CI 全套）。送審前用 Organizer 的 Generate Privacy Report 核對 `PrivacyInfo.xcprivacy`（只申報 UserDefaults CA92.1、FileTimestamp C617.1），多出別的類別交 Lead 改程式。
+版本規則：功能升次版、修正升修訂版（`chore/bump-<版本>`，CI 全套測試），`CURRENT_PROJECT_VERSION` 每個新版本從 1 開始（升版 PR 一併歸 1），同一版本重新上傳才 +1（`chore/build-<號>`，同樣跑 CI 全套）。送審前用 Organizer 的 Generate Privacy Report 核對 `PrivacyInfo.xcprivacy`（只申報 UserDefaults CA92.1、FileTimestamp C617.1），多出別的類別交 Lead 改程式。
 
 GUI：Xcode 選「Any iOS Device (arm64)」→ Product → Archive → Organizer → Distribute App → App Store Connect，自動簽名。
 
@@ -81,5 +81,5 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 
 ## 上架後
 
-- 退件或當機需要改程式時走 `fix/` 分支，升修訂版，build 號 +1，重新 Archive。
+- 退件或當機需要改程式時走 `fix/` 分支，升修訂版（build 號歸 1），重新 Archive。
 - App Store Connect 的「當機」與「TestFlight 回饋」由 Lead 轉成 Issue。
