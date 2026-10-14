@@ -72,10 +72,11 @@ final class FontScrollStabilityUITests: XCTestCase {
         for step in 1...80 {
             drag(up: true)
             var now = positions()
-            if step == 1 && abs(now.license - last.license) < 0.5 {
-                // A loaded CI runner sometimes drops the very first drag, so
-                // it gets one more try before it is called a miss (#547).
-                print("FONTSCROLL \(label) first drag did not scroll, retrying")
+            if abs(now.license - last.license) < 0.5 {
+                // A loaded CI runner sometimes drops a drag — the first one or
+                // one halfway down — so a drag that moves nothing gets one
+                // more try before it means a miss or the bottom (#547).
+                print("FONTSCROLL \(label) down#\(step) did not scroll, retrying")
                 drag(up: true)
                 now = positions()
             }
