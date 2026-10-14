@@ -138,6 +138,10 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         fullSwipeLeft(rows.element(boundBy: 1))
         XCTAssertTrue(deleteDialogButton.waitForExistence(timeout: 3))
         deleteDialogButton.tap()
+        // The row goes once the dialog has faded out, which on a busy CI
+        // simulator is about a second after the tap (#555): wait, don't sample.
+        let deleted = expectation(for: NSPredicate(format: "count == %d", countBefore - 1), evaluatedWith: rows)
+        wait(for: [deleted], timeout: 5)
         XCTAssertEqual(rows.count, countBefore - 1, "104.2 confirming deletes the row")
     }
 
