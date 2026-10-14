@@ -79,9 +79,10 @@ final class FocusExposureUITests: XCTestCase {
         XCTAssertTrue(reticle.exists)
         attachScreenshot("73.3-locked")
         viewfinder(0.5, 0.3).tap()
-        let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: lockLabel)
-        waitForExpectations(timeout: 3)
+        // The label is off screen a few frames after the tap, but on a busy
+        // CI simulator one accessibility snapshot alone has taken over 3 s
+        // (#555); the wait returns as soon as it is gone.
+        XCTAssertTrue(lockLabel.waitForNonExistence(timeout: 10), "73.3 a tap unlocks")
         XCTAssertTrue(reticle.exists)
     }
 
