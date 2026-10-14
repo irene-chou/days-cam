@@ -82,6 +82,11 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var position: OverlayPlacement
     /// How the overlay looks (PRD 0.2 §4.2).
     var style: OverlayStyle
+    /// Whether a film date stamp is printed in a corner, independent of
+    /// `showDate` and outside the "day count or date" rule (TASK-151 #520).
+    var showFilmDate: Bool
+    /// The corner the film date stamp is printed in.
+    var filmDateCorner: FilmDateCorner
     /// When this profile was created.
     var createdAt: Date
     /// When this profile was last modified.
@@ -102,6 +107,8 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          useAgeWording: Bool = false,
          position: OverlayPlacement = .default,
          style: OverlayStyle = OverlayStyle(),
+         showFilmDate: Bool = false,
+         filmDateCorner: FilmDateCorner = .default,
          createdAt: Date = Date(),
          updatedAt: Date = Date()) {
         self.id = id
@@ -115,6 +122,8 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.useAgeWording = useAgeWording
         self.position = position
         self.style = style
+        self.showFilmDate = showFilmDate
+        self.filmDateCorner = filmDateCorner
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -249,6 +258,7 @@ extension CameraProfile {
     private enum CodingKeys: String, CodingKey {
         case id, name, startDate, countingRule, showDayCount, showDate, showName
         case displayUnits, useAgeWording, position, style, createdAt, updatedAt
+        case showFilmDate, filmDateCorner
     }
 
     /// Keys that only 0.1 files carry. Read, never written.
@@ -298,6 +308,8 @@ extension CameraProfile {
         try container.encode(useAgeWording, forKey: .useAgeWording)
         try container.encode(position, forKey: .position)
         try container.encode(style, forKey: .style)
+        try container.encode(showFilmDate, forKey: .showFilmDate)
+        try container.encode(filmDateCorner, forKey: .filmDateCorner)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
@@ -320,6 +332,11 @@ extension CameraProfile {
         useAgeWording = try container.decode(Bool.self, forKey: .useAgeWording)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        // Added by TASK-151: files written before it lack both keys. A corner
+        // that cannot be read at all falls back too, rather than losing the
+        // profile (PRD 0.2 §4.3).
+        showFilmDate = try container.decodeIfPresent(Bool.self, forKey: .showFilmDate) ?? false
+        filmDateCorner = (try? container.decodeIfPresent(FilmDateCorner.self, forKey: .filmDateCorner)) ?? .default
 
         // 0.1 wrote `position` as a bare string such as "bottomTrailing".
         if let legacyPosition = try? container.decode(OverlayPosition.self, forKey: .position) {

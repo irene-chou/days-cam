@@ -1872,6 +1872,8 @@ final class TabProfileWriter {
         if updated.useAgeWording != baseline.useAgeWording { merged.useAgeWording = updated.useAgeWording }
         if updated.position != baseline.position { merged.position = updated.position }
         if updated.style != baseline.style { merged.style = updated.style }
+        if updated.showFilmDate != baseline.showFilmDate { merged.showFilmDate = updated.showFilmDate }
+        if updated.filmDateCorner != baseline.filmDateCorner { merged.filmDateCorner = updated.filmDateCorner }
         return merged
     }
 }

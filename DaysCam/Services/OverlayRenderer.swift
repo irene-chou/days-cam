@@ -28,6 +28,11 @@ struct OverlayRenderer {
     ///
     /// An empty `text` draws nothing at all, not even an empty background box.
     ///
+    /// `filmDate`, when given, is printed after the main text as its own
+    /// layer, in its corner of the (cropped) photo, by `FilmDateRenderer`
+    /// (TASK-151 #520). It never moves out of the main text's way. `nil`
+    /// draws nothing extra and leaves the output exactly as before.
+    ///
     /// `cropRect`, when given, is the window to keep, in orientation-normalized
     /// pixels (`ImageCropper.cropRect(forPixelSize:ratio:)`). Cropping, rotating
     /// upright and printing then happen in one drawing pass: the canvas is
@@ -46,7 +51,8 @@ struct OverlayRenderer {
     /// was drawing with (PRD 0.3 FR-5.14). It is used both to fit the size and
     /// to draw, so the two cannot disagree.
     func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement,
-              font: ResolvedOverlayFont, cropRect: CGRect? = nil) -> UIImage? {
+              font: ResolvedOverlayFont, cropRect: CGRect? = nil,
+              filmDate: FilmDateStamp? = nil) -> UIImage? {
         let sourceSize = CGSize(width: image.size.width * image.scale,
                                 height: image.size.height * image.scale)
         guard sourceSize.width >= 1, sourceSize.height >= 1 else { return nil }
@@ -58,7 +64,7 @@ struct OverlayRenderer {
         // Already upright, already one point per pixel, nothing to print: the
         // input already is the answer, and handing it back is the only way to
         // guarantee every pixel is untouched.
-        if text.isEmpty, image.imageOrientation == .up, image.scale == 1, cropRect == nil {
+        if text.isEmpty, filmDate == nil, image.imageOrientation == .up, image.scale == 1, cropRect == nil {
             return image
         }
 
@@ -73,11 +79,15 @@ struct OverlayRenderer {
             image.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
                                   width: sourceSize.width, height: sourceSize.height))
 
-            guard !text.isEmpty else { return }
-            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
-            let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize).decoratedText()
-            let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
-            block.draw(rendererContext.cgContext, origin)
+            if !text.isEmpty {
+                let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
+                let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize).decoratedText()
+                let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
+                block.draw(rendererContext.cgContext, origin)
+            }
+            if let filmDate {
+                FilmDateRenderer.draw(filmDate, in: rendererContext.cgContext, canvasSize: pixelSize)
+            }
         }
     }
 
