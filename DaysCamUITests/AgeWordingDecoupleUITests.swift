@@ -45,12 +45,22 @@ final class AgeWordingDecoupleUITests: XCTestCase {
     }
 
     private var ageWording: XCUIElement {
-        let s = app.switches["年改成歲"]
-        return s.exists ? s : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "年改成歲")).firstMatch
+        let s = app.switches["「年」改成「歲」"]
+        return s.exists ? s : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "「年」改成「歲」")).firstMatch
     }
     private var isAgeWordingOn: Bool { (ageWording.value as? String) == "1" }
-    /// The combined row is wide; tap near its switch end, as a finger would.
+    /// Tap near the switch's trailing end, as a finger would. With the cards
+    /// of #558 the switch can sit in the home-indicator band, which swallows
+    /// taps by design (92.7), so drag it up into reach first.
     private func tapAgeWording() {
+        let reach = app.frame.height - (app.frame.height >= 812 ? 60 : 16)
+        if ageWording.frame.maxY > reach {
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.frame.height - 140))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -(ageWording.frame.maxY - reach + 40))),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
         ageWording.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
     }
     private func overlay(containing text: String) -> XCUIElement {

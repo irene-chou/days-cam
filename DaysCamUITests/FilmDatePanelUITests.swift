@@ -16,7 +16,8 @@ final class FilmDatePanelUITests: XCTestCase {
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
-        XCTAssertTrue(app.switches["底片日期"].waitForExistence(timeout: 5))
+        // The 戳記 card starts below the fold on iPhone SE (#558).
+        XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
     }
 
     private func shot(_ name: String) {
@@ -43,7 +44,8 @@ final class FilmDatePanelUITests: XCTestCase {
         let tabBottom = app.buttons["內容"].frame.maxY
         var trace: [String] = []
         for _ in 0..<3 {
-            let gap = filmSwitch.frame.minY - tabBottom
+            // Not in the tree yet means still below the fold.
+            let gap = filmSwitch.exists ? filmSwitch.frame.minY - tabBottom : 200
             trace.append("\(Int(gap))")
             // Short drags snap unpredictably, so settle for anywhere close.
             if (4...60).contains(gap) { break }
@@ -66,18 +68,34 @@ final class FilmDatePanelUITests: XCTestCase {
         }
     }
 
+    /// Drags the panel back down until 文字內容 is on screen again.
+    private func scrollToTop() {
+        let heading = app.staticTexts["文字內容"]
+        for _ in 0..<8 where !(heading.exists && heading.frame.minY >= app.buttons["內容"].frame.maxY) {
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.buttons["內容"].frame.maxY + 30))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+    }
+
     func testSwitchRowLayoutCornersAndCollapse() {
-        // 152.1 below the 天數｜日期｜名稱 row, right edge under 名稱's, off by default.
-        let name = app.switches["名稱"]
-        XCTAssertGreaterThan(filmSwitch.frame.minY, name.frame.maxY - 1)
-        XCTAssertEqual(filmSwitch.frame.maxX, name.frame.maxX, accuracy: 1)
+        // 152.1 in the 戳記 card below the text switches (#558 moved it;
+        // the order is FormatTabReorderUITests'), right edge under 名稱's,
+        // off by default.
+        let nameMaxX = app.switches["名稱"].frame.maxX
+        showFilmDateBlock()
+        XCTAssertEqual(filmSwitch.frame.maxX, nameMaxX, accuracy: 1)
         XCTAssertEqual(filmSwitch.value as? String, "0")
         XCTAssertFalse(cornerButton("bottomLeading").exists)
         shot("PR_152.9_iPhoneSE_off")
 
         // 152.2 on: 位置 appears, bottom-left selected.
         filmSwitch.tap()
-        XCTAssertTrue(cornerButton("bottomLeading").waitForExistence(timeout: 3))
+        // The row opens below the panel's edge on a taller screen.
+        showFilmDateBlock()
+        XCTAssertTrue(cornerButton("bottomLeading").exists)
         XCTAssertTrue(cornerButton("bottomLeading").isSelected)
         XCTAssertFalse(cornerButton("topTrailing").isSelected)
         for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
@@ -98,15 +116,19 @@ final class FilmDatePanelUITests: XCTestCase {
         filmSwitch.tap()
         XCTAssertFalse(cornerButton("topTrailing").exists, "collapsed when off")
         filmSwitch.tap()
-        XCTAssertTrue(cornerButton("topTrailing").waitForExistence(timeout: 3))
+        // The row opens below the panel's edge on a taller screen.
+        showFilmDateBlock()
+        XCTAssertTrue(cornerButton("topTrailing").exists)
         XCTAssertTrue(cornerButton("topTrailing").isSelected)
 
         // 152.6 day count off collapses the units, not the film date rows.
+        scrollToTop()
         XCTAssertTrue(app.switches["日期"].exists)
         app.switches["日期"].tap()
         app.switches["天數"].coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertFalse(app.otherElements["dayCountUnits"].exists)
-        XCTAssertTrue(filmSwitch.exists)
+        showFilmDateBlock()
+        XCTAssertTrue(cornerButton("topTrailing").exists, "corner row still there")
     }
 
     func testLargestDynamicTypeKeepsLabelsApart() {
@@ -120,11 +142,15 @@ final class FilmDatePanelUITests: XCTestCase {
         XCTAssertTrue(filmSwitch.waitForExistence(timeout: 5))
         showFilmDateBlock()
         filmSwitch.tap()
-        XCTAssertTrue(cornerButton("bottomLeading").waitForExistence(timeout: 3))
+        // The row opens below the panel's edge on a taller screen.
         showFilmDateBlock()
-        let label = app.staticTexts["位置"].frame
-        for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
-            XCTAssertFalse(label.intersects(cornerButton(raw).frame), "位置 clear of \(raw)")
+        XCTAssertTrue(cornerButton("bottomLeading").exists)
+        showFilmDateBlock()
+        // #558: the corners sit in one row with their names under them;
+        // at this size they must still not run into each other.
+        let frames = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"].map { cornerButton($0).frame }
+        for (left, right) in zip(frames, frames.dropFirst()) {
+            XCTAssertLessThanOrEqual(left.maxX, right.minX + 0.5, "corners apart")
         }
         shot("PR_152.8_iPhoneSE_largestText")
     }
