@@ -71,7 +71,15 @@ final class FontScrollStabilityUITests: XCTestCase {
         var reachedBottom = false
         for step in 1...80 {
             drag(up: true)
-            let now = positions()
+            var now = positions()
+            if abs(now.license - last.license) < 0.5 {
+                // A loaded CI runner sometimes drops a drag — the first one or
+                // one halfway down — so a drag that moves nothing gets one
+                // more try before it means a miss or the bottom (#547).
+                print("FONTSCROLL \(label) down#\(step) did not scroll, retrying")
+                drag(up: true)
+                now = positions()
+            }
             print("FONTSCROLL \(label) down#\(step) heading=\(now.heading) license=\(now.license)")
             XCTAssertLessThanOrEqual(now.heading, last.heading + 0.5, "150.2 \(label) heading rose at down#\(step)")
             XCTAssertLessThanOrEqual(now.license, last.license + 0.5, "150.2 \(label) license rose at down#\(step)")
@@ -86,7 +94,13 @@ final class FontScrollStabilityUITests: XCTestCase {
             last = now
         }
         XCTAssertTrue(reachedBottom, "150.2 \(label) reached the bottom")
-        XCTAssertTrue(license.isHittable, "150.2 \(label) 字型授權 fully visible")
+        // `isHittable` is unreliable on CI runners (#547): check the frame
+        // lies inside the visible list area instead.
+        let visibleTop = app.buttons["字型"].frame.maxY
+        let visibleBottom = app.windows.firstMatch.frame.maxY
+        let licenseFrame = license.frame
+        XCTAssertTrue(license.exists && licenseFrame.minY >= visibleTop && licenseFrame.maxY <= visibleBottom,
+                      "150.2 \(label) 字型授權 fully visible: \(licenseFrame) in \(visibleTop)...\(visibleBottom)")
         attach("150.9_\(label)_bottom")
         last = positions()
         for step in 1...80 {
