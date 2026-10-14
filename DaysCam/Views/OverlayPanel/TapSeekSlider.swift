@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// A system `Slider` that also jumps to a tapped point on its track
-/// (TASK-114). Dragging is the system slider's own; a touch that lifts
-/// within `tapSlop` of where it began seeks to that point, snapped to
-/// `step`, and calls `onChange` once.
+/// (TASK-114). Dragging is the system slider's own; a recognized tap seeks
+/// to that point, snapped to `step`, and calls `onChange` once. The tap is a
+/// `SpatialTapGesture`, which fails once the touch moves, so it never takes
+/// over the slider's drag tracking (#551).
 struct TapSeekSlider: View {
     let value: Double
     let range: ClosedRange<Double>
@@ -18,9 +19,6 @@ struct TapSeekSlider: View {
     /// image), rounded up: the track's usable length excludes a thumb radius
     /// at each end, which is how the system maps a drag to a value.
     static let thumbRadius: CGFloat = 14
-    /// A touch that moves further than this before lifting is a drag, not a
-    /// tap, and seeks nothing.
-    static let tapSlop: CGFloat = 10
 
     var body: some View {
         Slider(value: Binding(get: { value }, set: onChange), in: range, step: step)
@@ -37,15 +35,14 @@ struct TapSeekSlider: View {
     }
 
     private var seekGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onEnded { drag in
+        SpatialTapGesture(coordinateSpace: .local)
+            .onEnded { tap in
                 guard !isDisabled, trackWidth > 0 else { return }
-                guard hypot(drag.translation.width, drag.translation.height) <= Self.tapSlop else { return }
                 // A tap on the thumb itself is not a seek: at the thumb's
                 // edge the tapped point could otherwise be a step away.
-                guard !Self.isOnThumb(x: drag.startLocation.x, value: value, trackWidth: trackWidth,
+                guard !Self.isOnThumb(x: tap.location.x, value: value, trackWidth: trackWidth,
                                       thumbRadius: Self.thumbRadius, range: range) else { return }
-                let target = Self.value(atX: drag.startLocation.x, trackWidth: trackWidth,
+                let target = Self.value(atX: tap.location.x, trackWidth: trackWidth,
                                         thumbRadius: Self.thumbRadius, range: range, step: step)
                 guard target != value else { return }
                 if reduceMotion {
