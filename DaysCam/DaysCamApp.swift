@@ -27,9 +27,27 @@ struct DaysCamApp: App {
     private static func makeCameraScreenModel() -> CameraScreenModel {
         let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
+        applyUITestFilmDate(to: profileStore)
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: profileStore,
                                  fontLibrary: uiTestFontLibrary ?? FontLibrary())
+    }
+
+    /// UI tests pass `-UITestFilmDate <corner>` (a `FilmDateCorner` raw value)
+    /// to turn the film date on in that corner for every saved profile, the
+    /// stand-in for the panel switch of TASK-152 (TASK-153). Debug builds only.
+    private static func applyUITestFilmDate(to profileStore: ProfileStore) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestFilmDate"),
+              arguments.indices.contains(flag + 1),
+              let corner = FilmDateCorner(rawValue: arguments[flag + 1]) else { return }
+        for var profile in profileStore.profiles {
+            profile.showFilmDate = true
+            profile.filmDateCorner = corner
+            _ = try? profileStore.update(profile)
+        }
+        #endif
     }
 
     /// Debug builds only: a stand-in font library for UI tests (TASK-150).

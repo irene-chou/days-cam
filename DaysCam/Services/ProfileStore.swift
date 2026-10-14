@@ -437,6 +437,8 @@ extension ProfileStore {
                                        useAgeWording: source.useAgeWording,
                                        position: source.position,
                                        style: source.style,
+                                       showFilmDate: source.showFilmDate,
+                                       filmDateCorner: source.filmDateCorner,
                                        createdAt: timestamp,
                                        updatedAt: timestamp)
 

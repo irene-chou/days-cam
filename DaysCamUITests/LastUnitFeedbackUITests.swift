@@ -26,16 +26,26 @@ final class LastUnitFeedbackUITests: XCTestCase {
         return s.exists ? s : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
     }
     private func isOn(_ element: XCUIElement) -> Bool { (element.value as? String) == "1" }
+    /// #558: the hint shows on its card's heading line, after the title.
+    private func assertHint(_ hint: XCUIElement, sitsOnHeading title: String, _ message: String,
+                            file: StaticString = #filePath, line: UInt = #line) {
+        let heading = app.staticTexts[title].frame
+        XCTAssertEqual(hint.frame.midY, heading.midY, accuracy: 4, "\(message) same line as \(title)", file: file, line: line)
+        XCTAssertGreaterThan(hint.frame.minX, heading.maxX, "\(message) right of \(title)", file: file, line: line)
+    }
 
     /// 108.1／108.2: 天 alone is enabled and stays checked when tapped; the
     /// hint appears and stays until another checkbox is tapped (141.4);
-    /// 年改成歲 and 顯示內容 do not move.
+    /// 「年」改成「歲」 and 文字內容 do not move.
     func testLastUnitStaysCheckedWithAHintAndNothingMoves() {
         let day = app.buttons["天"]
         XCTAssertTrue(day.isEnabled, "108.1 not disabled")
         XCTAssertTrue(day.isSelected, "108.1 checked")
-        let ageRowBefore = app.staticTexts["年改成歲"].frame
-        let contentHeadingBefore = app.staticTexts["顯示內容"].frame
+        // Distances, not absolute frames: on a short screen (iPhone SE) the
+        // panel scrolls when a row is tapped, shifting everything together.
+        func ageRowOffset() -> CGFloat { toggle("「年」改成「歲」").frame.minY - unitHint.frame.minY }
+        let ageRowBefore = ageRowOffset()
+        let contentHeadingBefore = app.staticTexts["文字內容"].frame.minY - unitHint.frame.minY
         // The hint line is always laid out (108.2); it carries the text only
         // while showing, so the checks read its label.
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
@@ -44,15 +54,19 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(day.isSelected, "108.1 still checked")
         let shown = NSPredicate(format: "label == '至少保留一個單位'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
-        XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 the age-wording row did not move")
-        XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
+        XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 the age-wording row did not move")
+        XCTAssertEqual(app.staticTexts["文字內容"].frame.minY - unitHint.frame.minY, contentHeadingBefore, "108.2 the content heading did not move")
+        assertHint(unitHint, sitsOnHeading: "天數單位", "#558.8")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
+        // Let the scroll from the earlier tap settle before the next one.
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(app.buttons["週"].isHittable, "週 reachable")
         app.buttons["週"].tap()
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
         XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 2), .completed, "141.4 a checkbox tap clears it")
-        XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 still in place after the hint")
+        XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 still in place after the hint")
     }
 
     /// 108.3: with 週 checked too, 天 can be unchecked and no hint shows.
@@ -67,10 +81,15 @@ final class LastUnitFeedbackUITests: XCTestCase {
     /// 108.4: turning off the only one of 天數／日期 springs back with its
     /// own hint, both ways.
     func testLastContentSwitchSpringsBackWithAHint() {
+        let switchFrames = ["天數", "日期", "名稱"].map { toggle($0).frame }
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
         let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
+        assertHint(contentHint, sitsOnHeading: "文字內容", "#558.7")
+        for (name, before) in zip(["天數", "日期", "名稱"], switchFrames) {
+            XCTAssertEqual(toggle(name).frame.minY, before.minY, accuracy: 1, "#558.7 \(name) did not move")
+        }
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(contentHint.label, "至少顯示天數或日期", "141.3 still there after 3 s")
         toggle("名稱").tap()
@@ -92,7 +111,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
         XCTAssertFalse(app.buttons["週"].exists, "141.2 collapsed")
-        XCTAssertFalse(toggle("年改成歲").exists, "141.2 collapsed")
+        XCTAssertFalse(toggle("「年」改成「歲」").exists, "141.2 collapsed")
         toggle("天數").tap()
         XCTAssertTrue(app.buttons["週"].waitForExistence(timeout: 3))
         app.buttons["週"].tap()
