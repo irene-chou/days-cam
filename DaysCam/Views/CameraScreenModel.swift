@@ -271,7 +271,7 @@ final class CameraScreenModel: ObservableObject {
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?) -> UIImage?
 
     /// Saves a baked photo to the system photo library, returning its new
     /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
@@ -363,8 +363,8 @@ final class CameraScreenModel: ObservableObject {
              ImageCropper.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { image, text, style, placement, font, cropRect in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect)
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect, filmDate: filmDate)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
@@ -916,6 +916,24 @@ extension CameraScreenModel {
         return renderer.render(profile: selectedProfile, capturedAt: calculator.now(), calendar: calendar)
     }
 
+    /// The film date stamp the viewfinder draws as of right now, or `nil`
+    /// while the selected profile has it off (TASK-153 #522). Computed on
+    /// every access from the same clock as `overlayText`, so it follows the
+    /// midnight rollover through the same `refreshTick`.
+    var filmDateStamp: FilmDateStamp? {
+        guard let selectedProfile else { return nil }
+        return filmDateStamp(for: selectedProfile, capturedAt: calculator.now())
+    }
+
+    /// The stamp for `profile` at the moment `capturedAt`, `nil` when its
+    /// film date is off. Shared by the viewfinder and the shutter so both
+    /// print the same date from the same moment.
+    private func filmDateStamp(for profile: CameraProfile, capturedAt: Date) -> FilmDateStamp? {
+        guard profile.showFilmDate else { return nil }
+        let components = DayCountCalculator(calendar: calendar, now: { capturedAt }).currentDateComponents()
+        return FilmDateStamp(text: FilmDateStamp.text(for: components), corner: profile.filmDateCorner)
+    }
+
     /// The style `selectedProfile` draws its overlay with (PRD 0.2 §4.2).
     var overlayStyle: OverlayStyle {
         selectedProfile?.style ?? OverlayStyle()
@@ -1207,11 +1225,12 @@ extension CameraScreenModel {
         let capturedAt = calculator.now()
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
         let font = resolveFont(profile.style, fontLibrary)
-        return (capturedAt, text, profile.style, profile.position, font)
+        return (capturedAt, text, profile.style, profile.position, font,
+                filmDateStamp(for: profile, capturedAt: capturedAt))
     }
 
     /// Everything the baking needs, fixed at the instant the shutter fires.
-    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont)
+    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont, filmDate: FilmDateStamp?)
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
     /// FR-7.6).
@@ -1369,7 +1388,7 @@ extension CameraScreenModel {
                 let pixelSize = CGSize(width: image.size.width * image.scale,
                                        height: image.size.height * image.scale)
                 let window = cropRect(pixelSize, aspectRatio)
-                return bake(image, context.text, context.style, context.placement, context.font, window)
+                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.

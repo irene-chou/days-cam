@@ -81,7 +81,7 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
             calendar: DateFixture.taipei,
             calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
             cropRect: { size, _ in CGRect(origin: .zero, size: size) },
-            bake: { _, _, _, _, _, _ in UIImage() },
+            bake: { _, _, _, _, _, _, _ in UIImage() },
             save: { _, completion in completion(.success("asset")) },
             scheduleToastDismiss: { _ in },
             makeThumbnailLibrary: { _ in EmptyThumbnailLibrary() },
