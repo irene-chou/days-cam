@@ -64,8 +64,13 @@ final class FormatTabReorderUITests: XCTestCase {
     }
     /// On a short screen (iPhone SE) 年改成歲 sits below the fold of the
     /// panel's scroll view; scroll it up as a finger would.
+    /// Scrolls the panel up so 年改成歲 is on screen. On a short screen
+    /// (iPhone SE, with the 底片日期 rows #521) it sits below the fold;
+    /// `isHittable` and `swipeUp` are unreliable there, so drag by coordinate.
     private func revealAgeWording() {
-        if !toggle("年改成歲").isHittable { app.staticTexts["顯示內容"].swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        let start = app.staticTexts["顯示內容"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
+        Thread.sleep(forTimeInterval: 1)
     }
 
     /// 141.1／141.2 on a past start date: order top to bottom, collapse with
