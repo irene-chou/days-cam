@@ -193,6 +193,71 @@ struct FormatTabView: View {
             }
             .frame(minHeight: Self.rowMinHeight)
             hintRow(contentHint, identifier: "contentSwitchHint")
+            filmDateRow
+            if model.displaySettings.profile.showFilmDate {
+                filmDateCornerRow
+            }
+        }
+    }
+
+    // MARK: - 底片日期 (#521)
+
+    /// The 底片日期 switch on its own row, right edge under 名稱's.
+    private var filmDateRow: some View {
+        HStack {
+            Spacer(minLength: 0)
+            displayToggleBody(label: "底片日期",
+                              isOn: model.displaySettings.profile.showFilmDate,
+                              isDisabled: false) {
+                model.displaySettings.setShowFilmDate($0)
+            }
+        }
+        .padding(.trailing, switchTrailingInset)
+        .frame(minHeight: Self.rowMinHeight)
+    }
+
+    /// 位置 with a 2x2 corner picker; collapsed while the switch is off.
+    private var filmDateCornerRow: some View {
+        let corners: [[FilmDateCorner]] = [[.topLeading, .topTrailing], [.bottomLeading, .bottomTrailing]]
+        return HStack(spacing: 8) {
+            Text("位置").font(.subheadline).foregroundColor(CameraTheme.ink)
+            Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                ForEach(corners, id: \.first) { row in
+                    HStack(spacing: 0) {
+                        ForEach(row, id: \.self) { cornerButton($0) }
+                    }
+                }
+            }
+        }
+        .padding(.trailing, switchTrailingInset)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("filmDateCorners")
+    }
+
+    private func cornerButton(_ corner: FilmDateCorner) -> some View {
+        let isSelected = model.displaySettings.profile.filmDateCorner == corner
+        let name = Self.cornerName(corner)
+        return Button {
+            model.displaySettings.setFilmDateCorner(corner)
+        } label: {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? CameraTheme.active : CameraTheme.inkTertiary.opacity(0.25))
+                .frame(width: 28, height: 28)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("底片日期位置，\(name)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("filmDateCorner_\(corner.rawValue)")
+    }
+
+    private static func cornerName(_ corner: FilmDateCorner) -> String {
+        switch corner {
+        case .topLeading: return "左上"
+        case .topTrailing: return "右上"
+        case .bottomLeading: return "左下"
+        case .bottomTrailing: return "右下"
         }
     }
 
