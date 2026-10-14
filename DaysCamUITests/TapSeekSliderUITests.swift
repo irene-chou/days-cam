@@ -119,4 +119,26 @@ final class TapSeekSliderUITests: XCTestCase {
         settle(strokeWidth)
         XCTAssertEqual(strokeWidth.value as? String, middle, "114.6 the tapped value was saved")
     }
+
+    /// #551: pressing the thumb and dragging moves the value continuously
+    /// (the tap gesture must not take over the slider's own drag).
+    func testDraggingTheThumbChangesTheValue() {
+        app.buttons["字級"].tap()
+        let slider = app.sliders["字級"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 3))
+        XCTAssertEqual(sizePercent, "字級 100%")
+
+        // 70…160: 100% sits about a third along the track.
+        let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.36, dy: 0.5))
+        let middle = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+        thumb.press(forDuration: 0.2, thenDragTo: middle)
+        let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
+        XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
+
+        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+        thumbNow.press(forDuration: 0.2, thenDragTo: end)
+        XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")
+        attach("551_size-drag")
+    }
 }
