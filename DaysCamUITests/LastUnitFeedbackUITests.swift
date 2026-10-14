@@ -34,8 +34,11 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let day = app.buttons["天"]
         XCTAssertTrue(day.isEnabled, "108.1 not disabled")
         XCTAssertTrue(day.isSelected, "108.1 checked")
-        let ageRowBefore = app.staticTexts["年改成歲"].frame
-        let contentHeadingBefore = app.staticTexts["顯示內容"].frame
+        // Distances, not absolute frames: on a short screen (iPhone SE) the
+        // panel scrolls when a row is tapped, shifting everything together.
+        func ageRowOffset() -> CGFloat { app.staticTexts["年改成歲"].frame.minY - unitHint.frame.minY }
+        let ageRowBefore = ageRowOffset()
+        let contentHeadingBefore = app.staticTexts["顯示內容"].frame.minY - unitHint.frame.minY
         // The hint line is always laid out (108.2); it carries the text only
         // while showing, so the checks read its label.
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
@@ -44,15 +47,15 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(day.isSelected, "108.1 still checked")
         let shown = NSPredicate(format: "label == '至少保留一個單位'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
-        XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 the age-wording row did not move")
-        XCTAssertEqual(app.staticTexts["顯示內容"].frame, contentHeadingBefore, "108.2 the content heading did not move")
+        XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 the age-wording row did not move")
+        XCTAssertEqual(app.staticTexts["顯示內容"].frame.minY - unitHint.frame.minY, contentHeadingBefore, "108.2 the content heading did not move")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
         app.buttons["週"].tap()
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
         XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 2), .completed, "141.4 a checkbox tap clears it")
-        XCTAssertEqual(app.staticTexts["年改成歲"].frame, ageRowBefore, "108.2 still in place after the hint")
+        XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 still in place after the hint")
     }
 
     /// 108.3: with 週 checked too, 天 can be unchecked and no hint shows.

@@ -65,7 +65,7 @@ final class FormatTabReorderUITests: XCTestCase {
     /// On a short screen (iPhone SE) 年改成歲 sits below the fold of the
     /// panel's scroll view; scroll it up as a finger would.
     private func revealAgeWording() {
-        if !toggle("年改成歲").isHittable { app.buttons["天"].swipeUp() }
+        if !toggle("年改成歲").isHittable { app.staticTexts["顯示內容"].swipeUp() }
     }
 
     /// 141.1／141.2 on a past start date: order top to bottom, collapse with
@@ -79,10 +79,12 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertEqual(order, order.sorted(), "141.1 顯示內容 → 開關 → 分隔線 → 天數單位 → 勾選框 → 年改成歲: \(order)")
         XCTAssertEqual(toggle("年改成歲").frame.maxX, toggle("名稱").frame.maxX, accuracy: 1,
                        "年改成歲 and 名稱 end on the same right edge")
+        // Measured before 週 is tapped: on a short screen (iPhone SE, with
+        // the 底片日期 rows #521) that tap scrolls the panel.
+        let switchFrames = ["天數", "日期", "名稱"].map { toggle($0).frame }
         app.buttons["週"].tap()
         shot("141.8_past_daycount_on")
 
-        let switchFrames = ["天數", "日期", "名稱"].map { toggle($0).frame }
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
