@@ -35,12 +35,35 @@ final class FilmDatePanelUITests: XCTestCase {
     private var filmSwitch: XCUIElement { app.switches["底片日期"] }
     private func cornerButton(_ raw: String) -> XCUIElement { app.buttons["filmDateCorner_\(raw)"] }
 
-    /// Drags the panel content up so the corner picker is in view for the
-    /// B′ shots: on iPhone SE it sits below the panel's bottom edge.
-    private func revealCornerPicker() {
-        let start = app.staticTexts["顯示內容"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -150)))
-        Thread.sleep(forTimeInterval: 1)
+    /// Scrolls the panel so the 底片日期 row sits just under the tab bar, then
+    /// checks the switch and, when on, every corner cell are on screen: on
+    /// iPhone SE they start below the panel's bottom edge, and a fixed drag
+    /// over- or under-shoots, so the B′ shots missed the picker.
+    private func showFilmDateBlock(file: StaticString = #filePath, line: UInt = #line) {
+        let tabBottom = app.buttons["內容"].frame.maxY
+        var trace: [String] = []
+        for _ in 0..<3 {
+            let gap = filmSwitch.frame.minY - tabBottom
+            trace.append("\(Int(gap))")
+            // Short drags snap unpredictably, so settle for anywhere close.
+            if (4...60).contains(gap) { break }
+            let offset = gap - 24
+            let startY = (tabBottom + app.frame.height) / 2
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: startY))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -offset)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertGreaterThanOrEqual(filmSwitch.frame.minY, tabBottom, "底片日期 switch under the tab bar, tab \(Int(tabBottom)) trace \(trace)", file: file, line: line)
+        XCTAssertLessThanOrEqual(filmSwitch.frame.maxY, app.frame.height, file: file, line: line)
+        guard filmSwitch.value as? String == "1" else { return }
+        for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
+            let cell = cornerButton(raw)
+            XCTAssertTrue(cell.exists, "\(raw) cell on screen", file: file, line: line)
+            XCTAssertGreaterThanOrEqual(cell.frame.minY, tabBottom, "\(raw) cell under the tab bar", file: file, line: line)
+            XCTAssertLessThanOrEqual(cell.frame.maxY, app.frame.height, "\(raw) cell above the screen edge", file: file, line: line)
+        }
     }
 
     func testSwitchRowLayoutCornersAndCollapse() {
@@ -63,14 +86,14 @@ final class FilmDatePanelUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(frame.height, 44)
             XCTAssertLessThanOrEqual(frame.maxX, app.frame.width, "no horizontal scroll needed")
         }
-        revealCornerPicker()
+        showFilmDateBlock()
         shot("PR_152.9_iPhoneSE_on_bottomLeading")
 
         // 152.3 picking a corner, and it is kept across off/on.
         cornerButton("topTrailing").tap()
         XCTAssertTrue(cornerButton("topTrailing").isSelected)
         XCTAssertEqual(cornerButton("topTrailing").label, "底片日期位置，右上")
-        revealCornerPicker()
+        showFilmDateBlock()
         shot("PR_152.9_iPhoneSE_on_topTrailing")
         filmSwitch.tap()
         XCTAssertFalse(cornerButton("topTrailing").exists, "collapsed when off")
@@ -84,5 +107,25 @@ final class FilmDatePanelUITests: XCTestCase {
         app.switches["天數"].coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertFalse(app.otherElements["dayCountUnits"].exists)
         XCTAssertTrue(filmSwitch.exists)
+    }
+
+    func testLargestDynamicTypeKeepsLabelsApart() {
+        // 152.8 relaunch at the largest accessibility size; the shot is for
+        // the truncation check, the frames for overlap.
+        app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        app.buttons["疊字設定"].tap()
+        app.buttons["內容"].tap()
+        XCTAssertTrue(filmSwitch.waitForExistence(timeout: 5))
+        showFilmDateBlock()
+        filmSwitch.tap()
+        XCTAssertTrue(cornerButton("bottomLeading").waitForExistence(timeout: 3))
+        showFilmDateBlock()
+        let label = app.staticTexts["位置"].frame
+        for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
+            XCTAssertFalse(label.intersects(cornerButton(raw).frame), "位置 clear of \(raw)")
+        }
+        shot("PR_152.8_iPhoneSE_largestText")
     }
 }
