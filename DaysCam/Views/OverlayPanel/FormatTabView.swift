@@ -310,9 +310,12 @@ struct FormatTabView: View {
                 ZStack(alignment: Self.alignment(of: corner)) {
                     RoundedRectangle(cornerRadius: 3)
                         .strokeBorder(CameraTheme.ink.opacity(0.35), lineWidth: 1)
+                    // Lies the way the stamp does on the photo: across where
+                    // the corner draws it unturned, upright where turned.
+                    let upright = corner.rotation != 0
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Self.stampColor)
-                        .frame(width: 11, height: 4)
+                        .frame(width: upright ? 4 : 11, height: upright ? 11 : 4)
                         .padding(3)
                 }
                 .frame(width: 34, height: 26)
