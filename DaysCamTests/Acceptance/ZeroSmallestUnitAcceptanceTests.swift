@@ -79,7 +79,7 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
             calendar: DateFixture.taipei,
             calculator: DayCountCalculator(calendar: DateFixture.taipei, now: now),
             cropRect: { size, _ in CGRect(origin: .zero, size: size) },
-            bake: { image, text, style, placement, _, _ in
+            bake: { image, text, style, placement, _, _, _ in
                 recorder.add(BakeCall(text: text, style: style, placement: placement))
                 return bakeOutput(image, text, style, placement)
             },

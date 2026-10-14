@@ -472,6 +472,11 @@ struct CameraScreen: View {
                             // #420; PRD 0.2 FR-8.7).
                             onTap: { model.handleOverlayTextTap() })
 
+            // The film date sits above the overlay text and is independent
+            // of it; same box, same short edge, same code as the bake
+            // (TASK-153 #522).
+            FilmDateStampView(stamp: model.filmDateStamp, frameSize: frameSize)
+
             if let countdownRemaining = model.countdownRemaining {
                 Text("\(countdownRemaining)")
                     .font(.system(size: 96, weight: .heavy, design: .rounded))

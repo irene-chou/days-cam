@@ -162,7 +162,7 @@ final class CameraScreenModelFontTests: XCTestCase {
                              fontB: OverlayFontID = .pingFang,
                              states: [OverlayFontID: FontState] = [:],
                              timeout: TimeInterval = 3,
-                             bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?) -> UIImage? = { _, _, _, _, _, _ in UIImage() },
+                             bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?) -> UIImage? = { _, _, _, _, _, _, _ in UIImage() },
                              captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
@@ -377,7 +377,7 @@ final class CameraScreenModelFontTests: XCTestCase {
         let baked = expectation(description: "baked")
         let harness = try makeHarness(
             fontA: font, states: [font: .available],
-            bake: { _, _, _, _, resolved, _ in
+            bake: { _, _, _, _, resolved, _, _ in
                 received.value = resolved
                 baked.fulfill()
                 return UIImage()
