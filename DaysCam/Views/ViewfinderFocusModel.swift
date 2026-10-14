@@ -71,6 +71,9 @@ final class ViewfinderFocusModel: ObservableObject {
     static let pointsPerEV: CGFloat = 80
     /// Smallest bias step sent to the camera.
     static let biasStep: Float = 0.1
+    /// How long after a tap closed the panel or a capsule a touch that only
+    /// then begins still counts as that tap (#541).
+    static let consumedTapWindow: Duration = .milliseconds(300)
 
     let previewBridge = PreviewLayerBridge()
 
@@ -95,6 +98,9 @@ final class ViewfinderFocusModel: ObservableObject {
     /// The id the camera gave the latest focus or lock request.
     private var latestFocusRequestID = 0
     private var touch: Touch?
+    /// Until when a touch that begins is the tap that just closed the panel
+    /// or a capsule (`ignoreTouchConsumedByTap`).
+    private var consumedTapDeadline: ContinuousClock.Instant?
     private var holdTask: Task<Void, Never>?
     private var dimTask: Task<Void, Never>?
     private var viewfinderSize = CGSize.zero
@@ -193,6 +199,19 @@ final class ViewfinderFocusModel: ObservableObject {
         touch = nil
     }
 
+    /// The viewfinder's own tap just closed the panel or a capsule, so that
+    /// touch must not focus as well (73.6). Through iOS 26 the focus drag has
+    /// already begun by then and is dropped here; from iOS 27 the tap is
+    /// recognized first and the drag's first update only follows, so the
+    /// touch that begins right after is dropped instead (#541).
+    func ignoreTouchConsumedByTap() {
+        if touch != nil {
+            invalidateTouch()
+        } else {
+            consumedTapDeadline = .now + Self.consumedTapWindow
+        }
+    }
+
     /// The finger lifted. A press that never moved and was not held is a tap.
     func touchEnded() {
         guard let finished = touch else { return }
@@ -205,7 +224,9 @@ final class ViewfinderFocusModel: ObservableObject {
 
     private func beginTouch(at start: CGPoint) {
         holdTask?.cancel()
-        guard canAcceptGesture(), !isPinching(), !shouldIgnoreTouch(start) else {
+        let consumedByTap = consumedTapDeadline.map { ContinuousClock.now < $0 } ?? false
+        consumedTapDeadline = nil
+        guard !consumedByTap, canAcceptGesture(), !isPinching(), !shouldIgnoreTouch(start) else {
             touch = Touch(start: start, mode: .ignored)
             return
         }

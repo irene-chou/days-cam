@@ -137,7 +137,9 @@ final class FocusExposureUITests: XCTestCase {
         XCTAssertTrue(reticle.waitForExistence(timeout: 3))
         viewfinder(0.5, 0.5).press(forDuration: 0.1, thenDragTo: viewfinder(0.5, 0.3))
         XCTAssertNotEqual(sun.value as? String, "0")
-        viewfinder(0.2, 0.7).tap()
+        // Inside the viewfinder at every ratio: a 1:1 box left by an earlier
+        // test ends above 0.7 of the screen (#541).
+        viewfinder(0.25, 0.35).tap()
         let zero = NSPredicate(format: "value == '0'")
         expectation(for: zero, evaluatedWith: sun)
         waitForExpectations(timeout: 3)

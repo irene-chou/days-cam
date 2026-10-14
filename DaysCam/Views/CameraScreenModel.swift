@@ -1132,9 +1132,12 @@ extension CameraScreenModel {
     }
 
     /// A tap on the viewfinder outside the overlay text: the same thing as
-    /// any other tap outside the panel (`handleTapOutsidePanel`).
+    /// any other tap outside the panel (`handleTapOutsidePanel`). A tap that
+    /// closes something does not also focus (73.6, #541).
     func handleViewfinderTap() {
+        let closesSomething = panelModel.isOpen || isCameraToolsExpanded || zoomExpansion.isExpanded
         handleTapOutsidePanel()
+        if closesSomething { focusModel.ignoreTouchConsumedByTap() }
     }
 
     /// A tap on the overlay text itself (TASK-105, #420): opens the panel

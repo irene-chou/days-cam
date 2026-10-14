@@ -117,6 +117,41 @@ final class ViewfinderFocusModelTests: XCTestCase {
         XCTAssertNil(model.reticle)
     }
 
+    /// #541 (iOS 27 order): the tap that closed the panel comes before the
+    /// touch begins; that touch does not focus, the next one does.
+    func testTouchBeginningRightAfterAClosingTapIsIgnored() {
+        let model = makeModel()
+        model.ignoreTouchConsumedByTap()
+        tap(model)
+        XCTAssertTrue(focused.isEmpty)
+        XCTAssertNil(model.reticle)
+        tap(model)
+        XCTAssertEqual(focused.count, 1)
+    }
+
+    /// #541 (iOS 26 order): the touch has already begun when the tap closes
+    /// the panel; it does not focus when it lifts.
+    func testTouchUnderwayWhenATapClosesThePanelIsIgnored() {
+        let model = makeModel()
+        let point = CGPoint(x: 150, y: 200)
+        model.touchChanged(startLocation: point, location: point, viewfinderSize: size)
+        model.ignoreTouchConsumedByTap()
+        model.touchEnded()
+        XCTAssertTrue(focused.isEmpty)
+        tap(model)
+        XCTAssertEqual(focused.count, 1)
+    }
+
+    /// #541: a closing tap whose touch never reaches the model does not
+    /// swallow a later tap.
+    func testClosingTapExpires() async {
+        let model = makeModel()
+        model.ignoreTouchConsumedByTap()
+        await settle(400)
+        tap(model)
+        XCTAssertEqual(focused.count, 1)
+    }
+
     // MARK: pinch
 
     /// 73.6: a pinch is never a tap or a hold.
