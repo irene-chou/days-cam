@@ -21,12 +21,11 @@ struct FilmDateStampView: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .allowsHitTesting(false)
-        // UI tests need its frame (the viewfinder box); VoiceOver reads the
-        // date it shows rather than landing on an unlabeled element.
+        // Decorative, and its frame is the whole viewfinder box, so VoiceOver
+        // never sees it: it would otherwise cover the overlay text under
+        // touch exploration. UI tests still find it by identifier.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("底片日期")
-        .accessibilityValue(stamp?.text ?? "")
-        .accessibilityHidden(stamp == nil)
+        .accessibilityHidden(true)
         .accessibilityIdentifier("filmDateStamp")
     }
 }
