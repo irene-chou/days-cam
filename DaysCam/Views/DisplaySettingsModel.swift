@@ -179,6 +179,22 @@ extension DisplaySettingsModel {
         guard newValue != profile.showName else { return }
         mutate { $0.showName = newValue }
     }
+
+    /// Sets `showFilmDate` (#521). Independent of 天數／日期 — never refused,
+    /// and not counted in the "at least one of 天數／日期" rule.
+    func setShowFilmDate(_ newValue: Bool) {
+        dismissHint()
+        guard newValue != profile.showFilmDate else { return }
+        mutate { $0.showFilmDate = newValue }
+    }
+
+    /// Sets `filmDateCorner` (#521). Kept while the switch is off, so turning
+    /// it back on returns to the same corner.
+    func setFilmDateCorner(_ newValue: FilmDateCorner) {
+        dismissHint()
+        guard newValue != profile.filmDateCorner else { return }
+        mutate { $0.filmDateCorner = newValue }
+    }
 }
 
 // MARK: - Day-count format (FR-2.7–FR-2.10)

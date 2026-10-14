@@ -457,4 +457,49 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setShowDayCount(false)
         XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount))
     }
+
+    // MARK: - #521 底片日期 (152.3–152.5)
+
+    func testFilmDateCornerWritesThroughAndSurvivesTogglingOffAndOn() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setShowFilmDate(true)
+        XCTAssertEqual(model.profile.filmDateCorner, .bottomLeading, "default is bottom-left")
+        model.setFilmDateCorner(.topTrailing)
+        XCTAssertEqual(spy.updated.last?.filmDateCorner, .topTrailing, "152.3 persisted at once")
+        model.setShowFilmDate(false)
+        model.setShowFilmDate(true)
+        XCTAssertEqual(model.profile.filmDateCorner, .topTrailing, "152.3 corner kept")
+    }
+
+    func testFilmDateSwitchIsIndependentOfDateAndDayCount() throws {
+        for dayCount in [true, false] {
+            for date in [true, false] where dayCount || date {
+                let spy = Spy()
+                let model = makeModel(profile: baselineProfile(showDayCount: dayCount, showDate: date),
+                                      now: try fixedNow(), spy: spy)
+                model.setShowFilmDate(true)
+                XCTAssertTrue(model.profile.showFilmDate)
+                XCTAssertEqual(model.profile.showDayCount, dayCount, "152.4")
+                XCTAssertEqual(model.profile.showDate, date, "152.4")
+                XCTAssertNil(model.lastRejection, "152.4 no hint")
+                model.setShowFilmDate(false)
+                XCTAssertEqual(model.profile.showDayCount, dayCount)
+                XCTAssertEqual(model.profile.showDate, date)
+                XCTAssertNil(model.lastRejection)
+            }
+        }
+    }
+
+    func testFilmDateDoesNotCountTowardTheLastContentSwitchRule() throws {
+        let spy = Spy()
+        let profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1),
+                                    showDayCount: true, showDate: false, showName: true,
+                                    showFilmDate: true)
+        let model = makeModel(profile: profile, now: try fixedNow(), spy: spy)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.profile.showDayCount, "152.5 still refused")
+        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.dayCount))
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
 }
