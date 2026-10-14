@@ -21,8 +21,11 @@ struct FilmDateStampView: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .allowsHitTesting(false)
-        // A decorative drawing, but UI tests need its frame (the viewfinder box).
+        // UI tests need its frame (the viewfinder box); VoiceOver reads the
+        // date it shows rather than landing on an unlabeled element.
         .accessibilityElement(children: .ignore)
+        .accessibilityLabel("底片日期")
+        .accessibilityValue(stamp?.text ?? "")
         .accessibilityHidden(stamp == nil)
         .accessibilityIdentifier("filmDateStamp")
     }
