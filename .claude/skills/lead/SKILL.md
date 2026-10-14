@@ -88,7 +88,7 @@ description: 擔任 DaysCam 專案 Lead：巡檢 GitHub、撿任務卡實作、�
 1. `gh issue close <N>`（若 Closes 沒自動關）。
 2. `git worktree remove --force ~/.claude-worktrees/task<N>`；`ssh $SIM_HOST 'rm -rf ~/dayscam-work/task<N>-* /tmp/dd-task<N>*'`（確認沒有 xcodebuild 在用）。
 3. 其他開著的分支：`git merge-tree` 查衝突，有衝突就 rebase＋`--force-with-lease`＋重跑相關測試＋等 bot 重審，再補 gate 留言。
-4. 階段任務全合併後，由 Lead 開 `chore/bump-<版本>` 升版 PR（只改 `project.yml` 的 `MARKETING_VERSION`，這支跑完整 CI）。
+4. 階段任務全合併後，由 Lead 開 `chore/bump-<版本>` 升版 PR（改 `project.yml` 的 `MARKETING_VERSION`，`CURRENT_PROJECT_VERSION` 歸 1，這支跑完整 CI）。
 5. 更新 memory `project_0_4_status.md`（日期、PR 狀態、待辦）與 `MEMORY.md` 索引行。
 
 ## 7. 回報格式
