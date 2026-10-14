@@ -51,6 +51,9 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["顯示內容"].frame.minY - unitHint.frame.minY, contentHeadingBefore, "108.2 the content heading did not move")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
+        // Let the scroll from the earlier tap settle before the next one.
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(app.buttons["週"].isHittable, "週 reachable")
         app.buttons["週"].tap()
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
