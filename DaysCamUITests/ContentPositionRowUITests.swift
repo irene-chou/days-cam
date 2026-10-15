@@ -39,26 +39,11 @@ final class ContentPositionRowUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: "positionExpanded").firstMatch
     }
     private func cell(_ name: String) -> XCUIElement { expanded.buttons[name] }
-    private var tabBottom: CGFloat { app.buttons["內容"].frame.maxY }
-
-    /// In the tree and wholly between the tab bar and the home-indicator
-    /// band, which swallows taps (92.7); a 4.7-inch screen has none.
-    private func isOnScreen(_ element: XCUIElement) -> Bool {
-        let bottomBand: CGFloat = app.frame.height >= 812 ? 50 : 8
-        return element.exists && element.frame.minY >= tabBottom && element.frame.maxY <= app.frame.height - bottomBand
-    }
-
-    /// Drags the panel up a little at a time until `element` is on screen;
-    /// `swipeUp` is unreliable in the panel, so drag by coordinate, slowly.
+    /// Brings `element` between the tab bar and the home-indicator band.
+    /// `revealInPanel` drags back to the top first, so a row scrolled above
+    /// the tab bar (iPhone SE, after the grid opens) comes back too.
     private func scrollTo(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        for _ in 0..<8 where !isOnScreen(element) {
-            let start = app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: (tabBottom + app.frame.height) / 2))
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -100)),
-                        withVelocity: .slow, thenHoldForDuration: 0.3)
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        XCTAssertTrue(isOnScreen(element), "\(element) on screen: exists \(element.exists) frame \(element.frame) tab \(tabBottom) screen \(app.frame.height)", file: file, line: line)
+        app.revealInPanel(element, file: file, line: line)
     }
 
     private func waitUntilGone(_ element: XCUIElement) -> Bool {
