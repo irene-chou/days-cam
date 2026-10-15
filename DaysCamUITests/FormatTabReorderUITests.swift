@@ -203,6 +203,7 @@ final class FormatTabReorderUITests: XCTestCase {
     /// and heading go, the switches stay put, ticks are kept; B′ shot (b).
     func testOrderAndCollapseOnAPastStartDate() {
         launch(startDay: "2023-08-05")
+        scrollTo(app.buttons["週"])
         app.buttons["週"].tap()
         // A tap low on a short screen scrolls the panel, and collapsing a
         // scrolled panel pulls everything down as it clamps; measure from
@@ -230,7 +231,8 @@ final class FormatTabReorderUITests: XCTestCase {
         scrollToTop()
 
         toggle("天數").tap()
-        XCTAssertTrue(app.buttons["週"].waitForExistence(timeout: 3))
+        Thread.sleep(forTimeInterval: 0.5)
+        scrollTo(app.buttons["週"])
         XCTAssertTrue(app.buttons["週"].isSelected && app.buttons["天"].isSelected, "#558.3 ticks kept")
     }
 
