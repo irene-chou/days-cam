@@ -276,7 +276,7 @@ struct OverlayPanelView: View {
     }
 
     /// The white, rounded, drop-shadowed chip (`D3-tab-options.html:70`): one
-    /// third of the track, offset to the selected segment. Hidden from
+    /// half of the track, offset to the selected segment. Hidden from
     /// accessibility; `-UITestSegmentChip` exposes it to UI tests (Debug only).
     private var selectionChip: some View {
         let tabs = OverlayPanelModel.Tab.allCases
@@ -346,19 +346,11 @@ struct OverlayPanelView: View {
             } else {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }
-        case .content:
+        case .layout:
             if let formatTabModel = model.formatTabModel {
-                // #567: the 位置 row edits the same model as the 位置 tab
-                // until #568 folds that tab in here.
                 ContentTabView(formatTabModel: formatTabModel, positionTabModel: model.positionTabModel)
             } else {
-                placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
-            }
-        case .position:
-            if let positionTabModel = model.positionTabModel {
-                PositionTabView(model: positionTabModel, availableHeight: contentHeight)
-            } else {
-                placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
+                placeholderTab(title: "版面", subtitle: "尚未選取設定檔")
             }
         }
     }
@@ -388,22 +380,11 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("內容分頁") {
+#Preview("版面分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .content
-    return ZStack {
-        CameraTheme.background.ignoresSafeArea()
-        OverlayPanelView(model: model)
-    }
-}
-
-#Preview("位置（PositionTabView 已接上）") {
-    let store = ProfileStore()
-    store.load()
-    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .position
+    model.panelModel.selectedTab = .layout
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)

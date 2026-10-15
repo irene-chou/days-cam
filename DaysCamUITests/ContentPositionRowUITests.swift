@@ -1,7 +1,7 @@
 import XCTest
 
 /// #567: the 文字內容 card's 位置 row opens the nine-point grid in place and
-/// writes the same position the 位置 tab shows. With `DAYSCAM_UI_SHOT_DIR` in
+/// writes the position the viewfinder shows. With `DAYSCAM_UI_SHOT_DIR` in
 /// the test runner's environment the B′ screenshots are also written there.
 final class ContentPositionRowUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -13,7 +13,7 @@ final class ContentPositionRowUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["內容"]
+        let content = app.buttons["版面"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
         XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
@@ -89,24 +89,21 @@ final class ContentPositionRowUITests: XCTestCase {
         XCTAssertEqual(row.value as? String, "已收起")
     }
 
-    /// #567-4: a point picked on the row is the one the 位置 tab shows.
-    func testRowAndPositionTabShareThePosition() {
+    /// #568-3: a point picked on the 版面 tab's row moves the text on the
+    /// viewfinder.
+    func testPickingAPointMovesTheTextOnTheViewfinder() {
+        let text = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        let before = text.frame
         scrollTo(row)
         row.tap()
         XCTAssertTrue(expanded.waitForExistence(timeout: 3))
-        scrollTo(cell("中上"))
-        cell("中上").tap()
-        XCTAssertEqual(row.label, "位置，中上")
-
-        app.buttons["位置"].tap()
-        XCTAssertTrue(app.staticTexts["中上"].waitForExistence(timeout: 3), "567.4 the 位置 tab names it")
-        XCTAssertTrue(app.buttons["中上"].isSelected, "567.4 and selects it")
-
-        // And back: the 位置 tab's pick shows on the row.
-        app.buttons["左下"].tap()
-        app.buttons["內容"].tap()
-        scrollTo(row)
-        XCTAssertEqual(row.label, "位置，左下")
-        XCTAssertEqual(row.value as? String, "已收起", "opens closed again")
+        scrollTo(cell("左上"))
+        cell("左上").tap()
+        XCTAssertEqual(row.label, "位置，左上")
+        let moved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "frame.origin.x < %f", before.minX - 40),
+                                              object: text)
+        XCTAssertEqual(XCTWaiter().wait(for: [moved], timeout: 3), .completed, "568.3 the text moved left")
+        XCTAssertLessThan(text.frame.minY, before.minY - 40, "568.3 and up")
     }
 }

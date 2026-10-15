@@ -29,7 +29,7 @@ final class DayCountToggleUITests: XCTestCase {
 
     private func openContentTab() {
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["內容"]
+        let content = app.buttons["版面"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
         XCTAssertTrue(toggle("天數").waitForExistence(timeout: 5), "107.1 the 天數 switch is there")

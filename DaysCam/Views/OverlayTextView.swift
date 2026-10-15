@@ -42,7 +42,7 @@ struct OverlayTextView: View {
     /// where the block started, and only this view knows that (`placement`
     /// plus its own measured `blockSize`). Deliberately still not where
     /// *persisting* happens — this view only reports where the block
-    /// currently is; writing that back to a profile is the position tab's
+    /// currently is; writing that back to a profile is the position model's
     /// job (`OverlayDragHandling`, owned by ui-panel).
     var onDragChanged: ((CGPoint, CGSize) -> Void)?
     /// Called once when the drag ends, with the same two values as
@@ -79,7 +79,7 @@ struct OverlayTextView: View {
     /// Creates a view. `frameSize` and everything before it are the settled
     /// public shape from TASK-18; `onDragChanged`/`onDragEnded` are TASK-24's
     /// addition, both defaulting to `nil` so every pre-existing call site
-    /// (`CameraScreen`'s non-position tabs, `StyleSwatchPreview`'s little
+    /// (`CameraScreen` while the panel is closed, `StyleSwatchPreview`'s little
     /// preview swatches) keeps compiling and keeps being non-interactive
     /// without changing a single call site.
     init(text: String,
@@ -108,7 +108,7 @@ struct OverlayTextView: View {
     /// Whether this instance should accept drags at all. `CameraScreen` is
     /// expected to only ever pass non-nil closures while
     /// `OverlayPanelModel.isOverlayDraggable` is true (FR-12.1's own
-    /// wording: "只在位置分頁啟用，allowsHitTesting 僅此時為 true"), but this
+    /// wording: "面板打開時啟用，allowsHitTesting 僅此時為 true"), but this
     /// is computed from the closures themselves rather than trusting the
     /// caller, so a stray non-nil closure can never leave the block
     /// draggable when the caller forgot to gate it.
@@ -148,6 +148,9 @@ struct OverlayTextView: View {
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
+                // The dashed frame is not in the accessibility tree; UI tests
+                // (#568) tell "draggable" apart by this identifier instead.
+                .accessibilityIdentifier(isInteractive ? "overlayTextDraggable" : "overlayText")
                 // TASK-96 (#400): the first-launch tour's step 2 lights this
                 // block up where it actually is — a look-only cut-out.
                 .onboardingTarget(.overlayText)

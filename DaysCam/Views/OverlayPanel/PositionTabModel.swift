@@ -27,7 +27,7 @@ final class PositionTabModel: ObservableObject {
 
     private let updateProfile: (CameraProfile) throws -> Void
 
-    /// Creates a position tab model for `profile`.
+    /// Creates a position model for `profile`.
     ///
     /// - Parameter updateProfile: Forwarded to the real persistence layer by
     ///   the caller, called after every change. Throws to report a failure;
@@ -89,7 +89,7 @@ extension PositionTabModel {
     static let dragHintMessage = "直接在觀景窗上拖曳疊字，或點左邊快速對齊"
 
     /// Upper bound for the nine-point grid box's side: 96pt (human's
-    /// 2026-09-30 call, #126). The position tab must not scroll inside the
+    /// 2026-09-30 call, #126). The nine-point grid must not scroll inside the
     /// fixed-height panel (#120/#128), and 96pt fits the regular 120pt
     /// content area with `gridBoxRegularInset` above and below.
     static let gridBoxMaxSide: CGFloat = 96
@@ -107,7 +107,7 @@ extension PositionTabModel {
 
     /// Vertical clearance the box leaves above and below itself: 12pt when
     /// `availableHeight` is at least 120pt (or not measured yet), else 8pt.
-    /// `PositionTabView` pads with this same value, so the box side and the
+    /// The old position page padded with this same value, so the box side and the
     /// padding can never disagree.
     static func gridBoxVerticalInset(forAvailableHeight availableHeight: CGFloat) -> CGFloat {
         guard availableHeight.isFinite else { return gridBoxRegularInset }
@@ -122,7 +122,7 @@ extension PositionTabModel {
     /// genuinely short viewport shrinks the box rather than clipping it
     /// (#108's "假設 1"). Expected values: 120 -> 96, 104 -> 88.
     ///
-    /// `availableHeight` being non-finite (`.infinity`, `PositionTabView`'s
+    /// `availableHeight` being non-finite (`.infinity`, the old position page's
     /// "not measured yet" default before `ui-shell` wires up real
     /// measurement — see that view's doc comment) resolves to the max, so
     /// every caller renders sensibly before that lands.
