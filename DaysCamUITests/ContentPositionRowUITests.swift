@@ -101,9 +101,11 @@ final class ContentPositionRowUITests: XCTestCase {
         scrollTo(cell("左上"))
         cell("左上").tap()
         XCTAssertEqual(row.label, "位置，左上")
-        let moved = XCTNSPredicateExpectation(predicate: NSPredicate(format: "frame.origin.x < %f", before.minX - 40),
-                                              object: text)
-        XCTAssertEqual(XCTWaiter().wait(for: [moved], timeout: 3), .completed, "568.3 the text moved left")
+        let deadline = Date().addingTimeInterval(3)
+        while text.frame.minX >= before.minX - 40 && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertLessThan(text.frame.minX, before.minX - 40, "568.3 the text moved left")
         XCTAssertLessThan(text.frame.minY, before.minY - 40, "568.3 and up")
     }
 }
