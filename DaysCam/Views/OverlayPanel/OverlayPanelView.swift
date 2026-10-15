@@ -348,7 +348,9 @@ struct OverlayPanelView: View {
             }
         case .content:
             if let formatTabModel = model.formatTabModel {
-                ContentTabView(formatTabModel: formatTabModel)
+                // #567: the 位置 row edits the same model as the 位置 tab
+                // until #568 folds that tab in here.
+                ContentTabView(formatTabModel: formatTabModel, positionTabModel: model.positionTabModel)
             } else {
                 placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
             }

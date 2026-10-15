@@ -8,9 +8,12 @@ import SwiftUI
 /// 格式 page minus the sub-tab row.
 struct ContentTabView: View {
     @ObservedObject var formatTabModel: FormatTabModel
+    /// Adds the 位置 row to the 文字內容 card (#567); `nil` leaves it out.
+    var positionTabModel: PositionTabModel?
 
     var body: some View {
-        FormatTabView(model: formatTabModel, appliesOuterPadding: false)
+        FormatTabView(model: formatTabModel, appliesOuterPadding: false,
+                      positionTabModel: positionTabModel)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
     }
@@ -23,7 +26,8 @@ struct ContentTabView: View {
                                startDate: DateComponents(year: 2026, month: 1, day: 1),
                                displayUnits: [.day])
     let format = FormatTabModel(displaySettings: DisplaySettingsModel(profile: profile) { _ in })
-    return ContentTabView(formatTabModel: format)
+    return ContentTabView(formatTabModel: format,
+                          positionTabModel: PositionTabModel(profile: profile) { _ in })
         .frame(width: 375)
         .background(Color(.systemBackground))
 }
