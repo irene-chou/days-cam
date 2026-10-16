@@ -567,6 +567,105 @@ final class CameraServiceTests: XCTestCase {
     }
 }
 
+// MARK: - Capture rotation (issue #571)
+
+/// `captureRotationAngle` without a camera: a real rotation coordinator cannot
+/// be built in the simulator, so these cover the default, the no-camera paths
+/// (#571-2) and the de-duplication of `publish(captureRotationAngle:)`
+/// (#571-3). The live value is a device acceptance item of the ui-shell card.
+final class CameraServiceCaptureRotationTests: XCTestCase {
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    override func tearDown() {
+        cancellables.removeAll()
+        super.tearDown()
+    }
+
+    private func settle() {
+        let drained = expectation(description: "queues drain")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { drained.fulfill() }
+        wait(for: [drained], timeout: 2)
+    }
+
+    /// Records every change after the current value.
+    private func recordChanges(of service: CameraService) -> () -> [CGFloat] {
+        var changes: [CGFloat] = []
+        service.$captureRotationAngle
+            .dropFirst()
+            .sink { changes.append($0) }
+            .store(in: &cancellables)
+        return { changes }
+    }
+
+    /// #571-1: upright by default.
+    func testDefaultsToUpright() {
+        XCTAssertEqual(CameraService(isCaptureSupported: false).captureRotationAngle, 90)
+    }
+
+    /// #571-2: with no camera nothing ever moves it off 90.
+    func testStaysUprightThroughStartAndSwitchWithoutACamera() {
+        let service = CameraService(isCaptureSupported: false)
+        let changes = recordChanges(of: service)
+
+        service.start()
+        service.switchCamera()
+        settle()
+        service.stop()
+        settle()
+
+        XCTAssertEqual(service.captureRotationAngle, 90)
+        XCTAssertEqual(changes(), [])
+    }
+
+    /// #571-3: an unchanged value is not re-published; `objectWillChange`
+    /// would otherwise redraw every view observing the service.
+    func testSameValueIsNotRepublished() {
+        let service = CameraService(isCaptureSupported: false)
+        let changes = recordChanges(of: service)
+        var willChangeCount = 0
+        service.objectWillChange
+            .sink { willChangeCount += 1 }
+            .store(in: &cancellables)
+
+        service.publish(captureRotationAngle: 90)
+        service.publish(captureRotationAngle: 90)
+        XCTAssertEqual(changes(), [], "90 is already the value")
+        XCTAssertEqual(willChangeCount, 0)
+
+        service.publish(captureRotationAngle: 180)
+        service.publish(captureRotationAngle: 180)
+        service.publish(captureRotationAngle: 180)
+        XCTAssertEqual(changes(), [180], "only the first 180 goes out")
+        XCTAssertEqual(willChangeCount, 1)
+
+        service.publish(captureRotationAngle: 0)
+        XCTAssertEqual(changes(), [180, 0])
+        XCTAssertEqual(service.captureRotationAngle, 0)
+    }
+
+    /// The KVO callback can fire off the main thread; the published value
+    /// must still change on main, as the other published properties do.
+    func testPublishFromABackgroundThreadLandsOnMain() {
+        let service = CameraService(isCaptureSupported: false)
+        let changed = expectation(description: "angle changes on main")
+        service.$captureRotationAngle
+            .dropFirst()
+            .sink { _ in
+                XCTAssertTrue(Thread.isMainThread)
+                changed.fulfill()
+            }
+            .store(in: &cancellables)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            service.publish(captureRotationAngle: 270)
+        }
+
+        wait(for: [changed], timeout: 2)
+        XCTAssertEqual(service.captureRotationAngle, 270)
+    }
+}
+
 // MARK: - Front camera mirroring (issue #272, TASK-59)
 
 /// A capture connection reduced to its mirroring switches. Starts the way
