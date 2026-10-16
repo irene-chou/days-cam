@@ -180,6 +180,13 @@ struct OverlayTextView: View {
                                 if Self.isTap(translation: value.translation) { onTap?() }
                                 return
                             }
+                            // A tap while draggable is swallowed: it must not
+                            // turn an anchor into `.custom` (#568).
+                            guard Self.shouldPersistDrag(translation: value.translation) else {
+                                dragStartCenter = nil
+                                liveDragCenter = nil
+                                return
+                            }
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             onDragEnded?(center, frameSize)
                             // Hands display back to `placement` — by the time
@@ -193,6 +200,14 @@ struct OverlayTextView: View {
                         }
                 )
         }
+    }
+
+    /// Whether a finished touch on a draggable block moved far enough to be a
+    /// drag worth saving. The bound is the same `tapTranslationLimit` (10pt)
+    /// that separates a tap from a drag while closed: one threshold for "did
+    /// the finger move", and about the jitter of a still fingertip.
+    static func shouldPersistDrag(translation: CGSize) -> Bool {
+        !isTap(translation: translation)
     }
 
     /// Whether a finished touch moved little enough to be a tap (TASK-105).

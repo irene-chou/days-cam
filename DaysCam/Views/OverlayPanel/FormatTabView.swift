@@ -442,12 +442,8 @@ private struct PositionRows: View {
                 .accessibilityIdentifier("positionExpanded")
             }
         }
-        .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
-                                             set: { if !$0 { model.lastError = nil } })) {
-            Button("好") { model.lastError = nil }
-        } message: {
-            Text("請再試一次。")
-        }
+        // A failed position save is reported by `OverlayPanelView`
+        // (`PositionSaveErrorHost`), since a drag on 樣式 writes it too (#568).
     }
 }
 

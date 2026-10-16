@@ -97,4 +97,13 @@ final class OverlayDragUITests: XCTestCase {
         overlayText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5), "568.6 a tap opens it")
     }
+
+    /// #568: a plain tap on the text while the panel is open leaves 右下 alone.
+    func testTapWhileOpenKeepsTheAnchor() {
+        openPanel()
+        let text = element("overlayTextDraggable")
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertEqual(openPositionRowLabel(), "位置，右下", "a tap is not a drag")
+    }
 }

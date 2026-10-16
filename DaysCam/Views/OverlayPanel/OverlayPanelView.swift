@@ -134,6 +134,13 @@ struct OverlayPanelView: View {
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }
+        // A failed position save (a drag on either tab, or the 版面 row) must
+        // not look like it worked (#568).
+        .background {
+            if let positionTabModel = model.positionTabModel {
+                PositionSaveErrorHost(model: positionTabModel)
+            }
+        }
     }
 
     // MARK: - Panel surface (FR-8.8, design option 2)
@@ -367,6 +374,28 @@ struct OverlayPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
+    }
+}
+
+/// Presents `PositionTabModel.lastError` for both tabs, since the overlay can
+/// be dragged while either is showing (#568).
+struct PositionSaveErrorHost: View {
+    @ObservedObject var model: PositionTabModel
+
+    /// True while there is an error to show; dismissing clears it.
+    static func isPresented(for model: PositionTabModel) -> Binding<Bool> {
+        Binding(get: { model.lastError != nil },
+                set: { if !$0 { model.lastError = nil } })
+    }
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .alert("無法儲存", isPresented: Self.isPresented(for: model)) {
+                Button("好") { model.lastError = nil }
+            } message: {
+                Text("請再試一次。")
+            }
     }
 }
 

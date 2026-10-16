@@ -152,4 +152,20 @@ final class PositionTabModelTests: XCTestCase {
     func testDragHintMessageCopyMatchesDesign() {
         XCTAssertEqual(PositionTabModel.dragHintMessage, "直接在觀景窗上拖曳疊字，或點左邊快速對齊", "P.1")
     }
+
+    // MARK: - #568: the shell's alert reads the same lastError
+
+    func testShellAlertBindingShowsAFailedSaveAndClearsIt() {
+        struct Boom: Error {}
+        let profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
+        let model = PositionTabModel(profile: profile) { _ in throw Boom() }
+        let binding = PositionSaveErrorHost.isPresented(for: model)
+        XCTAssertFalse(binding.wrappedValue)
+
+        model.applyDrag(center: CGPoint(x: 100, y: 100), viewfinderSize: CGSize(width: 288, height: 384))
+        XCTAssertTrue(binding.wrappedValue, "a drag (on any tab) that fails to save is presented")
+
+        binding.wrappedValue = false
+        XCTAssertNil(model.lastError)
+    }
 }
