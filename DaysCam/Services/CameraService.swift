@@ -400,6 +400,17 @@ final class CameraService: ObservableObject {
     /// The side currently in use. Only changes once a switch has succeeded.
     @Published private(set) var facing: CameraFacing = .back
 
+    /// The angle the shutter rotates a photo by to keep the horizon level,
+    /// published so the viewfinder can rotate its overlay layer by the same
+    /// amount (issue #571).
+    ///
+    /// Same source as `capturePhoto` uses: the rotation coordinator's
+    /// `videoRotationAngleForHorizonLevelCapture`, so what the viewfinder
+    /// shows and what gets baked never disagree. Only ever 0, 90, 180 or 270;
+    /// 90 is the phone held upright, and stays 90 forever when there is no
+    /// camera (`isCaptureSupported == false`).
+    @Published private(set) var captureRotationAngle: CGFloat = 90
+
     /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
     /// every camera switch (issue #274).
     ///
@@ -548,7 +559,11 @@ final class CameraService: ObservableObject {
     /// The flash mode the toolbar last asked for, so prepared settings match
     /// the next photo. Touched on `sessionQueue` only.
     private var requestedFlashMode: FlashMode = .off
+    /// Touched on `sessionQueue` only; installed by
+    /// `installRotationCoordinator(for:)`.
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    /// KVO on the coordinator's capture angle. Touched on `sessionQueue` only.
+    private var rotationObservation: NSKeyValueObservation?
     /// Keeps each in-flight capture delegate alive; AVFoundation does not
     /// retain it. Touched on `sessionQueue` only.
     private var captureDelegates: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
@@ -740,8 +755,7 @@ extension CameraService {
                 if FocusExposurePolicy.shouldReset(on: .cameraFlipped, isLocked: self.focusExposureShadow.isLocked) {
                     self.resetFocusExposure(on: device)
                 }
-                self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device,
-                                                                               previewLayer: nil)
+                self.installRotationCoordinator(for: device)
                 self.publish(facing: target)
             } else if let previous, self.session.canAddInput(previous) {
                 // Put the working input back rather than leaving a dead session.
@@ -1360,7 +1374,7 @@ private extension CameraService {
         resetZoom(on: device)
         resetFocusExposure(on: device)
 
-        rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        installRotationCoordinator(for: device)
         return true
     }
 
@@ -1458,6 +1472,48 @@ private extension CameraService {
                                             queue: nil) { [weak self] notification in
             self?.subjectAreaDidChange(from: notification.object as AnyObject?)
         })
+    }
+}
+
+// MARK: - Capture rotation (issue #571)
+
+extension CameraService {
+
+    /// Replaces the rotation coordinator with one for `device` and keeps
+    /// `captureRotationAngle` following it. Runs on `sessionQueue`.
+    ///
+    /// The old observation is invalidated before the swap, and a callback
+    /// that was already running when that happened is dropped by hopping to
+    /// `sessionQueue` and checking the coordinator is still the current one —
+    /// otherwise a stale angle could land after the new coordinator's initial
+    /// value and leave the viewfinder disagreeing with the shutter until the
+    /// next rotation. The callback touches `rotationCoordinator` only on
+    /// `sessionQueue`; the published value changes on main via `publish`.
+    private func installRotationCoordinator(for device: AVCaptureDevice) {
+        rotationObservation?.invalidate()
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        rotationCoordinator = coordinator
+        rotationObservation = coordinator.observe(
+            \.videoRotationAngleForHorizonLevelCapture,
+            options: [.initial, .new]
+        ) { [weak self] coordinator, change in
+            let angle = change.newValue ?? coordinator.videoRotationAngleForHorizonLevelCapture
+            guard let self else { return }
+            self.sessionQueue.async { [weak self] in
+                guard let self, self.rotationCoordinator === coordinator else { return }
+                self.publish(captureRotationAngle: angle)
+            }
+        }
+    }
+
+    /// Publishes a new capture angle on the main queue; an unchanged value is
+    /// not re-published. Internal rather than private only so the
+    /// de-duplication can be tested without a real coordinator.
+    func publish(captureRotationAngle newValue: CGFloat) {
+        onMain { [weak self] in
+            guard let self, self.captureRotationAngle != newValue else { return }
+            self.captureRotationAngle = newValue
+        }
     }
 }
 
