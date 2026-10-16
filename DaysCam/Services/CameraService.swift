@@ -1482,10 +1482,13 @@ extension CameraService {
     /// Replaces the rotation coordinator with one for `device` and keeps
     /// `captureRotationAngle` following it. Runs on `sessionQueue`.
     ///
-    /// The old observation is invalidated before the swap so a stale
-    /// coordinator can never publish over the new one. The KVO callback only
-    /// touches the coordinator it is handed and the published value (through
-    /// `publish`, which hops to the main queue), never the stored properties.
+    /// The old observation is invalidated before the swap, and a callback
+    /// that was already running when that happened is dropped by hopping to
+    /// `sessionQueue` and checking the coordinator is still the current one —
+    /// otherwise a stale angle could land after the new coordinator's initial
+    /// value and leave the viewfinder disagreeing with the shutter until the
+    /// next rotation. The callback touches `rotationCoordinator` only on
+    /// `sessionQueue`; the published value changes on main via `publish`.
     private func installRotationCoordinator(for device: AVCaptureDevice) {
         rotationObservation?.invalidate()
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
@@ -1494,7 +1497,12 @@ extension CameraService {
             \.videoRotationAngleForHorizonLevelCapture,
             options: [.initial, .new]
         ) { [weak self] coordinator, change in
-            self?.publish(captureRotationAngle: change.newValue ?? coordinator.videoRotationAngleForHorizonLevelCapture)
+            let angle = change.newValue ?? coordinator.videoRotationAngleForHorizonLevelCapture
+            guard let self else { return }
+            self.sessionQueue.async { [weak self] in
+                guard let self, self.rotationCoordinator === coordinator else { return }
+                self.publish(captureRotationAngle: angle)
+            }
         }
     }
 
