@@ -257,7 +257,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 
 | # | 規則 |
 |---|---|
-| FR-6.1 | 觀景窗疊字的內容、位置、主題、字級必須與最終成品**一致** |
+| FR-6.1 | 觀景窗疊字的內容、位置、主題、字級必須與最終成品**一致**；手機橫拿或倒拿時也一樣（§6.6） |
 | FR-6.2 | 預覽是 SwiftUI 圖層（非烘焙），只有存檔時才烘焙 |
 | FR-6.3 | 觀景窗比例與拍攝比例一致，避免所見非所得（比例見 PRD-0.2 FR-5.11） |
 | FR-6.4 | 疊字**不得攔截觸控**（`allowsHitTesting(false)`） |
@@ -436,6 +436,15 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 - 「EXIF 缺漏或不合理時跳出 UI 讓使用者手動輸入拍攝日期」的流程
 
 > Phase 4 真的要做匯入時的原則（先記在這裡備查）：有 EXIF 就用；沒有或數值不合理時**必須跳 UI 讓使用者手動輸入**，絕不能默默用檔案建立時間充數。
+
+### 6.6 拍攝方向（1.1.0，#571／#572）
+
+- 介面永遠直式（`UISupportedInterfaceOrientations` 只有 Portrait）；橫拿時**不重排介面**。
+- 成品方向只來自 `AVCaptureDevice.RotationCoordinator` 的 `videoRotationAngleForHorizonLevelCapture`（0／90／180／270，直拿 90）：快門把它設給 `photoOutput` 連線的 `videoRotationAngle`，`CameraService.captureRotationAngle` 把**同一個值**發布給取景框。不用 `UIDevice.orientation`、CoreMotion 或 EXIF 方向推算；手機平放時沿用最後角度；無相機（模擬器）時永遠 90。
+- 取景框把疊字、底片日期、倒數數字放在同一個圖層，以成品的寬高（橫向時取景框寬高對調）排版後整層繞中心旋轉 `90 − 角度`；預覽層、格線、對焦框、面板、吐司不轉。所以橫拿時 9:16 直框就是成品的 16:9，`ImageCropper` 裁成橫向不是 bug。
+- 拖曳在旋轉圖層內進行，存下的 `.custom` 分數相對橫向成品，與烘焙一致。
+- 工具列、頁尾、變焦圓鈕、AE/AF 鎖定膠囊的圖示像 iOS 相機一樣**原地**轉正（`rotatedChrome`，只轉 label，不轉按鈕本體；觸控區、identifier、accessibility label 不變）；快門、設定檔名稱膠囊、面板、吐司、權限頁不轉。轉動用 `CameraTheme.spring`，「減少動態效果」時不動畫。
+- UI 測試與模擬器沒有真 coordinator，用 launch argument `-UITestCaptureRotationAngle <0|90|180|270>` 假裝。
 
 ---
 
