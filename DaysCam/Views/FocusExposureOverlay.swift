@@ -6,6 +6,8 @@ import SwiftUI
 struct FocusExposureOverlay: View {
     @ObservedObject var focus: ViewfinderFocusModel
     let frameSize: CGSize
+    /// How the phone is held; the lock label turns upright (#572).
+    var rotation: ViewfinderRotation = .portrait
 
     static let squareSize: CGFloat = 70
     private static let sunSize: CGFloat = 22
@@ -31,6 +33,7 @@ struct FocusExposureOverlay: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(Self.yellow, in: Capsule())
+                    .rotatedChrome(rotation)
                     .padding(.top, 12)
                     .transition(.opacity)
                     .accessibilityIdentifier("focusLockLabel")

@@ -117,6 +117,8 @@ struct ZoomPresetBar: View {
     let isVisible: Bool
     /// The picture's rectangle in screen coordinates.
     let pictureFrame: CGRect
+    /// How the phone is held; the round button's text turns upright (#572).
+    var rotation: ViewfinderRotation = .portrait
 
     private static let buttonSize: CGFloat = 32
     private static let barWidth: CGFloat = 40
@@ -161,6 +163,7 @@ struct ZoomPresetBar: View {
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
                 .foregroundColor(.white)
+                .rotatedChrome(rotation)
                 .frame(width: Self.buttonSize, height: Self.buttonSize)
                 .background(Circle().fill(Color.black.opacity(0.45)))
                 .frame(width: Self.barWidth, height: Self.tapSize)
