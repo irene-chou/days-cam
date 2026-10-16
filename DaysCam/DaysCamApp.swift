@@ -30,7 +30,22 @@ struct DaysCamApp: App {
         applyUITestFilmDate(to: profileStore)
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: profileStore,
-                                 fontLibrary: uiTestFontLibrary ?? FontLibrary())
+                                 fontLibrary: uiTestFontLibrary ?? FontLibrary(),
+                                 captureRotationAngleOverride: uiTestCaptureRotationAngle)
+    }
+
+    /// UI tests pass `-UITestCaptureRotationAngle <0|90|180|270>` to pretend
+    /// the phone is held that way (#572). Debug builds only.
+    private static var uiTestCaptureRotationAngle: CGFloat? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestCaptureRotationAngle"),
+              arguments.indices.contains(flag + 1),
+              let angle = Double(arguments[flag + 1]) else { return nil }
+        return CGFloat(angle)
+        #else
+        return nil
+        #endif
     }
 
     /// UI tests pass `-UITestFilmDate <corner>` (a `FilmDateCorner` raw value)

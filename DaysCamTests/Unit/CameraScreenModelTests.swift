@@ -2366,4 +2366,50 @@ final class CameraScreenModelTests: XCTestCase {
         }
         XCTAssertNil(weakSlot, "the slot is freed once settled")
     }
+
+    // MARK: - viewfinderRotation (#572)
+
+    private func makeRotationModel(override: CGFloat?) -> (CameraScreenModel, CameraService) {
+        let service = CameraService(isCaptureSupported: false)
+        let model = CameraScreenModel(
+            cameraService: service,
+            profileStore: makeProfileStore(now: Date()),
+            captureSettingsStore: CaptureSettingsStore(defaults: defaults),
+            capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("rotation-photos", isDirectory: true)),
+            makeThumbnailLibrary: { _ in FakeThumbnailLibrary(status: .denied) },
+            captureRotationAngleOverride: override)
+        return (model, service)
+    }
+
+    /// #572-4: without a camera the service stays at 90, which is portrait.
+    func testViewfinderRotationIsPortraitWithoutACamera() {
+        let (model, _) = makeRotationModel(override: nil)
+        XCTAssertEqual(model.viewfinderRotation, .portrait)
+    }
+
+    /// #572-4: the override fixes the rotation from the start.
+    func testViewfinderRotationUsesTheOverride() {
+        XCTAssertEqual(makeRotationModel(override: 0).0.viewfinderRotation, .landscapeTopLeft)
+        XCTAssertEqual(makeRotationModel(override: 180).0.viewfinderRotation, .landscapeTopRight)
+        XCTAssertEqual(makeRotationModel(override: 270).0.viewfinderRotation, .upsideDown)
+    }
+
+    /// #572-4: with no override the rotation follows the service's angle.
+    func testViewfinderRotationFollowsTheServiceAngle() {
+        let (model, service) = makeRotationModel(override: nil)
+        service.publish(captureRotationAngle: 0)
+        waitUntil { model.viewfinderRotation == .landscapeTopLeft }
+        service.publish(captureRotationAngle: 90)
+        waitUntil { model.viewfinderRotation == .portrait }
+    }
+
+    /// #572-4: the override wins over later service changes.
+    func testOverrideWinsOverTheService() {
+        let (model, service) = makeRotationModel(override: 0)
+        service.publish(captureRotationAngle: 180)
+        let settled = expectation(description: "main queue drains")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { settled.fulfill() }
+        wait(for: [settled], timeout: 2)
+        XCTAssertEqual(model.viewfinderRotation, .landscapeTopLeft)
+    }
 }

@@ -23,6 +23,9 @@ struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The overlay text block's frame as `OverlayTextView` reports it, in the
+    /// turned overlay layer's coordinates (#572).
+    @State private var overlayTextLayerRect: CGRect = .null
     @Environment(\.scenePhase) private var scenePhase
 
     /// What the thumbnail button currently shows; follows
@@ -425,6 +428,8 @@ struct CameraScreen: View {
     /// permission guidance screen.
     @ViewBuilder
     private func viewfinderContent(frameSize: CGSize) -> some View {
+        let rotation = model.viewfinderRotation
+        let layerSize = rotation.frameSize(for: frameSize)
         ZStack {
             if model.showsPlaceholder {
                 placeholderBackground
@@ -446,44 +451,54 @@ struct CameraScreen: View {
 
             // Tap-to-focus reticle, exposure sun and AE/AF lock label
             // (issue #303); below the overlay text, never takes touches.
-            FocusExposureOverlay(focus: model.focusModel, frameSize: frameSize)
+            FocusExposureOverlay(focus: model.focusModel, frameSize: frameSize, rotation: rotation)
 
-            // Overlay text tracks the viewfinder's own size (not the
-            // screen's), matching FR-6.1's requirement that the preview and
-            // the eventual baked photo agree. Draggable only while the panel
-            // is open on the 位置 tab (PRD 0.2 FR-12.1, TASK-24's interface —
-            // see `OverlayPanelModel.overlayDragHandler`'s own doc comment);
-            // the closures forward straight through and never interpret the
-            // values themselves.
-            OverlayTextView(text: model.overlayText,
-                            style: model.overlayStyle,
-                            placement: model.overlayPlacement,
-                            frameSize: frameSize,
-                            font: model.overlayFont,
-                            onDragChanged: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
-                                model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
-                            } : nil,
-                            onDragEnded: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
-                                model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
-                            } : nil,
-                            // A tap on the text opens the panel while it is
-                            // closed and does nothing while it is open — in
-                            // particular it never collapses it (TASK-105,
-                            // #420; PRD 0.2 FR-8.7).
-                            onTap: { model.handleOverlayTextTap() })
+            // #572: the overlay layer lays out at the photo's own size
+            // (landscape swaps the box's sides) and turns about the box's
+            // center, so it sits where the baked photo puts it. The preview,
+            // grid and focus overlay stay outside and do not turn.
+            ZStack {
+                // Overlay text tracks the viewfinder's own size (not the
+                // screen's), matching FR-6.1's requirement that the preview and
+                // the eventual baked photo agree. Draggable only while the panel
+                // is open on the 位置 tab (PRD 0.2 FR-12.1, TASK-24's interface —
+                // see `OverlayPanelModel.overlayDragHandler`'s own doc comment);
+                // the closures forward straight through and never interpret the
+                // values themselves.
+                OverlayTextView(text: model.overlayText,
+                                style: model.overlayStyle,
+                                placement: model.overlayPlacement,
+                                frameSize: layerSize,
+                                font: model.overlayFont,
+                                onDragChanged: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
+                                    model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
+                                } : nil,
+                                onDragEnded: model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching ? { center, size in
+                                    model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
+                                } : nil,
+                                // A tap on the text opens the panel while it is
+                                // closed and does nothing while it is open — in
+                                // particular it never collapses it (TASK-105,
+                                // #420; PRD 0.2 FR-8.7).
+                                onTap: { model.handleOverlayTextTap() })
 
-            // The film date sits above the overlay text and is independent
-            // of it; same box, same short edge, same code as the bake
-            // (TASK-153 #522).
-            FilmDateStampView(stamp: model.filmDateStamp, frameSize: frameSize)
+                // The film date sits above the overlay text and is independent
+                // of it; same box, same short edge, same code as the bake
+                // (TASK-153 #522).
+                FilmDateStampView(stamp: model.filmDateStamp, frameSize: layerSize)
 
-            if let countdownRemaining = model.countdownRemaining {
-                Text("\(countdownRemaining)")
-                    .font(.system(size: 96, weight: .heavy, design: .rounded))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
-                    .allowsHitTesting(false)
+                if let countdownRemaining = model.countdownRemaining {
+                    Text("\(countdownRemaining)")
+                        .font(.system(size: 96, weight: .heavy, design: .rounded))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+                        .allowsHitTesting(false)
+                }
             }
+            .frame(width: layerSize.width, height: layerSize.height)
+            .rotationEffect(.degrees(rotation.degrees))
+            .frame(width: frameSize.width, height: frameSize.height)
+            .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
 
             if let statusMessage = model.statusMessage {
                 Text(statusMessage)
@@ -507,7 +522,15 @@ struct CameraScreen: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .contentShape(Rectangle())
-        .onPreferenceChange(OverlayTextBlockFrameKey.self) { model.overlayTextFrame = $0 }
+        .onPreferenceChange(OverlayTextBlockFrameKey.self) { rect in
+            overlayTextLayerRect = rect
+            model.overlayTextFrame = rotation.boxRect(fromRotatedRect: rect, box: frameSize)
+        }
+        // The rect above is in the turned layer's coordinates; a turn between
+        // portrait and upside down leaves it unchanged, so convert again.
+        .onChange(of: rotation) { _, newRotation in
+            model.overlayTextFrame = newRotation.boxRect(fromRotatedRect: overlayTextLayerRect, box: frameSize)
+        }
         // PRD 0.2 FR-8.7: tapping the viewfinder outside the overlay text
         // collapses the panel, only while it is open. `OverlayTextView`
         // claims its own hit-testing area (always tappable since TASK-105,
@@ -552,7 +575,8 @@ struct CameraScreen: View {
                       expansion: model.zoomExpansion,
                       presets: model.zoomPresets,
                       isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
-                      pictureFrame: viewfinderContentFrame(metrics: metrics))
+                      pictureFrame: viewfinderContentFrame(metrics: metrics),
+                      rotation: model.viewfinderRotation)
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
@@ -623,6 +647,7 @@ struct CameraScreen: View {
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
                 .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
                 .legibleOverPhoto(isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel("疊字設定")
         // TASK-96: the first-launch tour's step 2 points here.
@@ -653,6 +678,7 @@ struct CameraScreen: View {
             }
             .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .rotatedChrome(model.viewfinderRotation)
             // Only Reduce Motion crossfades the swap (0.2s, issue #148 S.8),
             // via an explicit `withAnimation` in `showThumbnail`; otherwise
             // the new photo replaces the icon instantly — an animated if/else

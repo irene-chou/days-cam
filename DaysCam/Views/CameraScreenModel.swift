@@ -148,6 +148,12 @@ final class CameraScreenModel: ObservableObject {
     /// only gates touches and must not redraw anything.
     var overlayTextFrame: CGRect = .null
 
+    /// How the phone is held, for the overlay layer and the icons (#572).
+    /// Follows `CameraService.captureRotationAngle` unless a fixed angle was
+    /// passed to `init`.
+    @Published private(set) var viewfinderRotation: ViewfinderRotation = .portrait
+    private let captureRotationAngleOverride: CGFloat?
+
     /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
     /// Rebuilt only when `selectedProfileID` actually changes — see
     /// `refreshOverlayPanelTabModelsIfNeeded`.
@@ -387,7 +393,9 @@ final class CameraScreenModel: ObservableObject {
          saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
          resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
              OverlayMetrics.resolvedFont(for: $0, availability: $1)
-         }) {
+         },
+         captureRotationAngleOverride: CGFloat? = nil) {
+        self.captureRotationAngleOverride = captureRotationAngleOverride
         self.resolveFont = resolveFont
         self.saveTimeout = saveTimeout
         self.onboarding = onboarding
@@ -651,6 +659,16 @@ final class CameraScreenModel: ObservableObject {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        // #572: a fixed angle (UI tests) wins over the service's.
+        if let captureRotationAngleOverride {
+            viewfinderRotation = ViewfinderRotation(captureAngle: captureRotationAngleOverride)
+        } else {
+            cameraService.$captureRotationAngle
+                .map { ViewfinderRotation(captureAngle: $0) }
+                .removeDuplicates()
+                .sink { [weak self] rotation in self?.viewfinderRotation = rotation }
+                .store(in: &cancellables)
+        }
     }
 
     /// Makes the tour's fresh-install decision, forwards its changes like

@@ -64,6 +64,7 @@ struct CameraToolbar: View {
                         .fill(CameraTheme.fill)
                         .opacity(model.isCameraToolsExpanded ? 1 : 0)
                 )
+                .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel("相機設定")
         .accessibilityValue(model.isCameraToolsExpanded ? "已展開" : "已收起")
@@ -108,6 +109,7 @@ struct CameraToolbar: View {
     private var ratioButton: some View {
         Button(action: model.cycleAspectRatio) {
             ratioIcon
+                .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel("比例：\(model.captureSettingsStore.captureAspectRatio.displayLabel)")
     }
@@ -157,6 +159,7 @@ struct CameraToolbar: View {
         Button(action: model.switchCamera) {
             Image(systemName: "arrow.triangle.2.circlepath.camera")
                 .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
         }
         .disabled(model.isCaptureUnsupported)
         .opacity(model.isCaptureUnsupported ? 0.35 : 1)
@@ -190,6 +193,7 @@ struct CameraToolsCapsule: View {
         Button(action: model.cycleFlash) {
             Image(systemName: flashIconName)
                 .toolbarIcon(isActive: model.isFlashToolActive, isOnPhoto: false)
+                .rotatedChrome(model.viewfinderRotation)
         }
         .disabled(model.isFlashToolDisabled)
         .opacity(model.isFlashToolDisabled ? 0.35 : 1)
@@ -215,6 +219,7 @@ struct CameraToolsCapsule: View {
                 }
             }
             .toolbarIcon(isActive: model.isTimerToolActive, isOnPhoto: false)
+            .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel(model.captureSettingsStore.timerSeconds == .off
                             ? "計時器：關"
@@ -225,6 +230,7 @@ struct CameraToolsCapsule: View {
         Button(action: model.toggleGrid) {
             Image(systemName: "grid")
                 .toolbarIcon(isActive: model.isGridToolActive, isOnPhoto: false)
+                .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
     }
