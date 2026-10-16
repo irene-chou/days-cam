@@ -136,12 +136,12 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertLessThan(app.staticTexts["文字內容"].frame.maxX, app.frame.width / 2, "#558.2 heading on the left")
         assertTopToBottom(pairs: [app.staticTexts["文字內容"], toggle("天數"), toggle("日期"), toggle("名稱"),
-                                  app.staticTexts["天數單位"], app.buttons["天"], toggle(ageWording),
+                                  app.buttons["positionRow"], app.staticTexts["天數單位"], app.buttons["天"], toggle(ageWording),
                                   app.staticTexts["戳記"], toggle("底片日期")], "#558.1")
         for name in [ageWording, "底片日期"] {
             XCTAssertEqual(toggle(name).frame.maxX, rightEdge, accuracy: 1, "#558.2 \(name)")
         }
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」「位置」分頁影響。"]
+        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
         XCTAssertTrue(note.exists, "#558.10 note while off")
 
         set("底片日期", on: true)
@@ -175,7 +175,7 @@ final class FormatTabReorderUITests: XCTestCase {
         shot("558.12a_all_on_2_units")
         scrollTo(toggle("底片日期"))
         set("底片日期", on: true)
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」「位置」分頁影響。"]
+        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
         scrollTo(app.buttons["filmDateCorner_bottomLeading"])
         scrollTo(note)
         XCTAssertTrue(isOnScreen(toggle("底片日期")) && isOnScreen(app.buttons["filmDateCorner_bottomLeading"]), "stamp card in the shot")
@@ -203,6 +203,7 @@ final class FormatTabReorderUITests: XCTestCase {
     /// and heading go, the switches stay put, ticks are kept; B′ shot (b).
     func testOrderAndCollapseOnAPastStartDate() {
         launch(startDay: "2023-08-05")
+        scrollTo(app.buttons["週"])
         app.buttons["週"].tap()
         // A tap low on a short screen scrolls the panel, and collapsing a
         // scrolled panel pulls everything down as it clamps; measure from
@@ -223,14 +224,15 @@ final class FormatTabReorderUITests: XCTestCase {
             XCTAssertEqual(after.minX, before.minX, accuracy: 1, "#558.3 \(name) did not move")
         }
         shot("558.12b_daycount_and_film_off_1_text")
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」「位置」分頁影響。"]
+        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
         scrollTo(note)
         XCTAssertTrue(isOnScreen(toggle("底片日期")), "stamp card in the shot")
         shot("558.12b_daycount_and_film_off_2_stamp")
         scrollToTop()
 
         toggle("天數").tap()
-        XCTAssertTrue(app.buttons["週"].waitForExistence(timeout: 3))
+        Thread.sleep(forTimeInterval: 0.5)
+        scrollTo(app.buttons["週"])
         XCTAssertTrue(app.buttons["週"].isSelected && app.buttons["天"].isSelected, "#558.3 ticks kept")
     }
 

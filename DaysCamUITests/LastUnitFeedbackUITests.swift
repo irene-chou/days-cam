@@ -39,13 +39,16 @@ final class LastUnitFeedbackUITests: XCTestCase {
     /// 「年」改成「歲」 and 文字內容 do not move.
     func testLastUnitStaysCheckedWithAHintAndNothingMoves() {
         let day = app.buttons["天"]
+        app.revealInPanel(day)
         XCTAssertTrue(day.isEnabled, "108.1 not disabled")
         XCTAssertTrue(day.isSelected, "108.1 checked")
         // Distances, not absolute frames: on a short screen (iPhone SE) the
         // panel scrolls when a row is tapped, shifting everything together.
         func ageRowOffset() -> CGFloat { toggle("「年」改成「歲」").frame.minY - unitHint.frame.minY }
         let ageRowBefore = ageRowOffset()
-        let contentHeadingBefore = app.staticTexts["文字內容"].frame.minY - unitHint.frame.minY
+        // The 文字內容 card's last row (#567): its heading can be scrolled off
+        // by the time the units are on screen.
+        let contentCardBefore = app.buttons["positionRow"].frame.minY - unitHint.frame.minY
         // The hint line is always laid out (108.2); it carries the text only
         // while showing, so the checks read its label.
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.1 no text beforehand")
@@ -55,7 +58,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         let shown = NSPredicate(format: "label == '至少保留一個單位'")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: unitHint)], timeout: 2), .completed, "108.1 the hint appeared")
         XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 the age-wording row did not move")
-        XCTAssertEqual(app.staticTexts["文字內容"].frame.minY - unitHint.frame.minY, contentHeadingBefore, "108.2 the content heading did not move")
+        XCTAssertEqual(app.buttons["positionRow"].frame.minY - unitHint.frame.minY, contentCardBefore, "108.2 the 文字內容 card did not move")
         assertHint(unitHint, sitsOnHeading: "天數單位", "#558.8")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertEqual(unitHint.label, "至少保留一個單位", "141.4 still there after 3 s")
@@ -71,6 +74,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
 
     /// 108.3: with 週 checked too, 天 can be unchecked and no hint shows.
     func testUncheckingIsAllowedOnceAnotherUnitIsChecked() {
+        app.revealInPanel(app.buttons["週"])
         app.buttons["週"].tap()
         XCTAssertTrue(app.buttons["週"].isSelected)
         app.buttons["天"].tap()
@@ -113,7 +117,8 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertFalse(app.buttons["週"].exists, "141.2 collapsed")
         XCTAssertFalse(toggle("「年」改成「歲」").exists, "141.2 collapsed")
         toggle("天數").tap()
-        XCTAssertTrue(app.buttons["週"].waitForExistence(timeout: 3))
+        Thread.sleep(forTimeInterval: 0.5)
+        app.revealInPanel(app.buttons["週"])
         app.buttons["週"].tap()
         XCTAssertTrue(app.buttons["週"].isSelected, "works once the day count is on")
     }

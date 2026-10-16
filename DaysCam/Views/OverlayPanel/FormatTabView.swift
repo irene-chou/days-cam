@@ -12,7 +12,9 @@ import SwiftUI
 /// sections now sit on one page. #558: one card per thing on the photo —
 /// 文字內容 (天數、日期、名稱), 天數單位 (units, 「年」改成「歲」) and 戳記
 /// (底片日期 and its corner). With the day count off the 天數單位 card is
-/// not shown; the switches above it stay put.
+/// not shown; the switches above it stay put. #567: with a
+/// `positionTabModel` the 文字內容 card ends in a 位置 row that opens the
+/// nine-point grid in place.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
@@ -21,6 +23,10 @@ struct FormatTabView: View {
     /// horizontal). `ContentTabView` turns it off and applies the same inset
     /// once around both sub-tabs.
     var appliesOuterPadding: Bool = true
+
+    /// The text's position, shown as the 文字內容 card's last row (#567).
+    /// `nil` leaves the row out.
+    var positionTabModel: PositionTabModel?
 
     /// Minimum height of every content row (display toggles, unit
     /// checkboxes, age-wording toggle), the same 44pt tap target the rules
@@ -80,7 +86,7 @@ struct FormatTabView: View {
             }
             heading("戳記")
             stampCard
-            Text("底片日期的字樣固定，不受「樣式」「位置」分頁影響。")
+            Text("底片日期的字樣固定，不受「樣式」分頁和文字位置影響。")
                 .font(.system(size: 12))
                 .foregroundColor(CameraTheme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -197,6 +203,10 @@ struct FormatTabView: View {
             rowDivider
             switchRow("名稱", isOn: model.displaySettings.profile.showName) {
                 model.displaySettings.setShowName($0)
+            }
+            if let positionTabModel {
+                rowDivider
+                PositionRows(model: positionTabModel)
             }
         }
     }
@@ -371,6 +381,76 @@ struct FormatTabView: View {
     }
 }
 
+// MARK: - 位置 (#567)
+
+/// The 文字內容 card's 位置 row: the position's name and a chevron, opening
+/// the nine-point grid and the drag hint right under it. Its own view so it
+/// observes `PositionTabModel`, which also follows drags on the viewfinder.
+private struct PositionRows: View {
+    @ObservedObject var model: PositionTabModel
+
+    /// Fixed here, unlike the 位置 tab's box: the card scrolls, so it no
+    /// longer has to fit the panel's height. 88pt is what the tab worked out
+    /// to on iPhone SE (`PositionTabModel.gridBoxSide(forAvailableHeight: 104)`).
+    static let gridSide: CGFloat = 88
+
+    /// Not remembered: the row opens closed every time the tab shows.
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("位置")
+                        .font(.subheadline)
+                        .foregroundColor(CameraTheme.ink)
+                    Spacer(minLength: 0)
+                    Text(model.positionName)
+                        .font(.subheadline)
+                        .foregroundColor(CameraTheme.inkSecondary)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(CameraTheme.inkSecondary)
+                }
+                .frame(minHeight: FormatTabView.rowMinHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            // "位置" alone is the 位置 tab's label, so the name rides in the
+            // label too (and keeps the two apart in UI tests).
+            .accessibilityLabel("位置，\(model.positionName)")
+            .accessibilityValue(isExpanded ? "已展開" : "已收起")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("positionRow")
+
+            if isExpanded {
+                HStack(alignment: .center, spacing: 14) {
+                    PositionGridView(model: model, side: Self.gridSide)
+                    Text(PositionTabModel.dragHintMessage)
+                        .font(.caption)
+                        .foregroundColor(CameraTheme.inkSecondary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.bottom, 12)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("positionExpanded")
+            }
+        }
+        .alert("無法儲存", isPresented: Binding(get: { model.lastError != nil },
+                                             set: { if !$0 { model.lastError = nil } })) {
+            Button("好") { model.lastError = nil }
+        } message: {
+            Text("請再試一次。")
+        }
+    }
+}
+
 // MARK: - Preview
 
 @MainActor
@@ -384,6 +464,14 @@ private func previewModel(displayUnits: Set<DisplayUnit> = [.day]) -> FormatTabM
 
 #Preview("格式頁 · iPhone SE 寬度 (375pt)") {
     FormatTabView(model: previewModel())
+        .frame(width: 375)
+        .background(Color(.systemBackground))
+}
+
+#Preview("含位置列 · iPhone SE 寬度 (375pt)") {
+    let profile = CameraProfile(name: "小寶", startDate: DateComponents(year: 2026, month: 1, day: 1))
+    return FormatTabView(model: previewModel(),
+                         positionTabModel: PositionTabModel(profile: profile) { _ in })
         .frame(width: 375)
         .background(Color(.systemBackground))
 }
