@@ -13,7 +13,7 @@ final class FilmDatePanelUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["內容"]
+        let content = app.buttons["版面"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
         // The 戳記 card starts below the fold on iPhone SE (#558).
@@ -41,7 +41,7 @@ final class FilmDatePanelUITests: XCTestCase {
     /// iPhone SE they start below the panel's bottom edge, and a fixed drag
     /// over- or under-shoots, so the B′ shots missed the picker.
     private func showFilmDateBlock(file: StaticString = #filePath, line: UInt = #line) {
-        let tabBottom = app.buttons["內容"].frame.maxY
+        let tabBottom = app.buttons["版面"].frame.maxY
         var trace: [String] = []
         for _ in 0..<3 {
             // Not in the tree yet means still below the fold.
@@ -71,9 +71,9 @@ final class FilmDatePanelUITests: XCTestCase {
     /// Drags the panel back down until 文字內容 is on screen again.
     private func scrollToTop() {
         let heading = app.staticTexts["文字內容"]
-        for _ in 0..<8 where !(heading.exists && heading.frame.minY >= app.buttons["內容"].frame.maxY) {
+        for _ in 0..<8 where !(heading.exists && heading.frame.minY >= app.buttons["版面"].frame.maxY) {
             let start = app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.buttons["內容"].frame.maxY + 30))
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.buttons["版面"].frame.maxY + 30))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)),
                         withVelocity: .slow, thenHoldForDuration: 0.3)
             Thread.sleep(forTimeInterval: 0.5)
@@ -138,7 +138,7 @@ final class FilmDatePanelUITests: XCTestCase {
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
         app.buttons["疊字設定"].tap()
-        app.buttons["內容"].tap()
+        app.buttons["版面"].tap()
         XCTAssertTrue(filmSwitch.waitForExistence(timeout: 5))
         showFilmDateBlock()
         filmSwitch.tap()

@@ -30,7 +30,7 @@ final class FormatTabReorderUITests: XCTestCase {
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["內容"]
+        let content = app.buttons["版面"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
         XCTAssertTrue(app.buttons["天"].waitForExistence(timeout: 5))
@@ -73,7 +73,7 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertEqual(isOn(toggle(name)), on, "\(name) \(on ? "on" : "off")", file: file, line: line)
     }
-    private var tabBottom: CGFloat { app.buttons["內容"].frame.maxY }
+    private var tabBottom: CGFloat { app.buttons["版面"].frame.maxY }
 
     /// Whether `element` is in the tree and wholly between the tab bar and
     /// the home-indicator band, which swallows taps by design (92.7; a
@@ -123,7 +123,7 @@ final class FormatTabReorderUITests: XCTestCase {
 
     /// #558.1／.2／.5／.6／.10: card order top to bottom, every switch on the
     /// same right edge, the corners in one row, nothing named 位置 but the
-    /// tab, the stamp note always there; with the B′ shot (a).
+    /// 位置 row, the stamp note always there; with the B′ shot (a).
     func testCardsReadTopToBottomWithOneRightEdge() {
         launch(startDay: "2023-08-05")
         XCTAssertFalse(element("formatDivider").exists, "#558.6 no divider")
@@ -158,8 +158,10 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertTrue(corners[2].isSelected, "#558.5 左下 by default")
         XCTAssertEqual(corners[2].label, "底片日期位置，左下")
-        let places = app.staticTexts.matching(NSPredicate(format: "label == %@", "位置")).allElementsBoundByIndex
-        XCTAssertTrue(places.allSatisfy { $0.frame.maxY <= tabBottom + 1 }, "#558.6 位置 only on the tab bar")
+        // #568: the 位置 tab is gone, so the 位置 row is the only thing named so.
+        let places = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "位置")).allElementsBoundByIndex
+        XCTAssertTrue(places.allSatisfy { app.buttons["positionRow"].frame.contains($0.frame) },
+                      "#558.6 位置 only on the 位置 row")
     }
 
     /// B′ shot (a): everything on, 左下, in as many screens as it takes.

@@ -167,4 +167,12 @@ final class OverlayTextViewTests: XCTestCase {
         XCTAssertEqual(origin.x, dragFrameSize.width - margin - dragBlockSize.width, accuracy: 0.0001, "D.4")
         XCTAssertEqual(origin.y, dragFrameSize.height - margin - dragBlockSize.height, accuracy: 0.0001, "D.4")
     }
+
+    // MARK: - #568: a tap on a draggable block is not a drag
+
+    func testATapSizedTouchIsNotPersistedAsADrag() {
+        XCTAssertFalse(OverlayTextView.shouldPersistDrag(translation: .zero))
+        XCTAssertFalse(OverlayTextView.shouldPersistDrag(translation: CGSize(width: 6, height: 8)), "10pt exactly is still a tap")
+        XCTAssertTrue(OverlayTextView.shouldPersistDrag(translation: CGSize(width: 11, height: 0)))
+    }
 }

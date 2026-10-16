@@ -134,6 +134,13 @@ struct OverlayPanelView: View {
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }
+        // A failed position save (a drag on either tab, or the 版面 row) must
+        // not look like it worked (#568).
+        .background {
+            if let positionTabModel = model.positionTabModel {
+                PositionSaveErrorHost(model: positionTabModel)
+            }
+        }
     }
 
     // MARK: - Panel surface (FR-8.8, design option 2)
@@ -276,7 +283,7 @@ struct OverlayPanelView: View {
     }
 
     /// The white, rounded, drop-shadowed chip (`D3-tab-options.html:70`): one
-    /// third of the track, offset to the selected segment. Hidden from
+    /// half of the track, offset to the selected segment. Hidden from
     /// accessibility; `-UITestSegmentChip` exposes it to UI tests (Debug only).
     private var selectionChip: some View {
         let tabs = OverlayPanelModel.Tab.allCases
@@ -346,19 +353,11 @@ struct OverlayPanelView: View {
             } else {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }
-        case .content:
+        case .layout:
             if let formatTabModel = model.formatTabModel {
-                // #567: the 位置 row edits the same model as the 位置 tab
-                // until #568 folds that tab in here.
                 ContentTabView(formatTabModel: formatTabModel, positionTabModel: model.positionTabModel)
             } else {
-                placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
-            }
-        case .position:
-            if let positionTabModel = model.positionTabModel {
-                PositionTabView(model: positionTabModel, availableHeight: contentHeight)
-            } else {
-                placeholderTab(title: "位置", subtitle: "尚未選取設定檔")
+                placeholderTab(title: "版面", subtitle: "尚未選取設定檔")
             }
         }
     }
@@ -378,6 +377,28 @@ struct OverlayPanelView: View {
     }
 }
 
+/// Presents `PositionTabModel.lastError` for both tabs, since the overlay can
+/// be dragged while either is showing (#568).
+struct PositionSaveErrorHost: View {
+    @ObservedObject var model: PositionTabModel
+
+    /// True while there is an error to show; dismissing clears it.
+    static func isPresented(for model: PositionTabModel) -> Binding<Bool> {
+        Binding(get: { model.lastError != nil },
+                set: { if !$0 { model.lastError = nil } })
+    }
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .alert("無法儲存", isPresented: Self.isPresented(for: model)) {
+                Button("好") { model.lastError = nil }
+            } message: {
+                Text("請再試一次。")
+            }
+    }
+}
+
 #Preview("樣式（StyleTabView 已接上）") {
     let store = ProfileStore()
     store.load()
@@ -388,22 +409,11 @@ struct OverlayPanelView: View {
     }
 }
 
-#Preview("內容分頁") {
+#Preview("版面分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .content
-    return ZStack {
-        CameraTheme.background.ignoresSafeArea()
-        OverlayPanelView(model: model)
-    }
-}
-
-#Preview("位置（PositionTabView 已接上）") {
-    let store = ProfileStore()
-    store.load()
-    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .position
+    model.panelModel.selectedTab = .layout
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)

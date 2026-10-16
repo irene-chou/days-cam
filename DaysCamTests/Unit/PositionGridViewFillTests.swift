@@ -10,7 +10,7 @@ import XCTest
 /// correct, and an isolated `#Preview` looked fine. `PositionTabModelTests`
 /// already covers `gridBoxSide`'s own math; nothing at that level would ever
 /// have caught this, since the bug was `LazyVGrid` silently not stretching
-/// its *rows* to fill an imposed height (see `PositionTabView.grid`'s doc
+/// its *rows* to fill an imposed height (see `PositionGridView.grid`'s doc
 /// comment) — a real layout behavior only a hosted, rendered view can show.
 ///
 /// Follows `ColorSchemeEscapeTests`' pattern: a real `UIHostingController`/
@@ -18,7 +18,7 @@ import XCTest
 /// reproduce the bug QA found on an actual device, so this deliberately
 /// avoids that path too.
 @MainActor
-final class PositionTabViewGridFillTests: XCTestCase {
+final class PositionGridViewFillTests: XCTestCase {
     func testNineDotsSpreadAcrossTheFullBoxHeightNotClusteredNearOneEdge() throws {
         let profile = CameraProfile(name: "測試",
                                      startDate: DateComponents(year: 2026, month: 1, day: 1),
@@ -26,7 +26,7 @@ final class PositionTabViewGridFillTests: XCTestCase {
         let model = PositionTabModel(profile: profile) { _ in }
         // 300 clamps to `gridBoxMaxSide` (96) — the dots must spread
         // across the whole box, not cluster near one edge (#108 QA report).
-        let view = PositionTabView(model: model, availableHeight: 300)
+        let view = PositionGridView(model: model, side: PositionTabModel.gridBoxMaxSide)
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 400)
         // Fail fast rather than crash on the force-unwraps below: on iOS 27
@@ -55,7 +55,7 @@ final class PositionTabViewGridFillTests: XCTestCase {
         XCTAssertEqual(rowCenters.count, 3, "九個點應該落在三個不同的列上，量到的列中心：\(rowCenters)")
 
         // The box's own grid area is `gridBoxSide - 2*4` (the `.padding(4)`
-        // on each side, `PositionTabView.body`) — 88pt here. Each row
+        // on each side, `PositionGridView.body`) — 88pt here. Each row
         // should own roughly a third of that, so the top and bottom row
         // centers should be far apart, not clustered together the way the
         // pre-fix `LazyVGrid` left them (under 25pt apart in the original
@@ -79,7 +79,7 @@ final class PositionTabViewGridFillTests: XCTestCase {
                                      position: .anchor(.bottomTrailing))
         let model = PositionTabModel(profile: profile) { _ in }
         let availableHeight: CGFloat = 104 // gridBoxSide = 104 - 8*2 = 88
-        let view = PositionTabView(model: model, availableHeight: availableHeight)
+        let view = PositionGridView(model: model, side: PositionTabModel.gridBoxSide(forAvailableHeight: availableHeight))
 
         let dotFrames = renderedDotFrames(hosting: view, hostWidth: 375, hostHeight: 200)
         // Fail fast rather than crash on the force-unwraps below: on iOS 27
@@ -112,7 +112,7 @@ final class PositionTabViewGridFillTests: XCTestCase {
     ///
     /// Polls until nine dots appear (or a 3s timeout) instead of a single
     /// fixed wait; the simulators are shared by several agents at once.
-    private func renderedDotFrames(hosting view: PositionTabView, hostWidth: CGFloat, hostHeight: CGFloat) -> [CGRect] {
+    private func renderedDotFrames(hosting view: PositionGridView, hostWidth: CGFloat, hostHeight: CGFloat) -> [CGRect] {
         let hosting = UIHostingController(rootView: view.frame(width: hostWidth))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: hostWidth, height: hostHeight))
         window.overrideUserInterfaceStyle = .light

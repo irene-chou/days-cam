@@ -10,17 +10,16 @@ import Foundation
 /// (acceptance 22.2) — not across relaunches, so a freshly constructed
 /// instance always starts at `.style` (acceptance 22.3).
 final class OverlayPanelModel: ObservableObject {
-    /// The panel's first-level tabs (0.3 TASK-37: 樣式｜內容｜位置), in display order.
-    /// 內容 shows the day-count format and display switches (0.4 TASK-45).
+    /// The panel's first-level tabs (#568: 樣式｜版面), in display order.
+    /// 版面 shows the day-count format, display switches and the 位置 row.
     enum Tab: CaseIterable, Equatable, Hashable {
-        case style, content, position
+        case style, layout
 
         /// The segmented control's label (PRD 0.2 FR-8.4).
         var title: String {
             switch self {
             case .style: return "樣式"
-            case .content: return "內容"
-            case .position: return "位置"
+            case .layout: return "版面"
             }
         }
     }
@@ -31,11 +30,9 @@ final class OverlayPanelModel: ObservableObject {
     /// value across `close()`/`open()` for the rest of this launch (A-4).
     @Published var selectedTab: Tab = .style
 
-    /// TASK-24's position-tab model, once ui-panel wires one in. `nil` until
-    /// then, so the overlay is simply not draggable yet — see
-    /// `CameraScreen`'s use of this alongside `isOverlayDraggable`. Whoever
-    /// builds the position tab's model is expected to assign itself here
-    /// while its tab is on screen (this file does not know that type yet).
+    /// The position model's drag adapter (`CameraScreenModel` assigns it).
+    /// `nil` until then, so the overlay is simply not draggable yet — see
+    /// `CameraScreen`'s use of this alongside `isOverlayDraggable`.
     weak var overlayDragHandler: OverlayDragHandling?
 
     init() {}
@@ -56,14 +53,13 @@ final class OverlayPanelModel: ObservableObject {
 
 // MARK: - Overlay drag interface (PRD 0.2 FR-12.1–FR-12.3, TASK-24)
 
-/// Whoever owns the position tab's model (ui-panel, TASK-24) conforms to
-/// this and assigns itself to `OverlayPanelModel.overlayDragHandler` while
-/// its tab is showing.
+/// Whoever owns the position model (ui-panel, TASK-24) conforms to this and
+/// assigns itself to `OverlayPanelModel.overlayDragHandler`.
 ///
 /// This is the "接口" TASK-22 is asked to open: `CameraScreen` attaches the
 /// drag gesture to the overlay text and reports through here, but never
 /// persists a position itself — writing the new `.custom(x:y:)` fraction is
-/// entirely the position tab's job (PRD 0.2 FR-12.3).
+/// entirely the position model's job (PRD 0.2 FR-12.3).
 ///
 /// `center` is already clamped into the 4% margin by `OverlayTextView`
 /// itself (#68, PRD FR-12.2) — the same `blockSize`-aware clamp a settled
@@ -83,11 +79,11 @@ protocol OverlayDragHandling: AnyObject {
 }
 
 extension OverlayPanelModel {
-    /// Whether the overlay text should currently accept drags: only while
-    /// the panel is open *and* the 位置 (position) tab is selected (PRD 0.2
-    /// FR-12.1). `CameraScreen` also gates `OverlayTextView`'s
-    /// `allowsHitTesting` on this, per FR-12.1's own wording.
+    /// Whether the overlay text should currently accept drags: whenever the
+    /// panel is open, on either tab (#568; it used to be the 位置 tab only,
+    /// PRD 0.2 FR-12.1). `CameraScreen` also gates `OverlayTextView`'s
+    /// `allowsHitTesting` on this.
     var isOverlayDraggable: Bool {
-        isOpen && selectedTab == .position
+        isOpen
     }
 }

@@ -160,7 +160,7 @@ final class CameraScreenModel: ObservableObject {
     /// when the tab takes over an external change (TASK-109).
     private var formatWriter: TabProfileWriter?
 
-    /// The 位置 tab's model (PRD 0.2 FR-12, TASK-24's `PositionTabView`).
+    /// The 位置 model (PRD 0.2 FR-12, TASK-24), shown by the 版面 tab's 位置 row.
     /// Rebuilt alongside `styleTabModel`; `panelModel.overlayDragHandler` is
     /// kept pointed at a fresh `PositionDragAdapter` wrapping this instance
     /// every time it changes (see `positionDragAdapter`).

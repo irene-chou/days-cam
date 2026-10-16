@@ -3,13 +3,11 @@ import SwiftUI
 /// The nine-point quick-align grid in its light square box (PRD 0.2 FR-12.4),
 /// selected point in the active color.
 ///
-/// Shared by the 位置 tab and the 位置 row on the content tab (#567), so both
-/// draw the same box and dots, read the same VoiceOver labels and write
-/// through the same `PositionTabModel.selectAnchor`.
+/// Used by the 位置 row on the 版面 tab (#567, #568), reads the VoiceOver labels
+/// and writes through `PositionTabModel.selectAnchor`.
 struct PositionGridView: View {
     @ObservedObject var model: PositionTabModel
-    /// The box's side. The 位置 tab derives it from the panel's height
-    /// (`PositionTabModel.gridBoxSide`); the content tab's row fixes it.
+    /// The box's side. The 位置 row fixes it.
     let side: CGFloat
 
     var body: some View {
@@ -31,7 +29,7 @@ struct PositionGridView: View {
     ///
     /// A plain `VStack` of `HStack` rows, not `LazyVGrid` — confirmed
     /// empirically (#108, real-device QA report + a `UIHostingController`
-    /// regression test, `PositionTabViewGridFillTests`) that `LazyVGrid`
+    /// regression test, `PositionGridViewFillTests`) that `LazyVGrid`
     /// reliably stretches its *columns* to fill an imposed width but does
     /// **not** stretch its *rows* to fill an imposed height, even when every
     /// cell declares `.frame(maxHeight: .infinity)`: each row instead

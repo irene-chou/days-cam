@@ -7,9 +7,10 @@ final class OverlayPanelModelTests: XCTestCase {
 
     // MARK: - Tab selection (22.1–22.3)
 
-    func testFirstLayerIsThreeTabsStyleContentPosition() {
-        // 37.1
-        XCTAssertEqual(OverlayPanelModel.Tab.allCases.map(\.title), ["樣式", "內容", "位置"])
+    func testFirstLayerIsTwoTabsStyleLayout() {
+        // #568-1
+        XCTAssertEqual(OverlayPanelModel.Tab.allCases, [.style, .layout])
+        XCTAssertEqual(OverlayPanelModel.Tab.allCases.map(\.title), ["樣式", "版面"])
     }
 
     func testInitialSelectedTabIsStyle() {
@@ -21,10 +22,10 @@ final class OverlayPanelModelTests: XCTestCase {
     func testSelectedTabSurvivesCloseThenOpenWithinTheSameInstance() {
         // 22.2
         let model = OverlayPanelModel()
-        model.selectedTab = .position
+        model.selectedTab = .layout
         model.close()
         model.open()
-        XCTAssertEqual(model.selectedTab, .position)
+        XCTAssertEqual(model.selectedTab, .layout)
     }
 
     func testAFreshInstanceAlwaysStartsAtStyleRegardlessOfAnEarlierOne() {
@@ -32,7 +33,7 @@ final class OverlayPanelModelTests: XCTestCase {
         // persists it to disk, so a new instance (simulating a relaunch)
         // never sees an earlier one's tab.
         let earlier = OverlayPanelModel()
-        earlier.selectedTab = .content
+        earlier.selectedTab = .layout
         earlier.open()
 
         let rebuilt = OverlayPanelModel()
@@ -55,18 +56,22 @@ final class OverlayPanelModelTests: XCTestCase {
 
     // MARK: - Overlay drag interface (TASK-24 hand-off)
 
-    func testOverlayIsOnlyDraggableWhenOpenOnThePositionTab() {
+    func testOverlayIsDraggableWheneverThePanelIsOpenOnEitherTab() {
+        // #568-4
         let model = OverlayPanelModel()
-        XCTAssertFalse(model.isOverlayDraggable, "closed, any tab")
+        XCTAssertFalse(model.isOverlayDraggable, "closed, style tab")
 
-        model.selectedTab = .position
-        XCTAssertFalse(model.isOverlayDraggable, "position tab but still closed")
+        model.selectedTab = .layout
+        XCTAssertFalse(model.isOverlayDraggable, "layout tab but still closed")
 
         model.open()
-        XCTAssertTrue(model.isOverlayDraggable, "open and on the position tab")
+        XCTAssertTrue(model.isOverlayDraggable, "open on the layout tab")
 
         model.selectedTab = .style
-        XCTAssertFalse(model.isOverlayDraggable, "open but a different tab")
+        XCTAssertTrue(model.isOverlayDraggable, "open on the style tab")
+
+        model.close()
+        XCTAssertFalse(model.isOverlayDraggable, "closed again")
     }
 
     /// A fake conformer, standing in for TASK-24's position-tab model.
