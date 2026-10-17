@@ -98,7 +98,7 @@ final class FilmDateStampViewTests: XCTestCase {
         return try ink(in: baked)
     }
 
-    /// The box of the solid orange pixels (the glyph cores, not the glow).
+    /// The box of the glyph pixels (body and core, not the halo).
     private func ink(in image: UIImage) throws -> CGRect? {
         let cgImage = try XCTUnwrap(image.cgImage)
         let width = cgImage.width, height = cgImage.height
@@ -112,8 +112,9 @@ final class FilmDateStampViewTests: XCTestCase {
         for y in 0..<height {
             for x in 0..<width {
                 let i = (y * width + x) * 4
-                // Core ink: close to #FF8A1E; gray/glow blends have a blue near their red.
-                if data[i] > 230, data[i + 1] > 110, data[i + 1] < 165, data[i + 2] < 70 {
+                // Ink: red well above blue (#578 three layers: body ≈ 225,
+                // core ≈ 140 on 255; the halo outside the glyphs stays under 20).
+                if Int(data[i]) - Int(data[i + 2]) > 112 {
                     minX = min(minX, x); maxX = max(maxX, x)
                     minY = min(minY, y); maxY = max(maxY, y)
                 }
