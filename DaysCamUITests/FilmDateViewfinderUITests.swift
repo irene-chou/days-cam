@@ -28,7 +28,8 @@ final class FilmDateViewfinderUITests: XCTestCase {
         return screenshot
     }
 
-    /// The box of the film-orange pixels in `screenshot`, in points.
+    /// The box of the stamp's glyph pixels in `screenshot`, in points: body
+    /// and core of the three layers (#578), not the halo.
     private func orangeBox(in screenshot: XCUIScreenshot) -> CGRect? {
         guard let cgImage = screenshot.image.cgImage else { return nil }
         let width = cgImage.width, height = cgImage.height
@@ -42,7 +43,10 @@ final class FilmDateViewfinderUITests: XCTestCase {
         for y in 0..<height {
             for x in 0..<width {
                 let i = (y * width + x) * 4
-                if data[i] > 230, data[i + 1] > 110, data[i + 1] < 165, data[i + 2] < 70 {
+                // Red well above blue (body ≈ 225, core ≈ 140 on 255; the halo
+                // stays under 30), green between orange and yellow-white so
+                // yellow or red controls never count.
+                if data[i] > 200, Int(data[i]) - Int(data[i + 2]) > 112, data[i + 1] > 90, data[i + 1] < 230 {
                     minX = min(minX, x); maxX = max(maxX, x)
                     minY = min(minY, y); maxY = max(maxY, y)
                 }
@@ -55,8 +59,8 @@ final class FilmDateViewfinderUITests: XCTestCase {
     }
 
     /// 153.1, 153.2, 153.5 on screen: per corner, the ink sits in that corner
-    /// of the viewfinder at 4.5% of its short edge, 3.5% tall (or wide when
-    /// turned), and runs the way the table says.
+    /// of the viewfinder at 4.5% of its short edge, 4.2% tall (or wide when
+    /// turned, #578), and runs the way the table says.
     func testStampSitsInEveryCornerOfTheViewfinder() {
         // (corner, isUpright, atLeft, atTop)
         let cases: [(String, Bool, Bool, Bool)] = [
@@ -76,7 +80,7 @@ final class FilmDateViewfinderUITests: XCTestCase {
             let label = "\(corner) ink \(ink) viewfinder \(box)"
             let thickness = upright ? ink.height : ink.width
             let length = upright ? ink.width : ink.height
-            XCTAssertEqual(thickness / short, 0.035, accuracy: 0.005, label)
+            XCTAssertEqual(thickness / short, 0.042, accuracy: 0.005, label)
             XCTAssertGreaterThan(length, thickness * 4, label)
             let marginX = atLeft ? ink.minX - box.minX : box.maxX - ink.maxX
             let marginY = atTop ? ink.minY - box.minY : box.maxY - ink.maxY

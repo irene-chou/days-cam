@@ -5,7 +5,8 @@ import XCTest
 
 /// Covers TASK-151 (#520) acceptance 151.1–151.9: the `'YY MM DD` text, the
 /// profile fields and their decoding, and the baked stamp's colour, size,
-/// corner, direction and crop handling.
+/// corner, direction and crop handling. The colour, size and glyph checks
+/// follow the three-layer look of #578 (halo, body, core).
 final class FilmDateStampTests: XCTestCase {
 
     // MARK: - 151.1 / 151.2 text
@@ -174,14 +175,26 @@ final class FilmDateStampTests: XCTestCase {
         }
 
         /// How far a pixel has moved from gray towards film orange, judged
-        /// on the blue channel (gray 0.5, orange 0.12).
+        /// on red minus blue (gray 0, body orange 0.88). The yellow-white
+        /// core scores about half, so it never reads as a hole.
         func orangeness(_ x: Int, _ y: Int) -> Double {
-            let blue = rgb(x, y).2
-            return (FilmDateStampTests.gray - blue) / (FilmDateStampTests.gray - Double(FilmDateStamp.Metrics.blue))
+            let (red, _, blue) = rgb(x, y)
+            return (red - blue) / Double(FilmDateStamp.Metrics.red - FilmDateStamp.Metrics.blue)
+        }
+
+        /// The rightmost run of ink (orangeness ≥ 0.5) on row `y` within
+        /// `minX..<maxX`, as its first and last column.
+        func rightmostInkRun(row y: Int, minX: Int, maxX: Int) -> (first: Int, last: Int)? {
+            var x = maxX - 1
+            while x >= minX, orangeness(x, y) < 0.5 { x -= 1 }
+            guard x >= minX else { return nil }
+            let last = x
+            while x - 1 >= minX, orangeness(x - 1, y) >= 0.5 { x -= 1 }
+            return (x, last)
         }
 
         /// The bounding box of pixels at least `threshold` orange inside `region`.
-        func inkBox(in region: CGRect, threshold: Double = 0.7) -> CGRect? {
+        func inkBox(in region: CGRect, threshold: Double = 0.5) -> CGRect? {
             var minX = Int.max, minY = Int.max, maxX = Int.min, maxY = Int.min
             let clipped = region.intersection(CGRect(x: 0, y: 0, width: width, height: height)).integral
             for y in Int(clipped.minY)..<Int(clipped.maxY) {
@@ -230,22 +243,52 @@ final class FilmDateStampTests: XCTestCase {
         let pixels = try Pixels(baked)
         let shortEdge = 3000.0
 
+        // Soft edges: the box is measured to ±3px (#578).
         let box = try XCTUnwrap(pixels.inkBox(in: CGRect(x: 2000, y: 1500, width: 2000, height: 1500)))
         let rightMargin = 4000 - box.maxX
         let bottomMargin = 3000 - box.maxY
-        XCTAssertEqual(rightMargin, shortEdge * 0.045, accuracy: 2, "box \(box)")
-        XCTAssertEqual(bottomMargin, shortEdge * 0.045, accuracy: 2, "box \(box)")
-        XCTAssertEqual(box.height, shortEdge * 0.035, accuracy: 2, "box \(box)")
+        XCTAssertEqual(rightMargin, shortEdge * 0.045, accuracy: 3, "box \(box)")
+        XCTAssertEqual(bottomMargin, shortEdge * 0.045, accuracy: 3, "box \(box)")
+        XCTAssertEqual(box.height, shortEdge * 0.042, accuracy: 3, "box \(box)")
 
-        // The middle of the last digit's bottom segment is solid ink.
+        // The last digit (2) ends in a bottom segment and has no bottom-right
+        // one, so the rightmost ink on the bottom segment's centre row is
+        // that segment, tip to tip; its middle is the segment centre.
         let height = FilmDateStamp.glyphHeight(forCanvasSize: CGSize(width: 4000, height: 3000))
         let thickness = FilmDateStamp.Metrics.segmentThicknessRatio * height
-        let digitWidth = FilmDateStamp.Metrics.digitWidthRatio * height
-        let centre = (x: Int(box.maxX - digitWidth / 2 - thickness * 0.2), y: Int(box.maxY - thickness / 2))
-        let orange = (Double(FilmDateStamp.Metrics.red), Double(FilmDateStamp.Metrics.green),
-                      Double(FilmDateStamp.Metrics.blue))
-        let difference = deltaE(pixels.rgb(centre.x, centre.y), orange)
-        XCTAssertLessThan(difference, 10, "pixel \(pixels.rgb(centre.x, centre.y)) at \(centre)")
+        let centreY = Int((box.maxY - thickness / 2).rounded())
+        let run = try XCTUnwrap(pixels.rightmostInkRun(row: centreY, minX: Int(box.minX), maxX: Int(box.maxX) + 1))
+        let centre = (x: (run.first + run.last) / 2, y: centreY)
+
+        // Segment centre: the yellow-white core. The core bar is thinner than
+        // its own blur, so the centre is a blend leaning to the core colour,
+        // never pure #FFD089 (the design mockup has the same physics).
+        let core = (Double(FilmDateStamp.Metrics.coreRed), Double(FilmDateStamp.Metrics.coreGreen),
+                    Double(FilmDateStamp.Metrics.coreBlue))
+        let body = (Double(FilmDateStamp.Metrics.red), Double(FilmDateStamp.Metrics.green),
+                    Double(FilmDateStamp.Metrics.blue))
+        let centrePixel = pixels.rgb(centre.x, centre.y)
+        XCTAssertLessThan(deltaE(centrePixel, core), 18, "pixel \(centrePixel) at \(centre)")
+        XCTAssertLessThan(deltaE(centrePixel, core), deltaE(centrePixel, body), "pixel \(centrePixel) at \(centre)")
+
+        // Between core and edge (0.3 × thickness off the centre line): the
+        // film-orange body, still red and less blue than the core.
+        let bodyPoint = (x: centre.x, y: centre.y - Int((thickness * 0.3).rounded()))
+        let bodyPixel = pixels.rgb(bodyPoint.x, bodyPoint.y)
+        XCTAssertGreaterThan(bodyPixel.0, 0.85, "pixel \(bodyPixel) at \(bodyPoint)")
+        XCTAssertLessThan(bodyPixel.2, centrePixel.2, "body \(bodyPixel) vs core \(centrePixel)")
+
+        // Just outside the glyph box (0.1 × height below the bottom segment):
+        // the halo tints the gray orange.
+        let haloPoint = (x: centre.x, y: Int(box.maxY) + Int((height * 0.1).rounded()))
+        let haloPixel = pixels.rgb(haloPoint.x, haloPoint.y)
+        XCTAssertGreaterThan(haloPixel.0 - haloPixel.2, 0.04, "pixel \(haloPixel) at \(haloPoint)")
+
+        // Well outside (0.8 × height below): still the gray photo.
+        let gray = (Double(Self.gray), Double(Self.gray), Double(Self.gray))
+        let farPoint = (x: centre.x, y: Int(box.maxY) + Int((height * 0.8).rounded()))
+        let farPixel = pixels.rgb(farPoint.x, farPoint.y)
+        XCTAssertLessThan(deltaE(farPixel, gray), 2, "pixel \(farPixel) at \(farPoint)")
 
         // Far corner untouched.
         let reference = pixels.rgb(0, 0)
@@ -257,6 +300,58 @@ final class FilmDateStampTests: XCTestCase {
         }
         XCTAssertEqual(changed, 0)
         XCTAssertEqual(reference.0, Self.gray, accuracy: 1.0 / 255)
+    }
+
+    // MARK: - Core glyph path (#578)
+
+    /// The closed subpaths of `path`, in drawing order, as their boxes.
+    private func subpathBoxes(_ path: CGPath) -> [CGRect] {
+        var boxes: [CGRect] = []
+        var current: [CGPoint] = []
+        func flush() {
+            guard let first = current.first else { return }
+            var box = CGRect(origin: first, size: .zero)
+            for point in current.dropFirst() {
+                box = box.union(CGRect(origin: point, size: .zero))
+            }
+            boxes.append(box)
+            current = []
+        }
+        path.applyWithBlock { element in
+            switch element.pointee.type {
+            case .moveToPoint:
+                flush()
+                current = [element.pointee.points[0]]
+            case .addLineToPoint:
+                current.append(element.pointee.points[0])
+            case .closeSubpath:
+                flush()
+            default:
+                break
+            }
+        }
+        flush()
+        return boxes
+    }
+
+    func test_578_coreGlyphPathIsConcentricWithTheBodyAndKeepsItsBox() {
+        let height: CGFloat = 126
+        let body = FilmDateStamp.glyphPath(for: stampText, height: height)
+        let core = FilmDateStamp.glyphPath(for: stampText, height: height,
+                                           thicknessRatio: FilmDateStamp.Metrics.segmentThicknessRatio
+                                               * FilmDateStamp.Metrics.coreThicknessFraction)
+        XCTAssertEqual(core.size, body.size)
+
+        let bodyBoxes = subpathBoxes(body.path)
+        let coreBoxes = subpathBoxes(core.path)
+        XCTAssertEqual(bodyBoxes.count, coreBoxes.count)
+        XCTAssertGreaterThan(bodyBoxes.count, 20, "nine characters' segments")
+        for (index, (outer, inner)) in zip(bodyBoxes, coreBoxes).enumerated() {
+            XCTAssertTrue(outer.insetBy(dx: -0.01, dy: -0.01).contains(inner), "segment \(index): \(inner) in \(outer)")
+            XCTAssertLessThan(abs(outer.midX - inner.midX), 0.5, "segment \(index)")
+            XCTAssertLessThan(abs(outer.midY - inner.midY), 0.5, "segment \(index)")
+            XCTAssertLessThan(inner.width * inner.height, outer.width * outer.height, "segment \(index)")
+        }
     }
 
     func test_151_6_eachCornerPlacesAndTurnsTheStampPerTheTable() throws {
@@ -272,10 +367,11 @@ final class FilmDateStampTests: XCTestCase {
             let pixels = try Pixels(try bake(photo, corner: corner))
             let box = try XCTUnwrap(pixels.inkBox(in: searchRegion(around: expected)), "\(corner)")
 
-            XCTAssertEqual(box.minX, expected.minX, accuracy: 2, "\(corner) \(box) vs \(expected)")
-            XCTAssertEqual(box.minY, expected.minY, accuracy: 2, "\(corner) \(box) vs \(expected)")
-            XCTAssertEqual(box.maxX, expected.maxX, accuracy: 2, "\(corner) \(box) vs \(expected)")
-            XCTAssertEqual(box.maxY, expected.maxY, accuracy: 2, "\(corner) \(box) vs \(expected)")
+            // Soft edges: ±3px (#578).
+            XCTAssertEqual(box.minX, expected.minX, accuracy: 3, "\(corner) \(box) vs \(expected)")
+            XCTAssertEqual(box.minY, expected.minY, accuracy: 3, "\(corner) \(box) vs \(expected)")
+            XCTAssertEqual(box.maxX, expected.maxX, accuracy: 3, "\(corner) \(box) vs \(expected)")
+            XCTAssertEqual(box.maxY, expected.maxY, accuracy: 3, "\(corner) \(box) vs \(expected)")
             XCTAssertEqual(box.minX < canvas.width / 2, corner == .topLeading || corner == .bottomLeading, "\(corner)")
             XCTAssertEqual(box.minY < canvas.height / 2, corner == .topLeading || corner == .topTrailing, "\(corner)")
 
@@ -312,9 +408,9 @@ final class FilmDateStampTests: XCTestCase {
         let expected = FilmDateStamp(text: stampText, corner: .bottomLeading).frame(inCanvasSize: canvas)
         let pixels = try Pixels(baked)
         let box = try XCTUnwrap(pixels.inkBox(in: searchRegion(around: expected)))
-        XCTAssertEqual(box.minX, 2250 * 0.045, accuracy: 2, "\(box)")
-        XCTAssertEqual(4000 - box.maxY, 2250 * 0.045, accuracy: 2, "\(box)")
-        XCTAssertEqual(box.width, 2250 * 0.035, accuracy: 2, "\(box)")
+        XCTAssertEqual(box.minX, 2250 * 0.045, accuracy: 3, "\(box)")
+        XCTAssertEqual(4000 - box.maxY, 2250 * 0.045, accuracy: 3, "\(box)")
+        XCTAssertEqual(box.width, 2250 * 0.042, accuracy: 3, "\(box)")
     }
 
     func test_151_8_nilFilmDateIsPixelIdenticalAndEmptyTextStillPrintsTheStamp() throws {
