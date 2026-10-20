@@ -160,8 +160,11 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertEqual(corners[2].label, "底片日期位置，左下")
         // #568: the 位置 tab is gone, so the 位置 row is the only thing named so.
         let places = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "位置")).allElementsBoundByIndex
-        XCTAssertTrue(places.allSatisfy { app.buttons["positionRow"].frame.contains($0.frame) },
-                      "#558.6 位置 only on the 位置 row")
+        // A hair of slack: the row's frame can come back a few ulps right
+        // of its own label's (26.000000000000057 vs 26.0 on iPhone 16).
+        let positionRow = app.buttons["positionRow"].frame.insetBy(dx: -0.5, dy: -0.5)
+        XCTAssertTrue(places.allSatisfy { positionRow.contains($0.frame) },
+                      "#558.6 位置 only on the 位置 row: \(places.map { "\($0.label) \($0.frame)" })")
     }
 
     /// B′ shot (a): everything on, 左下, in as many screens as it takes.
