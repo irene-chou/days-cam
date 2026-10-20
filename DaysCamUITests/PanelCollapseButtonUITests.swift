@@ -67,7 +67,7 @@ final class PanelCollapseButtonUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.height, 44 - 0.5, "116.2 tap target")
         let row = styleTab.frame
         XCTAssertEqual(frame.midY, row.midY, accuracy: 3, "116.1 same row as the segments")
-        XCTAssertGreaterThan(frame.minX, app.buttons["版面"].frame.maxX, "116.2 does not overlap the last segment")
+        XCTAssertGreaterThan(frame.minX, app.buttons["內容"].frame.maxX, "116.2 does not overlap the last segment")
         XCTAssertEqual(window.maxX - frame.maxX, row.minX - window.minX - 2, accuracy: 2,
                        "116.1 right margin mirrors the track's left margin")
         XCTAssertFalse(app.descendants(matching: .any)["panelGrabber"].exists)
@@ -79,14 +79,14 @@ final class PanelCollapseButtonUITests: XCTestCase {
 
     /// 116.2: tapping the last segment does not hit the chevron.
     func testTappingLastSegmentDoesNotCollapse() {
-        app.buttons["版面"].tap()
+        app.buttons["內容"].tap()
         XCTAssertTrue(collapseButton.exists, "116.2 still open")
-        XCTAssertTrue(app.buttons["版面"].isSelected, "and the segment switched")
+        XCTAssertTrue(app.buttons["內容"].isSelected, "and the segment switched")
     }
 
     /// 116.3: a downward swipe on the segmented row collapses on release.
     func testSwipeDownOnSegmentedRowCollapses() {
-        let row = app.buttons["版面"].frame
+        let row = app.buttons["內容"].frame
         drag(from: CGPoint(x: row.midX, y: row.midY), dy: 70)
         assertPanelClosed("116.3 swipe down on the segmented row")
     }
@@ -99,7 +99,7 @@ final class PanelCollapseButtonUITests: XCTestCase {
 
     /// 116.4: up, sideways and short drags leave the panel alone.
     func testOtherSwipesOnSegmentedRowDoNothing() {
-        let row = app.buttons["版面"].frame
+        let row = app.buttons["內容"].frame
         let start = CGPoint(x: row.midX, y: row.midY)
         drag(from: start, dy: -60)
         XCTAssertTrue(collapseButton.exists, "116.4 up")
@@ -123,7 +123,7 @@ final class PanelCollapseButtonUITests: XCTestCase {
     /// 116.7: the chevron stays put across tabs, sub-tabs and scrolling.
     func testChevronStaysPutAcrossTabsAndScrolling() {
         let resting = collapseButton.frame
-        for tab in ["版面", "樣式"] {
+        for tab in ["內容", "樣式"] {
             app.buttons[tab].tap()
             XCTAssertEqual(collapseButton.frame, resting, "116.7 same place on \(tab)")
         }

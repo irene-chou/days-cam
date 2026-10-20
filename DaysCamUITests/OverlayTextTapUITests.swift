@@ -47,7 +47,7 @@ final class OverlayTextTapUITests: XCTestCase {
         XCTAssertTrue(overlayText.waitForExistence(timeout: 10))
         tapOverlayText()
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5))
-        let contentTab = app.buttons["版面"]
+        let contentTab = app.buttons["內容"]
         XCTAssertTrue(contentTab.exists)
         contentTab.tap()
         XCTAssertTrue(contentTab.isSelected)

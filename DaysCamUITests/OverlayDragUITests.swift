@@ -53,7 +53,7 @@ final class OverlayDragUITests: XCTestCase {
     }
 
     private func openPositionRowLabel() -> String {
-        app.buttons["版面"].tap()
+        app.buttons["內容"].tap()
         app.revealInPanel(row)
         return row.label
     }
@@ -71,12 +71,12 @@ final class OverlayDragUITests: XCTestCase {
         XCTAssertEqual(openPositionRowLabel(), "位置，自訂位置", "568.5 saved as custom")
     }
 
-    /// #568-5／7: the same on 版面.
+    /// #568-5／7: the same on 內容.
     func testDragOnLayoutTab() {
         openPanel()
-        app.buttons["版面"].tap()
-        XCTAssertTrue(app.buttons["版面"].isSelected)
-        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 dashed frame on 版面")
+        app.buttons["內容"].tap()
+        XCTAssertTrue(app.buttons["內容"].isSelected)
+        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 dashed frame on 內容")
         let text = element("overlayTextDraggable")
         let before = text.frame
         dragText(text)

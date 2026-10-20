@@ -809,12 +809,12 @@ private struct GridLinesView: View {
     return CameraScreen(model: model)
 }
 
-#Preview("疊字面板打開・版面分頁") {
+#Preview("疊字面板打開・內容分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
     model.panelModel.open()
-    model.panelModel.selectedTab = .layout
+    model.panelModel.selectedTab = .content
     return CameraScreen(model: model)
 }
 
@@ -847,7 +847,7 @@ private struct GridLinesView: View {
         .previewDevice("iPhone SE (3rd generation)")
 }
 
-// MARK: - Issue #120 (panel-open viewfinder, layout tab, qa screenshots for G.9)
+// MARK: - Issue #120 (panel-open viewfinder, content tab, qa screenshots for G.9)
 
 @MainActor
 private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSuffix: String) -> CameraScreenModel {
@@ -857,41 +857,41 @@ private func panelOpenPositionTabPreviewModel(ratio: CaptureAspectRatio, suiteSu
     settings.setAspectRatio(ratio)
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store, captureSettingsStore: settings)
     model.panelModel.open()
-    model.panelModel.selectedTab = .layout
+    model.panelModel.selectedTab = .content
     return model
 }
 
-/// 驗收 G.1/G.5（issue #120）：3:4 開面板・版面分頁，作為跟 9:16 比較的基準畫面。
-#Preview("3:4 疊字面板打開・版面分頁（G.1 基準）") {
+/// 驗收 G.1/G.5（issue #120）：3:4 開面板・內容分頁，作為跟 9:16 比較的基準畫面。
+#Preview("3:4 疊字面板打開・內容分頁（G.1 基準）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.34"))
 }
 
-/// 驗收 G.5：1:1 開面板・版面分頁，跟 3:4/9:16 共用同一個開面板觀景區。
-#Preview("1:1 疊字面板打開・版面分頁（G.5）") {
+/// 驗收 G.5：1:1 開面板・內容分頁，跟 3:4/9:16 共用同一個開面板觀景區。
+#Preview("1:1 疊字面板打開・內容分頁（G.5）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.11"))
 }
 
 /// 驗收 G.1（issue #120）：整張 9:16 觀景窗都在面板上方，不再被面板／底部列蓋住，
 /// 疊字（預設右下）拖得到、看得到。iPhone 16 參考值：觀景窗 ≈236×419，水平置中。
-#Preview("9:16 疊字面板打開・版面分頁（G.1）") {
+#Preview("9:16 疊字面板打開・內容分頁（G.1）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.916"))
 }
 
 /// 驗收 G.7：iPhone SE 上重跑 G.1，開面板觀景區、9:16 內容都不重疊、不裁切。
-#Preview("iPhone SE・3:4 疊字面板打開・版面分頁（G.7 基準）") {
+#Preview("iPhone SE・3:4 疊字面板打開・內容分頁（G.7 基準）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .threeByFour, suiteSuffix: "g120.se.34"))
         .previewDevice("iPhone SE (3rd generation)")
 }
 
 /// 驗收 G.7：iPhone SE、1:1。
-#Preview("iPhone SE・1:1 疊字面板打開・版面分頁（G.7）") {
+#Preview("iPhone SE・1:1 疊字面板打開・內容分頁（G.7）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .oneByOne, suiteSuffix: "g120.se.11"))
         .previewDevice("iPhone SE (3rd generation)")
 }
 
 /// 驗收 G.7：iPhone SE、9:16——小螢幕也走 #120 的規則（跟面板收起時的「假設 2」退回
 /// 行為是分開的兩件事：退回只影響面板收起時的 9:16，見 #101）。
-#Preview("iPhone SE・9:16 疊字面板打開・版面分頁（G.7）") {
+#Preview("iPhone SE・9:16 疊字面板打開・內容分頁（G.7）") {
     CameraScreen(model: panelOpenPositionTabPreviewModel(ratio: .nineBySixteen, suiteSuffix: "g120.se.916"))
         .previewDevice("iPhone SE (3rd generation)")
 }

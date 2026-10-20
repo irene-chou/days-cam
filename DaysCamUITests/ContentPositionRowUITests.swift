@@ -13,7 +13,7 @@ final class ContentPositionRowUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["版面"]
+        let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
         XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
@@ -89,7 +89,7 @@ final class ContentPositionRowUITests: XCTestCase {
         XCTAssertEqual(row.value as? String, "已收起")
     }
 
-    /// #568-3: a point picked on the 版面 tab's row moves the text on the
+    /// #568-3: a point picked on the 內容 tab's row moves the text on the
     /// viewfinder.
     func testPickingAPointMovesTheTextOnTheViewfinder() {
         let text = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch

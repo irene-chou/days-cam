@@ -61,7 +61,7 @@ final class DefaultProfileNameUITests: XCTestCase {
         XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 5))
         // 155.1／119.2: the 內容 tab's 名稱 switch is on by default and turns off.
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["版面"]
+        let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
         let nameSwitch = app.switches["名稱"]

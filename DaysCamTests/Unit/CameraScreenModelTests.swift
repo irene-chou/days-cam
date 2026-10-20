@@ -1657,7 +1657,7 @@ final class CameraScreenModelTests: XCTestCase {
         model.panelModel.open()
         XCTAssertGreaterThan(sends, 0, "open() must re-render CameraScreen")
         let afterOpen = sends
-        model.panelModel.selectedTab = .layout
+        model.panelModel.selectedTab = .content
         XCTAssertGreaterThan(sends, afterOpen, "switching tabs must re-render")
         let afterTab = sends
         model.panelModel.close()
@@ -1858,7 +1858,7 @@ final class CameraScreenModelTests: XCTestCase {
         let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
 
         model.styleTabModel?.selectFont(.huninn)
-        model.panelModel.selectedTab = .layout // switching tabs never rebuilds (same profile)
+        model.panelModel.selectedTab = .content // switching tabs never rebuilds (same profile)
 
         let stored = try XCTUnwrap(store.profiles.first)
         XCTAssertEqual(stored.style.fontID, .huninn, "M.5: store 端沒有遺失樣式改動")
@@ -1887,7 +1887,7 @@ final class CameraScreenModelTests: XCTestCase {
         try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
         let (model, _, _, _) = makeModel(profileStore: store, now: now)
         model.openOverlayPanel()
-        model.panelModel.selectedTab = .layout
+        model.panelModel.selectedTab = .content
         model.profileManagerModel.edit(id: store.profiles[1].id)
 
         model.presentProfileManagement()
@@ -1895,7 +1895,7 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(model.isProfileManagerPresented)
         XCTAssertTrue(model.profileManagerModel.path.isEmpty)
         XCTAssertTrue(model.panelModel.isOpen)
-        XCTAssertEqual(model.panelModel.selectedTab, .layout)
+        XCTAssertEqual(model.panelModel.selectedTab, .content)
     }
 
     func testEditPageWritesMergeOntoFieldsAnotherTabChanged() throws {
