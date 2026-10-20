@@ -238,4 +238,13 @@ extension DisplaySettingsModel {
         guard !areUnitsInert else { return }
         mutate { $0.useAgeWording = newValue }
     }
+
+    /// Sets how a day-only count is written (#583). Allowed with other units
+    /// checked too: the wording is kept and applies once only 天 is checked.
+    func setDayCountFormat(_ newValue: DayCountFormat) {
+        dismissHint()
+        guard newValue != profile.dayCountFormat else { return }
+        guard !areUnitsInert else { return }
+        mutate { $0.dayCountFormat = newValue }
+    }
 }

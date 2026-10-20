@@ -502,4 +502,46 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.dayCount))
         XCTAssertTrue(spy.updated.isEmpty)
     }
+
+    // MARK: - #583 寫法
+
+    func test_583_setDayCountFormatSavesAndUpdatesTheOverlay() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setDayCountFormat(.dDay)
+        XCTAssertEqual(model.profile.dayCountFormat, .dDay)
+        XCTAssertEqual(spy.updated.last?.dayCountFormat, .dDay, "sent through onChange")
+        XCTAssertEqual(model.overlayPreviewText, "D+9")
+    }
+
+    func test_583_sameFormatIsNotSaved() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setDayCountFormat(.ordinal)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    func test_583_refusedWhileUnitsAreInert() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDate: true), now: try fixedNow(), spy: spy)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.areUnitsInert)
+        spy.updated.removeAll()
+        model.setDayCountFormat(.dayN)
+        XCTAssertEqual(model.profile.dayCountFormat, .ordinal)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    func test_583_changeableWithOtherUnitsCheckedButNotApplied() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 12, 29),
+                                                       displayUnits: [.week, .day]),
+                              now: try fixedNow(), spy: spy)
+        let before = model.overlayPreviewText
+        model.setDayCountFormat(.dayN)
+        XCTAssertEqual(spy.updated.last?.dayCountFormat, .dayN)
+        XCTAssertEqual(model.overlayPreviewText, before, "not applied while 週 is checked")
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.overlayPreviewText, "Day 13", "applied once only 天 is left")
+    }
 }
