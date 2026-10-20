@@ -435,6 +435,7 @@ extension ProfileStore {
                                        showName: source.showName,
                                        displayUnits: source.displayUnits,
                                        useAgeWording: source.useAgeWording,
+                                       dayCountFormat: source.dayCountFormat,
                                        position: source.position,
                                        style: source.style,
                                        showFilmDate: source.showFilmDate,

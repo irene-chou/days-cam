@@ -81,11 +81,16 @@ private extension TemplateRenderer {
 
         let units = profile.displayUnits
         if units == [.day] {
-            // U-2: the one ordinal form in the product. Kept even at zero:
-            // `.dayZero` on the start date prints 第 0 天, not the all-zero
-            // fallback (0.1 FR-2.13).
-            let count = calculator.dayCount(from: profile.startDate, rule: profile.countingRule)
-            return "第 \(count) 天"
+            // U-2: day only is written in the profile's `dayCountFormat`
+            // (#582), `ordinal` being the 第 N 天 of 0.1 FR-2.13. Kept even at
+            // zero: `.dayZero` on the start date prints 第 0 天, not the
+            // all-zero fallback. `dDay` ignores the counting rule, so the
+            // start date is D-Day under either rule.
+            let format = profile.dayCountFormat
+            let count = format.usesCountingRule
+                ? calculator.dayCount(from: profile.startDate, rule: profile.countingRule)
+                : rawDifference
+            return format.elapsedText(count: count)
         }
 
         let breakdown = calculator.elapsedBreakdown(from: profile.startDate,
@@ -102,9 +107,13 @@ private extension TemplateRenderer {
     /// the same segments and separator as the elapsed amount. Years always
     /// read 年 — an age that has not started is not an age. When every
     /// checked unit is zero, and for day only, it is `還有 N 天` rather than
-    /// a meaningless `還有 0 年`.
+    /// a meaningless `還有 0 年`. Day only is written in the profile's
+    /// `dayCountFormat` (#582); other units ignore it.
     func countdownText(profile: CameraProfile, calculator: DayCountCalculator, daysUntilStart: Int) -> String {
         let units = profile.displayUnits
+        if units == [.day] {
+            return profile.dayCountFormat.countdownText(daysUntilStart: daysUntilStart)
+        }
         let breakdown = calculator.countdownBreakdown(to: profile.startDate, units: units)
         guard let text = unitText(breakdown, units: units, useAgeWording: false) else {
             return Self.notStartedText(daysUntilStart: daysUntilStart)

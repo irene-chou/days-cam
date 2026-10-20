@@ -78,6 +78,9 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var displayUnits: Set<DisplayUnit>
     /// Whether years are printed as ages. Only valid when `displayUnits` has `.year`.
     var useAgeWording: Bool
+    /// How a day-only count is written (#582). Ignored unless
+    /// `displayUnits == [.day]`.
+    var dayCountFormat: DayCountFormat
     /// Where the overlay is drawn: a grid anchor or a custom center point.
     var position: OverlayPlacement
     /// How the overlay looks (PRD 0.2 §4.2).
@@ -105,6 +108,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          showName: Bool = false,
          displayUnits: Set<DisplayUnit> = [.day],
          useAgeWording: Bool = false,
+         dayCountFormat: DayCountFormat = .default,
          position: OverlayPlacement = .default,
          style: OverlayStyle = OverlayStyle(),
          showFilmDate: Bool = false,
@@ -120,6 +124,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.showName = showName
         self.displayUnits = displayUnits
         self.useAgeWording = useAgeWording
+        self.dayCountFormat = dayCountFormat
         self.position = position
         self.style = style
         self.showFilmDate = showFilmDate
@@ -259,6 +264,7 @@ extension CameraProfile {
         case id, name, startDate, countingRule, showDayCount, showDate, showName
         case displayUnits, useAgeWording, position, style, createdAt, updatedAt
         case showFilmDate, filmDateCorner
+        case dayCountFormat
     }
 
     /// Keys that only 0.1 files carry. Read, never written.
@@ -306,6 +312,7 @@ extension CameraProfile {
         try container.encode(showName, forKey: .showName)
         try container.encode(DisplayUnit.allCases.filter(displayUnits.contains), forKey: .displayUnits)
         try container.encode(useAgeWording, forKey: .useAgeWording)
+        try container.encode(dayCountFormat, forKey: .dayCountFormat)
         try container.encode(position, forKey: .position)
         try container.encode(style, forKey: .style)
         try container.encode(showFilmDate, forKey: .showFilmDate)
@@ -337,6 +344,9 @@ extension CameraProfile {
         // profile (PRD 0.2 §4.3).
         showFilmDate = try container.decodeIfPresent(Bool.self, forKey: .showFilmDate) ?? false
         filmDateCorner = (try? container.decodeIfPresent(FilmDateCorner.self, forKey: .filmDateCorner)) ?? .default
+        // Added by #582: older files lack it, and an unreadable value falls
+        // back too, so the profile is kept.
+        dayCountFormat = (try? container.decodeIfPresent(DayCountFormat.self, forKey: .dayCountFormat)) ?? .default
 
         // 0.1 wrote `position` as a bare string such as "bottomTrailing".
         if let legacyPosition = try? container.decode(OverlayPosition.self, forKey: .position) {

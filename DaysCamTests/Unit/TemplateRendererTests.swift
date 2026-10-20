@@ -795,3 +795,83 @@ extension TemplateRendererUnitSetTests {
                        "還有 1 年", "from a leap day, clamped like §7.1")
     }
 }
+
+// MARK: - #582 day-only wordings
+
+/// #582 acceptance 2, 5 and 6: `dayCountFormat` through `TemplateRenderer`,
+/// captured 2026-03-20 10:00 Asia/Taipei throughout.
+final class TemplateRendererDayCountFormatTests: XCTestCase {
+
+    private let renderer = TemplateRenderer()
+
+    private func render(start: DateComponents,
+                        format: DayCountFormat,
+                        rule: CountingRule = .dayOne,
+                        units: Set<DisplayUnit> = [.day],
+                        showDate: Bool = false,
+                        showName: Bool = false) throws -> String {
+        let capturedAt = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
+        let profile = CameraProfile(name: "小寶",
+                                    startDate: start,
+                                    countingRule: rule,
+                                    showDate: showDate,
+                                    showName: showName,
+                                    displayUnits: units,
+                                    dayCountFormat: format)
+        return renderer.render(profile: profile, capturedAt: capturedAt, calendar: DateFixture.taipei)
+    }
+
+    private let twelveDaysAgo = DateFixture.components(2026, 3, 8)
+    private let today = DateFixture.components(2026, 3, 20)
+    private let inSevenDays = DateFixture.components(2026, 3, 27)
+    private let tomorrow = DateFixture.components(2026, 3, 21)
+
+    func test_582_2_and_5_everyFormatUnderBothRules() throws {
+        // (format, rule, 12 days ago, today, in 7 days, tomorrow)
+        let table: [(DayCountFormat, CountingRule, String, String, String, String)] = [
+            (.ordinal, .dayOne, "第 13 天", "第 1 天", "還有 7 天", "還有 1 天"),
+            (.ordinal, .dayZero, "第 12 天", "第 0 天", "還有 7 天", "還有 1 天"),
+            (.plain, .dayOne, "13 天", "1 天", "還有 7 天", "還有 1 天"),
+            (.plain, .dayZero, "12 天", "0 天", "還有 7 天", "還有 1 天"),
+            (.dayN, .dayOne, "Day 13", "Day 1", "7 days to go", "1 days to go"),
+            (.dayN, .dayZero, "Day 12", "Day 0", "7 days to go", "1 days to go"),
+            (.dDay, .dayOne, "D+12", "D-Day", "D-7", "D-1"),
+            (.dDay, .dayZero, "D+12", "D-Day", "D-7", "D-1")
+        ]
+        for (format, rule, past, onTheDay, future, nextDay) in table {
+            let label = "\(format) \(rule)"
+            XCTAssertEqual(try render(start: twelveDaysAgo, format: format, rule: rule), past, label)
+            XCTAssertEqual(try render(start: today, format: format, rule: rule), onTheDay, label)
+            XCTAssertEqual(try render(start: inSevenDays, format: format, rule: rule), future, label)
+            XCTAssertEqual(try render(start: tomorrow, format: format, rule: rule), nextDay, label)
+        }
+    }
+
+    func test_582_2_dDayWithDateAndName() throws {
+        XCTAssertEqual(try render(start: twelveDaysAgo, format: .dDay, showDate: true, showName: true),
+                       "2026.03.20 小寶 D+12")
+    }
+
+    func test_582_6_otherUnitsIgnoreTheFormat() throws {
+        XCTAssertEqual(try render(start: twelveDaysAgo, format: .dayN, rule: .dayZero, units: [.week, .day]),
+                       "1 週又 5 天")
+        XCTAssertEqual(try render(start: DateFixture.components(2026, 6, 24), format: .dDay, units: [.year]),
+                       "還有 96 天", "U-10 all-zero countdown")
+
+        let starts = [DateFixture.components(2025, 1, 15), twelveDaysAgo, today, tomorrow, inSevenDays,
+                      DateFixture.components(2027, 5, 1)]
+        let unitSets: [Set<DisplayUnit>] = [[.week, .day], [.week], [.month, .day], [.month],
+                                            [.year, .month, .day], [.year], [.year, .week, .day]]
+        for start in starts {
+            for units in unitSets {
+                for rule in CountingRule.allCases {
+                    let ordinal = try render(start: start, format: .ordinal, rule: rule, units: units)
+                    for format in DayCountFormat.allCases {
+                        XCTAssertEqual(try render(start: start, format: format, rule: rule, units: units), ordinal,
+                                       "\(start) \(units) \(rule) \(format)")
+                    }
+                }
+            }
+        }
+    }
+}
