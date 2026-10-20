@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import DaysCam
 
@@ -44,5 +45,42 @@ final class CaptureSettingsStoreTests: XCTestCase {
         XCTAssertTrue(secondLaunch.showsGrid, "grid setting must persist")
         XCTAssertEqual(secondLaunch.flashMode, .off, "flash must reset on relaunch")
         XCTAssertEqual(secondLaunch.timerSeconds, .off, "timer must reset on relaunch")
+    }
+
+    // MARK: - ColorTone (#588)
+
+    func test_colorToneDefaultsToStandard() {
+        let store = CaptureSettingsStore(defaults: makeIsolatedDefaults())
+
+        XCTAssertEqual(store.colorTone, .standard)
+    }
+
+    func test_colorToneSurvivesARelaunch() {
+        let defaults = makeIsolatedDefaults()
+        CaptureSettingsStore(defaults: defaults).setColorTone(.warm2)
+
+        XCTAssertEqual(CaptureSettingsStore(defaults: defaults).colorTone, .warm2)
+    }
+
+    func test_unknownStoredColorToneFallsBackToStandard() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set("banana", forKey: "colorTone")
+
+        XCTAssertEqual(CaptureSettingsStore(defaults: defaults).colorTone, .standard)
+    }
+
+    func test_settingTheSameColorToneDoesNotPublish() {
+        let store = CaptureSettingsStore(defaults: makeIsolatedDefaults())
+        var publishCount = 0
+        let cancellable = store.objectWillChange.sink { publishCount += 1 }
+
+        store.setColorTone(.standard)
+        XCTAssertEqual(publishCount, 0)
+
+        store.setColorTone(.cool1)
+        XCTAssertEqual(publishCount, 1)
+        store.setColorTone(.cool1)
+        XCTAssertEqual(publishCount, 1)
+        cancellable.cancel()
     }
 }
