@@ -40,8 +40,9 @@ struct OverlayRenderer {
     /// laid out in the cropped canvas, exactly as if the photo had been cropped
     /// first. `nil` keeps the whole photo.
     ///
-    /// The output is rendered in the standard range (8 bits per component), so
-    /// wide-gamut or HDR sources do not double the bitmap's memory.
+    /// The output is Display P3 at 8 bits per component, so a wide-gamut
+    /// photo keeps the reds and greens sRGB would clip, without the doubled
+    /// memory of an extended-range bitmap (#586).
     ///
     /// Returns nil only when the image has no pixels to draw into; the caller
     /// treats nil as a baking failure and does not save the photo.
@@ -68,27 +69,41 @@ struct OverlayRenderer {
             return image
         }
 
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.preferredRange = .standard
-        let renderer = UIGraphicsImageRenderer(size: pixelSize, format: format)
+        // A bitmap context of its own rather than `UIGraphicsImageRenderer`,
+        // whose standard range is sRGB and whose extended range is 16 bits.
+        // Same pixel layout the renderer used, only the color space differs.
+        guard let space = CGColorSpace(name: CGColorSpace.displayP3),
+              let context = CGContext(data: nil,
+                                      width: Int(pixelSize.width.rounded(.up)),
+                                      height: Int(pixelSize.height.rounded(.up)),
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                          | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        // Top-left origin, as UIKit draws; pushed so `UIImage.draw` and the
+        // attributed-string drawing find it as the current context.
+        context.translateBy(x: 0, y: CGFloat(context.height))
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        // `UIImage.draw` honors `imageOrientation`, so this single call is
+        // the normalisation to `.up`; the negative offset is the crop.
+        image.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
+                              width: sourceSize.width, height: sourceSize.height))
 
-        return renderer.image { rendererContext in
-            // `UIImage.draw` honors `imageOrientation`, so this single call is
-            // the normalisation to `.up`; the negative offset is the crop.
-            image.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
-                                  width: sourceSize.width, height: sourceSize.height))
-
-            if !text.isEmpty {
-                let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
-                let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize).decoratedText()
-                let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
-                block.draw(rendererContext.cgContext, origin)
-            }
-            if let filmDate {
-                FilmDateRenderer.draw(filmDate, in: rendererContext.cgContext, canvasSize: pixelSize)
-            }
+        if !text.isEmpty {
+            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
+            let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize,
+                                      inPlainBitmapContext: true).decoratedText()
+            let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
+            block.draw(context, origin)
         }
+        if let filmDate {
+            FilmDateRenderer.draw(filmDate, in: context, canvasSize: pixelSize)
+        }
+        UIGraphicsPopContext()
+
+        return context.makeImage().map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
     }
 
     /// Draws only the overlay text — with its outline or box and its shadow —
@@ -197,10 +212,17 @@ private struct OverlayLayout {
     let decorationScale: CGFloat
     let font: UIFont
 
+    /// Whether the drawing goes into a plain `CGContext` flipped to UIKit
+    /// coordinates (`bake`) rather than a `UIGraphicsImageRenderer` context.
+    /// Only the shadow's vertical direction depends on it.
+    let inPlainBitmapContext: Bool
+
     /// `font` is the already-resolved face (PRD 0.3 FR-5.14); the layout
     /// never looks at `style.fontID` itself.
-    init(text: String, style: OverlayStyle, font: ResolvedOverlayFont, fontSize: CGFloat) {
+    init(text: String, style: OverlayStyle, font: ResolvedOverlayFont, fontSize: CGFloat,
+         inPlainBitmapContext: Bool = false) {
         self.text = text
+        self.inPlainBitmapContext = inPlainBitmapContext
         self.theme = OverlayTheme(style: style)
         self.fontSize = fontSize
         decorationScale = OverlayMetrics.decorationScale(forFontSize: fontSize)
@@ -328,8 +350,14 @@ private struct OverlayLayout {
         // documents shadow offsets in device space (y up), which suggests a
         // flip is needed, but measured here it puts the shadow above the text.
         // `test_shadowFallsBelowTheTextLikeThePreview` pins the direction.
+        //
+        // A plain bitmap context flipped by its CTM does follow the
+        // documentation — its device space is y up — so there the offset is
+        // negated to cast the shadow downward all the same (#586).
         let shadowOffset = CGSize(width: offset.width * decorationScale,
                                   height: offset.height * decorationScale)
+        let contextShadowOffset = CGSize(width: shadowOffset.width,
+                                         height: inPlainBitmapContext ? -shadowOffset.height : shadowOffset.height)
         let shadowBlur = CGFloat(blur) * decorationScale
         let shadowColor = uiColor(color, opacity: color.opacity * opacity).cgColor
         // Room around the block for everything that spills past its laid-out
@@ -346,7 +374,7 @@ private struct OverlayLayout {
             right: max(inner.overflow.right, inner.overflow.right + reach + shadowOffset.width))
         return DrawingBlock(size: inner.size, overflow: overflow) { context, origin in
             context.saveGState()
-            context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
+            context.setShadow(offset: contextShadowOffset, blur: shadowBlur, color: shadowColor)
             // Flatten `inner` into one layer first, so a stroked text casts
             // one shadow rather than one per stroke and fill pass — what
             // `.compositingGroup()` does in the viewfinder.

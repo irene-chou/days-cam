@@ -98,7 +98,7 @@ final class OverlayRendererCropTests: XCTestCase {
         XCTAssertEqual(normalizedPixelSize(direct), CGSize(width: 600, height: 600))
         let lhs = try XCTUnwrap(PixelGrid(direct))
         let rhs = try XCTUnwrap(PixelGrid(cropped))
-        XCTAssertEqual(lhs.bytes, rhs.bytes)
+        XCTAssertLessThanOrEqual(maxChannelDifference(lhs, rhs), Self.displayP3RoundTrip)
     }
 
     /// A smooth photo: red rises along x and green along y, each by at most
@@ -140,8 +140,23 @@ final class OverlayRendererCropTests: XCTestCase {
             XCTAssertEqual(normalizedPixelSize(baked), rect.size, label)
             let lhs = try XCTUnwrap(PixelGrid(baked), label)
             let rhs = try XCTUnwrap(PixelGrid(try referenceCrop(photo, to: rect)), label)
-            XCTAssertEqual(lhs.bytes, rhs.bytes, "146.3 \(label)")
+            XCTAssertLessThanOrEqual(maxChannelDifference(lhs, rhs), Self.displayP3RoundTrip, "146.3 \(label)")
         }
+    }
+
+    /// How far an sRGB pixel can move on its way through `bake`'s 8-bit
+    /// Display P3 canvas and back (#586). A reference cropped in sRGB never
+    /// makes that trip, so exact equality no longer holds.
+    private static let displayP3RoundTrip = 3
+
+    /// The largest difference of any RGB channel at any pixel.
+    private func maxChannelDifference(_ lhs: PixelGrid, _ rhs: PixelGrid) -> Int {
+        guard lhs.bytes.count == rhs.bytes.count else { return 255 }
+        var result = 0
+        for index in lhs.bytes.indices where index % 4 != 3 {
+            result = max(result, abs(Int(lhs.bytes[index]) - Int(rhs.bytes[index])))
+        }
+        return result
     }
 
     /// One-pixel black and white stripes across the cropped axis: rows for a

@@ -677,10 +677,11 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
         return try profile.validatedForPersistence(calendar: DateFixture.taipei).style
     }
 
-    /// 70.2: the baked photo is unchanged, byte for byte. The only number
-    /// that moves is a translucent box's alpha, 0.5 → 128/255 (8-bit
-    /// storage); Core Graphics fills an 8-bit bitmap with an 8-bit alpha
-    /// either way.
+    /// 70.2: the baked photo is unchanged. The only number that moves is a
+    /// translucent box's alpha, 0.5 → 128/255 (8-bit storage); Core Graphics
+    /// fills an 8-bit bitmap with an 8-bit alpha either way. Blending in
+    /// `bake`'s 8-bit Display P3 canvas rounds the two differently by up to
+    /// 3 levels read back in sRGB (#586).
     func testMigratedProfilesBakeTheSamePixels() throws {
         let photo = try Self.gradientPhoto()
         for testCase in cases {
@@ -693,7 +694,7 @@ final class OverlayRendererOutlineMigrationTests: XCTestCase {
                 }
             }
             let difference = Self.difference(pair[0], pair[1])
-            XCTAssertEqual(difference.bytes, 0, "\(label): \(difference)")
+            XCTAssertLessThanOrEqual(difference.maximum, 3, "\(label): \(difference)")
         }
     }
 
@@ -833,20 +834,25 @@ final class OverlayRendererShadowMigrationTests: XCTestCase {
     /// draws exactly as before — except a glow under translucent text, where
     /// it applies the shadow alpha in floating point and no 8-bit step
     /// equals 0.9: some channels move by one level (Lead decision, #299).
-    private func tolerance(_ testCase: Case) -> Int {
-        testCase.shadow == "glow" && testCase.textColor.count == 9 ? 1 : 0
+    ///
+    /// Since #586 `bake` blends in an 8-bit Display P3 canvas, which rounds
+    /// translucent layers differently: every baked case may move by up to
+    /// 3 levels read back in sRGB. The preview is still exact.
+    private func tolerance(_ testCase: Case, baked: Bool = false) -> Int {
+        if baked { return 3 }
+        return testCase.shadow == "glow" && testCase.textColor.count == 9 ? 1 : 0
     }
 
     private func assertSame(_ difference: OverlayRendererOutlineMigrationTests.Difference, _ testCase: Case,
-                            _ label: String) {
-        if tolerance(testCase) == 0 {
+                            _ label: String, baked: Bool = false) {
+        if tolerance(testCase, baked: baked) == 0 {
             XCTAssertEqual(difference.bytes, 0, "\(label): \(difference)")
         } else {
-            XCTAssertLessThanOrEqual(difference.maximum, tolerance(testCase), "\(label): \(difference)")
+            XCTAssertLessThanOrEqual(difference.maximum, tolerance(testCase, baked: baked), "\(label): \(difference)")
         }
     }
 
-    /// 71.2: the baked photo is unchanged, byte for byte (see `tolerance`).
+    /// 71.2: the baked photo is unchanged (see `tolerance`).
     func testMigratedShadowsBakeTheSamePixels() throws {
         let photo = try OverlayRendererOutlineMigrationTests.gradientPhoto()
         for testCase in cases {
@@ -858,7 +864,7 @@ final class OverlayRendererShadowMigrationTests: XCTestCase {
                     return try XCTUnwrap(PixelGrid(output)).bytes
                 }
             }
-            assertSame(OverlayRendererOutlineMigrationTests.difference(pair[0], pair[1]), testCase, label)
+            assertSame(OverlayRendererOutlineMigrationTests.difference(pair[0], pair[1]), testCase, label, baked: true)
         }
     }
 
@@ -1258,6 +1264,120 @@ private struct AlphaGrid {
         }
         guard minX <= maxX else { return nil }
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+}
+
+// MARK: - #586: Display P3 canvas
+
+/// Covers #586 1 ... 3: `bake` draws into a Display P3 canvas, so a
+/// wide-gamut photo keeps colors sRGB would clip, and an sRGB photo comes
+/// out with the same pixels as before.
+final class OverlayRendererColorSpaceTests: XCTestCase {
+
+    private let renderer = OverlayRenderer()
+    private let text = "第 10 天"
+
+    /// #586-1: the output is Display P3 at 8 bits per component, upright, at
+    /// scale 1 and the input's pixel size.
+    func test_586_1_bakedImageIsDisplayP3AtEightBits() throws {
+        let output = try bake(OverlayRendererOutlineMigrationTests.gradientPhoto())
+        let cgImage = try XCTUnwrap(output.cgImage)
+
+        XCTAssertEqual(cgImage.colorSpace?.name, CGColorSpace.displayP3, "#586-1")
+        XCTAssertEqual(cgImage.bitsPerComponent, 8, "#586-1: not an extended-range bitmap")
+        XCTAssertEqual(output.imageOrientation, .up)
+        XCTAssertEqual(output.scale, 1)
+        XCTAssertEqual(output.size, CGSize(width: 1200, height: 900))
+    }
+
+    /// #586-2: P3 pure red and pure green, outside sRGB, survive baking.
+    func test_586_2_wideGamutRedAndGreenAreNotClipped() throws {
+        let output = try bake(p3Photo())
+        let grid = try XCTUnwrap(P3Pixels(output))
+
+        let red = grid.color(x: 150, y: 150)
+        let green = grid.color(x: 450, y: 150)
+        XCTAssertGreaterThanOrEqual(red.red, 250, "#586-2 red \(red)")
+        XCTAssertGreaterThanOrEqual(green.green, 250, "#586-2 green \(green)")
+    }
+
+    /// #586-3: an sRGB photo, read back in sRGB, moves by at most 2 levels
+    /// per channel wherever the text is not — the 8-bit P3 canvas cannot hold
+    /// every sRGB value exactly.
+    func test_586_3_sRGBPhotoMovesAtMostTwoLevelsOutsideTheText() throws {
+        let input = try OverlayRendererOutlineMigrationTests.gradientPhoto()
+        let output = try bake(input)
+
+        let before = try XCTUnwrap(PixelGrid(input))
+        let after = try XCTUnwrap(PixelGrid(output))
+        XCTAssertEqual(after.width, before.width)
+        XCTAssertEqual(after.height, before.height)
+        // The text sits bottom-trailing; everything above it is photo.
+        let photoBytes = 600 * before.width * 4
+        let largest = (0..<photoBytes).filter { $0 % 4 != 3 }
+            .map { abs(Int(before.bytes[$0]) - Int(after.bytes[$0])) }.max() ?? 0
+        XCTAssertLessThanOrEqual(largest, 2, "#586-3")
+    }
+
+    /// #586-3: with nothing to print and nothing to crop, the photo never
+    /// reaches the P3 canvas: the very same image comes back.
+    func test_586_3_nothingToDrawReturnsTheSameImage() throws {
+        let input = try p3Photo()
+
+        let output = renderer.bake(image: input, text: "", style: OverlayStyle(legacyTheme: .classicWhite),
+                                   placement: .anchor(.bottomTrailing), font: .pingFang)
+
+        XCTAssertTrue(output === input, "#586-3: the shortcut hands the input back untouched")
+    }
+
+    private func bake(_ image: UIImage) throws -> UIImage {
+        try XCTUnwrap(renderer.bake(image: image, text: text, style: OverlayStyle(legacyTheme: .classicWhite),
+                                    placement: .anchor(.bottomTrailing), font: .pingFang))
+    }
+
+    /// A 600×600 Display P3 photo: the top-left quarter pure P3 red, the
+    /// top-right pure P3 green, the bottom half white.
+    private func p3Photo() throws -> UIImage {
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let context = try XCTUnwrap(CGContext(data: nil, width: 600, height: 600, bitsPerComponent: 8,
+                                              bytesPerRow: 0, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        // Bitmap contexts put y = 0 at the bottom.
+        context.setFillColor(try XCTUnwrap(CGColor(colorSpace: space, components: [1, 1, 1, 1])))
+        context.fill(CGRect(x: 0, y: 0, width: 600, height: 300))
+        context.setFillColor(try XCTUnwrap(CGColor(colorSpace: space, components: [1, 0, 0, 1])))
+        context.fill(CGRect(x: 0, y: 300, width: 300, height: 300))
+        context.setFillColor(try XCTUnwrap(CGColor(colorSpace: space, components: [0, 1, 0, 1])))
+        context.fill(CGRect(x: 300, y: 300, width: 300, height: 300))
+        return UIImage(cgImage: try XCTUnwrap(context.makeImage()), scale: 1, orientation: .up)
+    }
+}
+
+/// Pixels read back as 8-bit Display P3 RGBA, top row first.
+private struct P3Pixels {
+    let width: Int
+    let bytes: [UInt8]
+
+    init?(_ image: UIImage) {
+        guard let cgImage = image.cgImage,
+              let space = CGColorSpace(name: CGColorSpace.displayP3) else { return nil }
+        let width = cgImage.width
+        var buffer = [UInt8](repeating: 0, count: width * cgImage.height * 4)
+        let drew = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: cgImage.height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: cgImage.height))
+            return true
+        }
+        guard drew else { return nil }
+        self.width = width
+        bytes = buffer
+    }
+
+    func color(x: Int, y: Int) -> RGB {
+        let offset = (y * width + x) * 4
+        return RGB(red: Int(bytes[offset]), green: Int(bytes[offset + 1]), blue: Int(bytes[offset + 2]))
     }
 }
 
