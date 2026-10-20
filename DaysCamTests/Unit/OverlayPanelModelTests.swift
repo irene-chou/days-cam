@@ -9,8 +9,8 @@ final class OverlayPanelModelTests: XCTestCase {
 
     func testFirstLayerIsTwoTabsStyleLayout() {
         // #568-1
-        XCTAssertEqual(OverlayPanelModel.Tab.allCases, [.style, .layout])
-        XCTAssertEqual(OverlayPanelModel.Tab.allCases.map(\.title), ["樣式", "版面"])
+        XCTAssertEqual(OverlayPanelModel.Tab.allCases, [.style, .content])
+        XCTAssertEqual(OverlayPanelModel.Tab.allCases.map(\.title), ["樣式", "內容"])
     }
 
     func testInitialSelectedTabIsStyle() {
@@ -22,10 +22,10 @@ final class OverlayPanelModelTests: XCTestCase {
     func testSelectedTabSurvivesCloseThenOpenWithinTheSameInstance() {
         // 22.2
         let model = OverlayPanelModel()
-        model.selectedTab = .layout
+        model.selectedTab = .content
         model.close()
         model.open()
-        XCTAssertEqual(model.selectedTab, .layout)
+        XCTAssertEqual(model.selectedTab, .content)
     }
 
     func testAFreshInstanceAlwaysStartsAtStyleRegardlessOfAnEarlierOne() {
@@ -33,7 +33,7 @@ final class OverlayPanelModelTests: XCTestCase {
         // persists it to disk, so a new instance (simulating a relaunch)
         // never sees an earlier one's tab.
         let earlier = OverlayPanelModel()
-        earlier.selectedTab = .layout
+        earlier.selectedTab = .content
         earlier.open()
 
         let rebuilt = OverlayPanelModel()
@@ -61,11 +61,11 @@ final class OverlayPanelModelTests: XCTestCase {
         let model = OverlayPanelModel()
         XCTAssertFalse(model.isOverlayDraggable, "closed, style tab")
 
-        model.selectedTab = .layout
-        XCTAssertFalse(model.isOverlayDraggable, "layout tab but still closed")
+        model.selectedTab = .content
+        XCTAssertFalse(model.isOverlayDraggable, "content tab but still closed")
 
         model.open()
-        XCTAssertTrue(model.isOverlayDraggable, "open on the layout tab")
+        XCTAssertTrue(model.isOverlayDraggable, "open on the content tab")
 
         model.selectedTab = .style
         XCTAssertTrue(model.isOverlayDraggable, "open on the style tab")

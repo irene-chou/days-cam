@@ -134,7 +134,7 @@ struct OverlayPanelView: View {
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }
-        // A failed position save (a drag on either tab, or the 版面 row) must
+        // A failed position save (a drag on either tab, or the 內容 row) must
         // not look like it worked (#568).
         .background {
             if let positionTabModel = model.positionTabModel {
@@ -353,11 +353,11 @@ struct OverlayPanelView: View {
             } else {
                 placeholderTab(title: "樣式", subtitle: "尚未選取設定檔")
             }
-        case .layout:
+        case .content:
             if let formatTabModel = model.formatTabModel {
                 ContentTabView(formatTabModel: formatTabModel, positionTabModel: model.positionTabModel)
             } else {
-                placeholderTab(title: "版面", subtitle: "尚未選取設定檔")
+                placeholderTab(title: "內容", subtitle: "尚未選取設定檔")
             }
         }
     }
@@ -409,11 +409,11 @@ struct PositionSaveErrorHost: View {
     }
 }
 
-#Preview("版面分頁") {
+#Preview("內容分頁") {
     let store = ProfileStore()
     store.load()
     let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .layout
+    model.panelModel.selectedTab = .content
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         OverlayPanelView(model: model)

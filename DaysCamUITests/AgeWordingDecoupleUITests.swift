@@ -25,7 +25,7 @@ final class AgeWordingDecoupleUITests: XCTestCase {
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["版面"]
+        let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
         XCTAssertTrue(app.buttons["天"].waitForExistence(timeout: 5))

@@ -30,7 +30,7 @@ final class FormatTabReorderUITests: XCTestCase {
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
         app.launch()
         app.buttons["疊字設定"].tap()
-        let content = app.buttons["版面"]
+        let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
         XCTAssertTrue(app.buttons["天"].waitForExistence(timeout: 5))
@@ -73,7 +73,7 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertEqual(isOn(toggle(name)), on, "\(name) \(on ? "on" : "off")", file: file, line: line)
     }
-    private var tabBottom: CGFloat { app.buttons["版面"].frame.maxY }
+    private var tabBottom: CGFloat { app.buttons["內容"].frame.maxY }
 
     /// Whether `element` is in the tree and wholly between the tab bar and
     /// the home-indicator band, which swallows taps by design (92.7; a
