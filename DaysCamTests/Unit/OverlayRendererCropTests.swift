@@ -45,13 +45,19 @@ final class OverlayRendererCropTests: XCTestCase {
     /// `CGImage.cropping(to:)`.
     private func referenceCrop(_ image: UIImage, to rect: CGRect) throws -> UIImage {
         let size = normalizedPixelSize(image)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.preferredRange = .standard
-        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        let cropped = try XCTUnwrap(upright.cgImage?.cropping(to: rect))
+        // The same 8-bit Display P3 canvas `bake` draws in (#586), so both
+        // sides round the photo's sRGB colors the same way.
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let context = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+                                              bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                                  | CGBitmapInfo.byteOrder32Little.rawValue))
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        image.draw(in: CGRect(origin: .zero, size: size))
+        UIGraphicsPopContext()
+        let cropped = try XCTUnwrap(context.makeImage()?.cropping(to: rect))
         return UIImage(cgImage: cropped, scale: 1, orientation: .up)
     }
 
@@ -98,7 +104,7 @@ final class OverlayRendererCropTests: XCTestCase {
         XCTAssertEqual(normalizedPixelSize(direct), CGSize(width: 600, height: 600))
         let lhs = try XCTUnwrap(PixelGrid(direct))
         let rhs = try XCTUnwrap(PixelGrid(cropped))
-        XCTAssertLessThanOrEqual(maxChannelDifference(lhs, rhs), Self.displayP3RoundTrip)
+        XCTAssertEqual(lhs.bytes, rhs.bytes)
     }
 
     /// A smooth photo: red rises along x and green along y, each by at most
@@ -140,23 +146,8 @@ final class OverlayRendererCropTests: XCTestCase {
             XCTAssertEqual(normalizedPixelSize(baked), rect.size, label)
             let lhs = try XCTUnwrap(PixelGrid(baked), label)
             let rhs = try XCTUnwrap(PixelGrid(try referenceCrop(photo, to: rect)), label)
-            XCTAssertLessThanOrEqual(maxChannelDifference(lhs, rhs), Self.displayP3RoundTrip, "146.3 \(label)")
+            XCTAssertEqual(lhs.bytes, rhs.bytes, "146.3 \(label)")
         }
-    }
-
-    /// How far an sRGB pixel can move on its way through `bake`'s 8-bit
-    /// Display P3 canvas and back (#586). A reference cropped in sRGB never
-    /// makes that trip, so exact equality no longer holds.
-    private static let displayP3RoundTrip = 3
-
-    /// The largest difference of any RGB channel at any pixel.
-    private func maxChannelDifference(_ lhs: PixelGrid, _ rhs: PixelGrid) -> Int {
-        guard lhs.bytes.count == rhs.bytes.count else { return 255 }
-        var result = 0
-        for index in lhs.bytes.indices where index % 4 != 3 {
-            result = max(result, abs(Int(lhs.bytes[index]) - Int(rhs.bytes[index])))
-        }
-        return result
     }
 
     /// One-pixel black and white stripes across the cropped axis: rows for a

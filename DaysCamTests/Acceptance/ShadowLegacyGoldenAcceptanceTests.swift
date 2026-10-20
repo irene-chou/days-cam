@@ -178,22 +178,29 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
                                                       font: .pingFang)
         let scale = OverlayMetrics.decorationScale(forFontSize: fontSize)
 
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.preferredRange = .standard
-        let image = UIGraphicsImageRenderer(size: canvas, format: format).image { context in
-            input.draw(at: .zero)
-            if let shadow = fixture.expectedShadow {
-                let color = UIColor(red: CGFloat(shadow.red8) / 255, green: CGFloat(shadow.green8) / 255,
-                                    blue: CGFloat(shadow.blue8) / 255, alpha: CGFloat(shadow.alpha8) / 255)
-                // A positive y offset falls downward in a UIKit renderer
-                // context, as the profile's offsets read.
-                context.cgContext.setShadow(offset: CGSize(width: shadow.offsetX * scale,
-                                                           height: shadow.offsetY * scale),
-                                            blur: shadow.blur * scale, color: color.cgColor)
-            }
-            ink.draw(at: .zero)
+        // The same 8-bit Display P3 canvas `bake` draws in (#586), so the
+        // shadow blends in the same color space as the renderer's.
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let context = try XCTUnwrap(CGContext(data: nil, width: Int(canvas.width), height: Int(canvas.height),
+                                              bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                                  | CGBitmapInfo.byteOrder32Little.rawValue))
+        context.translateBy(x: 0, y: canvas.height)
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        input.draw(at: .zero)
+        if let shadow = fixture.expectedShadow {
+            let color = UIColor(red: CGFloat(shadow.red8) / 255, green: CGFloat(shadow.green8) / 255,
+                                blue: CGFloat(shadow.blue8) / 255, alpha: CGFloat(shadow.alpha8) / 255)
+            // This context's device space is y up, so the profile's
+            // downward-positive offset is negated to fall downward.
+            context.setShadow(offset: CGSize(width: shadow.offsetX * scale,
+                                             height: -shadow.offsetY * scale),
+                              blur: shadow.blur * scale, color: color.cgColor)
         }
+        ink.draw(at: .zero)
+        UIGraphicsPopContext()
+        let image = UIImage(cgImage: try XCTUnwrap(context.makeImage()), scale: 1, orientation: .up)
         return try XCTUnwrap(PixelGrid(image))
     }
 
@@ -202,10 +209,8 @@ final class ShadowLegacyGoldenAcceptanceTests: XCTestCase {
     /// 8-bit alpha can round a glyph edge by one step; measured on iOS 26.0
     /// and 27.0, shadowless fixtures differ by at most 1 and shadowed ones
     /// not at all. Half a point of shadow offset or blur moves pixels by 2
-    /// or more (`test535ComparisonCatchesShadowChanges`). Since #586 `bake`
-    /// draws in an 8-bit Display P3 canvas and the reference in sRGB, so the
-    /// round trip adds up to 2 more.
-    private let allowedChannelDifference = 3
+    /// or more (`test535ComparisonCatchesShadowChanges`).
+    private let allowedChannelDifference = 1
 
     /// The largest difference of any RGB channel at any pixel.
     private func maxChannelDifference(_ lhs: PixelGrid, _ rhs: PixelGrid) -> Int {

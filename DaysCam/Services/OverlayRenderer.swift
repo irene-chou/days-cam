@@ -425,11 +425,15 @@ private struct OverlayLayout {
                                     bottom: -overflow.bottom, right: -overflow.right))
     }
 
+    /// The alpha is rounded to the nearest 8-bit step first. An sRGB canvas
+    /// does that itself, but filling a Display P3 one (`bake`, #586)
+    /// converts the color and rounds some fractional alphas differently, so
+    /// 0.5 and its stored form 128/255 would no longer draw the same pixels.
     private func uiColor(_ color: OverlayColor, opacity: Double? = nil) -> UIColor {
         UIColor(red: CGFloat(color.red),
                 green: CGFloat(color.green),
                 blue: CGFloat(color.blue),
-                alpha: CGFloat(opacity ?? color.opacity))
+                alpha: (CGFloat(opacity ?? color.opacity) * 255).rounded() / 255)
     }
 }
 
