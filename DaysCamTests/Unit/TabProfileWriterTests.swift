@@ -222,4 +222,19 @@ final class TabProfileWriterTests: XCTestCase {
         model.selectShadowColor(nil)
         XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.shadowColorSource, .textColor, "147.2")
     }
+
+    /// 583.3: the 寫法 the content tab picks reaches the store — the merge
+    /// lists its fields one by one, so a new field left off it is dropped.
+    func test_583_3_dayCountFormatIsMergedIntoTheStore() throws {
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
+        store.load()
+        let original = try XCTUnwrap(store.profiles.first)
+        let writer = TabProfileWriter(baseline: original, profileStore: store)
+
+        var fromContentTab = original
+        fromContentTab.dayCountFormat = .dDay
+        try writer.write(fromContentTab)
+
+        XCTAssertEqual(store.profiles.first?.dayCountFormat, .dDay)
+    }
 }

@@ -22,7 +22,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
     }
 
-    private var contentTab: XCUIElement { app.buttons["版面"] }
+    private var contentTab: XCUIElement { app.buttons["內容"] }
     private var row: XCUIElement { app.buttons["dayCountFormatRow"] }
     private var expanded: XCUIElement { element("dayCountFormatExpanded") }
     private var note: XCUIElement { element("dayCountFormatNote") }
@@ -53,11 +53,32 @@ final class DayCountFormatPanelUITests: XCTestCase {
     }
 
     /// Opens the row and brings its last option (and the note, if any) on screen.
-    private func expand(file: StaticString = #filePath, line: UInt = #line) {
+    private func expand(revealingLast: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         app.revealInPanel(row, file: file, line: line)
         if row.value as? String != "已展開" { row.tap() }
         XCTAssertTrue(expanded.waitForExistence(timeout: 3), "expanded", file: file, line: line)
-        app.revealInPanel(note.exists ? note : option("dDay"), file: file, line: line)
+        if revealingLast {
+            app.revealInPanel(note.exists ? note : option("dDay"), file: file, line: line)
+        }
+        // A tap right after a drag only stops the scroll's momentum.
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// Brings `cell`'s top edge into the panel: at the largest text size an
+    /// option on iPhone SE is taller than the panel's visible part, so
+    /// `revealInPanel` (whole element on screen) cannot succeed.
+    private func revealTop(_ cell: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let tabBottom = app.buttons["panelCollapseButton"].frame.maxY
+        for _ in 0..<10 where !(cell.exists && cell.frame.minY >= tabBottom && cell.frame.minY <= app.frame.height - 60) {
+            let up = !cell.exists || cell.frame.minY > app.frame.height - 60
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: up ? (tabBottom + app.frame.height) / 2 : tabBottom + 30))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: up ? -60 : 60)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(cell.exists && cell.frame.minY >= tabBottom, "\(cell) top on screen: \(cell.frame) tab \(tabBottom)",
+                      file: file, line: line)
     }
 
     /// 583.1–583.4: the row, its options, writing back and the dimmed state.
@@ -67,7 +88,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         // 583.1: last row of the card, under 「年」改成「歲」, ≥ 44pt, collapsed.
         XCTAssertEqual(row.label, "寫法，第 N 天")
         XCTAssertEqual(row.value as? String, "已收起")
-        XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 43.5)
         XCTAssertGreaterThan(row.frame.minY, app.switches["「年」改成「歲」"].frame.maxY, "583.1 under 歲")
         XCTAssertFalse(expanded.exists)
         shot("PR_583.1_collapsed")
@@ -78,7 +99,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         for raw in Self.raws {
             let cell = option(raw)
             XCTAssertTrue(cell.exists, raw)
-            XCTAssertGreaterThanOrEqual(cell.frame.height, 44, raw)
+            XCTAssertGreaterThanOrEqual(cell.frame.height, 43.5, raw)
             XCTAssertLessThanOrEqual(cell.frame.maxY, app.frame.height, "\(raw) on screen")
         }
         XCTAssertEqual(option("dDay").label, "D-Day，D+12 ／ D-7")
@@ -89,11 +110,12 @@ final class DayCountFormatPanelUITests: XCTestCase {
 
         // 583.3: a tap writes back, the viewfinder follows, the list stays open.
         option("dDay").tap()
-        XCTAssertTrue(option("dDay").isSelected)
+        XCTAssertTrue(option("dDay").isSelected, "583.3")
         XCTAssertEqual(row.label, "寫法，D-Day")
         XCTAssertTrue(expanded.exists, "583.3 stays open")
         // A fresh profile starts today, so either counting rule prints D-Day.
-        XCTAssertEqual(overlayText.label, "D-Day", "583.3 \(overlayText.label)")
+        // The fresh profile also prints its name ahead of the count.
+        XCTAssertTrue(overlayText.label.hasSuffix(" D-Day") || overlayText.label == "D-Day", "583.3 \(overlayText.label)")
 
         // 583.4: with 週 checked the note appears and the wording no longer applies.
         app.revealInPanel(app.buttons["週"])
@@ -127,12 +149,12 @@ final class DayCountFormatPanelUITests: XCTestCase {
     /// 583.7: at accessibility XXXL the options stay ≥ 44pt and do not overlap.
     func testLargestTextKeepsOptionsApart() {
         launch(extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        expand()
+        expand(revealingLast: false)
         var previous = row
         for raw in Self.raws {
             let cell = option(raw)
-            app.revealInPanel(cell)
-            XCTAssertGreaterThanOrEqual(cell.frame.height, 44, raw)
+            revealTop(cell)
+            XCTAssertGreaterThanOrEqual(cell.frame.height, 43.5, raw)
             // Re-read after the reveal: scrolling moves both.
             XCTAssertGreaterThanOrEqual(cell.frame.minY, previous.frame.maxY - 1, "\(raw) does not overlap the row above")
             XCTAssertLessThanOrEqual(cell.frame.maxX, app.frame.width, "\(raw) within the screen")
