@@ -418,6 +418,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 | 6.5.3 | `TemplateRenderer.render` 必須接受 `capturedAt: Date` 參數；**日期分支也必須以它為準**，不得呼叫 `Date()` |
 | 6.5.4 | `OverlayRenderer.bake` 的介面為「（影像, 已渲染好的文字, 樣式）→ 烘焙後的影像」，**不得**綁定影像來源是即時拍攝或載入的檔案 |
 | 6.5.5 | MVP 一律傳入「按下快門的當下」，外顯行為與各層自行讀時鐘完全相同 |
+| 6.5.6 | **烘焙順序**（1.2.0，#589）：色調（`ColorTone`，`ColorToneRenderer` 以 Core Image 色溫＋vibrance 調整）→ 裁切／方向正規化 → 疊字 → 底片日期。疊字與底片日期在調色之後畫，顏色不受色調影響；`standard` 不經 Core Image、輸出與 1.2.0 逐像素相同。`tone` 是 `bake` 的參數（預設 `standard`），仍不綁定影像來源（6.5.4） |
 
 **為什麼要現在就做**
 
