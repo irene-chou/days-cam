@@ -33,6 +33,11 @@ struct OverlayRenderer {
     /// (TASK-151 #520). It never moves out of the main text's way. `nil`
     /// draws nothing extra and leaves the output exactly as before.
     ///
+    /// `tone` shifts the photo cooler or warmer through `ColorToneRenderer`
+    /// before anything is printed, so the text and the film date keep their
+    /// own colors (#589). `.standard` skips it and leaves every pixel as it
+    /// was before tones existed.
+    ///
     /// `cropRect`, when given, is the window to keep, in orientation-normalized
     /// pixels (`ImageCropper.cropRect(forPixelSize:ratio:)`). Cropping, rotating
     /// upright and printing then happen in one drawing pass: the canvas is
@@ -44,8 +49,9 @@ struct OverlayRenderer {
     /// photo keeps the reds and greens sRGB would clip, without the doubled
     /// memory of an extended-range bitmap (#586).
     ///
-    /// Returns nil only when the image has no pixels to draw into; the caller
-    /// treats nil as a baking failure and does not save the photo.
+    /// Returns nil when the image has no pixels to draw into, or a tone other
+    /// than `.standard` cannot be applied; the caller treats nil as a baking
+    /// failure and does not save the photo.
     ///
     /// `font` must be `OverlayMetrics.resolvedFont(for: style, ...)`,
     /// resolved when the shutter is pressed — the same value the viewfinder
@@ -53,7 +59,7 @@ struct OverlayRenderer {
     /// to draw, so the two cannot disagree.
     func bake(image: UIImage, text: String, style: OverlayStyle, placement: OverlayPlacement,
               font: ResolvedOverlayFont, cropRect: CGRect? = nil,
-              filmDate: FilmDateStamp? = nil) -> UIImage? {
+              filmDate: FilmDateStamp? = nil, tone: ColorTone = .standard) -> UIImage? {
         let sourceSize = CGSize(width: image.size.width * image.scale,
                                 height: image.size.height * image.scale)
         guard sourceSize.width >= 1, sourceSize.height >= 1 else { return nil }
@@ -65,45 +71,59 @@ struct OverlayRenderer {
         // Already upright, already one point per pixel, nothing to print: the
         // input already is the answer, and handing it back is the only way to
         // guarantee every pixel is untouched.
-        if text.isEmpty, filmDate == nil, image.imageOrientation == .up, image.scale == 1, cropRect == nil {
+        if text.isEmpty, filmDate == nil, tone == .standard, image.imageOrientation == .up, image.scale == 1,
+           cropRect == nil {
             return image
         }
 
-        // A bitmap context of its own rather than `UIGraphicsImageRenderer`,
-        // whose standard range is sRGB and whose extended range is 16 bits.
-        // Same pixel layout the renderer used, only the color space differs.
-        guard let space = CGColorSpace(name: CGColorSpace.displayP3),
-              let context = CGContext(data: nil,
-                                      width: Int(pixelSize.width.rounded(.up)),
-                                      height: Int(pixelSize.height.rounded(.up)),
-                                      bitsPerComponent: 8,
-                                      bytesPerRow: 0,
-                                      space: space,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
-                                          | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
-        // Top-left origin, as UIKit draws; pushed so `UIImage.draw` and the
-        // attributed-string drawing find it as the current context.
-        context.translateBy(x: 0, y: CGFloat(context.height))
-        context.scaleBy(x: 1, y: -1)
-        UIGraphicsPushContext(context)
-        // `UIImage.draw` honors `imageOrientation`, so this single call is
-        // the normalisation to `.up`; the negative offset is the crop.
-        image.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
-                              width: sourceSize.width, height: sourceSize.height))
+        // Core Image hands the toned copy back autoreleased, and it holds a
+        // full-size bitmap once drawn; the pool frees it before `bake`
+        // returns rather than whenever the caller's pool drains (#589).
+        return autoreleasepool {
+            let source: UIImage
+            if tone == .standard {
+                source = image
+            } else {
+                guard let toned = image.cgImage.flatMap({ ColorToneRenderer.apply(tone, to: $0) }) else { return nil }
+                source = UIImage(cgImage: toned, scale: image.scale, orientation: image.imageOrientation)
+            }
 
-        if !text.isEmpty {
-            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
-            let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize,
-                                      inPlainBitmapContext: true).decoratedText()
-            let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
-            block.draw(context, origin)
-        }
-        if let filmDate {
-            FilmDateRenderer.draw(filmDate, in: context, canvasSize: pixelSize)
-        }
-        UIGraphicsPopContext()
+            // A bitmap context of its own rather than `UIGraphicsImageRenderer`,
+            // whose standard range is sRGB and whose extended range is 16 bits.
+            // Same pixel layout the renderer used, only the color space differs.
+            guard let space = CGColorSpace(name: CGColorSpace.displayP3),
+                  let context = CGContext(data: nil,
+                                          width: Int(pixelSize.width.rounded(.up)),
+                                          height: Int(pixelSize.height.rounded(.up)),
+                                          bitsPerComponent: 8,
+                                          bytesPerRow: 0,
+                                          space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                              | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+            // Top-left origin, as UIKit draws; pushed so `UIImage.draw` and the
+            // attributed-string drawing find it as the current context.
+            context.translateBy(x: 0, y: CGFloat(context.height))
+            context.scaleBy(x: 1, y: -1)
+            UIGraphicsPushContext(context)
+            // `UIImage.draw` honors `imageOrientation`, so this single call is
+            // the normalisation to `.up`; the negative offset is the crop.
+            source.draw(in: CGRect(x: -window.origin.x, y: -window.origin.y,
+                                   width: sourceSize.width, height: sourceSize.height))
 
-        return context.makeImage().map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+            if !text.isEmpty {
+                let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
+                let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize,
+                                          inPlainBitmapContext: true).decoratedText()
+                let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
+                block.draw(context, origin)
+            }
+            if let filmDate {
+                FilmDateRenderer.draw(filmDate, in: context, canvasSize: pixelSize)
+            }
+            UIGraphicsPopContext()
+
+            return context.makeImage().map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+        }
     }
 
     /// Draws only the overlay text — with its outline or box and its shadow —
