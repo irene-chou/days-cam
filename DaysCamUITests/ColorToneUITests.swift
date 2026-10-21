@@ -107,16 +107,33 @@ final class ColorToneUITests: XCTestCase {
         XCTAssertFalse(element("toneTint", in: app).exists, "590.4 back to standard removes the tint")
     }
 
-    /// 590.8: held sideways the icon turns upright in place; the picker row
-    /// itself stays wider than tall.
-    func testPickerDoesNotTurnWhenHeldSideways() {
+    /// 590.8: with the top edge pointing left (`-UITestCaptureRotationAngle 0`)
+    /// the tone icon turns upright in place, which shows as different pixels
+    /// than held upright (angle 90) while the tap target stays put. The
+    /// picker row neither turns nor moves.
+    func testIconTurnsButPickerDoesNotWhenHeldSideways() {
         continueAfterFailure = false
-        let app = launch(angle: "90")
-        resetToStandard(app)
+        var upright = launch(angle: "90")
+        resetToStandard(upright)
+        openPicker(upright)
+        let uprightIcon = element("toneButton", in: upright)
+        let uprightIconPixels = uprightIcon.screenshot().pngRepresentation
+        let uprightIconFrame = uprightIcon.frame
+        let uprightPickerFrame = element("tonePicker", in: upright).frame
+        upright.terminate()
+
+        upright = launch(angle: "0")
+        let app = upright
         openPicker(app)
+        let icon = element("toneButton", in: app)
         let picker = element("tonePicker", in: app)
-        XCTAssertGreaterThan(picker.frame.width, picker.frame.height * 3, "590.8")
-        XCTAssertTrue(element("toneButton", in: app).exists)
+        let screen = app.windows.firstMatch.frame
+        XCTAssertTrue(screen.contains(icon.frame), "590.8 icon on screen")
+        XCTAssertTrue(screen.contains(picker.frame), "590.8 picker on screen")
+        XCTAssertEqual(icon.frame, uprightIconFrame, "590.8 the tap target stays put")
+        XCTAssertNotEqual(icon.screenshot().pngRepresentation, uprightIconPixels, "590.8 the icon turned")
+        XCTAssertEqual(picker.frame, uprightPickerFrame, "590.8 the picker did not move")
+        XCTAssertGreaterThan(picker.frame.width, picker.frame.height * 3, "590.8 the picker did not turn")
         attach(app, "590.8_picker-landscape")
     }
 }
