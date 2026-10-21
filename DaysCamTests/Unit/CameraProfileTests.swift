@@ -281,6 +281,90 @@ final class CameraProfileTests: XCTestCase {
         XCTAssertFalse(text.contains("largestUnit"))
         XCTAssertFalse(text.contains("smallestUnit"))
     }
+
+    // MARK: - #582 dayCountFormat
+
+    private func formatSample(_ format: DayCountFormat = .dDay) -> CameraProfile {
+        CameraProfile(name: "小寶",
+                      startDate: DateFixture.components(2025, 1, 15),
+                      countingRule: .dayZero,
+                      showDate: true,
+                      showName: true,
+                      displayUnits: [.day],
+                      useAgeWording: true,
+                      dayCountFormat: format,
+                      position: .custom(x: 0.3, y: 0.7),
+                      style: OverlayStyle(legacyTheme: .softPink),
+                      showFilmDate: true,
+                      filmDateCorner: .topTrailing,
+                      createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                      updatedAt: Date(timeIntervalSince1970: 1_700_000_500))
+    }
+
+    private func jsonObject(_ profile: CameraProfile) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(profile)) as? [String: Any])
+    }
+
+    private func decode(_ object: [String: Any]) throws -> CameraProfile {
+        try JSONDecoder().decode(CameraProfile.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    func test_582_3_newProfileDefaultsToOrdinal() {
+        XCTAssertEqual(profile().dayCountFormat, .ordinal)
+    }
+
+    func test_582_3_fileWithoutTheFieldDecodesAsOrdinalAndKeepsEverythingElse() throws {
+        let original = formatSample(.ordinal)
+        var json = try jsonObject(original)
+        XCTAssertEqual(json.removeValue(forKey: "dayCountFormat") as? String, "ordinal")
+
+        let decoded = try decode(json)
+
+        XCTAssertEqual(decoded.dayCountFormat, .ordinal)
+        XCTAssertEqual(decoded, original)
+        XCTAssertNoThrow(try decoded.validatedForPersistence(calendar: DateFixture.taipei))
+    }
+
+    func test_582_3_everyFormatSurvivesARoundTrip() throws {
+        for format in DayCountFormat.allCases {
+            let original = formatSample(format)
+            let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(original))
+            XCTAssertEqual(decoded, original, "\(format)")
+            XCTAssertNoThrow(try decoded.validatedForPersistence(calendar: DateFixture.taipei))
+        }
+    }
+
+    func test_582_3_badValueFallsBackWithoutLosingTheProfile() throws {
+        let original = formatSample(.dDay)
+        for bad in ["banana", "", 3, NSNull()] as [Any] {
+            var json = try jsonObject(original)
+            json["dayCountFormat"] = bad
+            let decoded = try decode(json)
+            XCTAssertEqual(decoded.dayCountFormat, .ordinal, "\(bad)")
+            var expected = original
+            expected.dayCountFormat = .ordinal
+            XCTAssertEqual(decoded, expected, "\(bad)")
+        }
+    }
+
+    func test_582_4_duplicatingAProfileKeepsTheFormat() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suiteName = "CameraProfileTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let instant = Date(timeIntervalSince1970: 1_760_000_000)
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { instant },
+                                 defaults: defaults, scheduler: ProfileStore.immediateScheduler)
+        let added = try store.add(formatSample(.dayN))
+
+        let copy = try store.duplicate(id: added.id)
+
+        XCTAssertEqual(copy.dayCountFormat, .dayN)
+    }
 }
 
 // MARK: - 0.2 style and position (TASK-17)
