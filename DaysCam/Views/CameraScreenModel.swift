@@ -582,7 +582,7 @@ final class CameraScreenModel: ObservableObject {
     /// calls its `updateProfile` closure with that *entire* copy, even
     /// though any one mutation only ever touches the handful of fields that
     /// tab actually owns (樣式 → `style`; 位置 → `position`; 格式 →
-    /// `showDayCount`/`showDate`/`showName`/`displayUnits`/`useAgeWording`,
+    /// `showDayCount`/`showDate`/`showName`/`displayUnits`/`useAgeWording`/`dayCountFormat`,
     /// and also `position`/`style`, as `DisplaySettingsModel` carries them; 天數規則 → `name`/`startDate`/
     /// `countingRule`). Passing that closure straight to
     /// `profileStore.update` would blindly overwrite the store's current
@@ -1914,6 +1914,7 @@ final class TabProfileWriter {
         if updated.style != baseline.style { merged.style = updated.style }
         if updated.showFilmDate != baseline.showFilmDate { merged.showFilmDate = updated.showFilmDate }
         if updated.filmDateCorner != baseline.filmDateCorner { merged.filmDateCorner = updated.filmDateCorner }
+        if updated.dayCountFormat != baseline.dayCountFormat { merged.dayCountFormat = updated.dayCountFormat }
         return merged
     }
 }

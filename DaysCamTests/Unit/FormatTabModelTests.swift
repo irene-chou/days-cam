@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import DaysCam
 
@@ -89,5 +90,20 @@ final class FormatTabModelTests: XCTestCase {
         XCTAssertTrue(model.displaySettings.profile.displayUnits.contains(.year), "48.3")
         model.displaySettings.setUseAgeWording(true)
         XCTAssertTrue(model.displaySettings.profile.useAgeWording, "48.3")
+    }
+
+    // MARK: - #583 寫法
+
+    func test_583_changingTheFormatIsForwarded() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        var changes = 0
+        let subscription = model.objectWillChange.sink { changes += 1 }
+        defer { subscription.cancel() }
+
+        model.displaySettings.setDayCountFormat(.plain)
+
+        XCTAssertEqual(model.displaySettings.profile.dayCountFormat, .plain)
+        XCTAssertGreaterThan(changes, 0, "objectWillChange forwarded")
     }
 }
