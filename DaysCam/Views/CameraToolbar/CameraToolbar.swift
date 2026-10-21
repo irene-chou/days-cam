@@ -180,6 +180,7 @@ struct CameraToolsCapsule: View {
             flashButton
             timerButton
             gridButton
+            toneButton
         }
         .padding(4)
         .background(
@@ -233,6 +234,89 @@ struct CameraToolsCapsule: View {
                 .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
+    }
+
+    /// Display name of one color tone (#590).
+    static func toneName(_ tone: ColorTone) -> String {
+        switch tone {
+        case .cool2: return "冷 2"
+        case .cool1: return "冷 1"
+        case .standard: return "標準"
+        case .warm1: return "暖 1"
+        case .warm2: return "暖 2"
+        }
+    }
+
+    /// Opens the tone picker; never cycles the tone itself (#590).
+    private var toneButton: some View {
+        Button(action: model.toggleTonePicker) {
+            Image(systemName: "thermometer.medium")
+                .toolbarIcon(isActive: model.isToneToolActive, isOnPhoto: false)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .accessibilityIdentifier("toneButton")
+        .accessibilityLabel("色調：\(Self.toneName(model.captureSettingsStore.colorTone))")
+    }
+}
+
+/// The second capsule under `CameraToolsCapsule`: 冷 · five dots · 暖 (#590).
+/// Picking a dot writes the tone straight away and leaves the row open.
+struct ColorTonePicker: View {
+    @ObservedObject var model: CameraScreenModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("冷")
+                .font(.caption)
+                .foregroundColor(CameraTheme.inkSecondary)
+                .padding(.leading, 12)
+            ForEach(ColorTone.allCases, id: \.self) { tone in
+                dot(for: tone)
+            }
+            Text("暖")
+                .font(.caption)
+                .foregroundColor(CameraTheme.inkSecondary)
+                .padding(.trailing, 12)
+        }
+        .padding(4)
+        .background(
+            Capsule()
+                .fill(CameraTheme.popoverBackground)
+                .shadow(color: CameraTheme.popoverShadow, radius: 12, x: 0, y: 8)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tonePicker")
+    }
+
+    private func dot(for tone: ColorTone) -> some View {
+        let isSelected = model.captureSettingsStore.colorTone == tone
+        return Button {
+            model.setColorTone(tone)
+        } label: {
+            Circle()
+                .fill(isSelected ? CameraTheme.active : CameraTheme.inkTertiary)
+                .frame(width: isSelected ? 16 : 10, height: isSelected ? 16 : 10)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(CameraToolsCapsule.toneName(tone))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("tone_\(tone.rawValue)")
+    }
+}
+
+/// Approximate viewfinder tint for each color tone (#590, D-10 方案甲).
+/// Not the baked filter, only a matching direction; `.standard` has none.
+enum ColorToneTint {
+    /// The overlay color and opacity for `tone`, or nil for `.standard`.
+    static func tint(for tone: ColorTone) -> (color: Color, opacity: Double)? {
+        switch tone {
+        case .cool2: return (Color(red: 0x6E / 255, green: 0x9B / 255, blue: 0xD6 / 255), 0.9)
+        case .cool1: return (Color(red: 0x6E / 255, green: 0x9B / 255, blue: 0xD6 / 255), 0.5)
+        case .standard: return nil
+        case .warm1: return (Color(red: 0xF2 / 255, green: 0xB3 / 255, blue: 0x6A / 255), 0.7)
+        case .warm2: return (Color(red: 0xF0 / 255, green: 0xA2 / 255, blue: 0x4D / 255), 1.0)
+        }
     }
 }
 

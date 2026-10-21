@@ -356,8 +356,15 @@ struct CameraScreen: View {
     @ViewBuilder
     private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isCameraToolsExpanded {
-            CameraToolsCapsule(model: model)
-                .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
+            VStack(alignment: .leading, spacing: 8) {
+                CameraToolsCapsule(model: model)
+                if model.isTonePickerOpen {
+                    ColorTonePicker(model: model)
+                        .transition(reduceMotion ? .identity : .scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? nil : CameraTheme.spring, value: model.isTonePickerOpen)
+            .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
                 .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
         }
     }
@@ -443,6 +450,16 @@ struct CameraScreen: View {
                 // actually end at (code review finding carried over from
                 // 0.1, PRD FR-6.1/6.3).
                 CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
+            }
+
+            if let tint = ColorToneTint.tint(for: model.captureSettingsStore.colorTone) {
+                Rectangle()
+                    .fill(tint.color.opacity(tint.opacity))
+                    .blendMode(.softLight)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .accessibilityIdentifier("toneTint")
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.captureSettingsStore.colorTone)
             }
 
             if model.captureSettingsStore.showsGrid {

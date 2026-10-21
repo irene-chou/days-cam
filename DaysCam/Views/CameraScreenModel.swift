@@ -114,6 +114,10 @@ final class CameraScreenModel: ObservableObject {
     /// (issue #135). Never persisted: every launch starts collapsed.
     @Published private(set) var isCameraToolsExpanded = false
 
+    /// Whether the five-step tone picker under the tools capsule is showing
+    /// (#590). Memory only; closes together with the capsule.
+    @Published private(set) var isTonePickerOpen = false
+
     /// Drives the 設定檔 sheet. Built once and reused: it mirrors the store
     /// itself, so there is nothing to go stale between presentations. Its
     /// edit page writes through a `TabProfileWriter` (#70, R-8).
@@ -277,7 +281,7 @@ final class CameraScreenModel: ObservableObject {
     /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
     /// it off the main thread without capturing `self` into a background
     /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?) -> UIImage?
+    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage?
 
     /// Saves a baked photo to the system photo library, returning its new
     /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
@@ -369,7 +373,7 @@ final class CameraScreenModel: ObservableObject {
              ImageCropper.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate in
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate in
              OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect, filmDate: filmDate)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
@@ -1144,6 +1148,23 @@ extension CameraScreenModel {
     /// Opens or closes the tools capsule (issue #135).
     func toggleCameraTools() {
         isCameraToolsExpanded.toggle()
+        if !isCameraToolsExpanded { isTonePickerOpen = false }
+    }
+
+    /// Opens or closes the tone picker (#590); never changes the tone.
+    func toggleTonePicker() {
+        isTonePickerOpen.toggle()
+    }
+
+    /// Picks a color tone (#590); the picker stays open.
+    func setColorTone(_ tone: ColorTone) {
+        captureSettingsStore.setColorTone(tone)
+    }
+
+    /// Whether the tone tool shows in the `active` color: any tone but
+    /// `.standard` (#590).
+    var isToneToolActive: Bool {
+        captureSettingsStore.colorTone != .standard
     }
 
     /// Closes the tools capsule; a no-op when it is already closed. Called by
@@ -1152,6 +1173,7 @@ extension CameraScreenModel {
         if isCameraToolsExpanded {
             isCameraToolsExpanded = false
         }
+        isTonePickerOpen = false
     }
 
     /// Opens the overlay panel, collapsing the tools capsule first (issue #135).
@@ -1392,6 +1414,7 @@ extension CameraScreenModel {
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
+        let tone = captureSettingsStore.colorTone
         // Only the capture's ID is kept for the timing log, so a pending save
         // timeout does not hold the full-resolution photo in memory.
         let timingID = CaptureTiming.timingID(of: image)
@@ -1409,7 +1432,7 @@ extension CameraScreenModel {
                 let pixelSize = CGSize(width: image.size.width * image.scale,
                                        height: image.size.height * image.scale)
                 let window = cropRect(pixelSize, aspectRatio)
-                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate)
+                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate, tone)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.
