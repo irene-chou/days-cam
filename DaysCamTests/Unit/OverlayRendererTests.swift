@@ -197,6 +197,108 @@ final class OverlayRendererTests: XCTestCase {
                       "same pixels in, same pixels out, wherever they came from")
     }
 
+    // MARK: - #589 color tone
+
+    func test_589_1_standardToneBakesExactlyLikeNoTone() throws {
+        let input = try makeImage(fill: RGB(red: 180, green: 120, blue: 90),
+                                  marker: (rect: CGRect(x: 1000, y: 1400, width: 50, height: 50), color: .red))
+
+        let untoned = try XCTUnwrap(renderer.bake(image: input, text: "第 10 天",
+                                                  style: OverlayStyle(legacyTheme: .classicWhite),
+                                                  placement: .anchor(.bottomTrailing), font: .pingFang))
+        let standard = try bake(input, text: "第 10 天", tone: .standard)
+
+        XCTAssertTrue((try pixels(of: standard)).bytes == (try pixels(of: untoned)).bytes)
+        XCTAssertTrue(try bake(input, text: "", tone: .standard) === input,
+                      "nothing to do still hands back the input itself")
+    }
+
+    /// The tone is applied to the photo before the text is drawn, so text
+    /// that is pure white without a tone is still white with warm2.
+    func test_589_4_warm2LeavesWhiteTextWhite() throws {
+        let gray = RGB(red: 128, green: 128, blue: 128)
+        let input = try makeImage(fill: gray)
+        let plainWhite = OverlayStyle(textColor: .white, outline: .none, shadow: .none)
+
+        let untoned = try pixels(of: XCTUnwrap(renderer.bake(image: input, text: "第 10 天", style: plainWhite,
+                                                             placement: .anchor(.middleCenter), font: .pingFang)))
+        let warm = try pixels(of: XCTUnwrap(renderer.bake(image: input, text: "第 10 天", style: plainWhite,
+                                                          placement: .anchor(.middleCenter), font: .pingFang,
+                                                          tone: .warm2)))
+
+        let background = warm.color(x: 10, y: 10)
+        XCTAssertGreaterThan(background.red - background.blue, 15, "the photo itself was warmed: \(background)")
+        var inked = 0
+        var tinted: [String] = []
+        for y in 0..<height {
+            for x in 0..<width where untoned.color(x: x, y: y) == .white {
+                inked += 1
+                let color = warm.color(x: x, y: y)
+                if !(color.red > 250 && color.green > 250 && color.blue > 250) {
+                    tinted.append("(\(x), \(y)) \(color)")
+                }
+            }
+        }
+        XCTAssertGreaterThan(inked, 100, "fixture sanity: the text has a solid white core")
+        XCTAssertTrue(tinted.isEmpty, "\(tinted.count) text pixels are no longer white: \(tinted.prefix(5))")
+    }
+
+    func test_589_5_rightOrientedImageWithWarm1IsUprightWithTheTextInItsCorner() throws {
+        let stored = try makeImage(pixelWidth: height, pixelHeight: width,
+                                   fill: RGB(red: 128, green: 128, blue: 128),
+                                   orientation: .right,
+                                   marker: (rect: CGRect(x: 0, y: 0, width: 100, height: 100), color: .red))
+
+        let output = try bake(stored, text: "第 10 天", position: .bottomTrailing, tone: .warm1)
+        let grid = try pixels(of: output)
+
+        XCTAssertEqual(output.imageOrientation, .up)
+        XCTAssertEqual(grid.width, width)
+        XCTAssertEqual(grid.height, height)
+
+        let background = grid.color(x: width / 2, y: height / 4)
+        XCTAssertGreaterThan(background.red, background.blue, "the photo was warmed: \(background)")
+        XCTAssertTrue(grid.all(in: region(x: width - 90...width - 10, y: 10...90)) {
+            $0.red > 200 && $0.green < 60 && $0.blue < 60
+        }, "the stored top-left marker lands top-right once rotated")
+        XCTAssertTrue(grid.all(in: region(x: 10...90, y: 10...90)) { $0.distance(to: background) <= 2 },
+                      "and not where an unrotated copy would have put it")
+
+        let lowerHalf = region(x: 0...(width - 1), y: (height / 2)...(height - 1))
+        let mark = try XCTUnwrap(grid.bounds(in: lowerHalf) { $0.distance(to: background) > 30 },
+                                 "the text left a mark in the lower half")
+        XCTAssertGreaterThan(mark.midX, CGFloat(width) / 2, "bottomTrailing lands on the right")
+        XCTAssertGreaterThan(mark.midY, CGFloat(height) * 0.75, "and at the bottom")
+        XCTAssertGreaterThan(mark.width, mark.height * 2,
+                             "one line of horizontal text is much wider than tall; rotated 90° it would not be")
+    }
+
+    func test_589_toneAloneStillProducesANewImageOfTheSameSize() throws {
+        let input = try makeImage(fill: RGB(red: 128, green: 128, blue: 128))
+
+        let output = try bake(input, text: "", tone: .warm1)
+
+        XCTAssertFalse(output === input, "a tone is something to do")
+        XCTAssertEqual(output.size, CGSize(width: width, height: height))
+        XCTAssertEqual(output.scale, 1)
+        XCTAssertEqual(output.imageOrientation, .up)
+        let color = try pixels(of: output).color(x: width / 2, y: height / 2)
+        XCTAssertGreaterThan(color.red, color.blue, "\(color)")
+    }
+
+    func test_589_6_aHundredWarm2BakesStayUnderFiveHundredMegabytes() throws {
+        let input = try makeImage()
+        var peak: UInt64 = 0
+
+        for _ in 0..<100 {
+            _ = try bake(input, text: "第 10 天", tone: .warm2)
+            peak = max(peak, try XCTUnwrap(physicalFootprint()))
+        }
+
+        let limit: UInt64 = 500 * 1024 * 1024
+        XCTAssertLessThan(peak, limit, "peak footprint \(peak / 1024 / 1024) MB")
+    }
+
     // MARK: - Pixel size, not point size
 
     /// A 3x image of 400x533.33 points is 1200x1600 pixels, and the text must
@@ -344,10 +446,11 @@ final class OverlayRendererTests: XCTestCase {
                       text: String,
                       theme: ThemeID = .classicWhite,
                       position: OverlayPosition = .bottomTrailing,
+                      tone: ColorTone = .standard,
                       file: StaticString = #filePath,
                       line: UInt = #line) throws -> UIImage {
         try XCTUnwrap(renderer.bake(image: image, text: text, style: OverlayStyle(legacyTheme: theme),
-                                    placement: .anchor(position), font: .pingFang),
+                                    placement: .anchor(position), font: .pingFang, tone: tone),
                       "bake returned nil", file: file, line: line)
     }
 
