@@ -279,10 +279,11 @@ final class FilmDateStampTests: XCTestCase {
         XCTAssertLessThan(bodyPixel.2, centrePixel.2, "body \(bodyPixel) vs core \(centrePixel)")
 
         // Just outside the glyph box (0.1 × height below the bottom segment):
-        // the halo tints the gray orange.
+        // the halo tints the gray orange. Less 3 levels for the round trip
+        // through `bake`'s 8-bit Display P3 canvas (#586).
         let haloPoint = (x: centre.x, y: Int(box.maxY) + Int((height * 0.1).rounded()))
         let haloPixel = pixels.rgb(haloPoint.x, haloPoint.y)
-        XCTAssertGreaterThan(haloPixel.0 - haloPixel.2, 0.04, "pixel \(haloPixel) at \(haloPoint)")
+        XCTAssertGreaterThan(haloPixel.0 - haloPixel.2, 0.04 - 3.0 / 255, "pixel \(haloPixel) at \(haloPoint)")
 
         // Well outside (0.8 × height below): still the gray photo.
         let gray = (Double(Self.gray), Double(Self.gray), Double(Self.gray))

@@ -45,13 +45,19 @@ final class OverlayRendererCropTests: XCTestCase {
     /// `CGImage.cropping(to:)`.
     private func referenceCrop(_ image: UIImage, to rect: CGRect) throws -> UIImage {
         let size = normalizedPixelSize(image)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.preferredRange = .standard
-        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        let cropped = try XCTUnwrap(upright.cgImage?.cropping(to: rect))
+        // The same 8-bit Display P3 canvas `bake` draws in (#586), so both
+        // sides round the photo's sRGB colors the same way.
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.displayP3))
+        let context = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+                                              bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                                  | CGBitmapInfo.byteOrder32Little.rawValue))
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        image.draw(in: CGRect(origin: .zero, size: size))
+        UIGraphicsPopContext()
+        let cropped = try XCTUnwrap(context.makeImage()?.cropping(to: rect))
         return UIImage(cgImage: cropped, scale: 1, orientation: .up)
     }
 
