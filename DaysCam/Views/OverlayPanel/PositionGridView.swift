@@ -3,7 +3,7 @@ import SwiftUI
 /// The nine-point quick-align grid in its light square box (PRD 0.2 FR-12.4),
 /// selected point in the active color.
 ///
-/// Used by the 位置 row on the 版面 tab (#567, #568), reads the VoiceOver labels
+/// Used by the 位置 row on the 內容 tab (#567, #568, #584), reads the VoiceOver labels
 /// and writes through `PositionTabModel.selectAnchor`.
 struct PositionGridView: View {
     @ObservedObject var model: PositionTabModel
