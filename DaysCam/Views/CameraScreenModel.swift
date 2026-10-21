@@ -373,8 +373,8 @@ final class CameraScreenModel: ObservableObject {
              ImageCropper.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
          },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect, filmDate: filmDate)
+         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate, tone in
+             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
          },
          save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
              PhotoSaver().saveReturningIdentifier(image, completion: completion)
