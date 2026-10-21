@@ -32,4 +32,23 @@ final class CaptureSettingsTests: XCTestCase {
         XCTAssertEqual(CaptureAspectRatio.oneByOne.shortToLongRatio, 1.0, accuracy: 0.0001)
         XCTAssertEqual(CaptureAspectRatio.nineBySixteen.shortToLongRatio, 0.5625, accuracy: 0.0001)
     }
+
+    // MARK: - ColorTone
+
+    func test_colorTone_allCasesRunFromCoolToWarm() {
+        XCTAssertEqual(ColorTone.allCases, [.cool2, .cool1, .standard, .warm1, .warm2])
+    }
+
+    func test_colorTone_rawValues() {
+        XCTAssertEqual(ColorTone.allCases.map(\.rawValue),
+                       ["cool2", "cool1", "standard", "warm1", "warm2"])
+    }
+
+    func test_colorTone_stepsRunFromMinusTwoToTwo() {
+        XCTAssertEqual(ColorTone.allCases.map(\.step), [-2, -1, 0, 1, 2])
+    }
+
+    func test_colorTone_defaultIsStandard() {
+        XCTAssertEqual(ColorTone.default, .standard)
+    }
 }

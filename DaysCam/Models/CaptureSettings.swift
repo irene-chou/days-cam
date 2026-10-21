@@ -56,3 +56,31 @@ enum TimerSetting: Int, Codable, CaseIterable, Equatable {
         }
     }
 }
+
+/// Colour tone of the captured photo, five steps from cool to warm.
+///
+/// `.standard` means no processing: the photo is exactly what the sensor
+/// delivered. The two cool and two warm steps shift the white balance
+/// towards blue or orange; the baking itself lives outside this model.
+enum ColorTone: String, Codable, CaseIterable, Equatable {
+    case cool2
+    case cool1
+    case standard
+    case warm1
+    case warm2
+
+    /// The tone a fresh install starts with: no processing.
+    static let `default`: ColorTone = .standard
+
+    /// Signed distance from `.standard`: -2 for `.cool2` up to 2 for
+    /// `.warm2`. Meant as an index for baking and UI, not as a display name.
+    var step: Int {
+        switch self {
+        case .cool2: return -2
+        case .cool1: return -1
+        case .standard: return 0
+        case .warm1: return 1
+        case .warm2: return 2
+        }
+    }
+}

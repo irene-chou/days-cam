@@ -2,7 +2,7 @@ import Foundation
 
 /// Holds the camera tools' state (PRD 0.2 §4.4).
 ///
-/// `captureAspectRatio` and `showsGrid` survive a relaunch via `UserDefaults`;
+/// `captureAspectRatio`, `showsGrid` and `colorTone` survive a relaunch via `UserDefaults`;
 /// `flashMode` and `timerSeconds` deliberately do not — leaving either one on
 /// by accident is worse than the inconvenience of it resetting, since it
 /// would fire on every photo until noticed rather than just this one.
@@ -14,12 +14,15 @@ final class CaptureSettingsStore: ObservableObject {
     private enum Keys {
         static let captureAspectRatio = "captureAspectRatio"
         static let showsGrid = "showsGrid"
+        static let colorTone = "colorTone"
     }
 
     /// Persisted across launches (PRD 0.2 §4.4).
     @Published private(set) var captureAspectRatio: CaptureAspectRatio
     /// Persisted across launches (PRD 0.2 §4.4).
     @Published private(set) var showsGrid: Bool
+    /// Persisted across launches, like the aspect ratio.
+    @Published private(set) var colorTone: ColorTone
 
     /// In-memory only: always starts at `.off` for a freshly created store,
     /// i.e. every app launch (PRD 0.2 §4.4).
@@ -45,6 +48,12 @@ final class CaptureSettingsStore: ObservableObject {
             captureAspectRatio = .threeByFour
         }
         showsGrid = defaults.bool(forKey: Keys.showsGrid)
+        if let stored = defaults.string(forKey: Keys.colorTone),
+           let tone = ColorTone(rawValue: stored) {
+            colorTone = tone
+        } else {
+            colorTone = .default
+        }
     }
 
     /// Sets the capture aspect ratio (PRD 0.2 FR-7.7) and persists it.
@@ -57,6 +66,14 @@ final class CaptureSettingsStore: ObservableObject {
     func toggleGrid() {
         showsGrid.toggle()
         defaults.set(showsGrid, forKey: Keys.showsGrid)
+    }
+
+    /// Sets the colour tone and persists it. Setting the current value is a
+    /// no-op.
+    func setColorTone(_ tone: ColorTone) {
+        guard tone != colorTone else { return }
+        colorTone = tone
+        defaults.set(tone.rawValue, forKey: Keys.colorTone)
     }
 
     /// Advances the flash mode 關 → 自動 → 開 → 關 (PRD 0.2 FR-7.4). Not
