@@ -356,8 +356,15 @@ struct CameraScreen: View {
     @ViewBuilder
     private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isCameraToolsExpanded {
-            CameraToolsCapsule(model: model)
-                .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
+            VStack(alignment: .leading, spacing: 8) {
+                CameraToolsCapsule(model: model)
+                if model.isTonePickerOpen {
+                    ColorTonePicker(model: model)
+                        .transition(reduceMotion ? .identity : .scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? nil : CameraTheme.spring, value: model.isTonePickerOpen)
+            .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
                 .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
         }
     }
@@ -443,6 +450,15 @@ struct CameraScreen: View {
                 // actually end at (code review finding carried over from
                 // 0.1, PRD FR-6.1/6.3).
                 CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
+            }
+
+            // The viewfinder through the chosen tone, live (#590). Absent for
+            // `.standard`, so then no frame is produced or processed.
+            if !model.showsPlaceholder, model.captureSettingsStore.colorTone != .standard {
+                FilteredPreviewView(tone: model.captureSettingsStore.colorTone,
+                                    service: model.cameraService)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
 
             if model.captureSettingsStore.showsGrid {

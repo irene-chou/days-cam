@@ -37,4 +37,9 @@ final class CameraToolbarTests: XCTestCase {
     func testToolbarButtonsAre44() {
         XCTAssertEqual(CameraToolbar.buttonSize, 44)
     }
+
+    func testToneNamesMatchTheCard() {
+        let names = ColorTone.allCases.map(CameraToolsCapsule.toneName)
+        XCTAssertEqual(names, ["冷 2", "冷 1", "標準", "暖 1", "暖 2"], "590.3")
+    }
 }
