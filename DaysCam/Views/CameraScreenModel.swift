@@ -1464,6 +1464,7 @@ extension CameraScreenModel {
                     }
                     if let composed {
                         HDRSideChannel.attachOutput(composed, to: baked)
+                        HDRSpike.dump(composed, name: "out-\(HDRSpike.nextIndex()).heic")
                         HDRSpike.log("hdr composed bytes=\(composed.count) ms=\(Int((CFAbsoluteTimeGetCurrent() - started) * 1000))")
                     } else {
                         HDRSpike.log("hdr compose failed, falling back to SDR")
