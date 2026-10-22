@@ -19,14 +19,6 @@ struct ZoomLens: Equatable {
         hasUltraWide ? (switchOverFactors.first ?? 2) : 1
     }
 
-    /// Whether going from device factor `from` to `to` passes a lens
-    /// switch-over: one lies after the lower factor, up to and including the
-    /// higher.
-    func crossesSwitchOver(from: CGFloat, to: CGFloat) -> Bool {
-        let low = min(from, to), high = max(from, to)
-        return switchOverFactors.contains { $0 > low && $0 <= high }
-    }
-
     /// Display factor to device `videoZoomFactor`.
     func deviceFactor(forDisplay display: CGFloat) -> CGFloat { display * baseDeviceFactor }
 

@@ -913,10 +913,7 @@ extension CameraService {
         // A pinch cuts a running ramp short rather than fighting it.
         if device.isRampingVideoZoom { device.cancelVideoZoomRamp() }
         let target = lens.deviceFactor(forDisplay: clamped)
-        // The camera cannot change lens smoothly, so a ramp across a switch-over
-        // only stretches the jump; set it directly and ramp within one lens.
-        let crossesLens = lens.crossesSwitchOver(from: device.videoZoomFactor, to: target)
-        if let rampRate, !crossesLens {
+        if let rampRate {
             device.ramp(toVideoZoomFactor: target, withRate: rampRate)
         } else {
             device.videoZoomFactor = target

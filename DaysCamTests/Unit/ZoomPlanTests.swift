@@ -151,7 +151,7 @@ final class ZoomPlanTests: XCTestCase {
         XCTAssertEqual(device.videoZoomFactor, 3)
     }
 
-    func testRampingWithinOneLensGoesThroughRampAtTheDeviceFactor() {
+    func testRampingGoesThroughRampAtTheDeviceFactor() {
         let device = FakeLensDevice(lens: triple)
         device.videoZoomFactor = 2
         CameraService.applyZoom(1.5, to: device, rampRate: CameraService.presetRampRate)
@@ -161,25 +161,13 @@ final class ZoomPlanTests: XCTestCase {
         XCTAssertEqual(device.videoZoomFactor, 2, "a ramp does not jump the factor")
     }
 
-    /// #601: a ramp across a lens switch-over is set directly instead.
-    func testRampAcrossASwitchOverSetsTheFactorDirectly() {
+    /// #601: a ramp across a lens switch-over still ramps, so the main camera
+    /// has time to take over (a direct jump showed a distorted frame first).
+    func testRampAcrossASwitchOverStillRamps() {
         let device = FakeLensDevice(lens: triple)
         CameraService.applyZoom(2, to: device, rampRate: CameraService.presetRampRate)
-        XCTAssertTrue(device.rampTargets.isEmpty)
-        XCTAssertEqual(device.videoZoomFactor, 4)
-    }
-
-    func testCrossesSwitchOver() {
-        let lens = ZoomLens(hasUltraWide: false, switchOverFactors: [2, 5])
-        XCTAssertFalse(lens.crossesSwitchOver(from: 1, to: 1.9))
-        XCTAssertTrue(lens.crossesSwitchOver(from: 1, to: 2))
-        XCTAssertFalse(lens.crossesSwitchOver(from: 2, to: 4.9))
-        XCTAssertTrue(lens.crossesSwitchOver(from: 4, to: 6))
-        XCTAssertTrue(lens.crossesSwitchOver(from: 6, to: 4), "downwards too")
-        XCTAssertFalse(ZoomLens().crossesSwitchOver(from: 1, to: 10), "single lens")
-        // Dual wide: 0.5x to 1x is device 1 to 2.
-        XCTAssertTrue(dualWide.crossesSwitchOver(from: 1, to: 2))
-        XCTAssertTrue(dualWide.crossesSwitchOver(from: 2, to: 1))
+        XCTAssertEqual(device.rampTargets.count, 1)
+        XCTAssertEqual(device.rampTargets.first?.factor, 4)
     }
 
     func testAPinchCancelsARunningRamp() {
