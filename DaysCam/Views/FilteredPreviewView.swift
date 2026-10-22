@@ -109,12 +109,12 @@ final class FilteredPreviewMetalView: MTKView, MTKViewDelegate {
     static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
                        colorSpace: CGColorSpace) {
         let target = CGSize(width: texture.width, height: texture.height)
-        // Core Image's origin is bottom-left, a Metal texture's top-left, so
-        // the result is flipped on the way in.
-        let flip = CGAffineTransform(scaleX: 1, y: -1).concatenating(CGAffineTransform(translationX: 0, y: target.height))
-        let fitted = image
-            .transformed(by: aspectFillTransform(from: image.extent.size, to: target))
-            .transformed(by: flip)
+        // No flip: `CIContext.render(_:to:)` into a drawable keeps the picture
+        // upright on screen with Core Image's own convention (high y = top of
+        // the picture), as confirmed on a device. Reading the texture back
+        // with `getBytes` gives a row order that does not say which way up
+        // the screen shows it, so do not "fix" this from such a readback.
+        let fitted = image.transformed(by: aspectFillTransform(from: image.extent.size, to: target))
         ColorToneRenderer.context.render(fitted, to: texture, commandBuffer: commandBuffer,
                                          bounds: CGRect(origin: .zero, size: target), colorSpace: colorSpace)
     }
