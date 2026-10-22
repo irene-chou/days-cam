@@ -106,6 +106,20 @@ final class OverlayTextViewTests: XCTestCase {
         return OverlayTextView.origin(forBlockSize: blockSize, frameSize: frameSize, placement: fraction)
     }
 
+    /// #599-5: the dashed frame shows only on a draggable block that is
+    /// pressed or flashing its hint.
+    func testIsFrameVisibleForAllEightCombinations() {
+        for interactive in [false, true] {
+            for pressed in [false, true] {
+                for hint in [false, true] {
+                    let expected = interactive && (pressed || hint)
+                    XCTAssertEqual(OverlayTextView.isFrameVisible(isInteractive: interactive, isPressed: pressed, isHintShowing: hint),
+                                   expected, "interactive \(interactive), pressed \(pressed), hint \(hint)")
+                }
+            }
+        }
+    }
+
     /// D.1: releasing a drag with zero translation must land back exactly
     /// where it started — starting from `.anchor(.topLeading)`, not
     /// `.custom`, is the case #68 fixes (the old `PositionDragAdapter` used a

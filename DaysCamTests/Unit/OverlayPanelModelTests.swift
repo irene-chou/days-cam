@@ -74,6 +74,22 @@ final class OverlayPanelModelTests: XCTestCase {
         XCTAssertFalse(model.isOverlayDraggable, "closed again")
     }
 
+    func testDragHintSerialBumpsOnlyWhenThePanelGoesFromClosedToOpen() {
+        // #599-2
+        let model = OverlayPanelModel()
+        XCTAssertEqual(model.dragHintSerial, 0)
+        model.open()
+        XCTAssertEqual(model.dragHintSerial, 1)
+        model.open()
+        XCTAssertEqual(model.dragHintSerial, 1, "open while open")
+        model.selectedTab = .content
+        XCTAssertEqual(model.dragHintSerial, 1, "tab switch")
+        model.close()
+        XCTAssertEqual(model.dragHintSerial, 1, "close")
+        model.open()
+        XCTAssertEqual(model.dragHintSerial, 2, "reopened")
+    }
+
     /// A fake conformer, standing in for TASK-24's position-tab model.
     private final class RecordingDragHandler: OverlayDragHandling {
         private(set) var changedCalls: [(center: CGPoint, viewfinderSize: CGSize)] = []

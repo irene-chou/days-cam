@@ -54,8 +54,17 @@ struct OverlayTextView: View {
     /// to the viewfinder (focus, FR-8.7 collapse), so pass an empty closure
     /// to keep the block tappable-but-inert.
     var onTap: (() -> Void)?
+    /// Bumped by `OverlayPanelModel` each time the panel goes from closed to
+    /// open (#599); every new value flashes the dashed frame once as a "this
+    /// can be dragged" hint. `0` (the initial value) never flashes.
+    var dragHintSerial: Int = 0
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Whether a finger is currently down on the draggable block (#599).
+    @State private var isPressed = false
+    /// Whether the open-time hint flash is currently showing (#599).
+    @State private var isHintShowing = false
     /// Memoizes pixels independently of placement and gesture state.
     @State private var renderCache = OverlayTextRenderCache()
 
@@ -89,7 +98,8 @@ struct OverlayTextView: View {
          font: ResolvedOverlayFont = .pingFang,
          onDragChanged: ((CGPoint, CGSize) -> Void)? = nil,
          onDragEnded: ((CGPoint, CGSize) -> Void)? = nil,
-         onTap: (() -> Void)? = nil) {
+         onTap: (() -> Void)? = nil,
+         dragHintSerial: Int = 0) {
         self.text = text
         self.style = style
         self.placement = placement
@@ -98,6 +108,19 @@ struct OverlayTextView: View {
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
         self.onTap = onTap
+        self.dragHintSerial = dragHintSerial
+    }
+
+    /// How long the open-time hint frame stays before fading out (#599).
+    static let hintDuration: Duration = .seconds(1)
+    /// Fade-in / fade-out durations of the dashed frame (#599).
+    static let frameFadeInDuration: Double = 0.15
+    static let frameFadeOutDuration: Double = 0.3
+
+    /// Whether the dashed frame is drawn (#599): only on a draggable block,
+    /// and only while a finger is down or the open-time hint is flashing.
+    static func isFrameVisible(isInteractive: Bool, isPressed: Bool, isHintShowing: Bool) -> Bool {
+        isInteractive && (isPressed || isHintShowing)
     }
 
     /// How far a touch may travel and still count as a tap on the block
@@ -114,6 +137,10 @@ struct OverlayTextView: View {
     /// draggable when the caller forgot to gate it.
     private var isInteractive: Bool {
         onDragChanged != nil || onDragEnded != nil
+    }
+
+    private var isFrameShowing: Bool {
+        Self.isFrameVisible(isInteractive: isInteractive, isPressed: isPressed, isHintShowing: isHintShowing)
     }
 
     var body: some View {
@@ -139,17 +166,22 @@ struct OverlayTextView: View {
                         .allowsHitTesting(false)
                 }
                 .overlay {
-                    if isInteractive {
+                    if isFrameShowing {
                         Rectangle()
                             .strokeBorder(.white, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                             .allowsHitTesting(false)
+                            .transition(.opacity)
                     }
                 }
+                .animation(reduceMotion ? nil : (isFrameShowing ? .easeOut(duration: Self.frameFadeInDuration)
+                                                                : .easeIn(duration: Self.frameFadeOutDuration)),
+                           value: isFrameShowing)
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
-                // The dashed frame is not in the accessibility tree; UI tests
-                // (#568) tell "draggable" apart by this identifier instead.
+                // The dashed frame is not in the accessibility tree and only
+                // shows on press / hint (#599); UI tests (#568) tell
+                // "draggable" apart by this identifier instead.
                 .accessibilityIdentifier(isInteractive ? "overlayTextDraggable" : "overlayText")
                 // TASK-96 (#400): the first-launch tour's step 2 lights this
                 // block up where it actually is — a look-only cut-out.
@@ -160,6 +192,18 @@ struct OverlayTextView: View {
                 .preference(key: OverlayTextBlockFrameKey.self,
                             value: CGRect(origin: settledOrigin, size: blockSize))
                 .allowsHitTesting(isInteractive || onTap != nil)
+                .onChange(of: isInteractive) { _, interactive in
+                    // A pinch or panel close can take the gesture away without
+                    // an `onEnded`; never leave the press state stuck.
+                    if !interactive { isPressed = false }
+                }
+                .task(id: dragHintSerial) {
+                    guard dragHintSerial > 0, isInteractive else { return }
+                    isHintShowing = true
+                    try? await Task.sleep(for: Self.hintDuration)
+                    guard !Task.isCancelled else { return }
+                    isHintShowing = false
+                }
                 .gesture(
                     // Always attached, never conditionally — `allowsHitTesting`
                     // above is the single switch that decides whether this can
@@ -171,11 +215,13 @@ struct OverlayTextView: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
                             guard isInteractive else { return }
+                            isPressed = true
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             liveDragCenter = center
                             onDragChanged?(center, frameSize)
                         }
                         .onEnded { value in
+                            isPressed = false
                             guard isInteractive else {
                                 if Self.isTap(translation: value.translation) { onTap?() }
                                 return
