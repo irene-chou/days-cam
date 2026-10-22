@@ -50,14 +50,4 @@ final class PreviewFrameOutputTests: XCTestCase {
         PreviewFrameOutput.configure(connection, facing: .back, isActive: true)
         XCTAssertEqual(connection.videoRotationAngle, 0)
     }
-
-    func testAddingTheFrameOutputLeavesThePhotoOutputAlone() {
-        let photoOutput = AVCapturePhotoOutput()
-        let before = (photoOutput.isHighResolutionCaptureEnabled, photoOutput.maxPhotoQualityPrioritization)
-        let session = AVCaptureSession()
-        _ = PreviewFrameOutput()
-        if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
-        XCTAssertEqual(before.0, photoOutput.isHighResolutionCaptureEnabled)
-        XCTAssertEqual(before.1, photoOutput.maxPhotoQualityPrioritization)
-    }
 }

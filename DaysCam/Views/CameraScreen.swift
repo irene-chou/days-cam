@@ -452,14 +452,13 @@ struct CameraScreen: View {
                 CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
             }
 
-            if let tint = ColorToneTint.tint(for: model.captureSettingsStore.colorTone) {
-                Rectangle()
-                    .fill(tint.color.opacity(tint.opacity))
-                    .blendMode(.softLight)
+            // The viewfinder through the chosen tone, live (#590). Absent for
+            // `.standard`, so then no frame is produced or processed.
+            if !model.showsPlaceholder, model.captureSettingsStore.colorTone != .standard {
+                FilteredPreviewView(tone: model.captureSettingsStore.colorTone,
+                                    setFrameHandler: model.cameraService.setPreviewFrameHandler)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                    .accessibilityIdentifier("toneTint")
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.captureSettingsStore.colorTone)
             }
 
             if model.captureSettingsStore.showsGrid {

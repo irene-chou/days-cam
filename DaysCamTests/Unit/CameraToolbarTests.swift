@@ -42,13 +42,4 @@ final class CameraToolbarTests: XCTestCase {
         let names = ColorTone.allCases.map(CameraToolsCapsule.toneName)
         XCTAssertEqual(names, ["冷 2", "冷 1", "標準", "暖 1", "暖 2"], "590.3")
     }
-
-    func testTintExistsForEveryToneButStandard() {
-        XCTAssertNil(ColorToneTint.tint(for: .standard), "590.4")
-        for tone in ColorTone.allCases where tone != .standard {
-            XCTAssertNotNil(ColorToneTint.tint(for: tone), "\(tone)")
-        }
-        XCTAssertEqual(ColorToneTint.tint(for: .warm2)?.opacity, 1.0)
-        XCTAssertEqual(ColorToneTint.tint(for: .cool1)?.opacity, 0.5)
-    }
 }

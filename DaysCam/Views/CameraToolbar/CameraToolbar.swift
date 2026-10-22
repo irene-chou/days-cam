@@ -305,21 +305,6 @@ struct ColorTonePicker: View {
     }
 }
 
-/// Approximate viewfinder tint for each color tone (#590, D-10 方案甲).
-/// Not the baked filter, only a matching direction; `.standard` has none.
-enum ColorToneTint {
-    /// The overlay color and opacity for `tone`, or nil for `.standard`.
-    static func tint(for tone: ColorTone) -> (color: Color, opacity: Double)? {
-        switch tone {
-        case .cool2: return (Color(red: 0x6E / 255, green: 0x9B / 255, blue: 0xD6 / 255), 0.9)
-        case .cool1: return (Color(red: 0x6E / 255, green: 0x9B / 255, blue: 0xD6 / 255), 0.5)
-        case .standard: return nil
-        case .warm1: return (Color(red: 0xF2 / 255, green: 0xB3 / 255, blue: 0x6A / 255), 0.7)
-        case .warm2: return (Color(red: 0xF0 / 255, green: 0xA2 / 255, blue: 0x4D / 255), 1.0)
-        }
-    }
-}
-
 /// One SF Symbol/text label at the toolbar's fixed 44x44 tap target, colored
 /// `active` when the tool it belongs to is on, otherwise `ink`/`inkOnPhoto`
 /// depending on `isOnPhoto` (PRD 0.2 FR-7.10, FR-14.2 — no button

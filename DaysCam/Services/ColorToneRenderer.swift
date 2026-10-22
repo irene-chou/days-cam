@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import Metal
 
 /// Shifts a photo cooler or warmer by one of the five `ColorTone` steps,
 /// before any text is printed on it (#589).
@@ -33,21 +34,26 @@ enum ColorToneRenderer {
         .warm2: Parameters(targetTemperature: 5000, vibrance: 0.15)
     ]
 
-    /// One context for every photo; intermediates are not cached because each
-    /// photo is processed once.
-    private static let context = CIContext(options: [.cacheIntermediates: false])
+    /// The Metal device both the photo path and the live viewfinder render on.
+    static let metalDevice = MTLCreateSystemDefaultDevice()
 
-    /// Returns `image` shifted to `tone`, in the input's color space (sRGB or
-    /// Display P3) at 8 bits per component and the same pixel size.
-    ///
-    /// `.standard` returns `image` itself, untouched and without going through
-    /// Core Image. Returns nil only if Core Image cannot render the result.
-    static func apply(_ tone: ColorTone, to image: CGImage) -> CGImage? {
+    /// One context for every photo and for the live viewfinder (#590), so the
+    /// two paths run the same filters on the same renderer; intermediates are
+    /// not cached because each image is processed once.
+    static let context: CIContext = {
+        let options: [CIContextOption: Any] = [.cacheIntermediates: false]
+        if let metalDevice { return CIContext(mtlDevice: metalDevice, options: options) }
+        return CIContext(options: options)
+    }()
+
+    /// `image` shifted to `tone`, as a lazy Core Image graph: the one place
+    /// the filters and their numbers live, used by the photo (`apply`) and the
+    /// live viewfinder alike. `.standard` returns `image` itself. Nil only if
+    /// a filter yields no output.
+    static func filtered(_ tone: ColorTone, _ image: CIImage) -> CIImage? {
         guard let parameters = parameters[tone] else { return image }
-
-        let input = CIImage(cgImage: image)
         let temperature = CIFilter.temperatureAndTint()
-        temperature.inputImage = input
+        temperature.inputImage = image
         temperature.neutral = CIVector(x: CGFloat(neutralTemperature), y: 0)
         temperature.targetNeutral = CIVector(x: CGFloat(parameters.targetTemperature), y: 0)
         var output = temperature.outputImage
@@ -57,7 +63,19 @@ enum ColorToneRenderer {
             vibrance.amount = parameters.vibrance
             output = vibrance.outputImage
         }
-        guard let output else { return nil }
+        return output
+    }
+
+    /// Returns `image` shifted to `tone`, in the input's color space (sRGB or
+    /// Display P3) at 8 bits per component and the same pixel size.
+    ///
+    /// `.standard` returns `image` itself, untouched and without going through
+    /// Core Image. Returns nil only if Core Image cannot render the result.
+    static func apply(_ tone: ColorTone, to image: CGImage) -> CGImage? {
+        guard parameters[tone] != nil else { return image }
+
+        let input = CIImage(cgImage: image)
+        guard let output = filtered(tone, input) else { return nil }
 
         let colorSpace = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
             ?? CGColorSpace(name: CGColorSpace.sRGB)

@@ -783,6 +783,20 @@ extension CameraService {
     }
 }
 
+// MARK: - Live tone frames (#590)
+
+extension CameraService {
+
+    /// Starts (or, with nil, stops) delivering upright BGRA viewfinder frames
+    /// for the live tone filter (#590). The handler runs on a background
+    /// queue. With no handler the frame connection is off, so nothing is
+    /// produced or processed.
+    func setPreviewFrameHandler(_ handler: ((CVPixelBuffer) -> Void)?) {
+        frameOutput.setHandler(handler)
+        sessionQueue.async { [weak self] in self?.applyFrameConnection() }
+    }
+}
+
 // MARK: - Zoom
 
 extension CameraService {
@@ -1420,15 +1434,6 @@ private extension CameraService {
     func applyFrameConnection() {
         guard let connection = frameOutput.output.connection(with: .video) else { return }
         PreviewFrameOutput.configure(connection, facing: sessionFacing, isActive: frameOutput.isActive)
-    }
-
-    /// Starts (or, with nil, stops) delivering upright BGRA viewfinder frames
-    /// for the live tone filter (#590). The handler runs on a background
-    /// queue. With no handler the frame connection is off, so nothing is
-    /// produced or processed.
-    func setPreviewFrameHandler(_ handler: ((CVPixelBuffer) -> Void)?) {
-        frameOutput.setHandler(handler)
-        sessionQueue.async { [weak self] in self?.applyFrameConnection() }
     }
 
     /// Puts `device` back to 1× (the main camera, or the nearest allowed

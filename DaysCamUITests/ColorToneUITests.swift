@@ -1,7 +1,7 @@
 import XCTest
 
 /// #590: the tools capsule's 色調 button, the five-step picker under it and
-/// the viewfinder's approximate tint. With `DAYSCAM_UI_SHOT_DIR` in the test
+/// the live filtered viewfinder (which needs a camera, so only the settings are driven here). With `DAYSCAM_UI_SHOT_DIR` in the test
 /// runner's environment the screenshots are also written there.
 ///
 /// The tone lives in the real `UserDefaults`, so each test first puts it back
@@ -55,13 +55,12 @@ final class ColorToneUITests: XCTestCase {
         }
     }
 
-    /// 590.1–590.4, 590.6: button, picker, tint, capsule close and relaunch.
-    func testPickingATonePersistsAndTintsTheViewfinder() {
+    /// 590.1–590.3, 590.6: button, picker, capsule close and relaunch.
+    func testPickingATonePersists() {
         continueAfterFailure = false
         var app = launch()
         resetToStandard(app)
         openCapsule(app)
-        XCTAssertFalse(element("toneTint", in: app).exists, "590.4 standard has no tint")
         let toneButton = element("toneButton", in: app)
         XCTAssertEqual(toneButton.label, "色調：標準")
         attach(app, "590.1_capsule-standard")
@@ -81,7 +80,6 @@ final class ColorToneUITests: XCTestCase {
         XCTAssertEqual(toneButton.label, "色調：暖 2", "590.3")
         XCTAssertTrue(element("tone_warm2", in: app).isSelected)
         XCTAssertTrue(picker.exists, "590.2 the picker stays open after a pick")
-        XCTAssertTrue(element("toneTint", in: app).waitForExistence(timeout: 3), "590.4 warm 2 tints")
         attach(app, "590.4_picker-warm2")
 
         element("tone_cool1", in: app).tap()
@@ -99,12 +97,10 @@ final class ColorToneUITests: XCTestCase {
         app = launch()
         openCapsule(app)
         XCTAssertEqual(element("toneButton", in: app).label, "色調：暖 2", "590.6 kept after relaunch")
-        XCTAssertTrue(element("toneTint", in: app).exists, "590.6 the tint is back too")
         element("toneButton", in: app).tap()
         XCTAssertTrue(element("tone_warm2", in: app).waitForExistence(timeout: 3))
         XCTAssertTrue(element("tone_warm2", in: app).isSelected, "590.6 the picker shows the last tone")
         element("tone_standard", in: app).tap()
-        XCTAssertFalse(element("toneTint", in: app).exists, "590.4 back to standard removes the tint")
     }
 
     /// 590.8: with the top edge pointing left (`-UITestCaptureRotationAngle 0`)
