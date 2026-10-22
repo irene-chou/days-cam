@@ -261,10 +261,16 @@ enum FocusExposureTrigger: Equatable {
 /// (issue #303). Pure, so the rules are testable without a device.
 enum FocusExposurePolicy {
     /// True when `trigger` must reset to continuous auto with bias 0.
-    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool) -> Bool {
+    ///
+    /// `isAtInitial` is whether focus and exposure are already at their
+    /// initial continuous-auto state (never tapped): a zoom preset then has
+    /// nothing to reset, so it does not trigger a needless re-focus and
+    /// re-meter (issue #601).
+    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool, isAtInitial: Bool = false) -> Bool {
         switch trigger {
         case .subjectAreaChanged: return !isLocked
-        case .cameraFlipped, .zoomPresetSelected, .enteredForeground: return true
+        case .zoomPresetSelected: return isLocked || !isAtInitial
+        case .cameraFlipped, .enteredForeground: return true
         case .pinchZoomed: return false
         }
     }
@@ -857,18 +863,24 @@ extension CameraService {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoInput?.device else { return }
             let rate: Float? = animated ? CameraService.presetRampRate : nil
-            guard CameraService.applyZoom(displayFactor, to: device, rampRate: rate) != nil else { return }
+            guard let applied = CameraService.applyZoom(displayFactor, to: device, rampRate: rate) else { return }
             // A preset can change the physical lens, whose focus and exposure
-            // the old tap no longer describes (issue #303).
-            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: self.focusExposureShadow.isLocked) {
+            // the old tap no longer describes (issue #303); with nothing ever
+            // tapped there is nothing to undo (issue #601).
+            let shadow = self.focusExposureShadow
+            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected,
+                                               isLocked: shadow.isLocked,
+                                               isAtInitial: shadow == .initial) {
                 self.resetFocusExposure(on: device)
             }
-            self.publishZoom(of: device)
+            // A ramp is still at its start here, so publish where it is going.
+            self.publishZoom(of: device, displayFactor: applied)
         }
     }
 
     /// How fast a quick-zoom ramp runs, in doublings of the factor per second.
-    static let presetRampRate: Float = 4
+    /// Measured on an iPhone 17: 4 took about 0.35 s for 0.5× to 1× (issue #601).
+    static let presetRampRate: Float = 8
 
     /// The display range a device with these available factors accepts, where
     /// display 1× is device factor `base`: its own range, with the top capped
@@ -901,7 +913,10 @@ extension CameraService {
         // A pinch cuts a running ramp short rather than fighting it.
         if device.isRampingVideoZoom { device.cancelVideoZoomRamp() }
         let target = lens.deviceFactor(forDisplay: clamped)
-        if let rampRate {
+        // The camera cannot change lens smoothly, so a ramp across a switch-over
+        // only stretches the jump; set it directly and ramp within one lens.
+        let crossesLens = lens.crossesSwitchOver(from: device.videoZoomFactor, to: target)
+        if let rampRate, !crossesLens {
             device.ramp(toVideoZoomFactor: target, withRate: rampRate)
         } else {
             device.videoZoomFactor = target
@@ -1468,14 +1483,17 @@ private extension CameraService {
 
     /// Publishes `device`'s current display factor, range and presets. Runs on
     /// `sessionQueue`.
-    func publishZoom(of device: ZoomableCaptureDevice) {
+    ///
+    /// `displayFactor` overrides the device's reading, for a ramp that has not
+    /// moved yet.
+    func publishZoom(of device: ZoomableCaptureDevice, displayFactor override: CGFloat? = nil) {
         let lens = device.zoomLens
         let plan = ZoomPlan.make(lens: lens,
                                  minAvailable: device.minAvailableVideoZoomFactor,
                                  maxAvailable: device.maxAvailableVideoZoomFactor,
                                  offersCropPresets: sessionFacing == .back)
         let range = plan.range
-        let factor = lens.displayFactor(forDevice: device.videoZoomFactor)
+        let factor = override ?? lens.displayFactor(forDevice: device.videoZoomFactor)
         onMain { [weak self] in
             guard let self else { return }
             if self.availableZoomPresets != plan.presets { self.availableZoomPresets = plan.presets }

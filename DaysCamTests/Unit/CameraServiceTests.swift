@@ -1295,8 +1295,19 @@ final class FocusExposurePolicyTests: XCTestCase {
         XCTAssertTrue(FocusExposurePolicy.shouldReset(on: .subjectAreaChanged, isLocked: false))
     }
 
-    func testFlipPresetAndForegroundAlwaysReset() {
-        for trigger in [FocusExposureTrigger.cameraFlipped, .zoomPresetSelected, .enteredForeground] {
+    /// #601: a preset resets unless focus and exposure were never touched.
+    func testZoomPresetResetsOnlyWhenLockedOrTouched() {
+        func reset(locked: Bool, initial: Bool) -> Bool {
+            FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: locked, isAtInitial: initial)
+        }
+        XCTAssertFalse(reset(locked: false, initial: true))
+        XCTAssertTrue(reset(locked: true, initial: true))
+        XCTAssertTrue(reset(locked: false, initial: false))
+        XCTAssertTrue(reset(locked: true, initial: false))
+    }
+
+    func testFlipAndForegroundAlwaysReset() {
+        for trigger in [FocusExposureTrigger.cameraFlipped, .enteredForeground] {
             XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: true), "\(trigger) locked")
             XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: false), "\(trigger) unlocked")
         }
