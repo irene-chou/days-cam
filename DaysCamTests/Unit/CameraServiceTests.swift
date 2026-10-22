@@ -664,6 +664,40 @@ final class CameraServiceCaptureRotationTests: XCTestCase {
         wait(for: [changed], timeout: 2)
         XCTAssertEqual(service.captureRotationAngle, 270)
     }
+
+    /// #600-2: the viewfinder angle is upright by default and stays so
+    /// through start and switch without a camera.
+    func testViewfinderAngleStaysUprightWithoutACamera() {
+        let service = CameraService(isCaptureSupported: false)
+        XCTAssertEqual(service.viewfinderRotationAngle, 90)
+
+        service.start()
+        service.switchCamera()
+        settle()
+        service.stop()
+        settle()
+
+        XCTAssertEqual(service.viewfinderRotationAngle, 90)
+    }
+
+    /// #600-2: an unchanged viewfinder angle is not re-published, and the
+    /// capture angle is left alone.
+    func testSameViewfinderValueIsNotRepublished() {
+        let service = CameraService(isCaptureSupported: false)
+        var willChangeCount = 0
+        service.objectWillChange
+            .sink { willChangeCount += 1 }
+            .store(in: &cancellables)
+
+        service.publish(viewfinderRotationAngle: 90)
+        XCTAssertEqual(willChangeCount, 0)
+
+        service.publish(viewfinderRotationAngle: 0)
+        service.publish(viewfinderRotationAngle: 0)
+        XCTAssertEqual(willChangeCount, 1)
+        XCTAssertEqual(service.viewfinderRotationAngle, 0)
+        XCTAssertEqual(service.captureRotationAngle, 90)
+    }
 }
 
 // MARK: - Front camera mirroring (issue #272, TASK-59)
