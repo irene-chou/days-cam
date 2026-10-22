@@ -879,8 +879,9 @@ extension CameraService {
     }
 
     /// How fast a quick-zoom ramp runs, in doublings of the factor per second.
-    /// Measured on an iPhone 17: 4 took about 0.35 s for 0.5× to 1× (issue #601).
-    static let presetRampRate: Float = 8
+    /// Kept at 4: on an iPhone 17 a ramp across the lens switch-over felt
+    /// smoother at 4 than at 8 or 2 (issue #601, human comparison).
+    static let presetRampRate: Float = 4
 
     /// The display range a device with these available factors accepts, where
     /// display 1× is device factor `base`: its own range, with the top capped
