@@ -42,5 +42,5 @@
 8. **系統字型第一次比對會真的連網下載**（數 MB 到 66 MB）。單元測試一律注入假比對介面；只有標明的整合測試會連網，沒網路時略過並在 PR 註明。
 9. **日期的渲染路徑永不讀取 `startDate`**（PRD FR-2.17）；**`startDate` 不可夾帶 `timeZone`**（PRD §4.1 不變條件 2）。
 10. **`CameraScreen.swift` 由 ui-shell 獨佔**；ui-panel 要在觀景窗上加東西時向 ui-shell 提需求。
-11. **面板只有「樣式｜內容」兩段，面板打開就能拖曳疊字**：「位置」分頁與 `PositionTabView` 已於 #568 移除，九宮格收進「內容」分頁「文字內容」卡的「位置」列（#567，`PositionGridView`，固定 88pt）。樣式分頁也能拖、也有白色虛線框，是人類 2026-10-14 的決定，不是 bug（PRD-0.2 FR-8.4、FR-12.1、FR-12.4）；PRD-0.3 FR-17.3／17.5 的三段與位置分頁描述已過時。#568 一度把分頁名稱改成「版面」，1.2.0 #584 改回「內容」。
-12. **橫拿時取景框疊字與圖示會轉、預覽層與介面不轉**（#571／#572，PRD 0.1 §6.6）：`CameraScreen` 把疊字、底片日期、倒數包成一層依 `ViewfinderRotation` 旋轉，`rotatedChrome` 只轉按鈕 label。橫拿時 `ImageCropper` 把 9:16 裁成 16:9、`.custom` 位置分數相對橫向成品，都是刻意的。模擬器角度永遠 90，UI 測試用 `-UITestCaptureRotationAngle`。
+11. **面板只有「樣式｜內容」兩段，面板打開就能拖曳疊字**：「位置」分頁與 `PositionTabView` 已於 #568 移除，九宮格收進「內容」分頁「文字內容」卡的「位置」列（#567，`PositionGridView`，固定 88pt）。樣式分頁也能拖，是人類 2026-10-14 的決定；虛線框自 1.3.0（#599）起只在按住與面板打開瞬間出現，面板開著卻沒框不是漏畫，不是 bug（PRD-0.2 FR-8.4、FR-12.1、FR-12.4）；PRD-0.3 FR-17.3／17.5 的三段與位置分頁描述已過時。#568 一度把分頁名稱改成「版面」，1.3.0 #584 改回「內容」。
+12. **橫拿時取景框疊字與圖示會轉、預覽層與介面不轉**（#571／#572，PRD 0.1 §6.6）：`CameraScreen` 把疊字、底片日期、倒數包成一層依 `ViewfinderRotation` 旋轉，`rotatedChrome` 只轉按鈕 label。橫拿時 `ImageCropper` 把 9:16 裁成 16:9、`.custom` 位置分數相對橫向成品，都是刻意的。模擬器角度永遠 90，UI 測試用 `-UITestCaptureRotationAngle`（餵的是取景框角度）。前鏡頭的 `captureRotationAngle` 與 `viewfinderRotationAngle` 不相等、後鏡頭相等，是刻意的（#600）；成品永遠用 capture 角度。
