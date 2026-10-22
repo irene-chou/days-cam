@@ -1,8 +1,8 @@
 import XCTest
 
 /// #568: with the panel open, the overlay text can be dragged from either tab
-/// and shows a dashed frame (exposed to tests as the `overlayTextDraggable`
-/// identifier); with it closed the text neither drags nor shows the frame.
+/// and is exposed to tests as `overlayTextDraggable` (the dashed frame itself only
+/// shows while pressed or briefly on open, #599); closed, it does not drag.
 /// With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
 /// screenshots are also written there.
 final class OverlayDragUITests: XCTestCase {
@@ -58,14 +58,17 @@ final class OverlayDragUITests: XCTestCase {
         return row.label
     }
 
-    /// #568-5／7: on 樣式 the frame shows and a drag leaves 自訂位置 on the row.
+    /// #568-5／7: on 樣式 the text is draggable and a drag leaves 自訂位置 on the row.
     func testDragOnStyleTab() {
         openPanel()
         XCTAssertTrue(app.buttons["樣式"].isSelected)
-        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 dashed frame on 樣式")
+        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 draggable on 樣式")
         let text = element("overlayTextDraggable")
         let before = text.frame
-        shot("style-tab-dashed-frame")
+        // #599-1: the open-time hint is gone after 1s, so the style tab is clean.
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(text.frame.intersects(app.frame), "599.1 the text is in view")
+        shot("style-tab-no-frame")
         dragText(text)
         XCTAssertLessThan(text.frame.midX, before.midX - 20, "568.5 the text followed the finger")
         XCTAssertEqual(openPositionRowLabel(), "位置，自訂位置", "568.5 saved as custom")
@@ -76,7 +79,7 @@ final class OverlayDragUITests: XCTestCase {
         openPanel()
         app.buttons["內容"].tap()
         XCTAssertTrue(app.buttons["內容"].isSelected)
-        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 dashed frame on 內容")
+        XCTAssertTrue(element("overlayTextDraggable").waitForExistence(timeout: 3), "568.7 draggable on 內容")
         let text = element("overlayTextDraggable")
         let before = text.frame
         dragText(text)
@@ -85,10 +88,11 @@ final class OverlayDragUITests: XCTestCase {
         XCTAssertEqual(row.label, "位置，自訂位置", "568.5 saved as custom")
     }
 
-    /// #568-6／7: closed, no frame, a drag does not move the text, a tap opens the panel.
+    /// #568-6／7: closed, not draggable, a drag does not move the text, a tap opens the panel.
     func testClosedPanelDoesNotDrag() {
         XCTAssertTrue(overlayText.waitForExistence(timeout: 5))
-        XCTAssertFalse(element("overlayTextDraggable").exists, "568.7 no frame while closed")
+        XCTAssertTrue(element("overlayText").exists, "568.7 plain identifier while closed")
+        XCTAssertFalse(element("overlayTextDraggable").exists, "568.7 not draggable while closed")
         let before = overlayText.frame
         dragText(overlayText)
         XCTAssertEqual(overlayText.frame.midX, before.midX, accuracy: 2, "568.6 did not move")

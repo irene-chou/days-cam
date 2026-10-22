@@ -31,6 +31,11 @@ final class OverlayPanelModel: ObservableObject {
     /// value across `close()`/`open()` for the rest of this launch (A-4).
     @Published var selectedTab: Tab = .style
 
+    /// Bumps each time the panel goes from closed to open, so the viewfinder's
+    /// overlay text flashes its dashed frame once as a drag hint (#599).
+    /// Re-opening while open, closing and switching tabs never bump it.
+    @Published private(set) var dragHintSerial = 0
+
     /// The position model's drag adapter (`CameraScreenModel` assigns it).
     /// `nil` until then, so the overlay is simply not draggable yet — see
     /// `CameraScreen`'s use of this alongside `isOverlayDraggable`.
@@ -40,6 +45,7 @@ final class OverlayPanelModel: ObservableObject {
 
     /// Expands the panel (PRD 0.2 FR-8.1).
     func open() {
+        if !isOpen { dragHintSerial += 1 }
         isOpen = true
     }
 

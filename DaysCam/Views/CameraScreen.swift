@@ -496,7 +496,8 @@ struct CameraScreen: View {
                                 // closed and does nothing while it is open — in
                                 // particular it never collapses it (TASK-105,
                                 // #420; PRD 0.2 FR-8.7).
-                                onTap: { model.handleOverlayTextTap() })
+                                onTap: { model.handleOverlayTextTap() },
+                                dragHintSerial: model.panelModel.dragHintSerial)
 
                 // The film date sits above the overlay text and is independent
                 // of it; same box, same short edge, same code as the bake
