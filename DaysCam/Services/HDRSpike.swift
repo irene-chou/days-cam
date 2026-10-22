@@ -15,7 +15,7 @@ enum HDRSpike {
     static func decide(for id: UUID) {
         lock.lock(); defer { lock.unlock() }
         decisions += 1
-        modes[id] = alternates ? decisions % 2 == 0 : isHDRPathOn
+        modes[id] = alternates ? (decisions > 20 || decisions % 2 == 0) : isHDRPathOn
     }
     static func usesHDR(_ id: UUID?) -> Bool {
         lock.lock(); defer { lock.unlock() }
