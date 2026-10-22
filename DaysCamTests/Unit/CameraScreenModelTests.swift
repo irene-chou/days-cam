@@ -1030,7 +1030,7 @@ final class CameraScreenModelTests: XCTestCase {
     // MARK: - processCapturedImage (TASK-10 bake wiring)
 
     private func sampleContext(_ now: Date) -> CameraScreenModel.CaptureContext {
-        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing), font: .pingFang, filmDate: nil)
+        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing), font: .pingFang, filmDate: nil, tone: .standard)
     }
 
     func testProcessCapturedImagePassesTheContextThroughToBake() throws {
@@ -2056,6 +2056,27 @@ final class CameraScreenModelTests: XCTestCase {
         model.toggleTonePicker()
         model.collapseCameraTools()
         XCTAssertFalse(model.isTonePickerOpen, "590.2 collapse closes it too")
+    }
+
+    func testBakeReceivesTheToneFixedWhenTheShutterFires() throws {
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.setColorTone(.cool2)
+        var finishCapture: ((Result<UIImage, CameraCaptureError>) -> Void)?
+        let received = expectation(description: "baked")
+        var receivedTone: ColorTone?
+        let (model, _, _, _) = makeModel(now: try fixedNow(),
+                                         captureSettingsStore: settings,
+                                         bake: { _, _, _, _, _, _, _, tone in
+                                             receivedTone = tone
+                                             received.fulfill()
+                                             return UIImage()
+                                         },
+                                         captureImage: { _, completion in finishCapture = completion })
+        model.beginCapture(profile: try XCTUnwrap(model.selectedProfile))
+        settings.setColorTone(.warm2) // changed after the shutter, before the photo comes back
+        finishCapture?(.success(UIImage()))
+        wait(for: [received], timeout: 3)
+        XCTAssertEqual(receivedTone, .cool2, "590.5 the tone of the shutter instant")
     }
 
     func testBakeReceivesTheToneChosenWhenTheCountdownEnds() throws {

@@ -37,10 +37,23 @@ final class PreviewFrameOutputTests: XCTestCase {
         let connection = FakeConnection()
         PreviewFrameOutput.configure(connection, facing: .back, isActive: frameOutput.isActive)
         XCTAssertFalse(connection.isEnabled, "standard: no frames are produced")
-        frameOutput.setHandler { _ in }
+        let owner = NSObject()
+        frameOutput.setHandler({ _ in }, owner: owner)
         PreviewFrameOutput.configure(connection, facing: .back, isActive: frameOutput.isActive)
         XCTAssertTrue(connection.isEnabled)
-        frameOutput.setHandler(nil)
+        frameOutput.clearHandler(owner: owner)
+        PreviewFrameOutput.configure(connection, facing: .back, isActive: frameOutput.isActive)
+        XCTAssertFalse(connection.isEnabled, "removed: the connection goes off again")
+    }
+
+    func testAStaleOwnerCannotClearANewerHandler() {
+        let frameOutput = PreviewFrameOutput()
+        let old = NSObject(), new = NSObject()
+        frameOutput.setHandler({ _ in }, owner: old)
+        frameOutput.setHandler({ _ in }, owner: new)
+        frameOutput.clearHandler(owner: old)
+        XCTAssertTrue(frameOutput.isActive, "the newer view's handler survives")
+        frameOutput.clearHandler(owner: new)
         XCTAssertFalse(frameOutput.isActive)
     }
 

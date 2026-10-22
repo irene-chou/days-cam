@@ -787,14 +787,24 @@ extension CameraService {
 
 extension CameraService {
 
-    /// Starts (or, with nil, stops) delivering upright BGRA viewfinder frames
-    /// for the live tone filter (#590). The handler runs on a background
-    /// queue. With no handler the frame connection is off, so nothing is
-    /// produced or processed.
-    func setPreviewFrameHandler(_ handler: ((CVPixelBuffer) -> Void)?) {
-        frameOutput.setHandler(handler)
+    /// Starts delivering upright BGRA viewfinder frames to `handler` for the
+    /// live tone filter (#590), replacing any other owner's. The handler runs
+    /// on a background queue. With no handler the frame connection is off, so
+    /// nothing is produced or processed.
+    func setPreviewFrameHandler(_ handler: @escaping (CVPixelBuffer) -> Void, owner: AnyObject) {
+        frameOutput.setHandler(handler, owner: owner)
         sessionQueue.async { [weak self] in self?.applyFrameConnection() }
     }
+
+    /// Stops the frames `owner` asked for; does nothing if another owner has
+    /// installed a handler since.
+    func clearPreviewFrameHandler(owner: AnyObject) {
+        frameOutput.clearHandler(owner: owner)
+        sessionQueue.async { [weak self] in self?.applyFrameConnection() }
+    }
+
+    /// Whether any handler is installed, i.e. whether frames are flowing.
+    var isPreviewFrameHandlerActive: Bool { frameOutput.isActive }
 }
 
 // MARK: - Zoom

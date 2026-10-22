@@ -1269,11 +1269,12 @@ extension CameraScreenModel {
         let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
         let font = resolveFont(profile.style, fontLibrary)
         return (capturedAt, text, profile.style, profile.position, font,
-                filmDateStamp(for: profile, capturedAt: capturedAt))
+                filmDateStamp(for: profile, capturedAt: capturedAt), captureSettingsStore.colorTone)
     }
 
-    /// Everything the baking needs, fixed at the instant the shutter fires.
-    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont, filmDate: FilmDateStamp?)
+    /// Everything the baking needs, fixed at the instant the shutter fires
+    /// (the color tone included, #590).
+    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont, filmDate: FilmDateStamp?, tone: ColorTone)
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
     /// FR-7.6).
@@ -1414,7 +1415,6 @@ extension CameraScreenModel {
         let bake = self.bake
         let save = self.save
         let aspectRatio = captureSettingsStore.captureAspectRatio
-        let tone = captureSettingsStore.colorTone
         // Only the capture's ID is kept for the timing log, so a pending save
         // timeout does not hold the full-resolution photo in memory.
         let timingID = CaptureTiming.timingID(of: image)
@@ -1432,7 +1432,7 @@ extension CameraScreenModel {
                 let pixelSize = CGSize(width: image.size.width * image.scale,
                                        height: image.size.height * image.scale)
                 let window = cropRect(pixelSize, aspectRatio)
-                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate, tone)
+                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate, context.tone)
             }
             guard let baked else {
                 // PRD §7.3: baking failure. Not saved, no success toast.

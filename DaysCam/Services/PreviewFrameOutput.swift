@@ -26,10 +26,14 @@ final class PreviewFrameOutput: NSObject, AVCaptureVideoDataOutputSampleBufferDe
     let output = AVCaptureVideoDataOutput()
 
     private let queue = DispatchQueue(label: "com.irenechou.DaysCam.preview-frames", qos: .userInteractive)
-    private let handler = OSAllocatedUnfairLock<((CVPixelBuffer) -> Void)?>(initialState: nil)
+    private struct Registration {
+        var handler: ((CVPixelBuffer) -> Void)?
+        var owner: ObjectIdentifier?
+    }
+    private let registration = OSAllocatedUnfairLock(initialState: Registration())
 
     /// Whether a handler is installed, i.e. whether frames should flow.
-    var isActive: Bool { handler.withLock { $0 != nil } }
+    var isActive: Bool { registration.withLock { $0.handler != nil } }
 
     override init() {
         super.init()
@@ -37,10 +41,18 @@ final class PreviewFrameOutput: NSObject, AVCaptureVideoDataOutputSampleBufferDe
         output.setSampleBufferDelegate(self, queue: queue)
     }
 
-    /// Installs (or, with nil, removes) the frame handler. It runs on the
-    /// frame queue, not the main queue.
-    func setHandler(_ newHandler: ((CVPixelBuffer) -> Void)?) {
-        handler.withLock { $0 = newHandler }
+    /// Installs `newHandler` for `owner`, replacing any other owner's. It
+    /// runs on the frame queue, not the main queue.
+    func setHandler(_ newHandler: @escaping (CVPixelBuffer) -> Void, owner: AnyObject) {
+        registration.withLock { $0 = Registration(handler: newHandler, owner: ObjectIdentifier(owner)) }
+    }
+
+    /// Removes the handler, but only if `owner` still owns it: a view torn
+    /// down after its replacement was installed must not clear the new one.
+    func clearHandler(owner: AnyObject) {
+        registration.withLock {
+            if $0.owner == ObjectIdentifier(owner) { $0 = Registration() }
+        }
     }
 
     /// BGRA, and late frames dropped rather than queued so the live picture
@@ -63,7 +75,7 @@ final class PreviewFrameOutput: NSObject, AVCaptureVideoDataOutputSampleBufferDe
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        guard let handler = handler.withLock({ $0 }),
+        guard let handler = registration.withLock({ $0.handler }),
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         handler(pixelBuffer)
     }

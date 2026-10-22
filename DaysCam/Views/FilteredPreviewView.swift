@@ -12,13 +12,27 @@ import SwiftUI
 /// handler the camera produces no frames at all.
 struct FilteredPreviewView: UIViewRepresentable {
     let tone: ColorTone
-    /// Installs or removes the frame handler (`CameraService.setPreviewFrameHandler`).
-    let setFrameHandler: (((CVPixelBuffer) -> Void)?) -> Void
+    let service: CameraService
+
+    /// Owns the frame handler's install and removal, so the handler goes
+    /// away exactly when this view does. Each view has its own coordinator,
+    /// and the service only clears a handler its owner still holds, so an old
+    /// view dismantled after its replacement went in leaves the new one alone.
+    final class Coordinator {
+        let service: CameraService
+        init(service: CameraService) { self.service = service }
+
+        func install(on view: FilteredPreviewMetalView) {
+            service.setPreviewFrameHandler({ [weak view] buffer in view?.receive(buffer) }, owner: self)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(service: service) }
 
     func makeUIView(context: Context) -> FilteredPreviewMetalView {
         let view = FilteredPreviewMetalView()
         view.tone = tone
-        setFrameHandler { [weak view] buffer in view?.receive(buffer) }
+        context.coordinator.install(on: view)
         return view
     }
 
@@ -26,8 +40,9 @@ struct FilteredPreviewView: UIViewRepresentable {
         uiView.tone = tone
     }
 
-    static func dismantleUIView(_ uiView: FilteredPreviewMetalView, coordinator: ()) {
+    static func dismantleUIView(_ uiView: FilteredPreviewMetalView, coordinator: Coordinator) {
         uiView.stop()
+        coordinator.service.clearPreviewFrameHandler(owner: coordinator)
     }
 }
 

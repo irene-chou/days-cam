@@ -456,7 +456,7 @@ struct CameraScreen: View {
             // `.standard`, so then no frame is produced or processed.
             if !model.showsPlaceholder, model.captureSettingsStore.colorTone != .standard {
                 FilteredPreviewView(tone: model.captureSettingsStore.colorTone,
-                                    setFrameHandler: model.cameraService.setPreviewFrameHandler)
+                                    service: model.cameraService)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }

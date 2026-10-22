@@ -68,4 +68,28 @@ final class FilteredPreviewViewTests: XCTestCase {
         XCTAssertGreaterThan(top.y, bottom.y)
         XCTAssertEqual(transform.d, 0.5, accuracy: 0.001, "scaled, never mirrored vertically")
     }
+
+    func testTheHandlerIsRemovedWhenTheViewGoesAway() {
+        let service = CameraService()
+        let coordinator = FilteredPreviewView.Coordinator(service: service)
+        let view = FilteredPreviewMetalView()
+        coordinator.install(on: view)
+        XCTAssertTrue(service.isPreviewFrameHandlerActive)
+        FilteredPreviewView.dismantleUIView(view, coordinator: coordinator)
+        XCTAssertFalse(service.isPreviewFrameHandlerActive, "590 no frames once the view is gone")
+    }
+
+    func testDismantlingAnOldViewLeavesTheReplacementsHandler() {
+        let service = CameraService()
+        let oldCoordinator = FilteredPreviewView.Coordinator(service: service)
+        let newCoordinator = FilteredPreviewView.Coordinator(service: service)
+        let oldView = FilteredPreviewMetalView()
+        let newView = FilteredPreviewMetalView()
+        oldCoordinator.install(on: oldView)
+        newCoordinator.install(on: newView) // the new view is made before the old one is torn down
+        FilteredPreviewView.dismantleUIView(oldView, coordinator: oldCoordinator)
+        XCTAssertTrue(service.isPreviewFrameHandlerActive)
+        FilteredPreviewView.dismantleUIView(newView, coordinator: newCoordinator)
+        XCTAssertFalse(service.isPreviewFrameHandlerActive)
+    }
 }
