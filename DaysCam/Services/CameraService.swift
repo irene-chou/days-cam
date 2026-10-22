@@ -418,9 +418,9 @@ final class CameraService: ObservableObject {
     ///
     /// Not the same as `captureRotationAngle`: that one follows the sensor's
     /// mounting, which differs between the front and back cameras, so it is
-    /// right for the photo but wrong for the viewfinder. Source is the rotation
-    /// coordinator's `videoRotationAngleForHorizonLevelPreview`. Stays 90
-    /// forever when there is no camera (`isCaptureSupported == false`).
+    /// right for the photo but wrong for the viewfinder. Derived from the
+    /// capture angle per camera side (`viewfinderRotationAngle(captureAngle:facing:)`).
+    /// Stays 90 forever when there is no camera (`isCaptureSupported == false`).
     @Published private(set) var viewfinderRotationAngle: CGFloat = 90
 
     /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
@@ -576,8 +576,6 @@ final class CameraService: ObservableObject {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     /// KVO on the coordinator's capture angle. Touched on `sessionQueue` only.
     private var rotationObservation: NSKeyValueObservation?
-    /// KVO on the coordinator's preview angle. Touched on `sessionQueue` only.
-    private var previewRotationObservation: NSKeyValueObservation?
     /// Keeps each in-flight capture delegate alive; AVFoundation does not
     /// retain it. Touched on `sessionQueue` only.
     private var captureDelegates: [ObjectIdentifier: PhotoCaptureDelegate] = [:]
@@ -1506,8 +1504,8 @@ extension CameraService {
     /// `sessionQueue`; the published value changes on main via `publish`.
     private func installRotationCoordinator(for device: AVCaptureDevice) {
         rotationObservation?.invalidate()
-        previewRotationObservation?.invalidate()
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        let facing = sessionFacing
         rotationCoordinator = coordinator
         rotationObservation = coordinator.observe(
             \.videoRotationAngleForHorizonLevelCapture,
@@ -1518,18 +1516,31 @@ extension CameraService {
             self.sessionQueue.async { [weak self] in
                 guard let self, self.rotationCoordinator === coordinator else { return }
                 self.publish(captureRotationAngle: angle)
+                self.publish(viewfinderRotationAngle: CameraService.viewfinderRotationAngle(
+                    captureAngle: angle, facing: facing))
             }
         }
-        previewRotationObservation = coordinator.observe(
-            \.videoRotationAngleForHorizonLevelPreview,
-            options: [.initial, .new]
-        ) { [weak self] coordinator, change in
-            let angle = change.newValue ?? coordinator.videoRotationAngleForHorizonLevelPreview
-            guard let self else { return }
-            self.sessionQueue.async { [weak self] in
-                guard let self, self.rotationCoordinator === coordinator else { return }
-                self.publish(viewfinderRotationAngle: angle)
-            }
+    }
+
+    /// The viewfinder angle for a capture angle, so both cameras give the same
+    /// value for the same phone pose (issue #600).
+    ///
+    /// Measured on an iPhone 17 (`videoRotationAngleForHorizonLevelPreview`
+    /// stays 0 with a nil preview layer, so it cannot be used):
+    ///
+    /// | pose            | back capture | front capture |
+    /// |-----------------|--------------|---------------|
+    /// | upright         | 90           | 0             |
+    /// | top to the left | 0            | 90            |
+    /// | top to the right| 180          | 270           |
+    /// | upside down     | 270          | 180           |
+    ///
+    /// Back is the `ViewfinderRotation` table already; front mirrors it
+    /// (`90 - capture`), as the front sensor faces the other way.
+    static func viewfinderRotationAngle(captureAngle: CGFloat, facing: CameraFacing) -> CGFloat {
+        switch facing {
+        case .back: return captureAngle
+        case .front: return (90 - captureAngle + 360).truncatingRemainder(dividingBy: 360)
         }
     }
 

@@ -680,6 +680,18 @@ final class CameraServiceCaptureRotationTests: XCTestCase {
         XCTAssertEqual(service.viewfinderRotationAngle, 90)
     }
 
+    /// #600: measured table, front and back, four poses each.
+    func testViewfinderAngleTableMatchesMeasuredCaptureAngles() {
+        // (pose viewfinder angle, back capture, front capture)
+        let rows: [(CGFloat, CGFloat, CGFloat)] = [
+            (90, 90, 0), (0, 0, 90), (180, 180, 270), (270, 270, 180),
+        ]
+        for (expected, back, front) in rows {
+            XCTAssertEqual(CameraService.viewfinderRotationAngle(captureAngle: back, facing: .back), expected)
+            XCTAssertEqual(CameraService.viewfinderRotationAngle(captureAngle: front, facing: .front), expected)
+        }
+    }
+
     /// #600-2: an unchanged viewfinder angle is not re-published, and the
     /// capture angle is left alone.
     func testSameViewfinderValueIsNotRepublished() {
