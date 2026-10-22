@@ -1443,6 +1443,33 @@ extension CameraScreenModel {
                 }
                 return
             }
+            if HDRSpike.usesHDR(timingID), let raw = HDRSideChannel.raw(of: image) {
+                let started = CFAbsoluteTimeGetCurrent()
+                let sourcePixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+                let window = cropRect(sourcePixels, aspectRatio)
+                if baked === image {
+                    // Nothing printed or cropped: the original file goes in untouched.
+                    HDRSideChannel.attachOutput(raw, to: baked)
+                    HDRSpike.log("hdr passthrough bytes=\(raw.count)")
+                } else if let cg = baked.cgImage {
+                    let coverage = autoreleasepool {
+                        OverlayRenderer().overlayCoverage(text: context.text, style: context.style,
+                                                          placement: context.placement, font: context.font,
+                                                          pixelSize: CGSize(width: cg.width, height: cg.height),
+                                                          filmDate: context.filmDate)
+                    }
+                    let composed = autoreleasepool {
+                        HDRGainMapComposer.compose(source: raw, baked: cg, window: window ?? CGRect(origin: .zero, size: sourcePixels),
+                                                   overlayCoverage: coverage)
+                    }
+                    if let composed {
+                        HDRSideChannel.attachOutput(composed, to: baked)
+                        HDRSpike.log("hdr composed bytes=\(composed.count) ms=\(Int((CFAbsoluteTimeGetCurrent() - started) * 1000))")
+                    } else {
+                        HDRSpike.log("hdr compose failed, falling back to SDR")
+                    }
+                }
+            }
             // Downscaled here, off the main thread, alongside the bake work
             // it depends on: a 12MP `UIImage` is not something the thumbnail
             // (88px) or the flight animation (~600px) should hold on to.

@@ -126,6 +126,32 @@ struct OverlayRenderer {
         }
     }
 
+    /// Spike #587: where `bake` would draw the overlay and film date, as alpha
+    /// coverage at `pixelSize` (the cropped canvas), for masking the gain map.
+    func overlayCoverage(text: String, style: OverlayStyle, placement: OverlayPlacement,
+                         font: ResolvedOverlayFont, pixelSize: CGSize, filmDate: FilmDateStamp?) -> CGImage? {
+        guard !text.isEmpty || filmDate != nil,
+              let context = CGContext(data: nil, width: Int(pixelSize.width.rounded(.up)),
+                                      height: Int(pixelSize.height.rounded(.up)), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return nil }
+        context.translateBy(x: 0, y: CGFloat(context.height))
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        if !text.isEmpty {
+            let fontSize = Self.fittedFontSize(for: text, style: style, frameSize: pixelSize, font: font)
+            let block = OverlayLayout(text: text, style: style, font: font, fontSize: fontSize,
+                                      inPlainBitmapContext: true).decoratedText()
+            let origin = OverlayMetrics.origin(forBlockSize: block.size, in: pixelSize, placement: placement)
+            block.draw(context, origin)
+        }
+        if let filmDate {
+            FilmDateRenderer.draw(filmDate, in: context, canvasSize: pixelSize)
+        }
+        UIGraphicsPopContext()
+        return context.makeImage()
+    }
+
     /// Draws only the overlay text — with its outline or box and its shadow —
     /// on a transparent background, at `fontSize` points.
     ///

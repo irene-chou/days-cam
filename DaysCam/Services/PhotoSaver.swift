@@ -92,7 +92,7 @@ struct SystemPhotoLibrary: PhotoLibraryAccessing {
         var assetIdentifier: String?
         var resolvedAlbumIdentifier = existing?.localIdentifier
         PHPhotoLibrary.shared().performChanges({
-            guard let asset = PHAssetChangeRequest.creationRequestForAsset(from: image)
+            guard let asset = PhotoSaver.creationRequest(for: image)
                 .placeholderForCreatedAsset else { return }
             assetIdentifier = asset.localIdentifier
             if let existing {
@@ -150,6 +150,16 @@ final class PhotoSaver {
     /// Named rather than inlined so a static check can confirm the app only
     /// ever asks to add, never to read the user's photos (acceptance 10.1).
     static let accessLevel: PHAccessLevel = .addOnly
+
+    /// Spike #587: HEIF with gain map when the pipeline attached one.
+    static func creationRequest(for image: UIImage) -> PHAssetChangeRequest {
+        if let data = HDRSideChannel.output(of: image) {
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, data: data, options: nil)
+            return request
+        }
+        return PHAssetChangeRequest.creationRequestForAsset(from: image)
+    }
 
     private let library: PhotoLibraryAccessing
     private let albumSettings: AlbumSaveSettings
@@ -276,7 +286,7 @@ final class PhotoSaver {
             // is created and no metadata is written (FR-5.6, PRD §6.2). The
             // placeholder's identifier is available synchronously, before the
             // write commits — this is the one place it can be read.
-            PHAssetChangeRequest.creationRequestForAsset(from: image).placeholderForCreatedAsset?.localIdentifier
+            PhotoSaver.creationRequest(for: image).placeholderForCreatedAsset?.localIdentifier
         } completion: { succeeded, identifier, error in
             let result: Result<T, PhotoSaveError>
             switch (succeeded, identifier) {

@@ -1286,7 +1286,7 @@ extension CameraService {
         settings.maxPhotoDimensions = output.maxPhotoDimensions
         // Never above the output's `maxPhotoQualityPrioritization`, which is
         // also `.balanced`; `.speed` is a quality trade-off left to a human.
-        settings.photoQualityPrioritization = .balanced
+        settings.photoQualityPrioritization = HDRSpike.useQuality ? .quality : .balanced
         // Only ever a mode the output actually reports supporting —
         // assigning an unsupported one is silently ignored by
         // AVFoundation, but checking here keeps the intent explicit
@@ -1306,7 +1306,7 @@ extension CameraService {
     /// is supported depends on the camera and format, and a feature that
     /// became unsupported reverts to off by itself.
     static func configureLowLatencyCapture(on output: PhotoOutputConfiguring) {
-        output.maxPhotoQualityPrioritization = .balanced
+        output.maxPhotoQualityPrioritization = HDRSpike.useQuality ? .quality : .balanced
         // Responsive capture needs zero shutter lag, which is on by default
         // when supported; make sure of it rather than assume.
         if output.isZeroShutterLagSupported, !output.isZeroShutterLagEnabled {
@@ -1678,6 +1678,13 @@ final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             return
         }
         CaptureTiming.markProcessed(id: timingID, image: image)
+        if HDRSpike.dumpsRaw {
+            let index = HDRSpike.nextIndex()
+            HDRSpike.dump(data, name: "raw-\(index).heic")
+            HDRSpike.log("raw-\(index) bytes=\(data.count) px=\(photo.resolvedSettings.photoDimensions.width)x\(photo.resolvedSettings.photoDimensions.height) flash=\(photo.resolvedSettings.isFlashEnabled) orientation=\(photo.metadata[String(kCGImagePropertyOrientation)] ?? "?")")
+        }
+        HDRSpike.decide(for: timingID)
+        HDRSideChannel.attachRaw(data, to: image)
         deliver(.success(image))
     }
 
@@ -1907,14 +1914,15 @@ enum CaptureTiming {
 
     /// Starts timing capture `id` from `start` (DEBUG only).
     static func begin(id: UUID, at start: CFAbsoluteTime) {
-        #if DEBUG
+        #if true
         recorder.begin(id: id, at: start)
+        HDRSpike.captureBegan()
         #endif
     }
 
     /// DEBUG only: records `willCapturePhotoFor`, the start of the exposure.
     static func markWillCapture(id: UUID) {
-        #if DEBUG
+        #if true
         recorder.markWillCapture(id: id, at: CFAbsoluteTimeGetCurrent())
         #endif
     }
@@ -1924,7 +1932,7 @@ enum CaptureTiming {
     /// #499) and, as a separate stage, press → `didFinishCapture`, which
     /// also includes the image processing (TASK-130).
     static func logCaptureFinished(id: UUID) {
-        #if DEBUG
+        #if true
         guard let line = recorder.finishedLine(id: id, at: CFAbsoluteTimeGetCurrent()) else { return }
         logger.debug("\(line, privacy: .public)")
         #endif
@@ -1946,7 +1954,7 @@ enum CaptureTiming {
     /// itself (not on its memory address, which a later photo may reuse), so
     /// the bake and save stages can find their capture again.
     static func markProcessed(id: UUID, image: UIImage) {
-        #if DEBUG
+        #if true
         objc_setAssociatedObject(image, timingIDKey, id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         recorder.markProcessed(id: id,
                                size: CGSize(width: image.size.width * image.scale,
@@ -1964,16 +1972,17 @@ enum CaptureTiming {
     /// DEBUG only: `stage` of capture `id` finished now. Logs once `.saved`
     /// is marked.
     static func mark(_ stage: Stage, id: UUID?) {
-        #if DEBUG
+        #if true
         guard let id, let line = recorder.mark(stage, id: id, at: CFAbsoluteTimeGetCurrent()) else { return }
         logger.debug("\(line, privacy: .public)")
+        HDRSpike.log("timing hdr=\(HDRSpike.usesHDR(id)) quality=\(HDRSpike.useQuality) \(line) peakMB=\(Int(HDRSpike.captureEnded()))")
         #endif
     }
 
     /// DEBUG only: capture `id` will not reach `.saved`.
     static func discard(id: UUID?) {
-        #if DEBUG
-        if let id { recorder.discard(id: id) }
+        #if true
+        if let id { recorder.discard(id: id); _ = HDRSpike.captureEnded() }
         #endif
     }
 }
