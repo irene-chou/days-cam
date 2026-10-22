@@ -158,7 +158,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 |---|---|
 | FR-2.11 | `{n}` 為套用起算規則後的天數（§3.3） |
 | FR-2.12 | 已由 PRD-0.2 §4.5 U-7 取代 |
-| FR-2.13 | **序數只用於單獨的天數**：只勾天且寫法為 `ordinal`（預設）時輸出 `第 {n} 天`；天作為複合式最後一節時用基數 `{n} 天`（PRD-0.2 U-2）。其他寫法見 PRD-0.2 U-11（1.2.0，#582） |
+| FR-2.13 | **序數只用於單獨的天數**：只勾天且寫法為 `ordinal`（預設）時輸出 `第 {n} 天`；天作為複合式最後一節時用基數 `{n} 天`（PRD-0.2 U-2）。其他寫法見 PRD-0.2 U-11（1.3.0，#582） |
 | FR-2.14 | 已由 PRD-0.2 §4.5 U-8 取代 |
 | FR-2.15 | 數字一律半形阿拉伯數字，不做千分位分隔 |
 | FR-2.16 | `{yyyy}.{MM}.{dd}` 為**拍攝時刻**當天的日期，不是起始日 |
@@ -418,7 +418,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 | 6.5.3 | `TemplateRenderer.render` 必須接受 `capturedAt: Date` 參數；**日期分支也必須以它為準**，不得呼叫 `Date()` |
 | 6.5.4 | `OverlayRenderer.bake` 的介面為「（影像, 已渲染好的文字, 樣式）→ 烘焙後的影像」，**不得**綁定影像來源是即時拍攝或載入的檔案 |
 | 6.5.5 | MVP 一律傳入「按下快門的當下」，外顯行為與各層自行讀時鐘完全相同 |
-| 6.5.6 | **烘焙順序**（1.2.0，#589）：色調（`ColorTone`，`ColorToneRenderer` 以 Core Image 色溫＋vibrance 調整）→ 裁切／方向正規化 → 疊字 → 底片日期。疊字與底片日期在調色之後畫，顏色不受色調影響；`standard` 不經 Core Image、輸出與 1.2.0 逐像素相同。`tone` 是 `bake` 的參數（預設 `standard`），仍不綁定影像來源（6.5.4） |
+| 6.5.6 | **烘焙順序**（1.3.0，#589）：色調（`ColorTone`，`ColorToneRenderer` 以 Core Image 色溫＋vibrance 調整）→ 裁切／方向正規化 → 疊字 → 底片日期。疊字與底片日期在調色之後畫，顏色不受色調影響；`standard` 不經 Core Image、輸出與 1.2.0 逐像素相同；快門觸發（倒數結束）當下的色調存進 `CaptureContext`，照片回傳後才改的色調不影響這張。`tone` 是 `bake` 的參數（預設 `standard`），仍不綁定影像來源（6.5.4） |
 
 **為什麼要現在就做**
 
@@ -438,10 +438,10 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 
 > Phase 4 真的要做匯入時的原則（先記在這裡備查）：有 EXIF 就用；沒有或數值不合理時**必須跳 UI 讓使用者手動輸入**，絕不能默默用檔案建立時間充數。
 
-### 6.6 拍攝方向（1.1.0，#571／#572）
+### 6.6 拍攝方向（1.1.0，#571／#572；1.3.0 #600 前鏡頭）
 
 - 介面永遠直式（`UISupportedInterfaceOrientations` 只有 Portrait）；橫拿時**不重排介面**。
-- 成品方向只來自 `AVCaptureDevice.RotationCoordinator` 的 `videoRotationAngleForHorizonLevelCapture`（0／90／180／270，直拿 90）：快門把它設給 `photoOutput` 連線的 `videoRotationAngle`，`CameraService.captureRotationAngle` 把**同一個值**發布給取景框。不用 `UIDevice.orientation`、CoreMotion 或 EXIF 方向推算；手機平放時沿用最後角度；無相機（模擬器）時永遠 90。
+- 成品方向只來自 `AVCaptureDevice.RotationCoordinator` 的 `videoRotationAngleForHorizonLevelCapture`（0／90／180／270，直拿 90）：快門把它設給 `photoOutput` 連線的 `videoRotationAngle`，`CameraService.captureRotationAngle` 發布同一個值。取景框改訂閱 `viewfinderRotationAngle`（依**手機姿勢**，前後鏡頭同一姿勢同一值）：後鏡頭等於 capture 角度；前鏡頭的 capture 角度與後鏡頭左右鏡像，換算為 `(90 − capture) mod 360`（1.3.0，#600，iPhone 17 實機量表見 #600；`videoRotationAngleForHorizonLevelPreview` 在 `previewLayer` 為 nil 時恆為 0，不可用）。不用 `UIDevice.orientation`、CoreMotion 或 EXIF 方向推算；手機平放時沿用最後角度；無相機（模擬器）時永遠 90。
 - 取景框把疊字、底片日期、倒數數字放在同一個圖層，以成品的寬高（橫向時取景框寬高對調）排版後整層繞中心旋轉 `90 − 角度`；預覽層、格線、對焦框、面板、吐司不轉。所以橫拿時 9:16 直框就是成品的 16:9，`ImageCropper` 裁成橫向不是 bug。
 - 拖曳在旋轉圖層內進行，存下的 `.custom` 分數相對橫向成品，與烘焙一致。
 - 工具列、頁尾、變焦圓鈕、AE/AF 鎖定膠囊的圖示像 iOS 相機一樣**原地**轉正（`rotatedChrome`，只轉 label，不轉按鈕本體；觸控區、identifier、accessibility label 不變）；快門、設定檔名稱膠囊、面板、吐司、權限頁不轉。轉動用 `CameraTheme.spring`，「減少動態效果」時不動畫。
