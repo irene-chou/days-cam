@@ -667,7 +667,7 @@ final class CameraScreenModel: ObservableObject {
         if let captureRotationAngleOverride {
             viewfinderRotation = ViewfinderRotation(captureAngle: captureRotationAngleOverride)
         } else {
-            cameraService.$captureRotationAngle
+            cameraService.$viewfinderRotationAngle
                 .map { ViewfinderRotation(captureAngle: $0) }
                 .removeDuplicates()
                 .sink { [weak self] rotation in self?.viewfinderRotation = rotation }

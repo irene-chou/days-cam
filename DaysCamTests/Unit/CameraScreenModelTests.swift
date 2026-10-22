@@ -2470,16 +2470,16 @@ final class CameraScreenModelTests: XCTestCase {
     /// #572-4: with no override the rotation follows the service's angle.
     func testViewfinderRotationFollowsTheServiceAngle() {
         let (model, service) = makeRotationModel(override: nil)
-        service.publish(captureRotationAngle: 0)
+        service.publish(viewfinderRotationAngle: 0)
         waitUntil { model.viewfinderRotation == .landscapeTopLeft }
-        service.publish(captureRotationAngle: 90)
+        service.publish(viewfinderRotationAngle: 90)
         waitUntil { model.viewfinderRotation == .portrait }
     }
 
     /// #572-4: the override wins over later service changes.
     func testOverrideWinsOverTheService() {
         let (model, service) = makeRotationModel(override: 0)
-        service.publish(captureRotationAngle: 180)
+        service.publish(viewfinderRotationAngle: 180)
         let settled = expectation(description: "main queue drains")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { settled.fulfill() }
         wait(for: [settled], timeout: 2)

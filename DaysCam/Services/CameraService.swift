@@ -411,6 +411,18 @@ final class CameraService: ObservableObject {
     /// camera (`isCaptureSupported == false`).
     @Published private(set) var captureRotationAngle: CGFloat = 90
 
+    /// The angle the viewfinder's overlay layer and icons rotate by (issue
+    /// #600). Follows the phone's pose, so both cameras give the same value
+    /// for the same pose: 90 upright, 0 top to the left, 180 top to the
+    /// right, 270 upside down (the `ViewfinderRotation` table).
+    ///
+    /// Not the same as `captureRotationAngle`: that one follows the sensor's
+    /// mounting, which differs between the front and back cameras, so it is
+    /// right for the photo but wrong for the viewfinder. Derived from the
+    /// capture angle per camera side (`viewfinderRotationAngle(captureAngle:facing:)`).
+    /// Stays 90 forever when there is no camera (`isCaptureSupported == false`).
+    @Published private(set) var viewfinderRotationAngle: CGFloat = 90
+
     /// The current camera's zoom factor, 1 meaning unzoomed. Back to 1 on
     /// every camera switch (issue #274).
     ///
@@ -1522,7 +1534,8 @@ private extension CameraService {
 extension CameraService {
 
     /// Replaces the rotation coordinator with one for `device` and keeps
-    /// `captureRotationAngle` following it. Runs on `sessionQueue`.
+    /// `captureRotationAngle` and `viewfinderRotationAngle` following it.
+    /// Runs on `sessionQueue`.
     ///
     /// The old observation is invalidated before the swap, and a callback
     /// that was already running when that happened is dropped by hopping to
@@ -1534,6 +1547,7 @@ extension CameraService {
     private func installRotationCoordinator(for device: AVCaptureDevice) {
         rotationObservation?.invalidate()
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        let facing = sessionFacing
         rotationCoordinator = coordinator
         rotationObservation = coordinator.observe(
             \.videoRotationAngleForHorizonLevelCapture,
@@ -1544,7 +1558,31 @@ extension CameraService {
             self.sessionQueue.async { [weak self] in
                 guard let self, self.rotationCoordinator === coordinator else { return }
                 self.publish(captureRotationAngle: angle)
+                self.publish(viewfinderRotationAngle: CameraService.viewfinderRotationAngle(
+                    captureAngle: angle, facing: facing))
             }
+        }
+    }
+
+    /// The viewfinder angle for a capture angle, so both cameras give the same
+    /// value for the same phone pose (issue #600).
+    ///
+    /// Measured on an iPhone 17 (`videoRotationAngleForHorizonLevelPreview`
+    /// stays 0 with a nil preview layer, so it cannot be used):
+    ///
+    /// | pose            | back capture | front capture |
+    /// |-----------------|--------------|---------------|
+    /// | upright         | 90           | 0             |
+    /// | top to the left | 0            | 90            |
+    /// | top to the right| 180          | 270           |
+    /// | upside down     | 270          | 180           |
+    ///
+    /// Back is the `ViewfinderRotation` table already; front mirrors it
+    /// (`90 - capture`), as the front sensor faces the other way.
+    static func viewfinderRotationAngle(captureAngle: CGFloat, facing: CameraFacing) -> CGFloat {
+        switch facing {
+        case .back: return captureAngle
+        case .front: return (90 - captureAngle + 360).truncatingRemainder(dividingBy: 360)
         }
     }
 
@@ -1555,6 +1593,15 @@ extension CameraService {
         onMain { [weak self] in
             guard let self, self.captureRotationAngle != newValue else { return }
             self.captureRotationAngle = newValue
+        }
+    }
+
+    /// Publishes a new viewfinder angle on the main queue; an unchanged value
+    /// is not re-published. Internal for the same reason as the capture one.
+    func publish(viewfinderRotationAngle newValue: CGFloat) {
+        onMain { [weak self] in
+            guard let self, self.viewfinderRotationAngle != newValue else { return }
+            self.viewfinderRotationAngle = newValue
         }
     }
 }
