@@ -551,6 +551,8 @@ final class CameraService: ObservableObject {
     private let flashCapabilityProvider: FlashCapabilityProviding
     private let sessionQueue = DispatchQueue(label: "com.irenechou.DaysCam.camera-session")
     private let photoOutput: AVCapturePhotoOutput
+    /// Feeds the live-tone viewfinder (#590); off unless a handler is set.
+    private let frameOutput = PreviewFrameOutput()
 
     /// Touched on `sessionQueue` only.
     private var videoInput: AVCaptureDeviceInput?
@@ -746,6 +748,7 @@ extension CameraService {
                 // The input swap rebuilds the output's connection, so its
                 // mirroring is set again for the new side (issue #272).
                 self.applyPhotoMirroring()
+                self.applyFrameConnection()
                 // Supported features and the maximum size changed with the
                 // camera, so the prepared settings are redone for it.
                 self.preparePhotoOutput()
@@ -764,6 +767,7 @@ extension CameraService {
                 CameraService.configureLowLatencyCapture(on: self.photoOutput)
                 self.session.commitConfiguration()
                 self.applyPhotoMirroring()
+                self.applyFrameConnection()
                 self.preparePhotoOutput()
                 // Still the same side, so it keeps its zoom.
                 self.publishZoom(of: previous.device)
@@ -1366,10 +1370,15 @@ private extension CameraService {
             return false
         }
         session.addOutput(photoOutput)
+        // A missing frame output only costs the live tone; the camera works.
+        if session.canAddOutput(frameOutput.output) {
+            session.addOutput(frameOutput.output)
+        }
         adoptNativeResolution(of: device)
         CameraService.configureLowLatencyCapture(on: photoOutput)
         session.commitConfiguration()
         applyPhotoMirroring()
+        applyFrameConnection()
         preparePhotoOutput()
         resetZoom(on: device)
         resetFocusExposure(on: device)
@@ -1402,6 +1411,24 @@ private extension CameraService {
     func applyPhotoMirroring() {
         guard let connection = photoOutput.connection(with: .video) else { return }
         CameraService.configureMirroring(of: connection, for: sessionFacing)
+    }
+
+    /// Sets the frame output's connection for the side now in the session:
+    /// upright, mirrored like the preview, on only while a handler is set.
+    /// Redone after every input change, since the connection is rebuilt.
+    /// Runs on `sessionQueue`.
+    func applyFrameConnection() {
+        guard let connection = frameOutput.output.connection(with: .video) else { return }
+        PreviewFrameOutput.configure(connection, facing: sessionFacing, isActive: frameOutput.isActive)
+    }
+
+    /// Starts (or, with nil, stops) delivering upright BGRA viewfinder frames
+    /// for the live tone filter (#590). The handler runs on a background
+    /// queue. With no handler the frame connection is off, so nothing is
+    /// produced or processed.
+    func setPreviewFrameHandler(_ handler: ((CVPixelBuffer) -> Void)?) {
+        frameOutput.setHandler(handler)
+        sessionQueue.async { [weak self] in self?.applyFrameConnection() }
     }
 
     /// Puts `device` back to 1× (the main camera, or the nearest allowed
