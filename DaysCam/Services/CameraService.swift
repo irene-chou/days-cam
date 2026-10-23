@@ -1483,8 +1483,8 @@ private extension CameraService {
     /// `sessionQueue`.
     ///
     /// `displayFactor` overrides the device's reading, for a ramp that has not
-    /// moved yet.
-    func publishZoom(of device: ZoomableCaptureDevice, displayFactor override: CGFloat? = nil) {
+    /// moved yet. Internal rather than private only so tests can reach it.
+    internal func publishZoom(of device: ZoomableCaptureDevice, displayFactor override: CGFloat? = nil) {
         let lens = device.zoomLens
         let plan = ZoomPlan.make(lens: lens,
                                  minAvailable: device.minAvailableVideoZoomFactor,

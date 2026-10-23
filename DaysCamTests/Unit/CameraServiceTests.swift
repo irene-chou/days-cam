@@ -830,6 +830,21 @@ private final class FakeZoomDevice: ZoomableCaptureDevice {
 
 final class CameraServiceZoomTests: XCTestCase {
 
+    /// #601: a ramp is still at its start when published, so the target factor
+    /// is what `zoomFactor` shows.
+    func testPublishZoomUsesTheGivenTargetFactor() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeZoomDevice(min: 1, max: 16)
+        service.publishZoom(of: device, displayFactor: 3)
+        XCTAssertEqual(service.zoomFactor, 3)
+        service.publishZoom(of: device)
+        XCTAssertEqual(service.zoomFactor, 1, "without a target the device reading is used")
+    }
+
+    func testPresetRampRateIsFour() {
+        XCTAssertEqual(CameraService.presetRampRate, 4)
+    }
+
     // MARK: Range
 
     /// 61.3: never past 10×, even when the device goes further.
