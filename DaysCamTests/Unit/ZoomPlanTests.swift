@@ -153,11 +153,21 @@ final class ZoomPlanTests: XCTestCase {
 
     func testRampingGoesThroughRampAtTheDeviceFactor() {
         let device = FakeLensDevice(lens: triple)
-        CameraService.applyZoom(2, to: device, rampRate: 4)
+        device.videoZoomFactor = 2
+        CameraService.applyZoom(1.5, to: device, rampRate: CameraService.presetRampRate)
+        XCTAssertEqual(device.rampTargets.count, 1)
+        XCTAssertEqual(device.rampTargets.first?.factor, 3)
+        XCTAssertEqual(device.rampTargets.first?.rate, CameraService.presetRampRate)
+        XCTAssertEqual(device.videoZoomFactor, 2, "a ramp does not jump the factor")
+    }
+
+    /// #601: a ramp across a lens switch-over still ramps, so the main camera
+    /// has time to take over (a direct jump showed a distorted frame first).
+    func testRampAcrossASwitchOverStillRamps() {
+        let device = FakeLensDevice(lens: triple)
+        CameraService.applyZoom(2, to: device, rampRate: CameraService.presetRampRate)
         XCTAssertEqual(device.rampTargets.count, 1)
         XCTAssertEqual(device.rampTargets.first?.factor, 4)
-        XCTAssertEqual(device.rampTargets.first?.rate, 4)
-        XCTAssertEqual(device.videoZoomFactor, 1, "a ramp does not jump the factor")
     }
 
     func testAPinchCancelsARunningRamp() {

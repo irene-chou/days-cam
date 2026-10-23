@@ -830,6 +830,21 @@ private final class FakeZoomDevice: ZoomableCaptureDevice {
 
 final class CameraServiceZoomTests: XCTestCase {
 
+    /// #601: a ramp is still at its start when published, so the target factor
+    /// is what `zoomFactor` shows.
+    func testPublishZoomUsesTheGivenTargetFactor() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeZoomDevice(min: 1, max: 16)
+        service.publishZoom(of: device, displayFactor: 3)
+        XCTAssertEqual(service.zoomFactor, 3)
+        service.publishZoom(of: device)
+        XCTAssertEqual(service.zoomFactor, 1, "without a target the device reading is used")
+    }
+
+    func testPresetRampRateIsFour() {
+        XCTAssertEqual(CameraService.presetRampRate, 4)
+    }
+
     // MARK: Range
 
     /// 61.3: never past 10×, even when the device goes further.
@@ -1002,6 +1017,26 @@ final class CameraServiceFocusExposureTests: XCTestCase {
         CameraService.applyExposureBias(1, to: device)
         CameraService.applyFocusAndExpose(at: CGPoint(x: 0.3, y: 0.6), to: device, resetBias: false)
         XCTAssertEqual(device.bias, 1)
+    }
+
+    /// #601 (Codex P1): a plain tap publishes `.initial` again, yet the device
+    /// holds a one-shot point, so a zoom preset must still reset; only a reset
+    /// brings the "never touched" state back.
+    func testTapMarksContinuousAutoTouchedUntilReset() {
+        let service = CameraService(isCaptureSupported: false)
+        let device = FakeFocusDevice()
+        XCTAssertTrue(service.isContinuousAutoPristine, "nothing tapped yet: a preset does not reset")
+        service.applyTap(at: CGPoint(x: 0.8, y: 0.1), to: device)
+        XCTAssertFalse(service.isContinuousAutoPristine, "tapped: a preset must reset")
+        service.resetFocusExposure(on: device)
+        XCTAssertTrue(service.isContinuousAutoPristine)
+    }
+
+    /// A bias left on the device is something a preset must undo too.
+    func testBiasMarksContinuousAutoTouched() {
+        let service = CameraService(isCaptureSupported: false)
+        service.applyBias(1, forFocusRequestID: 0, to: FakeFocusDevice())
+        XCTAssertFalse(service.isContinuousAutoPristine)
     }
 
     func testTapPublishesZeroUnlockedAndConfirmationEvenForRepeatedTap() {
@@ -1295,8 +1330,19 @@ final class FocusExposurePolicyTests: XCTestCase {
         XCTAssertTrue(FocusExposurePolicy.shouldReset(on: .subjectAreaChanged, isLocked: false))
     }
 
-    func testFlipPresetAndForegroundAlwaysReset() {
-        for trigger in [FocusExposureTrigger.cameraFlipped, .zoomPresetSelected, .enteredForeground] {
+    /// #601: a preset resets unless focus and exposure were never touched.
+    func testZoomPresetResetsOnlyWhenLockedOrTouched() {
+        func reset(locked: Bool, initial: Bool) -> Bool {
+            FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: locked, isAtInitial: initial)
+        }
+        XCTAssertFalse(reset(locked: false, initial: true))
+        XCTAssertTrue(reset(locked: true, initial: true))
+        XCTAssertTrue(reset(locked: false, initial: false))
+        XCTAssertTrue(reset(locked: true, initial: false))
+    }
+
+    func testFlipAndForegroundAlwaysReset() {
+        for trigger in [FocusExposureTrigger.cameraFlipped, .enteredForeground] {
             XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: true), "\(trigger) locked")
             XCTAssertTrue(FocusExposurePolicy.shouldReset(on: trigger, isLocked: false), "\(trigger) unlocked")
         }

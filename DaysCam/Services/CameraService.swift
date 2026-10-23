@@ -261,10 +261,16 @@ enum FocusExposureTrigger: Equatable {
 /// (issue #303). Pure, so the rules are testable without a device.
 enum FocusExposurePolicy {
     /// True when `trigger` must reset to continuous auto with bias 0.
-    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool) -> Bool {
+    ///
+    /// `isAtInitial` is whether focus and exposure are already at their
+    /// initial continuous-auto state (never tapped): a zoom preset then has
+    /// nothing to reset, so it does not trigger a needless re-focus and
+    /// re-meter (issue #601).
+    static func shouldReset(on trigger: FocusExposureTrigger, isLocked: Bool, isAtInitial: Bool = false) -> Bool {
         switch trigger {
         case .subjectAreaChanged: return !isLocked
-        case .cameraFlipped, .zoomPresetSelected, .enteredForeground: return true
+        case .zoomPresetSelected: return isLocked || !isAtInitial
+        case .cameraFlipped, .enteredForeground: return true
         case .pinchZoomed: return false
         }
     }
@@ -485,6 +491,12 @@ final class CameraService: ObservableObject {
     private let focusExposureFailureSubject = PassthroughSubject<FocusExposureFailure, Never>()
     /// The truth the subject is published from. Touched on `sessionQueue` only.
     private var focusExposureShadow = FocusExposureState.initial
+    /// True while focus and exposure are still the continuous auto the session
+    /// started with: false from the first tap or lock until the next reset.
+    /// Kept apart from `focusExposureShadow`, which reads `.initial` again
+    /// after a plain tap even though the device then holds a one-shot point
+    /// (issue #601). Touched on `sessionQueue` only.
+    private(set) var isContinuousAutoPristine = true
 
     /// The most the exposure compensation moves either way, in EV.
     static let maxExposureBiasMagnitude: Float = 2
@@ -857,17 +869,23 @@ extension CameraService {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoInput?.device else { return }
             let rate: Float? = animated ? CameraService.presetRampRate : nil
-            guard CameraService.applyZoom(displayFactor, to: device, rampRate: rate) != nil else { return }
+            guard let applied = CameraService.applyZoom(displayFactor, to: device, rampRate: rate) else { return }
             // A preset can change the physical lens, whose focus and exposure
-            // the old tap no longer describes (issue #303).
-            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected, isLocked: self.focusExposureShadow.isLocked) {
+            // the old tap no longer describes (issue #303); with nothing ever
+            // tapped there is nothing to undo (issue #601).
+            if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected,
+                                               isLocked: self.focusExposureShadow.isLocked,
+                                               isAtInitial: self.isContinuousAutoPristine) {
                 self.resetFocusExposure(on: device)
             }
-            self.publishZoom(of: device)
+            // A ramp is still at its start here, so publish where it is going.
+            self.publishZoom(of: device, displayFactor: applied)
         }
     }
 
     /// How fast a quick-zoom ramp runs, in doublings of the factor per second.
+    /// Kept at 4: on an iPhone 17 a ramp across the lens switch-over felt
+    /// smoother at 4 than at 8 or 2 (issue #601, human comparison).
     static let presetRampRate: Float = 4
 
     /// The display range a device with these available factors accepts, where
@@ -1043,6 +1061,7 @@ extension CameraService {
             guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device, resetBias: false) else {
                 return self.reportFocusExposureFailure()
             }
+            self.isContinuousAutoPristine = false
             self.updateFocusExposure { $0.isLocked = outcome.tookEffect }
         }
     }
@@ -1054,6 +1073,7 @@ extension CameraService {
         guard let outcome = CameraService.applyFocusAndExpose(at: point, to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = false
         guard outcome.tookEffect else {
             // Bias was reset under the lock, but unsupported modes remain unchanged.
             updateFocusExposure {
@@ -1084,6 +1104,7 @@ extension CameraService {
         guard let applied = CameraService.applyExposureBias(ev, to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = false
         updateFocusExposure { $0.exposureBias = applied }
     }
 
@@ -1135,6 +1156,7 @@ extension CameraService {
         guard CameraService.applyContinuousAuto(to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = true
         updateFocusExposure { $0 = .initial }
         let applied = lastAppliedFocusRequestID
         onMain { [weak self] in self?.focusExposureResetSubject.send(applied) }
@@ -1468,14 +1490,17 @@ private extension CameraService {
 
     /// Publishes `device`'s current display factor, range and presets. Runs on
     /// `sessionQueue`.
-    func publishZoom(of device: ZoomableCaptureDevice) {
+    ///
+    /// `displayFactor` overrides the device's reading, for a ramp that has not
+    /// moved yet. Internal rather than private only so tests can reach it.
+    internal func publishZoom(of device: ZoomableCaptureDevice, displayFactor override: CGFloat? = nil) {
         let lens = device.zoomLens
         let plan = ZoomPlan.make(lens: lens,
                                  minAvailable: device.minAvailableVideoZoomFactor,
                                  maxAvailable: device.maxAvailableVideoZoomFactor,
                                  offersCropPresets: sessionFacing == .back)
         let range = plan.range
-        let factor = lens.displayFactor(forDevice: device.videoZoomFactor)
+        let factor = override ?? lens.displayFactor(forDevice: device.videoZoomFactor)
         onMain { [weak self] in
             guard let self else { return }
             if self.availableZoomPresets != plan.presets { self.availableZoomPresets = plan.presets }
