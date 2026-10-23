@@ -74,6 +74,35 @@ final class OverlayDragUITests: XCTestCase {
         XCTAssertEqual(openPositionRowLabel(), "位置，自訂位置", "568.5 saved as custom")
     }
 
+    /// #605-2: right after release the text stays where the finger left it.
+    func testReleaseDoesNotBounceBack() {
+        openPanel()
+        let text = element("overlayTextDraggable")
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        dragText(text)
+        let released = text.frame
+        for _ in 0..<5 {
+            let frame = element("overlayTextDraggable").exists ? element("overlayTextDraggable").frame : element("overlayText").frame
+            XCTAssertEqual(frame.midX, released.midX, accuracy: 2, "605.2 no bounce")
+            XCTAssertEqual(frame.midY, released.midY, accuracy: 2, "605.2 no bounce")
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+
+    /// #605 review: grabbing again right after release starts from the released point.
+    func testRegrabRightAfterReleaseStartsFromReleasePoint() {
+        openPanel()
+        let text = element("overlayTextDraggable")
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        dragText(text)
+        let released = text.frame
+        let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 40)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        let after = element("overlayTextDraggable").frame
+        XCTAssertEqual(after.midX, released.midX, accuracy: 4, "605 regrab keeps x")
+        XCTAssertEqual(after.midY, released.midY + 40, accuracy: 6, "605 regrab moved 40pt from the release point")
+    }
+
     /// #568-5／7: the same on 內容.
     func testDragOnLayoutTab() {
         openPanel()

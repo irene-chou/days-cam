@@ -106,6 +106,25 @@ final class OverlayTextViewTests: XCTestCase {
         return OverlayTextView.origin(forBlockSize: blockSize, frameSize: frameSize, placement: fraction)
     }
 
+    /// #605-3: a released block only skips waiting when it is already in place.
+    func testShouldSettleWithinHalfAPoint() {
+        let settled = CGPoint(x: 100, y: 100)
+        XCTAssertTrue(OverlayTextView.shouldSettle(settledOrigin: settled, releasedOrigin: settled))
+        XCTAssertTrue(OverlayTextView.shouldSettle(settledOrigin: settled, releasedOrigin: CGPoint(x: 100.4, y: 100)))
+        XCTAssertFalse(OverlayTextView.shouldSettle(settledOrigin: settled, releasedOrigin: CGPoint(x: 100.6, y: 100)))
+        XCTAssertFalse(OverlayTextView.shouldSettle(settledOrigin: settled, releasedOrigin: CGPoint(x: 110, y: 100)))
+    }
+
+    /// #605 review: a drag grabbed while the save is pending starts at the released center.
+    func testDragStartCenterPrefersPendingReleaseCenter() {
+        let settled = CGPoint(x: 10, y: 20)
+        let size = CGSize(width: 100, height: 40)
+        XCTAssertEqual(OverlayTextView.dragStartCenter(pendingReleaseCenter: nil, settledOrigin: settled, blockSize: size),
+                       CGPoint(x: 60, y: 40))
+        XCTAssertEqual(OverlayTextView.dragStartCenter(pendingReleaseCenter: CGPoint(x: 200, y: 300), settledOrigin: settled, blockSize: size),
+                       CGPoint(x: 200, y: 300))
+    }
+
     /// #599-5: the dashed frame shows only on a draggable block that is
     /// pressed or flashing its hint.
     func testIsFrameVisibleForAllEightCombinations() {
