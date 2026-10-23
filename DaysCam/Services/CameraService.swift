@@ -491,6 +491,12 @@ final class CameraService: ObservableObject {
     private let focusExposureFailureSubject = PassthroughSubject<FocusExposureFailure, Never>()
     /// The truth the subject is published from. Touched on `sessionQueue` only.
     private var focusExposureShadow = FocusExposureState.initial
+    /// True while focus and exposure are still the continuous auto the session
+    /// started with: false from the first tap or lock until the next reset.
+    /// Kept apart from `focusExposureShadow`, which reads `.initial` again
+    /// after a plain tap even though the device then holds a one-shot point
+    /// (issue #601). Touched on `sessionQueue` only.
+    private(set) var isContinuousAutoPristine = true
 
     /// The most the exposure compensation moves either way, in EV.
     static let maxExposureBiasMagnitude: Float = 2
@@ -867,10 +873,9 @@ extension CameraService {
             // A preset can change the physical lens, whose focus and exposure
             // the old tap no longer describes (issue #303); with nothing ever
             // tapped there is nothing to undo (issue #601).
-            let shadow = self.focusExposureShadow
             if FocusExposurePolicy.shouldReset(on: .zoomPresetSelected,
-                                               isLocked: shadow.isLocked,
-                                               isAtInitial: shadow == .initial) {
+                                               isLocked: self.focusExposureShadow.isLocked,
+                                               isAtInitial: self.isContinuousAutoPristine) {
                 self.resetFocusExposure(on: device)
             }
             // A ramp is still at its start here, so publish where it is going.
@@ -1056,6 +1061,7 @@ extension CameraService {
             guard let outcome = CameraService.applyFocusAndExpose(at: devicePoint, to: device, resetBias: false) else {
                 return self.reportFocusExposureFailure()
             }
+            self.isContinuousAutoPristine = false
             self.updateFocusExposure { $0.isLocked = outcome.tookEffect }
         }
     }
@@ -1067,6 +1073,7 @@ extension CameraService {
         guard let outcome = CameraService.applyFocusAndExpose(at: point, to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = false
         guard outcome.tookEffect else {
             // Bias was reset under the lock, but unsupported modes remain unchanged.
             updateFocusExposure {
@@ -1097,6 +1104,7 @@ extension CameraService {
         guard let applied = CameraService.applyExposureBias(ev, to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = false
         updateFocusExposure { $0.exposureBias = applied }
     }
 
@@ -1148,6 +1156,7 @@ extension CameraService {
         guard CameraService.applyContinuousAuto(to: device) else {
             return reportFocusExposureFailure()
         }
+        isContinuousAutoPristine = true
         updateFocusExposure { $0 = .initial }
         let applied = lastAppliedFocusRequestID
         onMain { [weak self] in self?.focusExposureResetSubject.send(applied) }
