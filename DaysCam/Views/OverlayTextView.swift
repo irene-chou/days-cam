@@ -85,6 +85,11 @@ struct OverlayTextView: View {
     /// position round-trips all the way back from `ProfileStore`.
     @State private var liveDragCenter: CGPoint?
 
+    /// The center the block was released at, while waiting for the saved
+    /// position to round-trip back into `placement` (#605). `liveDragCenter`
+    /// stays set meanwhile so the block does not move.
+    @State private var pendingReleaseCenter: CGPoint?
+
     /// Creates a view. `frameSize` and everything before it are the settled
     /// public shape from TASK-18; `onDragChanged`/`onDragEnded` are TASK-24's
     /// addition, both defaulting to `nil` so every pre-existing call site
@@ -166,16 +171,21 @@ struct OverlayTextView: View {
                         .allowsHitTesting(false)
                 }
                 .overlay {
-                    if isFrameShowing {
-                        Rectangle()
-                            .strokeBorder(.white, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
+                    // The fade is scoped to this overlay only (#605): an
+                    // `.animation(value:)` further out would also animate the
+                    // block's `.position` the moment a drag is released.
+                    ZStack {
+                        if isFrameShowing {
+                            Rectangle()
+                                .strokeBorder(.white, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
                     }
+                    .animation(reduceMotion ? nil : (isFrameShowing ? .easeOut(duration: Self.frameFadeInDuration)
+                                                                    : .easeIn(duration: Self.frameFadeOutDuration)),
+                               value: isFrameShowing)
                 }
-                .animation(reduceMotion ? nil : (isFrameShowing ? .easeOut(duration: Self.frameFadeInDuration)
-                                                                : .easeIn(duration: Self.frameFadeOutDuration)),
-                           value: isFrameShowing)
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(text)
@@ -195,7 +205,24 @@ struct OverlayTextView: View {
                 .onChange(of: isInteractive) { _, interactive in
                     // A pinch or panel close can take the gesture away without
                     // an `onEnded`; never leave the press state stuck.
-                    if !interactive { isPressed = false }
+                    if !interactive {
+                        isPressed = false
+                        clearDragState()
+                    }
+                }
+                // The saved position has round-tripped back: `settledOrigin`
+                // now equals the released center, so handing display back to
+                // `placement` does not move anything (#605).
+                .onChange(of: placement) { _, _ in
+                    if pendingReleaseCenter != nil { clearDragState() }
+                }
+                // Safety net when the write-back never arrives (save failed):
+                // fall back to the stored position, as before.
+                .task(id: pendingReleaseCenter) {
+                    guard pendingReleaseCenter != nil else { return }
+                    try? await Task.sleep(for: Self.releaseSettleTimeout)
+                    guard !Task.isCancelled else { return }
+                    clearDragState()
                 }
                 .task(id: dragHintSerial) {
                     guard dragHintSerial > 0, isInteractive else { return }
@@ -216,6 +243,7 @@ struct OverlayTextView: View {
                         .onChanged { value in
                             guard isInteractive else { return }
                             isPressed = true
+                            pendingReleaseCenter = nil
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             liveDragCenter = center
                             onDragChanged?(center, frameSize)
@@ -229,23 +257,42 @@ struct OverlayTextView: View {
                             // A tap while draggable is swallowed: it must not
                             // turn an anchor into `.custom` (#568).
                             guard Self.shouldPersistDrag(translation: value.translation) else {
-                                dragStartCenter = nil
-                                liveDragCenter = nil
+                                clearDragState()
                                 return
                             }
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             onDragEnded?(center, frameSize)
-                            // Hands display back to `placement` — by the time
-                            // this update and `onDragEnded`'s own (which is
-                            // expected to persist a new `.custom` position
-                            // that round-trips back into `placement`) both
-                            // settle, `settledOrigin` already agrees with
-                            // `center`, so this never visibly jumps (#68).
-                            dragStartCenter = nil
-                            liveDragCenter = nil
+                            // `placement` only changes after the position model
+                            // writes the profile and `ProfileStore` publishes it,
+                            // which is not in this update. Keep showing the
+                            // released center until then (`onChange(of: placement)`
+                            // or the timeout hands display back), otherwise the
+                            // block would jump to its old settled origin first (#605).
+                            let releasedOrigin = CGPoint(x: center.x - blockSize.width / 2, y: center.y - blockSize.height / 2)
+                            if Self.shouldSettle(settledOrigin: settledOrigin, releasedOrigin: releasedOrigin) {
+                                clearDragState()
+                            } else {
+                                pendingReleaseCenter = center
+                            }
                         }
                 )
         }
+    }
+
+    /// How long a released block keeps showing its released center while
+    /// waiting for the saved position to come back (#605).
+    static let releaseSettleTimeout: Duration = .milliseconds(500)
+
+    /// Whether the released position already equals the settled one, so
+    /// there is nothing to wait for (#605).
+    static func shouldSettle(settledOrigin: CGPoint, releasedOrigin: CGPoint, tolerance: CGFloat = 0.5) -> Bool {
+        hypot(settledOrigin.x - releasedOrigin.x, settledOrigin.y - releasedOrigin.y) < tolerance
+    }
+
+    private func clearDragState() {
+        dragStartCenter = nil
+        liveDragCenter = nil
+        pendingReleaseCenter = nil
     }
 
     /// Whether a finished touch on a draggable block moved far enough to be a
