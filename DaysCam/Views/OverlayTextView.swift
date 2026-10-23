@@ -243,6 +243,12 @@ struct OverlayTextView: View {
                         .onChanged { value in
                             guard isInteractive else { return }
                             isPressed = true
+                            // A new touch during the post-release wait starts from
+                            // where the block is shown, not the stale `placement`.
+                            if dragStartCenter == nil {
+                                dragStartCenter = Self.dragStartCenter(pendingReleaseCenter: pendingReleaseCenter,
+                                                                       settledOrigin: settledOrigin, blockSize: blockSize)
+                            }
                             pendingReleaseCenter = nil
                             let center = dragCenter(forTranslation: value.translation, settledOrigin: settledOrigin, blockSize: blockSize)
                             liveDragCenter = center
@@ -272,6 +278,7 @@ struct OverlayTextView: View {
                             if Self.shouldSettle(settledOrigin: settledOrigin, releasedOrigin: releasedOrigin) {
                                 clearDragState()
                             } else {
+                                dragStartCenter = nil
                                 pendingReleaseCenter = center
                             }
                         }
@@ -287,6 +294,13 @@ struct OverlayTextView: View {
     /// there is nothing to wait for (#605).
     static func shouldSettle(settledOrigin: CGPoint, releasedOrigin: CGPoint, tolerance: CGFloat = 0.5) -> Bool {
         hypot(settledOrigin.x - releasedOrigin.x, settledOrigin.y - releasedOrigin.y) < tolerance
+    }
+
+    /// Where a new drag starts from: the block's displayed center, which is the
+    /// released center while a save is still pending, else the settled one.
+    static func dragStartCenter(pendingReleaseCenter: CGPoint?, settledOrigin: CGPoint, blockSize: CGSize) -> CGPoint {
+        pendingReleaseCenter ?? CGPoint(x: settledOrigin.x + blockSize.width / 2,
+                                        y: settledOrigin.y + blockSize.height / 2)
     }
 
     private func clearDragState() {
@@ -313,8 +327,8 @@ struct OverlayTextView: View {
     /// gesture, and reused for every later callback of the same one (see
     /// `dragStartCenter`'s own doc comment).
     private func dragCenter(forTranslation translation: CGSize, settledOrigin: CGPoint, blockSize: CGSize) -> CGPoint {
-        let start = dragStartCenter ?? CGPoint(x: settledOrigin.x + blockSize.width / 2,
-                                               y: settledOrigin.y + blockSize.height / 2)
+        let start = dragStartCenter ?? Self.dragStartCenter(pendingReleaseCenter: pendingReleaseCenter,
+                                                            settledOrigin: settledOrigin, blockSize: blockSize)
         dragStartCenter = start
         return Self.clampedDragCenter(start: start, translation: translation, frameSize: frameSize, blockSize: blockSize)
     }

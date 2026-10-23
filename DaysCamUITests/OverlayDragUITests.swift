@@ -89,6 +89,20 @@ final class OverlayDragUITests: XCTestCase {
         }
     }
 
+    /// #605 review: grabbing again right after release starts from the released point.
+    func testRegrabRightAfterReleaseStartsFromReleasePoint() {
+        openPanel()
+        let text = element("overlayTextDraggable")
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        dragText(text)
+        let released = text.frame
+        let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 40)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        let after = element("overlayTextDraggable").frame
+        XCTAssertEqual(after.midX, released.midX, accuracy: 4, "605 regrab keeps x")
+        XCTAssertEqual(after.midY, released.midY + 40, accuracy: 6, "605 regrab moved 40pt from the release point")
+    }
+
     /// #568-5／7: the same on 內容.
     func testDragOnLayoutTab() {
         openPanel()
