@@ -72,13 +72,13 @@ final class PhotoWallModel: ObservableObject {
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
          todayText: @escaping (CameraProfile) -> String,
-         presentLimitedPicker: @escaping () -> Void = { LimitedLibraryPicker.present() }) {
+         presentLimitedPicker: (() -> Void)? = nil) {
         self.profileID = profileID
         self.store = store
         self.library = library
         self.calendar = calendar
         self.todayText = todayText
-        self.presentLimitedPicker = presentLimitedPicker
+        self.presentLimitedPicker = presentLimitedPicker ?? { LimitedLibraryPicker.present() }
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
