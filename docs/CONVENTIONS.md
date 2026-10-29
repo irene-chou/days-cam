@@ -12,6 +12,8 @@
 
 **共用測試情境**（卡片另寫除外）：`DAYSCAM_FAKE_TODAY=2026-01-10`（`#if DEBUG` 時間覆寫），設定檔「小寶」起始日 2026-01-01、`dayOne`、只顯示天數 → 疊字 `第 10 天`。
 
+**2.0 UI 測試 launch argument**（由對應卡實作，合併後補實際行為）：`-UITestRecordPhotos <n>`（假圖庫帶 n 張照片，`creationDate` 從 `DAYSCAM_FAKE_TODAY` 往回每天一張，#616）、`-UITestOpenFirstRecord`（啟動直接進第一個紀錄的照片牆，#618）、`-UITestOpenExport`（啟動直接進匯出頁，#620）。
+
 **設計稿是視覺依據，PRD 是規格依據**，兩者衝突時照 PRD。驗收指令寫法見 [WORKFLOW 驗收指令規則](WORKFLOW.md#驗收指令規則)。
 
 ## 檔案所有權
@@ -20,9 +22,9 @@
 
 | 擁有者 | 檔案 |
 |---|---|
-| core-style | `Models/`（`CaptureSettings.swift` 除外，含 `OverlayStyle.swift`、`FontCatalog*.swift`）、`Services/OverlayMetrics.swift`、`OverlayRenderer.swift`、`TemplateRenderer.swift`、`DayCountCalculator.swift`、`RecentColorsStore.swift` |
-| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`CapturedPhotoStore.swift`、`AlbumSettingsStore.swift`、`FontLibrary.swift`、`FontDownloader.swift` |
-| ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`）、`DaysCamApp.swift`、`Assets.xcassets`（`FontPreviews/` 除外） |
+| core-style | `Models/`（`CaptureSettings.swift` 除外，含 `OverlayStyle.swift`、`ExportFormat.swift`、`FontCatalog*.swift`）、`Services/OverlayMetrics.swift`、`OverlayRenderer.swift`、`TemplateRenderer.swift`、`DayCountCalculator.swift`、`RecentColorsStore.swift` |
+| core-device | `Models/CaptureSettings.swift`、`Services/CameraService.swift`、`CaptureSettingsStore.swift`、`ImageCropper.swift`、`ProfileStore.swift`、`PhotoSaver.swift`、`RecordAlbumLibrary.swift`、`LegacyDataMigrator.swift`、`CapturedPhotoStore.swift`、`AlbumSettingsStore.swift`、`FontLibrary.swift`、`FontDownloader.swift` |
+| ui-shell | `Views/` 下除了 ui-panel 那幾項以外的全部（含 `CameraScreen.swift`、`CameraScreenModel.swift`、`OverlayTextView.swift`、`ProfileListModel*.swift`、`Views/Theme/`、`Views/CameraToolbar/`、`Views/ProfileManager/`、`Views/Gallery/`、`Views/Records/`）、`DaysCamApp.swift`、`Assets.xcassets`（`FontPreviews/` 除外） |
 | ui-panel | `Views/OverlayPanel/` 下各分頁的 View 與 view model（含 `StyleTab*`、`FontLibrary*`、`FontLicenseView`；面板殼層 `OverlayPanelModel` 與容器 View 屬 ui-shell）、`Views/DisplaySettingsModel.swift`、`Views/ProfileEditModel.swift` |
 | qa | `DaysCamTests/Acceptance/`。**不得修改任何產品程式碼**，發現 bug 回報不自己修 |
 | Lead | `project.yml`、`.gitignore`、`README.md`、`docs/**`、`AGENTS.md`、`CLAUDE.md`、`.claude/`、`.codex/`、`.github/`、`scripts/`、`Assets.xcassets/FontPreviews/`、`Resources/FontLicenses/`、外部 repo `irene-chou/dayscam-fonts` |
@@ -36,11 +38,14 @@
 2. **`OverlayTheme` 沒有固定 5 組主題**：它是由 `OverlayStyle` 產生的渲染值，允許無裝飾（PRD-0.2 FR-10.10）。
 3. **天數單位是任意勾選**：0.1 的「單位軌道」（`DisplayUnitTrack`、最小單位隨最大單位夾取）已刪除；舊 `(largest, smallest)` 對應到單位集合後，輸出文字必須與 0.1 相同（PRD-0.2 §4.3、§4.5）。
 4. **舊畫面已刪**：0.1 的顯示設定面板、清單與編輯頁、切換選單不存在；其邏輯（FR-2.4 開關互鎖、名稱 1～20 字等）由新 view model 測試涵蓋。
-5. **相簿權限兩段式**：存檔只請求 `.addOnly`，照片瀏覽才請求 `.readWrite`（例外見 AGENTS.md Code Review Rules）；啟動時不得詢問相簿權限。
+5. **相簿權限（2.0，PRD-2.0 §7）**：第一次進紀錄（照片牆）才請求 `.readWrite`，相機存進紀錄相簿用的就是這個權限，不是違規；匯出只新增照片、不另請求；限制取用時不讀寫相簿，照片 ID 寫進 `fallbackAssetIDs`；啟動時不得詢問相簿權限。0.2 FR-5.3′「存檔只請求 addOnly」與 #281 相簿開關已由 PRD-2.0 §7.6 取代。
 6. **未知 `fontID` 改用蘋方**：舊設定檔升級後字型變蘋方是 PRD-0.3 §4.3 的預期結果，不是遷移遺失。
 7. **字型解析回傳蘋方不一定是 bug**：字型不是 `available` 時，觀景窗與照片都用蘋方（FR-5.14、FR-16.14），要檢查的是兩邊一致。
 8. **系統字型第一次比對會真的連網下載**（數 MB 到 66 MB）。單元測試一律注入假比對介面；只有標明的整合測試會連網，沒網路時略過並在 PR 註明。
 9. **日期的渲染路徑永不讀取 `startDate`**（PRD FR-2.17）；**`startDate` 不可夾帶 `timeZone`**（PRD §4.1 不變條件 2）。
-10. **`CameraScreen.swift` 由 ui-shell 獨佔**；ui-panel 要在觀景窗上加東西時向 ui-shell 提需求。
+10. **`CameraScreen.swift` 由 ui-shell 獨佔**（2.0 起相機不是首頁，從照片牆進入；10～12 只描述相機與匯出面板本身）；ui-panel 要在觀景窗上加東西時向 ui-shell 提需求。
 11. **面板只有「樣式｜內容」兩段，面板打開就能拖曳疊字**：「位置」分頁與 `PositionTabView` 已於 #568 移除，九宮格收進「內容」分頁「文字內容」卡的「位置」列（#567，`PositionGridView`，固定 88pt）。樣式分頁也能拖，是人類 2026-10-14 的決定；虛線框自 1.3.0（#599）起只在按住與面板打開瞬間出現，面板開著卻沒框不是漏畫，不是 bug（PRD-0.2 FR-8.4、FR-12.1、FR-12.4）；PRD-0.3 FR-17.3／17.5 的三段與位置分頁描述已過時。#568 一度把分頁名稱改成「版面」，1.3.0 #584 改回「內容」。
 12. **橫拿時取景框疊字與圖示會轉、預覽層與介面不轉**（#571／#572，PRD 0.1 §6.6）：`CameraScreen` 把疊字、底片日期、倒數包成一層依 `ViewfinderRotation` 旋轉，`rotatedChrome` 只轉按鈕 label。橫拿時 `ImageCropper` 把 9:16 裁成 16:9、`.custom` 位置分數相對橫向成品，都是刻意的。模擬器角度永遠 90，UI 測試用 `-UITestCaptureRotationAngle`（餵的是取景框角度）。前鏡頭的 `captureRotationAngle` 與 `viewfinderRotationAngle` 不相等、後鏡頭相等，是刻意的（#600）；成品永遠用 capture 角度。
+13. **2.0 相機存乾淨原圖，不經 bake**：快門後不裁切、不調色、不烘焙，直接存進紀錄相簿（PRD-2.0 FR-20.4、§6.3）。照片沒有疊字是刻意的；烘焙只在匯出頁，存成新照片、原圖不動。
+14. **1.x 烘焙過的照片在 2.0 會出現兩層字**：舊照片像素裡已有疊字，照片牆／大圖再即時標一次，是 PRD-2.0 M-5 接受的結果，不是 bug。
+15. **照片早於起始日印「前 N 天」**：「照片」時刻、拍攝日早於起始日時天數一律「前 N 天」，不套 `countingRule`、單位、年齡措辭、`dayCountFormat`（PRD-2.0 §6.2）；「今天」時刻起始日在未來仍印「還有 N 天」，兩者並存不是矛盾。
