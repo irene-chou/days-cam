@@ -875,3 +875,81 @@ final class TemplateRendererDayCountFormatTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 614 photo moment
+
+extension TemplateRendererTests {
+
+    private func photoRender(_ subject: CameraProfile,
+                             _ capturedAt: Date,
+                             calendar: Calendar = DateFixture.taipei) -> String {
+        renderer.render(profile: subject, capturedAt: capturedAt, calendar: calendar, moment: .photo)
+    }
+
+    /// 614.4
+    func test_614_4_photoOneDayBeforeStartReadsBeforeOneDayUnderBothRules() throws {
+        let photo = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 10))
+        for rule in [CountingRule.dayOne, .dayZero] {
+            let subject = profile(start: DateFixture.components(2026, 1, 10), rule: rule)
+            XCTAssertEqual(photoRender(subject, photo), "前 1 天")
+        }
+    }
+
+    /// 614.5
+    func test_614_5_photoSixtyDaysBeforeStartIgnoresUnitsAndAgeWording() throws {
+        let photo = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 10))
+        let start = DateFixture.components(2026, 3, 10)
+        XCTAssertEqual(photoRender(profile(start: start), photo), "前 60 天")
+        XCTAssertEqual(photoRender(profile(start: start, largest: .year, smallest: .day, useAgeWording: true), photo),
+                       "前 60 天")
+        XCTAssertEqual(photoRender(profile(start: start, largest: .month, smallest: .month), photo), "前 60 天")
+    }
+
+    /// 614.6
+    func test_614_6_photoMomentKeepsDateAndNamePlacement() throws {
+        let photo = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 10))
+        let subject = profile(start: DateFixture.components(2026, 3, 10), showDate: true, showName: true)
+        XCTAssertEqual(photoRender(subject, photo), "2026.01.09 小寶 前 60 天")
+        XCTAssertEqual(render(subject, at: photo), "2026.01.09 小寶 還有 60 天")
+    }
+
+    /// 614.7
+    func test_614_7_todayMomentStillCountsDown() throws {
+        let now = try XCTUnwrap(DateFixture.date(2026, 1, 9, hour: 10))
+        let subject = profile(start: DateFixture.components(2026, 3, 10))
+        XCTAssertEqual(render(subject, at: now), "還有 60 天")
+        XCTAssertEqual(renderer.render(profile: subject, capturedAt: now, calendar: DateFixture.taipei, moment: .today),
+                       "還有 60 天")
+    }
+
+    /// 614.8
+    func test_614_8_photoOnOrAfterStartMatchesToday() throws {
+        let start = DateFixture.components(2025, 1, 15)
+        let onStart = try XCTUnwrap(DateFixture.date(2025, 1, 15, hour: 9))
+        let later = try XCTUnwrap(DateFixture.date(2026, 3, 20, hour: 10))
+        for day in [onStart, later] {
+            for rule in [CountingRule.dayOne, .dayZero] {
+                for units in [(DisplayUnit.day, DisplayUnit.day), (.year, .day)] {
+                    let subject = profile(start: start, rule: rule, showDate: true, showName: true,
+                                          largest: units.0, smallest: units.1)
+                    XCTAssertEqual(photoRender(subject, day), render(subject, at: day))
+                }
+            }
+        }
+    }
+
+    /// 614.9: expected behavior (PRD 2.0 §8) — one instant is two different
+    /// calendar days in two zones, so the same photo reads differently.
+    func test_614_9_sameInstantGivesDifferentDaysInDifferentTimeZones() throws {
+        // 2026-01-10 02:00 in Taipei is 2026-01-09 10:00 in Los Angeles.
+        let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 2))
+        let losAngeles = DateFixture.calendar(timeZoneIdentifier: "America/Los_Angeles")
+        let subject = profile(start: DateFixture.components(2026, 1, 10), showDate: true)
+        XCTAssertEqual(photoRender(subject, instant, calendar: DateFixture.taipei), "2026.01.10 第 1 天")
+        XCTAssertEqual(photoRender(subject, instant, calendar: losAngeles), "2026.01.09 前 1 天")
+    }
+
+    func test_614_unknownDateText() {
+        XCTAssertEqual(TemplateRenderer.unknownDateText, "日期不明")
+    }
+}

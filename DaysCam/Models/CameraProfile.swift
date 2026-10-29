@@ -90,6 +90,15 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var showFilmDate: Bool
     /// The corner the film date stamp is printed in.
     var filmDateCorner: FilmDateCorner
+    /// Local identifier of the photo album bound to this profile; nil when none
+    /// (PRD 2.0 §4.1). Stored as-is: whether the album still exists is the
+    /// album layer's concern, not a validation error.
+    var albumIdentifier: String?
+    /// Asset identifiers the profile may read when album access is limited
+    /// (PRD 2.0 §4.1).
+    var fallbackAssetIDs: [String]
+    /// How photos of this profile are exported.
+    var exportFormat: ExportFormat
     /// When this profile was created.
     var createdAt: Date
     /// When this profile was last modified.
@@ -114,7 +123,10 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          showFilmDate: Bool = false,
          filmDateCorner: FilmDateCorner = .default,
          createdAt: Date = Date(),
-         updatedAt: Date = Date()) {
+         updatedAt: Date = Date(),
+         albumIdentifier: String? = nil,
+         fallbackAssetIDs: [String] = [],
+         exportFormat: ExportFormat = .overlay) {
         self.id = id
         self.name = name
         self.startDate = startDate
@@ -131,6 +143,9 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.filmDateCorner = filmDateCorner
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.albumIdentifier = albumIdentifier
+        self.fallbackAssetIDs = fallbackAssetIDs
+        self.exportFormat = exportFormat
     }
 }
 
@@ -265,6 +280,7 @@ extension CameraProfile {
         case displayUnits, useAgeWording, position, style, createdAt, updatedAt
         case showFilmDate, filmDateCorner
         case dayCountFormat
+        case albumIdentifier, fallbackAssetIDs, exportFormat
     }
 
     /// Keys that only 0.1 files carry. Read, never written.
@@ -319,6 +335,9 @@ extension CameraProfile {
         try container.encode(filmDateCorner, forKey: .filmDateCorner)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(albumIdentifier, forKey: .albumIdentifier)
+        try container.encode(fallbackAssetIDs, forKey: .fallbackAssetIDs)
+        try container.encode(exportFormat, forKey: .exportFormat)
     }
 
     /// Decodes a profile in the 0.2 format or the 0.1 format (PRD 0.2 §4.3).
@@ -347,6 +366,11 @@ extension CameraProfile {
         // Added by #582: older files lack it, and an unreadable value falls
         // back too, so the profile is kept.
         dayCountFormat = (try? container.decodeIfPresent(DayCountFormat.self, forKey: .dayCountFormat)) ?? .default
+        // Added by 2.0 (#614): older files lack all three, and an unreadable
+        // value falls back too, so the profile is kept.
+        albumIdentifier = (try? container.decodeIfPresent(String.self, forKey: .albumIdentifier)) ?? nil
+        fallbackAssetIDs = (try? container.decodeIfPresent([String].self, forKey: .fallbackAssetIDs)) ?? []
+        exportFormat = (try? container.decodeIfPresent(ExportFormat.self, forKey: .exportFormat)) ?? .overlay
 
         // 0.1 wrote `position` as a bare string such as "bottomTrailing".
         if let legacyPosition = try? container.decode(OverlayPosition.self, forKey: .position) {

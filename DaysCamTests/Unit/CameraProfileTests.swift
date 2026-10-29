@@ -1332,3 +1332,82 @@ final class CameraProfileShadowTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 614 album, fallback and export format
+
+/// Covers #614: the album, fallback and export-format fields of `CameraProfile`.
+final class CameraProfileAlbumFieldsTests: XCTestCase {
+
+    private func jsonObject(_ profile: CameraProfile) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(profile)) as? [String: Any])
+    }
+
+    private func decode(_ object: [String: Any]) throws -> CameraProfile {
+        try JSONDecoder().decode(CameraProfile.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    private func albumSample() -> CameraProfile {
+        CameraProfile(name: "小寶",
+                      startDate: DateFixture.components(2025, 1, 15),
+                      createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                      updatedAt: Date(timeIntervalSince1970: 1_700_000_500),
+                      albumIdentifier: "ALBUM-1",
+                      fallbackAssetIDs: ["A/L0/001", "B/L0/002"],
+                      exportFormat: .polaroid)
+    }
+
+    /// 614.1: a 1.3.0 record has none of the three keys.
+    func test_614_1_version130RecordDecodesWithDefaults() throws {
+        let json = """
+        {"id":"11111111-1111-1111-1111-111111111111","name":"小寶",
+        "startDate":{"year":2025,"month":1,"day":15},"countingRule":"dayOne",
+        "showDayCount":true,"showDate":false,"showName":false,"displayUnits":["day"],
+        "useAgeWording":false,"dayCountFormat":"ordinal","position":{"anchor":"bottomTrailing"},
+        "showFilmDate":false,"filmDateCorner":"bottomTrailing",
+        "createdAt":1700000000,"updatedAt":1700000500}
+        """
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        // Borrow a real `position` and `style` encoding so the fixture tracks the format.
+        let template = try jsonObject(albumSample())
+        object["position"] = template["position"]
+        object["filmDateCorner"] = template["filmDateCorner"]
+        object["style"] = template["style"]
+        object["createdAt"] = template["createdAt"]
+        object["updatedAt"] = template["updatedAt"]
+        for key in ["albumIdentifier", "fallbackAssetIDs", "exportFormat"] {
+            XCTAssertNil(object[key])
+        }
+        let decoded = try decode(object)
+        XCTAssertNil(decoded.albumIdentifier)
+        XCTAssertEqual(decoded.fallbackAssetIDs, [])
+        XCTAssertEqual(decoded.exportFormat, .overlay)
+        XCTAssertEqual(decoded.name, "小寶")
+    }
+
+    /// 614.2
+    func test_614_2_newFieldsSurviveARoundTrip() throws {
+        let original = albumSample()
+        let decoded = try JSONDecoder().decode(CameraProfile.self, from: JSONEncoder().encode(original))
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.albumIdentifier, "ALBUM-1")
+        XCTAssertEqual(decoded.fallbackAssetIDs, ["A/L0/001", "B/L0/002"])
+        XCTAssertEqual(decoded.exportFormat, .polaroid)
+    }
+
+    /// 614.3
+    func test_614_3_unknownExportFormatFallsBackToOverlay() throws {
+        var json = try jsonObject(albumSample())
+        json["exportFormat"] = "film"
+        let decoded = try decode(json)
+        XCTAssertEqual(decoded.exportFormat, .overlay)
+        XCTAssertEqual(decoded.albumIdentifier, "ALBUM-1")
+        XCTAssertEqual(decoded.name, "小寶")
+    }
+
+    /// The three fields are not validated: a profile with them still persists.
+    func test_614_newFieldsAreNotValidated() throws {
+        var subject = albumSample()
+        subject.albumIdentifier = ""
+        XCTAssertNoThrow(try subject.validatedForPersistence(calendar: DateFixture.taipei))
+    }
+}
