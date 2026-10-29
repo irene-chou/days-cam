@@ -177,6 +177,22 @@ extension ProfileStore {
     /// (PRD §4.1, §7.3).
     @discardableResult
     func load() -> [CameraProfile] {
+        // 1.x data: keep a copy of the untouched file before any repair or
+        // migration rewrites it (PRD-2.0 M-4). If the copy fails nothing is
+        // migrated this launch and the next one retries.
+        let canMigrate = LegacyDataMigrator.needsMigration(defaults: defaults)
+            && LegacyDataMigrator.backUpProfilesFile(in: directory,
+                                                     profilesFileName: Self.fileName,
+                                                     fileManager: fileManager)
+        loadAndRepair()
+        if canMigrate && !didSeedFreshInstall {
+            migrateLegacyData()
+        }
+        return profiles
+    }
+
+    @discardableResult
+    private func loadAndRepair() -> [CameraProfile] {
         didRecoverFromCorruption = false
         didSeedFreshInstall = false
         droppedUndecodableRecordCount = 0
@@ -185,6 +201,7 @@ extension ProfileStore {
         guard fileManager.fileExists(atPath: fileURL.path) else {
             didSeedFreshInstall = true
             seedDefaultProfile()
+            LegacyDataMigrator.markMigrated(defaults: defaults)
             return profiles
         }
 
@@ -240,6 +257,27 @@ extension ProfileStore {
             try? persistSynchronously(repaired)
         }
         return profiles
+    }
+
+    /// Attaches the 1.x photo IDs and album to the last-used profile, then
+    /// records version 2. The new `profiles.json` is written first; if that
+    /// fails the version stays 1, memory and disk keep the old data, and the
+    /// next launch retries (PRD-2.0 M-1~M-3, §4.2).
+    private func migrateLegacyData() {
+        let migrated = LegacyDataMigrator.migrated(
+            profiles,
+            targetID: lastUsedProfileID,
+            photosURL: directory.appendingPathComponent(CapturedPhotoStore.fileName),
+            defaults: defaults)
+        if migrated != profiles {
+            do {
+                try persistSynchronously(migrated)
+            } catch {
+                return
+            }
+            profiles = migrated
+        }
+        LegacyDataMigrator.markMigrated(defaults: defaults)
     }
 
     /// Writes the one profile a fresh install starts with (PRD §4.3).
