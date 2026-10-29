@@ -15,7 +15,7 @@ final class FontRowHeightUITests: XCTestCase {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DAYSCAM_UI_NOTO_SEEDED"] == "1",
                           "seed notoSerifTC.otf and set DAYSCAM_UI_NOTO_SEEDED=1")
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }

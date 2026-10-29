@@ -12,7 +12,7 @@ final class RulesTabDatePickerUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         openEditor()
     }
@@ -55,7 +55,7 @@ final class RulesTabDatePickerUITests: XCTestCase {
         XCTAssertTrue(day.waitForExistence(timeout: 3), "a day in next month is tappable (94.1)")
         day.tap()
         // Dismiss the popover by tapping the page title area, outside it.
-        app.navigationBars.firstMatch.tap()
+        app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).tap()
         let countdown = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '還有'")).firstMatch
         XCTAssertTrue(countdown.waitForExistence(timeout: 5), "94.4 the preview reads 還有 N 天")
         attach("94.8_future-date-selected")

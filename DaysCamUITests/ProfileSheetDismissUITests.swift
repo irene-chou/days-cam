@@ -9,7 +9,7 @@ final class ProfileSheetDismissUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -55,7 +55,7 @@ final class ProfileSheetDismissUITests: XCTestCase {
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5), "the edit page opened")
         XCTAssertFalse(app.buttons["完成"].exists, "101.2 no checkmark key on the edit page")
-        let back = app.navigationBars.firstMatch.buttons.firstMatch
+        let back = app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch
         XCTAssertTrue(back.exists, "101.2 the system back button is there")
         nameField.tap()
         nameField.typeText("乙")

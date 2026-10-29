@@ -9,7 +9,7 @@ final class FontWeightCollapseUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         app.buttons["疊字設定"].tap()

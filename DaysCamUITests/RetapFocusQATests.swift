@@ -14,7 +14,7 @@ final class RetapFocusQATests: XCTestCase {
         // closed. The ratio lives in the standard defaults, so a test that
         // left 1:1 behind puts the overlay text under (0.8, 0.65), and that
         // tap opens the panel; pin the ratio and start from fresh profiles.
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestZoomPresets",
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestZoomPresets",
                                 "-UITestFreshProfiles", UUID().uuidString,
                                 "-captureAspectRatio", "threeByFour"]
         app.launch()

@@ -237,4 +237,28 @@ final class TabProfileWriterTests: XCTestCase {
 
         XCTAssertEqual(store.profiles.first?.dayCountFormat, .dDay)
     }
+
+    /// #617 acceptance 10: a changed `albumIdentifier` is merged; an unchanged
+    /// one keeps the store's newer value.
+    func testMergesAlbumIdentifierOnlyWhenItChanged() throws {
+        let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
+        store.load()
+        let original = try XCTUnwrap(store.profiles.first)
+        let writer = TabProfileWriter(baseline: original, profileStore: store)
+
+        var changed = original
+        changed.albumIdentifier = "album-1"
+        try writer.write(changed)
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, "album-1")
+
+        // Another writer rebinds; this writer then edits only the name.
+        var rebound = try XCTUnwrap(store.profiles.first)
+        rebound.albumIdentifier = "album-2"
+        try store.update(rebound)
+        var renamed = changed
+        renamed.name = "改名"
+        try writer.write(renamed)
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, "album-2", "an untouched field keeps the latest value")
+        XCTAssertEqual(store.profiles.first?.name, "改名")
+    }
 }

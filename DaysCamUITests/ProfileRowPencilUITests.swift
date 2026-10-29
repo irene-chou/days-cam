@@ -9,7 +9,7 @@ final class ProfileRowPencilUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -23,7 +23,7 @@ final class ProfileRowPencilUITests: XCTestCase {
     private var pencils: XCUIElementQuery {
         app.buttons.matching(identifier: "profileEditButton")
     }
-    private var backButton: XCUIElement { app.navigationBars.firstMatch.buttons.firstMatch }
+    private var backButton: XCUIElement { app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch }
     private var nameField: XCUIElement { app.textFields.firstMatch }
 
     private func openSheet() {

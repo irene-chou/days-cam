@@ -10,7 +10,7 @@ final class FontScrollStabilityUITests: XCTestCase {
     private func launch(extraArguments: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString] + extraArguments
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString] + extraArguments
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }

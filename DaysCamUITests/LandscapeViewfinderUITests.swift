@@ -9,7 +9,7 @@ final class LandscapeViewfinderUITests: XCTestCase {
     private func launch(angle: String?, filmDateCorner: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         if let angle { app.launchArguments += ["-UITestCaptureRotationAngle", angle] }
         if let filmDateCorner { app.launchArguments += ["-UITestFilmDate", filmDateCorner] }
         app.launch()

@@ -11,7 +11,7 @@ final class ProfileReorderUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -42,7 +42,7 @@ final class ProfileReorderUITests: XCTestCase {
     }
 
     private func addProfile() {
-        let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '新增'")).firstMatch
+        let add = app.buttons["新增設定檔"]
         XCTAssertTrue(add.waitForExistence(timeout: 5))
         add.tap()
         let nameField = app.textFields.firstMatch
@@ -50,7 +50,7 @@ final class ProfileReorderUITests: XCTestCase {
         // An untouched new profile is not kept (TASK-106): give it a name.
         nameField.tap()
         nameField.typeText("甲")
-        app.navigationBars.firstMatch.buttons.firstMatch.tap()
+        app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch.tap()
         XCTAssertTrue(sheetBar.waitForExistence(timeout: 5))
     }
 

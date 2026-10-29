@@ -8,7 +8,7 @@ import XCTest
 final class FilmDateViewfinderUITests: XCTestCase {
     private func launch(corner: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString,
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString,
                                 "-UITestFilmDate", corner]
         app.launch()
         return app
@@ -93,7 +93,7 @@ final class FilmDateViewfinderUITests: XCTestCase {
     /// 153.1: off by default, nothing orange in the viewfinder.
     func testNothingIsDrawnWhileTheFilmDateIsOff() {
         let app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         XCTAssertNil(orangeBox(in: attach(app, "153.1_film-date-off")))

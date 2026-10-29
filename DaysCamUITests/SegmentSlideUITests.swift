@@ -12,7 +12,7 @@ final class SegmentSlideUITests: XCTestCase {
     private func launch(extra: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString,
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString,
                                 "-UITestSegmentChip"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))

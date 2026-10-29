@@ -3,35 +3,80 @@ import SwiftUI
 @main
 struct DaysCamApp: App {
     /// One `CameraService` and one `ProfileStore` for the app's lifetime.
-    /// `CameraScreen` calls `onAppear`/`onDisappear` on its model, which in
-    /// turn starts/stops the camera session — though in this single-screen
-    /// app `onDisappear` effectively never fires in practice (see its own
-    /// doc comment). Neither service is ever rebuilt regardless, so a
-    /// switched camera, a granted permission or a profile change survives
-    /// any future navigating away and back.
-    @StateObject private var cameraScreenModel = Self.makeCameraScreenModel()
+    /// `CameraScreen` calls `onAppear`/`onDisappear` on its model, which
+    /// start/stop the camera session as the 紀錄 list presents and dismisses
+    /// it. Neither service is ever rebuilt, so a switched camera, a granted
+    /// permission or a profile change survives opening and closing the camera.
+    @StateObject private var cameraScreenModel: CameraScreenModel
+    @StateObject private var recordListModel: RecordListModel
+
+    init() {
+        let profileStore = Self.makeProfileStore()
+        _cameraScreenModel = StateObject(wrappedValue: Self.makeCameraScreenModel(profileStore: profileStore))
+        _recordListModel = StateObject(wrappedValue: RecordListModel(
+            store: profileStore,
+            library: Self.makeRecordAlbumLibrary(for: profileStore)))
+    }
 
     var body: some Scene {
         WindowGroup {
-            CameraScreen(model: cameraScreenModel)
+            RecordListView(model: recordListModel,
+                           cameraModel: cameraScreenModel,
+                           opensFirstRecordAtLaunch: Self.opensFirstRecordAtLaunch)
         }
     }
 
-    /// Builds the screen-level model for launch.
+    /// Debug UI tests pass `-UITestOpenFirstRecord` to enter the first record
+    /// at launch instead of stopping on the list (#617). Debug builds only.
+    private static var opensFirstRecordAtLaunch: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-UITestOpenFirstRecord")
+        #else
+        return false
+        #endif
+    }
+
+    /// The photo library behind the list. Debug UI tests with
+    /// `-UITestRecordPhotos <n>` get an in-memory one holding an album
+    /// "測試相簿" with all `n` photos; `-UITestBindAlbum` also binds every
+    /// record to it.
+    private static func makeRecordAlbumLibrary(for profileStore: ProfileStore) -> any RecordAlbumLibrary {
+        #if DEBUG
+        if let fake = FakeRecordAlbumLibrary.forUITests() {
+            let album = FakeRecordAlbumLibrary.Album(id: "uitest-album", title: "測試相簿",
+                                                     assetIDs: fake.assets.map(\.id))
+            let library = FakeRecordAlbumLibrary(status: fake.status, assets: fake.assets, albums: [album])
+            if ProcessInfo.processInfo.arguments.contains("-UITestBindAlbum") {
+                for var profile in profileStore.profiles {
+                    profile.albumIdentifier = album.id
+                    _ = try? profileStore.update(profile)
+                }
+            }
+            return library
+        }
+        #endif
+        return SystemRecordAlbumLibrary()
+    }
+
+    /// Builds the one `ProfileStore` shared by the list and the camera.
     ///
     /// `ProfileStore.load()` runs here, before the first frame: a fresh
     /// install seeds one default profile, an existing install applies
     /// `lastUsedProfileID` (falling back to the first profile when it no
-    /// longer exists). The app always lands directly on the camera screen —
-    /// there is no first-launch form to route to instead (PRD §2.2, TASK-12).
-    private static func makeCameraScreenModel() -> CameraScreenModel {
+    /// longer exists). The app lands on the 紀錄 list (PRD 2.0 FR-16).
+    private static func makeProfileStore() -> ProfileStore {
         let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
         applyUITestFilmDate(to: profileStore)
-        return CameraScreenModel(cameraService: CameraService(),
-                                 profileStore: profileStore,
-                                 fontLibrary: uiTestFontLibrary ?? FontLibrary(),
-                                 captureRotationAngleOverride: uiTestCaptureRotationAngle)
+        return profileStore
+    }
+
+    /// Builds the camera screen's model over `profileStore`.
+    private static func makeCameraScreenModel(profileStore: ProfileStore) -> CameraScreenModel {
+        CameraScreenModel(cameraService: CameraService(),
+                          profileStore: profileStore,
+                          fontLibrary: uiTestFontLibrary ?? FontLibrary(),
+                          captureRotationAngleOverride: uiTestCaptureRotationAngle)
     }
 
     /// UI tests pass `-UITestCaptureRotationAngle <0|90|180|270>` to pretend

@@ -13,7 +13,7 @@ import XCTest
 final class AlbumAccessUITests: XCTestCase {
     private func launch(_ mode: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestPhotoAccess", mode]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestPhotoAccess", mode]
         app.launch()
         return app
     }

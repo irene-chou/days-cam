@@ -12,7 +12,7 @@ final class ColorToneUITests: XCTestCase {
     private func launch(angle: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", profileName]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName]
         if let angle { app.launchArguments += ["-UITestCaptureRotationAngle", angle] }
         app.launch()
         return app

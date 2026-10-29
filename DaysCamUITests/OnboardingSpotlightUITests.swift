@@ -23,7 +23,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
     }
 
     private func launch(reset: Bool) {
-        app.launchArguments = ["-UITestFreshProfiles", profileName] + (reset ? ["-UITestResetOnboarding"] : [])
+        app.launchArguments = ["-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName] + (reset ? ["-UITestResetOnboarding"] : [])
         app.launch()
     }
 
@@ -181,7 +181,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
     /// 96.13: `-UITestSkipOnboarding` hides the tour for that launch only.
     func testSkipArgumentHidesTheTour() {
         app.terminate()
-        app.launchArguments = ["-UITestFreshProfiles", profileName, "-UITestResetOnboarding", "-UITestSkipOnboarding"]
+        app.launchArguments = ["-UITestFreshProfiles", profileName, "-UITestResetOnboarding", "-UITestSkipOnboarding", "-UITestOpenFirstRecord"]
         app.launch()
         assertTourGone("96.13 skipped")
         app.terminate()

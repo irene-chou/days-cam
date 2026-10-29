@@ -11,7 +11,7 @@ final class OverlayTextTapUITests: XCTestCase {
         app = XCUIApplication()
         // `-UITestFocus` swaps in the fake focus backend the simulator needs
         // for the reticle to appear at all (see `FocusExposureUITests`).
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
