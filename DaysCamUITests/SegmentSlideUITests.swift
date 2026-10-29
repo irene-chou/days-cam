@@ -15,6 +15,7 @@ final class SegmentSlideUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString,
                                 "-UITestSegmentChip"] + extra
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         app.buttons["疊字設定"].tap()
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5), "the panel opened")

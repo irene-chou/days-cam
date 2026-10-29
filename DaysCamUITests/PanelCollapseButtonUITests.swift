@@ -16,6 +16,7 @@ final class PanelCollapseButtonUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         openPanel()
     }
 

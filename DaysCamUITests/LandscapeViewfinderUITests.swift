@@ -13,6 +13,7 @@ final class LandscapeViewfinderUITests: XCTestCase {
         if let angle { app.launchArguments += ["-UITestCaptureRotationAngle", angle] }
         if let filmDateCorner { app.launchArguments += ["-UITestFilmDate", filmDateCorner] }
         app.launch()
+        app.openCamera()
         return app
     }
 

@@ -13,6 +13,7 @@ final class FontWeightUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         openFontPage()
     }
 
@@ -66,6 +67,7 @@ final class FontWeightUITests: XCTestCase {
         attach("font-weights-light-selected")
         app.terminate()
         app.launch()
+        app.openCamera()
         openFontPage()
         XCTAssertTrue(weight("light").waitForExistence(timeout: 5))
         XCTAssertTrue(weight("light").isSelected, "89.3 kept after relaunch")

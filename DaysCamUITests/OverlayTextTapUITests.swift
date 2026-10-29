@@ -13,6 +13,7 @@ final class OverlayTextTapUITests: XCTestCase {
         // for the reticle to appear at all (see `FocusExposureUITests`).
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
     }
 
     /// The day-count text on the viewfinder (第 1 天 on a fresh profile).

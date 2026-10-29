@@ -12,6 +12,7 @@ final class DayCountToggleUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
     }
 
     private func toggle(_ name: String) -> XCUIElement {

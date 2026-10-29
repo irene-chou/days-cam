@@ -15,6 +15,7 @@ final class AlbumAccessUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestPhotoAccess", mode]
         app.launch()
+        app.openCamera()
         return app
     }
 

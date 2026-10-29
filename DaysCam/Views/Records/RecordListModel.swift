@@ -2,6 +2,21 @@ import Combine
 import Foundation
 import Photos
 
+/// A page pushed on the 紀錄 list's navigation stack.
+enum RecordRoute: Hashable {
+    /// The photo wall of a record (FR-17).
+    case wall(UUID)
+    /// The editor of a record (FR-21).
+    case editor(UUID)
+
+    /// The record the page belongs to.
+    var recordID: UUID {
+        switch self {
+        case let .wall(id), let .editor(id): return id
+        }
+    }
+}
+
 /// Drives the 紀錄 list, the home screen of 2.0 (PRD 2.0 FR-16, FR-21).
 ///
 /// Mirrors the `ProfileStore` and reads photo counts from a
@@ -37,9 +52,10 @@ final class RecordListModel: ObservableObject {
     @Published private(set) var deletionCandidate: CameraProfile?
     /// The latest failed action, for the view to surface.
     @Published var lastError: Error?
-    /// The record ids pushed onto the list's navigation stack: one id is that
-    /// record's editor. Leaving a new record's editor by back discards it.
-    @Published var path: [UUID] = [] {
+    /// The pages pushed onto the list's navigation stack: a record's photo
+    /// wall, with its editor on top when opened from there. Leaving a new
+    /// record's editor by back discards it.
+    @Published var path: [RecordRoute] = [] {
         didSet { if path.isEmpty { discardDraft() } }
     }
     /// Bumped to re-read counts and album names when the library changed.
@@ -47,6 +63,7 @@ final class RecordListModel: ObservableObject {
 
     let store: ProfileStore
     let library: any RecordAlbumLibrary
+    private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
     private let makeRulesModel: (CameraProfile) -> RulesTabModel
@@ -69,6 +86,7 @@ final class RecordListModel: ObservableObject {
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
+        self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
         self.makeRulesModel = makeRulesModel ?? { profile in
@@ -150,11 +168,13 @@ final class RecordListModel: ObservableObject {
     }
 
     /// Deletes the armed record. The album and its photos are untouched.
+    /// Deleting from the record's own photo wall returns to the list.
     func confirmDeletion() {
         guard let candidate = deletionCandidate else { return }
         deletionCandidate = nil
         do {
             try store.delete(id: candidate.id)
+            if path.contains(where: { $0.recordID == candidate.id }) { path = [] }
         } catch {
             lastError = error
         }
@@ -162,9 +182,25 @@ final class RecordListModel: ObservableObject {
 
     // MARK: - Editor
 
-    /// Opens `id`'s editor.
+    /// Opens `id`'s editor from the list.
     func edit(id: UUID) {
-        path = [id]
+        path = [.editor(id)]
+    }
+
+    /// Opens `id`'s photo wall (FR-17).
+    func openWall(id: UUID) {
+        path = [.wall(id)]
+    }
+
+    /// Opens `id`'s editor on top of its photo wall (FR-17.9).
+    func editFromWall(id: UUID) {
+        path.append(.editor(id))
+    }
+
+    /// The wall's model for `id`.
+    func photoWallModel(for id: UUID) -> PhotoWallModel {
+        PhotoWallModel(profileID: id, store: store, library: library, calendar: calendar,
+                       todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" })
     }
 
     var canAdd: Bool { profiles.count < ProfileStore.profileLimit }
@@ -192,7 +228,7 @@ final class RecordListModel: ObservableObject {
             let added = try store.add(newProfile)
             draftID = added.id
             draftPreviousSelectedID = previousSelectedID
-            path = [added.id]
+            path = [.editor(added.id)]
         } catch {
             lastError = error
         }
@@ -210,13 +246,13 @@ final class RecordListModel: ObservableObject {
         draftID == id
     }
 
-    /// The checkmark: keeps the new record and returns to the list. The
-    /// caller then opens the record.
+    /// The checkmark: keeps the new record and opens its photo wall in place
+    /// of the editor (FR-21.2).
     @discardableResult
     func confirmNewRecord() -> UUID? {
         guard let id = draftID else { return nil }
         draftID = nil
-        path = []
+        path = [.wall(id)]
         return id
     }
 

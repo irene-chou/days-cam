@@ -13,6 +13,7 @@ final class ProfileReorderUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
     }
 
     private var profileChip: XCUIElement {
@@ -99,6 +100,7 @@ final class ProfileReorderUITests: XCTestCase {
         app.terminate()
         app.launchArguments = app.launchArguments.filter { $0 != "-UITestResetOnboarding" }
         app.launch()
+        app.openCamera()
         openSheet()
         XCTAssertEqual(rows.count, 2, "102.5 the order survives a relaunch")
     }

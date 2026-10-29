@@ -50,6 +50,14 @@ enum CameraTheme {
     /// tool that is on.
     static let inkOnPhoto = Color.white
 
+    /// The photo wall's day mark for a photo taken before the record's start
+    /// date, "前 N 天" (`#FFD9A8`, PRD 2.0 FR-17.4), replacing `inkOnPhoto`.
+    static let inkOnPhotoBeforeStart = Color(red: 0xFF / 255, green: 0xD9 / 255, blue: 0xA8 / 255)
+
+    /// Text on an `accent`-filled call-to-action such as 加入照片 (`#2A1A08`,
+    /// PRD 2.0 FR-17.6).
+    static let inkOnAccent = Color(red: 0x2A / 255, green: 0x1A / 255, blue: 0x08 / 255)
+
     /// The shutter's outer ring (`#EADFD3`), stated directly since it is
     /// used in exactly one place and does not need an Asset Catalog entry.
     static let shutterRing = Color(red: 0xEA / 255, green: 0xDF / 255, blue: 0xD3 / 255)

@@ -1,0 +1,277 @@
+import SwiftUI
+
+/// The photo wall of one record (PRD 2.0 FR-17, D-7 screen 2).
+///
+/// The record's photos by month, oldest to newest, opened at the newest, each
+/// square marked with its day count. The bottom bar adds photos from the
+/// library or opens the camera.
+struct PhotoWallView: View {
+    @StateObject private var model: PhotoWallModel
+    @ObservedObject var listModel: RecordListModel
+    @ObservedObject var cameraModel: CameraScreenModel
+    /// Called with the tapped photo's asset id. The viewer comes with #619; the
+    /// wall only reports the tap so a later selection mode can intercept it.
+    var onSelectPhoto: (String) -> Void = { _ in }
+
+    @State private var showsCamera = false
+    @State private var showsPicker = false
+
+    static let columnSpacing: CGFloat = 2
+    static let columnCount = 3
+
+    init(profileID: UUID,
+         listModel: RecordListModel,
+         cameraModel: CameraScreenModel,
+         onSelectPhoto: @escaping (String) -> Void = { _ in }) {
+        _model = StateObject(wrappedValue: listModel.photoWallModel(for: profileID))
+        self.listModel = listModel
+        self.cameraModel = cameraModel
+        self.onSelectPhoto = onSelectPhoto
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content
+            if showsBottomBar { bottomBar }
+        }
+        .background(CameraTheme.background.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { titleView }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+        }
+        .tint(CameraTheme.active)
+        .task { await model.prepare() }
+        .onAppear {
+            model.reload()
+            model.startObservingLibrary()
+        }
+        .onDisappear { model.stopObservingLibrary() }
+        .sheet(isPresented: $showsPicker) {
+            PhotoPicker { ids in
+                showsPicker = false
+                Task { await model.addPhotos(ids: ids) }
+            }
+            .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            CameraScreen(model: cameraModel) { showsCamera = false }
+        }
+        .alert("無法加入照片", isPresented: errorBinding) {
+            Button("好") { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Header
+
+    private var titleView: some View {
+        VStack(spacing: 1) {
+            Text(model.title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(CameraTheme.ink)
+                .lineLimit(1)
+            Text(model.subtitle)
+                .font(.system(size: 11.5).monospacedDigit())
+                .foregroundColor(CameraTheme.inkTertiary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("wallTitle")
+    }
+
+    /// 編輯紀錄 / 刪除紀錄 and nothing else (FR-17.9).
+    private var moreMenu: some View {
+        Menu {
+            Button {
+                listModel.editFromWall(id: model.profileID)
+            } label: {
+                Label("編輯紀錄", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                listModel.requestDeletion(of: model.profileID)
+            } label: {
+                Label("刪除紀錄", systemImage: "trash")
+            }
+            .disabled(!listModel.canDelete)
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel("更多")
+        .accessibilityIdentifier("wallMoreButton")
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.content {
+        case .photos: wall
+        case .empty: emptyState
+        case .needsPermission: PermissionGuidanceView()
+        case .waiting: Color.clear
+        }
+    }
+
+    private var showsBottomBar: Bool {
+        model.content == .photos || model.content == .empty
+    }
+
+    private var wall: some View {
+        GeometryReader { proxy in
+            let side = Self.cellSide(forWidth: proxy.size.width)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.sections) { section in
+                        Text(section.title)
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundColor(CameraTheme.inkSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 10)
+                            .padding(.bottom, 4)
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: Self.columnSpacing),
+                                                 count: Self.columnCount),
+                                  spacing: Self.columnSpacing) {
+                            ForEach(section.cells) { cell in
+                                PhotoWallCell(cell: cell, side: side, library: listModel.library) {
+                                    onSelectPhoto(cell.id)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, Self.columnSpacing)
+                .padding(.bottom, 8)
+                .frame(minHeight: proxy.size.height, alignment: .top)
+            }
+            .defaultScrollAnchor(.bottom)
+            .onAppear { preheat(side: side) }
+            .accessibilityIdentifier("photoWall")
+        }
+    }
+
+    /// The square side that fits three columns in `width` (FR-17.3).
+    static func cellSide(forWidth width: CGFloat) -> CGFloat {
+        let gaps = columnSpacing * CGFloat(columnCount - 1) + columnSpacing * 2
+        return max(1, floor((width - gaps) / CGFloat(columnCount)))
+    }
+
+    /// Warms the newest thumbnails, the ones the wall opens on.
+    private func preheat(side: CGFloat) {
+        let scale = UIScreen.main.scale
+        listModel.library.startCaching(ids: Array(model.photoIDs.suffix(60)),
+                                       targetSize: CGSize(width: side * scale, height: side * scale))
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Text("還沒有照片")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(CameraTheme.ink)
+            Text("從相簿加入，或用相機拍一張")
+                .font(.system(size: 13))
+                .foregroundColor(CameraTheme.inkSecondary)
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wallEmptyState")
+    }
+
+    // MARK: - Bottom bar (FR-17.6)
+
+    private var bottomBar: some View {
+        HStack {
+            Button {
+                showsPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("加入照片")
+                        .font(.system(size: 14, weight: .heavy))
+                }
+                .foregroundColor(CameraTheme.inkOnAccent)
+                .padding(.leading, 12)
+                .padding(.trailing, 16)
+                .padding(.vertical, 9)
+                .background(Capsule().fill(CameraTheme.accent))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("addPhotosButton")
+            Spacer()
+            Button {
+                cameraModel.selectProfile(id: model.profileID)
+                showsCamera = true
+            } label: {
+                Image(systemName: "camera")
+                    .font(.system(size: 22))
+                    .foregroundColor(CameraTheme.ink)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("拍一張")
+            .accessibilityIdentifier("wallCameraButton")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })
+    }
+}
+
+/// One square of the wall: the photo's thumbnail, aspect-filled, with its day
+/// mark at the lower left (FR-17.3, FR-17.4).
+private struct PhotoWallCell: View {
+    let cell: PhotoWallModel.Cell
+    let side: CGFloat
+    let library: any RecordAlbumLibrary
+    var onSelect: () -> Void
+
+    @State private var thumbnail: UIImage?
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Button(action: onSelect) {
+                ZStack {
+                    CameraTheme.fill
+                    if let thumbnail {
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: side, height: side)
+                    }
+                }
+                .frame(width: side, height: side)
+                .clipped()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("照片")
+            .accessibilityIdentifier("photoCell")
+
+            Text(cell.dayText)
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundColor(cell.isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto)
+                .shadow(color: .black.opacity(0.6), radius: 2)
+                .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
+                .padding(.leading, 6)
+                .padding(.bottom, 5)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("photoDayLabel")
+        }
+        .frame(width: side, height: side)
+        // Cancelled when the cell scrolls away, which cancels the request.
+        .task(id: cell.id) {
+            let pixels = side * displayScale
+            thumbnail = await library.thumbnail(id: cell.id, targetSize: CGSize(width: pixels, height: pixels))
+        }
+    }
+}

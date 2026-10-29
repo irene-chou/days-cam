@@ -26,8 +26,10 @@ struct DaysCamApp: App {
         }
     }
 
-    /// Debug UI tests pass `-UITestOpenFirstRecord` to enter the first record
-    /// at launch instead of stopping on the list (#617). Debug builds only.
+    /// Debug UI tests pass `-UITestOpenFirstRecord` to enter the first
+    /// record's photo wall at launch instead of stopping on the list (#617,
+    /// #618); they tap `wallCameraButton` to reach the camera. Debug builds
+    /// only.
     private static var opensFirstRecordAtLaunch: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-UITestOpenFirstRecord")
@@ -53,6 +55,11 @@ struct DaysCamApp: App {
                 }
             }
             return library
+        }
+        // Entering a record asks for photo access; an empty in-memory library
+        // keeps that system alert out of the tests that only want the camera.
+        if ProcessInfo.processInfo.arguments.contains("-UITestOpenFirstRecord") {
+            return FakeRecordAlbumLibrary()
         }
         #endif
         return SystemRecordAlbumLibrary()

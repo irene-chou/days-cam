@@ -13,6 +13,7 @@ final class RulesEditorLayoutUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         openEditor()
     }
 

@@ -11,6 +11,7 @@ final class ProfileSheetDismissUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
     }
 
     private var profileChip: XCUIElement {

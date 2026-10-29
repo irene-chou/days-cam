@@ -19,7 +19,7 @@ final class RecordListUITests: XCTestCase {
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         seeding.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-01"
         seeding.launch()
-        XCTAssertTrue(seeding.buttons["快門"].waitForExistence(timeout: 10))
+        XCTAssertTrue(seeding.openCamera())
         seeding.terminate()
 
         app = XCUIApplication()
@@ -30,6 +30,12 @@ final class RecordListUITests: XCTestCase {
 
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    /// Leaves the photo wall for the list with the system back button.
+    private func backToList() {
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5))
     }
 
     private func shot(_ name: String) {
@@ -79,9 +85,8 @@ final class RecordListUITests: XCTestCase {
         app.buttons["新增紀錄"].tap()
         XCTAssertTrue(element("recordEditor").waitForExistence(timeout: 5))
         app.buttons["createRecordButton"].tap()
-        XCTAssertTrue(app.buttons["回到紀錄"].waitForExistence(timeout: 10))
-        app.buttons["回到紀錄"].tap()
-        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10))
+        backToList()
 
         let first = app.descendants(matching: .any).matching(identifier: "recordRow").element(boundBy: 0)
         first.swipeLeft()
@@ -90,7 +95,7 @@ final class RecordListUITests: XCTestCase {
             .waitForExistence(timeout: 3), "5 the dialog names what is kept")
     }
 
-    /// 6: add a record named 小寶, tick it, land on the camera.
+    /// 6: add a record named 小寶, tick it, land on its photo wall.
     func testAddingARecordCreatesAndOpensIt() {
         launch(extra: ["-UITestRecordPhotos", "0"])
         XCTAssertTrue(app.buttons["新增紀錄"].waitForExistence(timeout: 10))
@@ -99,8 +104,8 @@ final class RecordListUITests: XCTestCase {
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.typeText("小寶")
         app.buttons["createRecordButton"].tap()
-        XCTAssertTrue(app.buttons["快門"].waitForExistence(timeout: 10), "6 the new record opened")
-        app.buttons["回到紀錄"].tap()
+        XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10), "6 the new record opened")
+        backToList()
         let rows = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '小寶'"))
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "6 the record is listed")
     }
@@ -109,9 +114,9 @@ final class RecordListUITests: XCTestCase {
     func testDeniedAccessShowsNeedsPermission() {
         launch(extra: ["-UITestRecordPhotos", "0", "-UITestPhotoAccess", "denied"])
         element("recordRow").tap()
-        // The camera opens for now; get back and edit through the swipe action.
-        XCTAssertTrue(app.buttons["回到紀錄"].waitForExistence(timeout: 10))
-        app.buttons["回到紀錄"].tap()
+        // The wall opens; get back and edit through the swipe action.
+        XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
+        backToList()
         let row = element("recordRow")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.swipeLeft()
@@ -129,8 +134,8 @@ final class RecordListUITests: XCTestCase {
     func testPickingAnAlbumShowsTheCheckmark() {
         launch(extra: ["-UITestRecordPhotos", "3"])
         element("recordRow").tap()
-        XCTAssertTrue(app.buttons["回到紀錄"].waitForExistence(timeout: 10))
-        app.buttons["回到紀錄"].tap()
+        XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
+        backToList()
         let row = element("recordRow")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.swipeLeft()

@@ -18,6 +18,7 @@ final class RetapFocusQATests: XCTestCase {
                                 "-UITestFreshProfiles", UUID().uuidString,
                                 "-captureAspectRatio", "threeByFour"]
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the overlay panel must start closed")
     }

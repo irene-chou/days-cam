@@ -12,6 +12,7 @@ final class TapSeekSliderUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         openStyleTab()
     }
 
@@ -114,6 +115,7 @@ final class TapSeekSliderUITests: XCTestCase {
 
         app.terminate()
         app.launch()
+        app.openCamera()
         openStyleTab()
         openStrokePage()
         settle(strokeWidth)

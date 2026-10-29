@@ -12,6 +12,7 @@ final class ContentPositionRowUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         app.buttons["疊字設定"].tap()
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))

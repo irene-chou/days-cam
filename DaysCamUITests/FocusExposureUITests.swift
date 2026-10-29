@@ -11,6 +11,7 @@ final class FocusExposureUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestZoomPresets"] + extra
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
     }
 

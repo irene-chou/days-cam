@@ -15,6 +15,7 @@ final class PanelOutsideTapUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
     }
 
     private var panelButton: XCUIElement { app.buttons["疊字設定"] }

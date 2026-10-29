@@ -25,6 +25,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
     private func launch(reset: Bool) {
         app.launchArguments = ["-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName] + (reset ? ["-UITestResetOnboarding"] : [])
         app.launch()
+        app.openCamera()
     }
 
     private var spotlight: XCUIElement { app.descendants(matching: .any)["onboardingSpotlight"] }
@@ -183,6 +184,7 @@ final class OnboardingSpotlightUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-UITestFreshProfiles", profileName, "-UITestResetOnboarding", "-UITestSkipOnboarding", "-UITestOpenFirstRecord"]
         app.launch()
+        app.openCamera()
         assertTourGone("96.13 skipped")
         app.terminate()
         launch(reset: false)
