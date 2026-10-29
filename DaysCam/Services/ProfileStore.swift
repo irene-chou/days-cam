@@ -199,9 +199,19 @@ extension ProfileStore {
         isPartialBackupPending = false
 
         guard fileManager.fileExists(atPath: fileURL.path) else {
-            didSeedFreshInstall = true
+            // A missing profiles.json is only a fresh install when no 1.x
+            // trace remains; otherwise (corrupt file set aside, an earlier
+            // write that failed) the seeded profile still has to receive the
+            // old photos and album, and `load()` migrates it.
+            let hasLegacyData = LegacyDataMigrator.hasLegacyData(
+                in: directory, profilesFileName: Self.fileName,
+                photosFileName: CapturedPhotoStore.fileName,
+                defaults: defaults, fileManager: fileManager)
+            didSeedFreshInstall = !hasLegacyData
             seedDefaultProfile()
-            LegacyDataMigrator.markMigrated(defaults: defaults)
+            if !hasLegacyData {
+                LegacyDataMigrator.markMigrated(defaults: defaults)
+            }
             return profiles
         }
 

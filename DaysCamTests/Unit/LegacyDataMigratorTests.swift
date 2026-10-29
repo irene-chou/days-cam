@@ -175,6 +175,32 @@ final class LegacyDataMigratorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
     }
 
+    func testMissingProfilesFileWithPhotosMigratesIntoSeededProfile() throws {
+        try JSONEncoder().encode(photoIDs).write(to: photosURL)
+        defaults.set("X", forKey: "daysCamAlbumIdentifier")
+        let store = makeStore()
+        let loaded = store.load()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].fallbackAssetIDs, photoIDs)
+        XCTAssertEqual(loaded[0].albumIdentifier, "X")
+        XCTAssertFalse(store.didSeedFreshInstall)
+        XCTAssertEqual(defaults.integer(forKey: LegacyDataMigrator.dataVersionKey), 2)
+    }
+
+    func testCorruptFileWithFailedWritesThenNextLaunchStillMigrates() throws {
+        try seedLegacyInstall(photos: photoIDs)
+        try Data("not json".utf8).write(to: profilesURL)
+        // Launch 1: file is set aside, re-seed and migration writes all fail.
+        makeStore(dataWriter: { _, _ in throw DiskFailure() }).load()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: profilesURL.path))
+        XCTAssertNotEqual(defaults.integer(forKey: LegacyDataMigrator.dataVersionKey), 2)
+        // Launch 2: disk works again.
+        let loaded = makeStore().load()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].fallbackAssetIDs, photoIDs)
+        XCTAssertEqual(defaults.integer(forKey: LegacyDataMigrator.dataVersionKey), 2)
+    }
+
     func testSecondLoadDoesNotRerunMigration() throws {
         try seedLegacyInstall(photos: photoIDs)
         makeStore().load()

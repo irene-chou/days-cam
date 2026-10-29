@@ -46,6 +46,20 @@ enum LegacyDataMigrator {
         }
     }
 
+    /// True when a missing `profiles.json` still comes with 1.x leftovers: a
+    /// non-empty `photos.json`, a remembered album, a v1 backup or a
+    /// `profiles.json.corrupt-*` set-aside file. Such an install is not fresh.
+    static func hasLegacyData(in directory: URL,
+                              profilesFileName: String,
+                              photosFileName: String,
+                              defaults: UserDefaults,
+                              fileManager: FileManager) -> Bool {
+        if !legacyAssetIDs(at: directory.appendingPathComponent(photosFileName)).isEmpty { return true }
+        if let album = defaults.string(forKey: albumIdentifierKey), !album.isEmpty { return true }
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.contains { $0 == backupFileName || $0.hasPrefix("\(profilesFileName).corrupt-") }
+    }
+
     /// Returns `profiles` with the legacy photo IDs and album attached to the
     /// profile `targetID` (M-2, M-3).
     ///
