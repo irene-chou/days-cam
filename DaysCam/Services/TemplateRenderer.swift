@@ -19,6 +19,24 @@ struct TemplateRenderer {
     /// (#249, replacing PRD FR-2.5's ideographic space).
     static let partSeparator = " "
 
+    /// Shown for a photo that has no creation date (PRD 2.0 §6.1.3).
+    static let unknownDateText = "日期不明"
+
+    /// Which moment `capturedAt` stands for (PRD 2.0 §6.2).
+    enum RenderMoment {
+        /// The shutter instant, or "now": a start date still ahead reads
+        /// as a countdown, `還有 N 天`.
+        case today
+        /// A photo's own moment, possibly long past: a photo taken before
+        /// the start date reads `前 N 天` instead of a countdown.
+        case photo
+    }
+
+    /// Words before the day gap for a photo taken before the start date.
+    static func daysBeforeStartText(days: Int) -> String {
+        "前 \(days) 天"
+    }
+
     init() {}
 
     /// Renders the overlay text for `profile` as of `capturedAt`.
@@ -28,7 +46,8 @@ struct TemplateRenderer {
     /// Parts are joined by a single half-width space.
     func render(profile: CameraProfile,
                 capturedAt: Date,
-                calendar: Calendar = .autoupdatingCurrent) -> String {
+                calendar: Calendar = .autoupdatingCurrent,
+                moment: RenderMoment = .today) -> String {
         // One clock for the whole render, and it is the caller's.
         let calculator = DayCountCalculator(calendar: calendar, now: { capturedAt })
 
@@ -42,7 +61,7 @@ struct TemplateRenderer {
         // Date, name, then the elapsed amount; with the day count off the
         // same order minus the last part — "日期 名稱", not the old "名稱
         // 日期" (TASK-107, #426, unified on purpose).
-        let elapsed: String? = profile.showDayCount ? elapsedText(profile: profile, calculator: calculator) : nil
+        let elapsed: String? = profile.showDayCount ? elapsedText(profile: profile, calculator: calculator, moment: moment) : nil
         return [date, name, elapsed].compactMap { $0 }.joined(separator: Self.partSeparator)
     }
 }
@@ -69,13 +88,18 @@ private extension TemplateRenderer {
 
 private extension TemplateRenderer {
     /// The elapsed amount in the checked `displayUnits` (PRD 0.2 §4.5).
-    func elapsedText(profile: CameraProfile, calculator: DayCountCalculator) -> String {
+    func elapsedText(profile: CameraProfile, calculator: DayCountCalculator, moment: RenderMoment) -> String {
         // Checked on the raw difference, not the day count: under `.dayOne` a
         // start date one day out still counts to 0, and 0 is not "day zero".
         // The counting rule plays no part in how far away the start is, so a
         // start date tomorrow reads 還有 1 天 under either rule.
         let rawDifference = calculator.rawDayDifference(from: profile.startDate)
         guard rawDifference >= 0 else {
+            // A photo earlier than the start date: calendar days before it,
+            // whatever the rule, units, wording or format (PRD 2.0 §6.2).
+            if moment == .photo {
+                return Self.daysBeforeStartText(days: -rawDifference)
+            }
             return countdownText(profile: profile, calculator: calculator, daysUntilStart: -rawDifference)
         }
 
