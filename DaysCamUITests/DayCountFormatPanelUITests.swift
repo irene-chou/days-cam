@@ -15,6 +15,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString] + extraArguments
         app.launch()
+        app.openCamera()
         app.buttons["疊字設定"].tap()
         let content = contentTab
         XCTAssertTrue(content.waitForExistence(timeout: 10))

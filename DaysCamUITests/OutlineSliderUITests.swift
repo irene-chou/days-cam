@@ -14,6 +14,7 @@ final class OutlineSliderUITests: XCTestCase {
         profileName = UUID().uuidString
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName]
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         app.buttons["疊字設定"].tap()
         app.buttons["樣式"].tap()
@@ -98,6 +99,7 @@ final class OutlineSliderUITests: XCTestCase {
         XCTAssertEqual(points(strokeSlider), dragged)
         app.terminate()
         app.launch()
+        app.openCamera()
         app.buttons["疊字設定"].tap()
         app.buttons["樣式"].tap()
         app.buttons["外框"].tap()

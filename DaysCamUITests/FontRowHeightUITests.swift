@@ -17,6 +17,7 @@ final class FontRowHeightUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))

@@ -14,6 +14,7 @@ final class FontRowChevronUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         openFontPage()
     }
 
@@ -157,6 +158,7 @@ final class FontRowChevronUITests: XCTestCase {
         attach("115.3_weight-applied")
         app.terminate()
         app.launch()
+        app.openCamera()
         openFontPage()
         XCTAssertTrue(noto.waitForExistence(timeout: 5))
         XCTAssertTrue(noto.isSelected, "115.3 still selected after relaunch")

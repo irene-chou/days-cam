@@ -3,15 +3,14 @@ import SwiftUI
 /// The home screen of 2.0: the 紀錄 list (PRD 2.0 FR-16, D-7 screen 1).
 ///
 /// A large title, `plus` at the top right, then one plain row per record: no
-/// thumbnail, no style preview, no frame. Tapping a row opens the camera for
-/// that record for now (#617); #618 replaces this with the photo wall.
+/// thumbnail, no style preview, no frame. Tapping a row pushes that record's
+/// photo wall (#618); the camera opens from the wall.
 struct RecordListView: View {
     @ObservedObject var model: RecordListModel
     @ObservedObject var cameraModel: CameraScreenModel
     /// Debug UI tests: enter the first record at launch, skipping the list.
     var opensFirstRecordAtLaunch = false
 
-    @State private var openedRecordID: UUID?
     @State private var didOpenAtLaunch = false
 
     var body: some View {
@@ -39,9 +38,12 @@ struct RecordListView: View {
                     .accessibilityIdentifier("addRecordButton")
                 }
             }
-            .navigationDestination(for: UUID.self) { id in
-                RecordEditorView(model: model, profileID: id) { newID in
-                    open(newID)
+            .navigationDestination(for: RecordRoute.self) { route in
+                switch route {
+                case let .wall(id):
+                    PhotoWallView(profileID: id, listModel: model, cameraModel: cameraModel)
+                case let .editor(id):
+                    RecordEditorView(model: model, profileID: id)
                 }
             }
         }
@@ -61,9 +63,6 @@ struct RecordListView: View {
                 Text(error.displayMessage)
             }
         }
-        .fullScreenCover(isPresented: cameraBinding) {
-            CameraScreen(model: cameraModel) { openedRecordID = nil }
-        }
         .onAppear {
             model.startObservingLibrary()
             model.reloadLibrary()
@@ -77,7 +76,7 @@ struct RecordListView: View {
         List {
             ForEach(model.rows) { row in
                 Button {
-                    open(row.id)
+                    model.openWall(id: row.id)
                 } label: {
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -131,22 +130,12 @@ struct RecordListView: View {
 
     // MARK: - Opening a record
 
-    /// Selects the record and presents the camera (temporary route, #617).
-    private func open(_ id: UUID) {
-        cameraModel.selectProfile(id: id)
-        openedRecordID = id
-    }
-
     private func openFirstRecordIfRequested() {
         guard opensFirstRecordAtLaunch, !didOpenAtLaunch, let first = model.rows.first else { return }
         didOpenAtLaunch = true
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        withTransaction(transaction) { open(first.id) }
-    }
-
-    private var cameraBinding: Binding<Bool> {
-        Binding(get: { openedRecordID != nil }, set: { if !$0 { openedRecordID = nil } })
+        withTransaction(transaction) { model.openWall(id: first.id) }
     }
 
     private var deletionBinding: Binding<Bool> {

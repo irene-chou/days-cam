@@ -11,6 +11,7 @@ final class ZoomPresetBarUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestZoomPresets", "-captureAspectRatio", "threeByFour"]
         app.launch()
+        app.openCamera()
     }
 
     private var roundButton: XCUIElement { app.buttons["zoomRoundButton"] }

@@ -14,6 +14,7 @@ final class OverlayDragUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
     }
 

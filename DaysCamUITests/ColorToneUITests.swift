@@ -15,6 +15,7 @@ final class ColorToneUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName]
         if let angle { app.launchArguments += ["-UITestCaptureRotationAngle", angle] }
         app.launch()
+        app.openCamera()
         return app
     }
 

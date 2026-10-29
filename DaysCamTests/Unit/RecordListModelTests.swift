@@ -196,8 +196,9 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, before)
 
         model.addRecord()
-        let id = try XCTUnwrap(model.path.first)
+        guard case let .editor(id)? = model.path.first else { return XCTFail("the editor is pushed") }
         XCTAssertEqual(model.confirmNewRecord(), id)
+        XCTAssertEqual(model.path, [.wall(id)], "the checkmark opens the new record's wall")
         XCTAssertEqual(store.profiles.count, before + 1)
     }
 }

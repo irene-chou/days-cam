@@ -22,6 +22,7 @@ final class FormatTabReorderUITests: XCTestCase {
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         seeding.launchEnvironment["DAYSCAM_FAKE_TODAY"] = startDay
         seeding.launch()
+        seeding.openCamera()
         XCTAssertTrue(seeding.buttons["疊字設定"].waitForExistence(timeout: 10))
         seeding.terminate()
 
@@ -29,6 +30,7 @@ final class FormatTabReorderUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
         app.launch()
+        app.openCamera()
         app.buttons["疊字設定"].tap()
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))

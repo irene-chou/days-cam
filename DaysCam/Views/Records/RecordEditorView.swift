@@ -2,17 +2,15 @@ import SwiftUI
 
 /// The record editor (PRD 2.0 FR-21): the shared rules form (name, start
 /// date, day-count rules) plus the 相簿 row. One page for adding and editing.
-/// Adding shows a checkmark that creates the record and opens it; editing
-/// saves as it goes and the back button leaves.
+/// Adding shows a checkmark that creates the record and opens its photo wall
+/// in place of this page; editing saves as it goes and the back button leaves.
 struct RecordEditorView: View {
     @ObservedObject var model: RecordListModel
     let profileID: UUID
-    /// Called with the record's id after the checkmark created it.
-    var onCreated: (UUID) -> Void = { _ in }
 
     var body: some View {
         if let profile = model.profile(id: profileID) {
-            RecordEditorContent(model: model, profile: profile, onCreated: onCreated)
+            RecordEditorContent(model: model, profile: profile)
         } else {
             // The record vanished (deleted); the stack pops itself.
             Color.clear.onAppear { model.path = [] }
@@ -23,13 +21,11 @@ struct RecordEditorView: View {
 private struct RecordEditorContent: View {
     @ObservedObject var model: RecordListModel
     let profile: CameraProfile
-    var onCreated: (UUID) -> Void
     @StateObject private var rulesModel: RulesTabModel
 
-    init(model: RecordListModel, profile: CameraProfile, onCreated: @escaping (UUID) -> Void) {
+    init(model: RecordListModel, profile: CameraProfile) {
         self.model = model
         self.profile = profile
-        self.onCreated = onCreated
         _rulesModel = StateObject(wrappedValue: model.rulesModel(for: profile))
     }
 
@@ -52,7 +48,7 @@ private struct RecordEditorContent: View {
             if model.isDraft(profile.id) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        if let id = model.confirmNewRecord() { onCreated(id) }
+                        model.confirmNewRecord()
                     } label: {
                         Image(systemName: "checkmark")
                     }

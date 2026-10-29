@@ -11,6 +11,7 @@ final class FilmDateViewfinderUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString,
                                 "-UITestFilmDate", corner]
         app.launch()
+        app.openCamera()
         return app
     }
 
@@ -95,6 +96,7 @@ final class FilmDateViewfinderUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         XCTAssertNil(orangeBox(in: attach(app, "153.1_film-date-off")))
     }

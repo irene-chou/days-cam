@@ -9,6 +9,7 @@ final class StyleSubTabLabelUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
+        app.openCamera()
         app.buttons["疊字設定"].tap()
         let styleTab = app.buttons["樣式"]
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5))
