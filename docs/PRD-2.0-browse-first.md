@@ -162,7 +162,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 | FR-17.7 | 「加入照片」用 `PHPickerViewController`（`photoLibrary: .shared()`，多選、只有圖片）。選完把 `assetIdentifier` 加進相簿（`PHAssetCollectionChangeRequest.addAssets`）；相簿不存在就先建（名稱＝紀錄名稱）再加。加入失敗要報錯，不得報成成功 |
 | FR-17.8 | 相簿變動（`PHPhotoLibraryChangeObserver`）即時反映，包括使用者在「照片」App 加進或移出 |
 | FR-17.9 | 右上 ⋯：「編輯紀錄」「刪除紀錄」。第一期只有這兩項，不顯示灰字佔位 |
-| FR-17.10 | 空狀態（相簿空、也沒有 fallback）：中央「還沒有照片」＋「從相簿加入，或用相機拍一張」＋同一顆「加入照片」鍵 |
+| FR-17.10 | 空狀態（相簿空、也沒有 fallback）：中央「還沒有照片」＋「從相簿加入，或用相機拍一張」；不放中央按鈕，只用底部同一顆「加入照片」鍵 |
 
 ### 5.3 FR-18：大圖（D-7 畫面 3）
 
