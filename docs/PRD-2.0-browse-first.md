@@ -182,7 +182,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 |---|---|
 | FR-19.1 | 頂列：左 `xmark`、中「匯出」（第二行「第 N 天」）、右 `checkmark`（`active` 色；完成一律打勾圖示） |
 | FR-19.2 | 預覽：寬約 52% 的原比例縮圖，套與大圖相同的即時標記；面板改動即時反映 |
-| FR-19.3 | 面板：**現有的內容／樣式／位置三個分頁整個搬過來**（0.2 FR-10、FR-11、FR-12、PRD-0.3 字型），行為不變，拖曳定位改在預覽縮圖上拖。天數規則分頁移到紀錄編輯頁（§3.1） |
+| FR-19.3 | 面板：**現有的「樣式｜內容」兩段整個搬過來**（位置九宮格在「內容」分頁，#567／#568；0.2 FR-10、FR-11、FR-12、PRD-0.3 字型），行為不變，拖曳定位改在預覽縮圖上拖。天數規則分頁移到紀錄編輯頁（§3.1） |
 | FR-19.4 | 面板改動**直接寫回紀錄**（即存），取消不還原（與 1.x 面板行為一致） |
 | FR-19.5 | 打勾：用 `PHImageManager` 取原始尺寸影像（`.highQualityFormat`、`isNetworkAccessAllowed = true`，iCloud 照片要能下載）→ `OverlayRenderer.bake(image, text, style, placement, filmDate, tone: .standard, cropRect: 全圖)` → `PhotoSaver.save`（`.addOnly` 即可，不加進任何相簿）。文字用 `capturedAt = creationDate` 產生（§6.1） |
 | FR-19.6 | 成功：VoiceOver 唸「已匯出」、畫面 toast「已匯出」0.9 秒後回大圖。失敗：沿用 0.1 §7.3 的錯誤 alert，不得報成成功 |

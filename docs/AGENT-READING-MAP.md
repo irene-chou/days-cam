@@ -14,7 +14,7 @@
 
 1. [CONVENTIONS](CONVENTIONS.md)：驗收分級、共用測試情境、檔案所有權、易誤判處。
 2. 任務卡是 GitHub issue：`gh issue view <號碼>`，讀目標／範圍／全部驗收／依賴。
-3. 規格分三層：[PRD 0.1](PRD.md) ← [PRD-0.2](PRD-0.2-ui-redesign.md) ← [PRD-0.3](PRD-0.3-fonts.md)，新版未覆蓋的沿用前一版；衝突先查 PRD-0.2 §9、PRD-0.3 §8 的覆蓋清單。只讀卡片引用的章節，牽涉設計時讀對應設計稿（規格以 PRD 為準）。
+3. 規格分四層：[PRD 0.1](PRD.md) ← [PRD-0.2](PRD-0.2-ui-redesign.md) ← [PRD-0.3](PRD-0.3-fonts.md) ← [PRD-2.0](PRD-2.0-browse-first.md)，新版未覆蓋的沿用前一版；衝突先查 PRD-2.0 §9、PRD-0.2 §9、PRD-0.3 §8 的覆蓋清單。**2.0 的卡（#613 起）必讀 PRD-2.0 與設計稿 [D7](design/D7-browse-flow.html)**。只讀卡片引用的章節，牽涉設計時讀對應設計稿（規格以 PRD 為準）。
 4. 修改拍攝／日期／渲染／持久化時補讀 PRD 0.1 §4、§6 相關不變條件。
 
 新任務不要複製一整份背景，提供文件路徑、章節、issue／PR 編號與 SHA 即可。
