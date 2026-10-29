@@ -11,6 +11,9 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
         let id: String
         var mediaType: PHAssetMediaType = .image
         var creationDate: Date?
+        /// Width over height of the images served for this asset; `nil`
+        /// fills whatever size is asked for.
+        var aspectRatio: CGFloat?
     }
 
     struct Album: Equatable {
@@ -121,7 +124,16 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
 
     func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { Self.solidImage(for: id, size: targetSize) }
 
-    func displayImage(id: String, targetSize: CGSize) async -> UIImage? { Self.solidImage(for: id, size: targetSize) }
+    func displayImage(id: String, targetSize: CGSize) async -> UIImage? {
+        var size = targetSize
+        if let ratio = assets.first(where: { $0.id == id })?.aspectRatio, ratio > 0 {
+            // Aspect-fit inside the target, like `PHImageManager` does.
+            size = ratio >= targetSize.width / max(targetSize.height, 1)
+                ? CGSize(width: targetSize.width, height: targetSize.width / ratio)
+                : CGSize(width: targetSize.height * ratio, height: targetSize.height)
+        }
+        return Self.solidImage(for: id, size: size)
+    }
 
     func fullImage(id: String, progress: @escaping @Sendable (Double) -> Void) async throws -> UIImage {
         if let failure { throw failure }
@@ -145,19 +157,25 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
 extension FakeRecordAlbumLibrary {
     /// `n` still photos, one per day ending on `today`, oldest first:
     /// ids `uitest-photo-1…n`, no album.
-    static func generatedPhotos(count: Int, today: Date, calendar: Calendar = .autoupdatingCurrent) -> [Asset] {
+    ///
+    /// With `mixedAspects` the photos alternate portrait (3:4) and landscape
+    /// (3:2), the first being portrait.
+    static func generatedPhotos(count: Int, today: Date, calendar: Calendar = .autoupdatingCurrent,
+                                mixedAspects: Bool = false) -> [Asset] {
         guard count > 0 else { return [] }
         return (0..<count).map { offset in
             let daysAgo = count - 1 - offset
             return Asset(id: "uitest-photo-\(offset + 1)",
-                         creationDate: calendar.date(byAdding: .day, value: -daysAgo, to: today))
+                         creationDate: calendar.date(byAdding: .day, value: -daysAgo, to: today),
+                         aspectRatio: mixedAspects ? (offset % 2 == 0 ? 0.75 : 1.5) : nil)
         }
     }
 
     /// The library for UI tests: with `-UITestRecordPhotos <n>` it holds `n`
     /// generated photos dated one per day back from `DAYSCAM_FAKE_TODAY`
     /// (or the real today). `nil` without the argument, so the caller uses
-    /// the real library. `-UITestPhotoAccess` picks the status (default full).
+    /// the real library. `-UITestPhotoAccess` picks the status (default full);
+    /// `-UITestMixedAspects` alternates portrait and landscape photos.
     static func forUITests(arguments: [String] = ProcessInfo.processInfo.arguments,
                            environment: [String: String] = ProcessInfo.processInfo.environment,
                            calendar: Calendar = .autoupdatingCurrent) -> FakeRecordAlbumLibrary? {
@@ -174,7 +192,8 @@ extension FakeRecordAlbumLibrary {
             default: break
             }
         }
-        return FakeRecordAlbumLibrary(status: status, assets: generatedPhotos(count: count, today: today, calendar: calendar))
+        return FakeRecordAlbumLibrary(status: status, assets: generatedPhotos(count: count, today: today, calendar: calendar,
+                                                                        mixedAspects: arguments.contains("-UITestMixedAspects")))
     }
 }
 #endif
