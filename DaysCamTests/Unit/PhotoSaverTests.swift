@@ -35,6 +35,7 @@ final class PhotoSaverTests: XCTestCase {
         private(set) var checkedLevels: [PHAccessLevel] = []
         private(set) var writeCount = 0
         private(set) var albumWrites: [(albumIdentifier: String?, albumTitle: String)] = []
+        private(set) var recordAlbumWrites: [(albumIdentifier: String?, albumTitle: String)] = []
 
         init(status: PHAuthorizationStatus, grants: PHAuthorizationStatus = .authorized) {
             self.status = status
@@ -63,6 +64,20 @@ final class PhotoSaverTests: XCTestCase {
                 completion(false, nil, writeError)
             } else {
                 completion(true, identifierToReturn, nil)
+            }
+        }
+
+        func saveToRecordAlbum(_ image: UIImage,
+                               albumIdentifier: String?,
+                               albumTitle: String,
+                               completion: @escaping (AlbumWriteResult) -> Void) {
+            recordAlbumWrites.append((albumIdentifier, albumTitle))
+            if let albumWriteError {
+                completion(AlbumWriteResult(succeeded: false, assetIdentifier: nil,
+                                            albumIdentifier: nil, error: albumWriteError))
+            } else {
+                completion(AlbumWriteResult(succeeded: true, assetIdentifier: identifierToReturn,
+                                            albumIdentifier: albumIdentifierToReturn, error: nil))
             }
         }
 
@@ -591,6 +606,109 @@ extension PhotoSaverTests {
         wait(for: [done], timeout: 2)
 
         XCTAssertTrue(wasOnMain)
+    }
+
+    // MARK: - Record album paths (PRD 2.0, #616)
+
+    private func saveToRecord(_ library: StubLibrary, albumIdentifier: String? = nil) throws
+        -> Result<RecordSaveOutcome, PhotoSaveError> {
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
+        let done = expectation(description: "record save completes")
+        var result: Result<RecordSaveOutcome, PhotoSaveError>?
+        saver.saveToRecordAlbum(image, albumIdentifier: albumIdentifier, albumTitle: "小寶") {
+            result = $0
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        return try XCTUnwrap(result)
+    }
+
+    func test_recordAlbum_authorized_returnsAssetAndAlbum() throws {
+        let library = StubLibrary(status: .notDetermined)
+        library.readWriteStatus = .authorized
+        let result = try saveToRecord(library, albumIdentifier: "album-9")
+        XCTAssertEqual(try result.get(), RecordSaveOutcome(assetID: "stub-asset-identifier", albumID: "album-1"))
+        XCTAssertEqual(library.recordAlbumWrites.count, 1)
+        XCTAssertEqual(library.recordAlbumWrites.first?.albumIdentifier, "album-9")
+        XCTAssertEqual(library.recordAlbumWrites.first?.albumTitle, "小寶")
+        XCTAssertEqual(library.writeCount, 0)
+    }
+
+    func test_recordAlbum_limited_savesAddOnlyWithoutAlbum() throws {
+        let library = StubLibrary(status: .notDetermined)
+        library.readWriteStatus = .limited
+        let result = try saveToRecord(library)
+        XCTAssertEqual(try result.get(), RecordSaveOutcome(assetID: "stub-asset-identifier", albumID: nil))
+        XCTAssertEqual(library.requestedLevels, [.addOnly])
+        XCTAssertTrue(library.recordAlbumWrites.isEmpty)
+        XCTAssertEqual(library.writeCount, 1)
+    }
+
+    func test_recordAlbum_denied_failsWithoutWriting() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .denied
+        assertRecordFailure(try saveToRecord(library), .permissionDenied)
+        XCTAssertEqual(library.writeCount, 0)
+        XCTAssertTrue(library.recordAlbumWrites.isEmpty)
+    }
+
+    func test_recordAlbum_authorizedWriteFailure_isFailure() throws {
+        let library = StubLibrary(status: .notDetermined)
+        library.readWriteStatus = .authorized
+        library.albumWriteError = NSError(domain: "test", code: 1)
+        let result = try saveToRecord(library)
+        guard case .failure(.saveFailed) = result else { return XCTFail("expected saveFailed, got \(result)") }
+        XCTAssertEqual(library.writeCount, 0, "must not silently retry into recents")
+    }
+
+    func test_recordAlbum_limitedWriteFailure_isFailure() throws {
+        let library = StubLibrary(status: .authorized)
+        library.readWriteStatus = .limited
+        library.writeError = NSError(domain: "test", code: 2)
+        let result = try saveToRecord(library)
+        guard case .failure(.saveFailed) = result else { return XCTFail("expected saveFailed, got \(result)") }
+    }
+
+    func test_recentsOnly_requestsAddOnlyAndSkipsAlbum() throws {
+        let library = StubLibrary(status: .notDetermined)
+        library.readWriteStatus = .authorized
+        // An enabled album switch must not matter for exports.
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings(enabled: true))
+        let done = expectation(description: "export save completes")
+        var result: Result<String, PhotoSaveError>?
+        saver.saveToRecentsOnly(image) {
+            result = $0
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        XCTAssertEqual(try XCTUnwrap(result).get(), "stub-asset-identifier")
+        XCTAssertEqual(library.requestedLevels, [.addOnly])
+        XCTAssertTrue(library.albumWrites.isEmpty)
+        XCTAssertTrue(library.recordAlbumWrites.isEmpty)
+        XCTAssertFalse(library.checkedLevels.contains(.readWrite))
+    }
+
+    func test_recentsOnly_writeFailure_isFailure() throws {
+        let library = StubLibrary(status: .authorized)
+        library.writeError = NSError(domain: "test", code: 3)
+        let saver = PhotoSaver(library: library, albumSettings: FakeAlbumSettings())
+        let done = expectation(description: "export save completes")
+        var result: Result<String, PhotoSaveError>?
+        saver.saveToRecentsOnly(image) {
+            result = $0
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        guard case .failure(.saveFailed)? = result else { return XCTFail("expected saveFailed, got \(String(describing: result))") }
+    }
+
+    private func assertRecordFailure(_ result: Result<RecordSaveOutcome, PhotoSaveError>,
+                                     _ expected: PhotoSaveError,
+                                     file: StaticString = #filePath, line: UInt = #line) {
+        guard case .failure(let error) = result else {
+            return XCTFail("expected \(expected), got success", file: file, line: line)
+        }
+        XCTAssertEqual(error, expected, file: file, line: line)
     }
 }
 

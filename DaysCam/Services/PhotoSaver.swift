@@ -41,6 +41,34 @@ protocol PhotoLibraryAccessing {
                      albumIdentifier: String?,
                      albumTitle: String,
                      completion: @escaping (AlbumWriteResult) -> Void)
+    /// Creates the asset and adds it to the album in one change block, like
+    /// `saveToAlbum`, but never looks an album up by title: when
+    /// `albumIdentifier` is `nil` or no longer resolves, a new album titled
+    /// `albumTitle` is created even if a same-titled one exists (PRD 2.0
+    /// §4.1). Needs full `.readWrite` access.
+    func saveToRecordAlbum(_ image: UIImage,
+                           albumIdentifier: String?,
+                           albumTitle: String,
+                           completion: @escaping (AlbumWriteResult) -> Void)
+}
+
+extension PhotoLibraryAccessing {
+    /// Default for fakes that never write to a record album.
+    func saveToRecordAlbum(_ image: UIImage,
+                           albumIdentifier: String?,
+                           albumTitle: String,
+                           completion: @escaping (AlbumWriteResult) -> Void) {
+        completion(AlbumWriteResult(succeeded: false, assetIdentifier: nil, albumIdentifier: nil, error: nil))
+    }
+}
+
+/// Where a camera photo ended up (PRD 2.0 FR-21.4).
+struct RecordSaveOutcome: Equatable {
+    /// The new asset's `localIdentifier`.
+    let assetID: String
+    /// The record's album, or `nil` when the photo is only in 「最近項目」 and
+    /// the caller has to store `assetID` as a fallback id.
+    let albumID: String?
 }
 
 /// What one `saveToAlbum` change block did.
@@ -89,6 +117,32 @@ struct SystemPhotoLibrary: PhotoLibraryAccessing {
         // Under limited access, title lookup may hide a user-created namesake;
         // creating another album in that case is expected (TASK-79, #306).
         let existing = Self.album(identifier: albumIdentifier) ?? Self.album(titled: albumTitle)
+        var assetIdentifier: String?
+        var resolvedAlbumIdentifier = existing?.localIdentifier
+        PHPhotoLibrary.shared().performChanges({
+            guard let asset = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                .placeholderForCreatedAsset else { return }
+            assetIdentifier = asset.localIdentifier
+            if let existing {
+                PHAssetCollectionChangeRequest(for: existing)?.addAssets([asset] as NSArray)
+            } else {
+                let creation = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: albumTitle)
+                creation.addAssets([asset] as NSArray)
+                resolvedAlbumIdentifier = creation.placeholderForCreatedAssetCollection.localIdentifier
+            }
+        }, completionHandler: { succeeded, error in
+            completion(AlbumWriteResult(succeeded: succeeded,
+                                        assetIdentifier: assetIdentifier,
+                                        albumIdentifier: resolvedAlbumIdentifier,
+                                        error: error))
+        })
+    }
+
+    func saveToRecordAlbum(_ image: UIImage,
+                           albumIdentifier: String?,
+                           albumTitle: String,
+                           completion: @escaping (AlbumWriteResult) -> Void) {
+        let existing = Self.album(identifier: albumIdentifier)
         var assetIdentifier: String?
         var resolvedAlbumIdentifier = existing?.localIdentifier
         PHPhotoLibrary.shared().performChanges({
@@ -233,7 +287,14 @@ final class PhotoSaver {
             writeToAlbum(image, map: map, completion: completion)
             return
         }
+        saveAddOnly(image, map: map, completion: completion)
+    }
 
+    /// The `.addOnly` path: asks for permission if undecided, then writes to
+    /// 「最近項目」 only.
+    private func saveAddOnly<T>(_ image: UIImage,
+                                map: @escaping (String) -> T,
+                                completion: @escaping (Result<T, PhotoSaveError>) -> Void) {
         let accessLevel = Self.accessLevel
 
         switch library.authorizationStatus(for: accessLevel) {
@@ -254,6 +315,47 @@ final class PhotoSaver {
         default:
             // Denied or restricted. Both are settled refusals, so re-asking
             // would do nothing but produce a prompt the system suppresses.
+            finish(.failure(.permissionDenied), completion)
+        }
+    }
+
+    /// Saves an exported image into 「最近項目」 only (PRD 2.0 FR-19.9): asks
+    /// for `.addOnly` at most, never adds it to any album. `completion` runs
+    /// once on the main queue; a refused or failed write is a `.failure`.
+    func saveToRecentsOnly(_ image: UIImage,
+                           completion: @escaping (Result<String, PhotoSaveError>) -> Void) {
+        saveAddOnly(image, map: { $0 }, completion: completion)
+    }
+
+    /// Saves a camera photo for a record (PRD 2.0 FR-21.4), by the current
+    /// `.readWrite` status (never prompts for it):
+    /// - full access: saves and adds it to the record's album, creating one
+    ///   titled `albumTitle` if `albumIdentifier` is `nil` or unknown;
+    ///   returns `(assetID, albumID)`.
+    /// - limited or undecided: saves through `.addOnly` to 「最近項目」 and
+    ///   returns `(assetID, nil)`; the caller keeps `assetID` as a fallback.
+    /// - denied or restricted: `.permissionDenied`, nothing written.
+    /// A failed write is always a `.failure`; there is no silent retry.
+    func saveToRecordAlbum(_ image: UIImage,
+                           albumIdentifier: String?,
+                           albumTitle: String,
+                           completion: @escaping (Result<RecordSaveOutcome, PhotoSaveError>) -> Void) {
+        switch library.authorizationStatus(for: .readWrite) {
+        case .authorized:
+            library.saveToRecordAlbum(image, albumIdentifier: albumIdentifier, albumTitle: albumTitle) { result in
+                let outcome: Result<RecordSaveOutcome, PhotoSaveError>
+                if !result.succeeded {
+                    outcome = .failure(.saveFailed(Self.describe(result.error)))
+                } else if let asset = result.assetIdentifier, let album = result.albumIdentifier {
+                    outcome = .success(RecordSaveOutcome(assetID: asset, albumID: album))
+                } else {
+                    outcome = .failure(.saveFailed("儲存成功但未取得照片識別碼"))
+                }
+                self.finish(outcome, completion)
+            }
+        case .limited, .notDetermined:
+            saveAddOnly(image, map: { RecordSaveOutcome(assetID: $0, albumID: nil) }, completion: completion)
+        default:
             finish(.failure(.permissionDenied), completion)
         }
     }
