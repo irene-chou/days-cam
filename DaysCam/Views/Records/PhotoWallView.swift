@@ -9,10 +9,7 @@ struct PhotoWallView: View {
     @StateObject private var model: PhotoWallModel
     @ObservedObject var listModel: RecordListModel
     @ObservedObject var cameraModel: CameraScreenModel
-    /// Called with the tapped photo's asset id. The viewer comes with #619; the
-    /// wall only reports the tap so a later selection mode can intercept it.
-    var onSelectPhoto: (String) -> Void = { _ in }
-
+    @State private var viewerPhotoID: String?
     @State private var showsCamera = false
     @State private var showsPicker = false
 
@@ -21,12 +18,10 @@ struct PhotoWallView: View {
 
     init(profileID: UUID,
          listModel: RecordListModel,
-         cameraModel: CameraScreenModel,
-         onSelectPhoto: @escaping (String) -> Void = { _ in }) {
+         cameraModel: CameraScreenModel) {
         _model = StateObject(wrappedValue: listModel.photoWallModel(for: profileID))
         self.listModel = listModel
         self.cameraModel = cameraModel
-        self.onSelectPhoto = onSelectPhoto
     }
 
     var body: some View {
@@ -56,6 +51,13 @@ struct PhotoWallView: View {
         }
         .fullScreenCover(isPresented: $showsCamera) {
             CameraScreen(model: cameraModel) { showsCamera = false }
+        }
+        .navigationDestination(item: $viewerPhotoID) { photoID in
+            PhotoDetailView(model: listModel.photoDetailModel(
+                for: model.profileID, startingAt: photoID,
+                resolveFont: { [cameraModel] style in
+                    OverlayMetrics.resolvedFont(for: style, availability: cameraModel.fontLibrary)
+                }))
         }
         .alert("無法加入照片", isPresented: errorBinding) {
             Button("好") { model.errorMessage = nil }
@@ -135,7 +137,7 @@ struct PhotoWallView: View {
                                   spacing: Self.columnSpacing) {
                             ForEach(section.cells) { cell in
                                 PhotoWallCell(cell: cell, side: side, library: listModel.library) {
-                                    onSelectPhoto(cell.id)
+                                    viewerPhotoID = cell.id
                                 }
                             }
                         }

@@ -203,6 +203,13 @@ final class RecordListModel: ObservableObject {
                        todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" })
     }
 
+    /// The viewer's model, opened on `photoID` of record `id` (#619).
+    func photoDetailModel(for id: UUID, startingAt photoID: String,
+                          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoDetailModel {
+        PhotoDetailModel(profileID: id, startingAt: photoID, store: store, library: library,
+                         calendar: calendar, renderer: renderer, resolveFont: resolveFont)
+    }
+
     var canAdd: Bool { profiles.count < ProfileStore.profileLimit }
 
     /// Creates a default record and pushes its editor, name empty (FR-21.2).
