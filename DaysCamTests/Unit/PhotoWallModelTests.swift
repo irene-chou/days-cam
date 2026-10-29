@@ -180,12 +180,67 @@ final class PhotoWallModelTests: XCTestCase {
         let (store, profile) = try makeStore()
         let empty = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary())
         XCTAssertEqual(empty.content, .empty)
-        for status in [PHAuthorizationStatus.denied, .restricted, .limited] {
+        for status in [PHAuthorizationStatus.denied, .restricted] {
             let model = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: status))
             XCTAssertEqual(model.content, .needsPermission, "\(status)")
         }
         let undecided = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: .notDetermined))
         XCTAssertEqual(undecided.content, .waiting)
+    }
+
+    /// #622-1: limited access still shows the wall (or its empty state), flagged
+    /// for the notice; full access is not flagged.
+    func testLimitedAccessShowsTheWallWithTheNotice() throws {
+        let (store, profile) = try makeStore()
+        let limited = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: .limited))
+        XCTAssertEqual(limited.content, .empty)
+        XCTAssertTrue(limited.isLimited)
+        let full = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary())
+        XCTAssertFalse(full.isLimited)
+    }
+
+    /// #622-2: under limited access 「加入照片」 opens the system picker, shows
+    /// no `PHPicker` and writes nothing to the library or the record.
+    func testLimitedAddOpensTheSystemPickerAndWritesNothing() throws {
+        let (store, profile) = try makeStore()
+        let library = FakeRecordAlbumLibrary(status: .limited, assets: [asset("x", 1, 3)])
+        var presented = 0
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                                   todayText: { _ in "" }, presentLimitedPicker: { presented += 1 })
+
+        XCTAssertFalse(model.beginAddingPhotos(), "no PHPicker")
+        XCTAssertEqual(presented, 1)
+        XCTAssertTrue(library.albums.isEmpty, "addAssets not called")
+        XCTAssertNil(store.profiles.first { $0.id == profile.id }?.albumIdentifier)
+    }
+
+    /// #622-2: under full access the caller still shows its own picker.
+    func testFullAccessAddLeavesThePickerToTheCaller() throws {
+        let (store, profile) = try makeStore()
+        var presented = 0
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: FakeRecordAlbumLibrary(),
+                                   calendar: calendar, todayText: { _ in "" }, presentLimitedPicker: { presented += 1 })
+        XCTAssertTrue(model.beginAddingPhotos())
+        XCTAssertEqual(presented, 0)
+    }
+
+    /// #622-5: coming back from Settings with access granted swaps the
+    /// permission page for the wall; withdrawing it swaps back.
+    func testReloadRereadsTheAuthorization() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        library.status = .denied
+        let model = makeModel(store: store, profile: profile, library: library)
+        XCTAssertEqual(model.content, .needsPermission)
+
+        library.status = .authorized
+        model.reload()
+        XCTAssertEqual(model.content, .photos)
+        XCTAssertFalse(model.isLimited)
+
+        library.status = .denied
+        model.reload()
+        XCTAssertEqual(model.content, .needsPermission)
     }
 
     func testPrepareAsksOnceWhenUndecided() async throws {
