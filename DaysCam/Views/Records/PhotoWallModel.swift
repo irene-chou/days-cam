@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Photos
+import UIKit
 
 /// Drives the photo wall of one record (PRD 2.0 FR-17, D-7 screen 2).
 ///
@@ -32,8 +33,8 @@ final class PhotoWallModel: ObservableObject {
     enum Content: Equatable {
         /// Access is still being asked for.
         case waiting
-        /// Access is limited or denied; #622 replaces this with the full
-        /// three-state flow.
+        /// Access is denied or restricted: the wall gives way to the
+        /// permission page (§7.4). The record itself stays editable.
         case needsPermission
         /// Full access, nothing to show (FR-17.10).
         case empty
@@ -56,6 +57,7 @@ final class PhotoWallModel: ObservableObject {
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
     private let todayText: (CameraProfile) -> String
+    private let presentLimitedPicker: () -> Void
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
 
@@ -63,16 +65,20 @@ final class PhotoWallModel: ObservableObject {
     ///
     /// - Parameter todayText: "今天第 N 天" for the header, supplied by the
     ///   list so both screens read the same clock and wording.
+    /// - Parameter presentLimitedPicker: Opens the system "select more photos"
+    ///   sheet; injected so tests can count the calls.
     init(profileID: UUID,
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
-         todayText: @escaping (CameraProfile) -> String) {
+         todayText: @escaping (CameraProfile) -> String,
+         presentLimitedPicker: @escaping () -> Void = { LimitedLibraryPicker.present() }) {
         self.profileID = profileID
         self.store = store
         self.library = library
         self.calendar = calendar
         self.todayText = todayText
+        self.presentLimitedPicker = presentLimitedPicker
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
@@ -104,9 +110,13 @@ final class PhotoWallModel: ObservableObject {
 
     // MARK: - State
 
+    /// Limited access: the wall shows the "not synced with Photos" notice and
+    /// "加入照片" opens the system picker (§7.3).
+    var isLimited: Bool { status == .limited }
+
     var content: Content {
         switch status {
-        case .authorized: return photoIDs.isEmpty ? .empty : .photos
+        case .authorized, .limited: return photoIDs.isEmpty ? .empty : .photos
         case .notDetermined: return .waiting
         default: return .needsPermission
         }
@@ -155,6 +165,17 @@ final class PhotoWallModel: ObservableObject {
     }
 
     // MARK: - Adding photos
+
+    /// The 「加入照片」 tap. Under limited access it opens the system "select
+    /// more photos" sheet itself and returns `false`: the photos the user
+    /// ticks there are the record's photos, so no `PHPicker` and no album
+    /// write follow (§7.3). Otherwise returns `true` for the caller to show
+    /// its own picker.
+    func beginAddingPhotos() -> Bool {
+        guard isLimited else { return true }
+        presentLimitedPicker()
+        return false
+    }
 
     /// Adds the picked assets to the record's album, creating the album when
     /// the record has none, and stores the album id if it changed (FR-17.7).
@@ -230,5 +251,19 @@ final class PhotoWallModel: ObservableObject {
             }
         }
         return result
+    }
+}
+
+/// Opens the system limited-library picker over the topmost view controller.
+enum LimitedLibraryPicker {
+    @MainActor
+    static func present() {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        var top = scene?.keyWindow?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        guard let top else { return }
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
     }
 }

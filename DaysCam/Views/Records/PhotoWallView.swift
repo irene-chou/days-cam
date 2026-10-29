@@ -10,6 +10,7 @@ struct PhotoWallView: View {
     @ObservedObject var listModel: RecordListModel
     @ObservedObject var cameraModel: CameraScreenModel
     @State private var viewerPhotoID: String?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showsCamera = false
     @State private var showsPicker = false
 
@@ -26,6 +27,7 @@ struct PhotoWallView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if model.isLimited && showsBottomBar { limitedBanner }
             content
             if showsBottomBar { bottomBar }
         }
@@ -42,6 +44,10 @@ struct PhotoWallView: View {
             model.startObservingLibrary()
         }
         .onDisappear { model.stopObservingLibrary() }
+        // Back from Settings the status may have changed (§7.4).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.reload() }
+        }
         .sheet(isPresented: $showsPicker) {
             PhotoPicker { ids in
                 showsPicker = false
@@ -111,7 +117,7 @@ struct PhotoWallView: View {
         switch model.content {
         case .photos: wall
         case .empty: emptyState
-        case .needsPermission: PermissionGuidanceView()
+        case .needsPermission: PhotoAccessView()
         case .waiting: Color.clear
         }
     }
@@ -166,6 +172,19 @@ struct PhotoWallView: View {
                                        targetSize: CGSize(width: side * scale, height: side * scale))
     }
 
+    /// Limited access notice, always on top of the wall (§7.3).
+    private var limitedBanner: some View {
+        Text("限制取用中，不會與「照片」App 的相簿同步")
+            .font(.system(size: 12.5))
+            .foregroundColor(CameraTheme.inkSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("limitedAccessBanner")
+    }
+
     private var emptyState: some View {
         VStack(spacing: 6) {
             Text("還沒有照片")
@@ -187,7 +206,7 @@ struct PhotoWallView: View {
     private var bottomBar: some View {
         HStack {
             Button {
-                showsPicker = true
+                if model.beginAddingPhotos() { showsPicker = true }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.on.rectangle.angled")
