@@ -18,8 +18,9 @@ import SwiftUI
 /// borderless "v6" this file originally shipped with — #75) states plainly
 /// that "分段控制本身有底色，是『非必要不加框』的例外" — an iOS segmented
 /// control's own gray track, matching PRD FR-8.4's own wording.
-struct OverlayPanelView: View {
-    @ObservedObject var model: CameraScreenModel
+struct OverlayPanelView<Host: OverlayPanelHosting>: View {
+    /// The camera (until #621) or the export page (#620).
+    @ObservedObject var model: Host
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The usable scrolling area's fixed height below the segmented control
@@ -47,33 +48,13 @@ struct OverlayPanelView: View {
     /// and the panel above it (human decision 2026-10-11; it was a fixed 2).
     var tabBarHorizontalInset: CGFloat = 6
 
-    /// A downward drag this far (pt) on the segmented row collapses.
-    static let collapseSwipeDistance: CGFloat = 30
-    /// A fast flick whose predicted end travels this far also collapses.
-    static let collapseSwipePredictedDistance: CGFloat = 80
-    /// The chevron's tap target (TASK-116, 116.2).
-    static let collapseButtonTapSide: CGFloat = 44
-    /// Gap between the gray track and the chevron.
-    static let collapseButtonGap: CGFloat = 4
-
-    /// Whether a drag that ended on the segmented row should collapse the
-    /// panel (116.3／116.4): downward past 30pt, or predicted to travel 80pt,
-    /// and more vertical than horizontal. Up, sideways and short drags do
-    /// nothing.
-    static func shouldCollapse(translation: CGSize, predictedEndTranslation: CGSize) -> Bool {
-        guard translation.height > 0, abs(translation.height) > abs(translation.width) else { return false }
-        return translation.height >= collapseSwipeDistance
-            || predictedEndTranslation.height >= collapseSwipePredictedDistance
-    }
-
-    /// Room every tab leaves under its last row (116.8): the band plus 8pt.
-    static func bottomContentInset(bottomSafeAreaInset: CGFloat) -> CGFloat {
-        bottomSafeAreaInset + 8
-    }
+    /// Whether the collapse chevron is shown. The export page keeps the panel
+    /// open and has nothing to collapse to (#620).
+    var showsCollapseButton = true
 
     /// What every tab keeps clear under its last row.
     private var bottomContentInset: CGFloat {
-        Self.bottomContentInset(bottomSafeAreaInset: bottomSafeAreaInset)
+        OverlayPanelLayout.bottomContentInset(bottomSafeAreaInset: bottomSafeAreaInset)
     }
 
     /// The chevron grows with Dynamic Type, capped at 22pt.
@@ -177,7 +158,7 @@ struct OverlayPanelView: View {
     /// shadow. Its 44pt tap target extends above and below the row without
     /// changing the row's height.
     private var collapseButton: some View {
-        let side = Self.collapseButtonTapSide
+        let side = OverlayPanelLayout.collapseButtonTapSide
         return Button(action: onCollapse) {
             Image(systemName: "chevron.down")
                 .font(.system(size: min(chevronSize, 22), weight: .semibold))
@@ -222,9 +203,9 @@ struct OverlayPanelView: View {
     /// edit, so its numbers are stale for this one element, not a gap #105
     /// should close.
     private var segmentedControl: some View {
-        HStack(spacing: Self.collapseButtonGap) {
+        HStack(spacing: OverlayPanelLayout.collapseButtonGap) {
             segmentTrack
-            collapseButton
+            if showsCollapseButton { collapseButton }
         }
         // The chevron's right edge sits the same distance from the screen
         // edge as the track's left edge (2026-10-11 margin, TASK-116).
@@ -234,7 +215,7 @@ struct OverlayPanelView: View {
         // not follow the finger (116.6) and the list below never sees it.
         .simultaneousGesture(
             DragGesture(minimumDistance: 10).onEnded { value in
-                if Self.shouldCollapse(translation: value.translation,
+                if OverlayPanelLayout.shouldCollapse(translation: value.translation,
                                        predictedEndTranslation: value.predictedEndTranslation) {
                     onCollapse()
                 }
@@ -292,7 +273,7 @@ struct OverlayPanelView: View {
             let width = proxy.size.width / CGFloat(tabs.count)
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white)
-                .shadow(color: Self.selectedSegmentShadow, radius: 3, x: 0, y: 1)
+                .shadow(color: OverlayPanelLayout.selectedSegmentShadow, radius: 3, x: 0, y: 1)
                 .frame(width: width, height: proxy.size.height)
                 .offset(x: width * CGFloat(index))
                 .animation(slideAnimation, value: index)
@@ -309,11 +290,6 @@ struct OverlayPanelView: View {
         return false
         #endif
     }
-
-    /// The selected-segment shadow (`rgba(60,40,20,.15)`,
-    /// `D3-tab-options.html:70`) — stated directly, like
-    /// `CameraTheme.shutterRing`, since it is used in exactly one place.
-    private static let selectedSegmentShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.15)
 
     /// One of the three equal-width segments (`.A .seg button`): plain text
     /// whose colour follows the selection; the white chip behind it is
@@ -375,6 +351,39 @@ struct OverlayPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
     }
+}
+
+/// The overlay panel's fixed measures and gesture rule, outside the generic
+/// `OverlayPanelView` so they can be stored and read without a host type.
+enum OverlayPanelLayout {
+    /// A downward drag this far (pt) on the segmented row collapses.
+    static let collapseSwipeDistance: CGFloat = 30
+    /// A fast flick whose predicted end travels this far also collapses.
+    static let collapseSwipePredictedDistance: CGFloat = 80
+    /// The chevron's tap target (TASK-116, 116.2).
+    static let collapseButtonTapSide: CGFloat = 44
+    /// Gap between the gray track and the chevron.
+    static let collapseButtonGap: CGFloat = 4
+
+    /// Whether a drag that ended on the segmented row should collapse the
+    /// panel (116.3／116.4): downward past 30pt, or predicted to travel 80pt,
+    /// and more vertical than horizontal. Up, sideways and short drags do
+    /// nothing.
+    static func shouldCollapse(translation: CGSize, predictedEndTranslation: CGSize) -> Bool {
+        guard translation.height > 0, abs(translation.height) > abs(translation.width) else { return false }
+        return translation.height >= collapseSwipeDistance
+            || predictedEndTranslation.height >= collapseSwipePredictedDistance
+    }
+
+    /// Room every tab leaves under its last row (116.8): the band plus 8pt.
+    static func bottomContentInset(bottomSafeAreaInset: CGFloat) -> CGFloat {
+        bottomSafeAreaInset + 8
+    }
+
+    /// The selected-segment shadow (`rgba(60,40,20,.15)`,
+    /// `D3-tab-options.html:70`) — stated directly, like
+    /// `CameraTheme.shutterRing`, since it is used in exactly one place.
+    static let selectedSegmentShadow = Color(red: 60 / 255, green: 40 / 255, blue: 20 / 255).opacity(0.15)
 }
 
 /// Presents `PositionTabModel.lastError` for both tabs, since the overlay can

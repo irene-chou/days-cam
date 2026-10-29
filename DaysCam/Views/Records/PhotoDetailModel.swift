@@ -126,6 +126,12 @@ final class PhotoDetailModel: ObservableObject {
         return renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
     }
 
+    /// Whether `photo` can be exported: only with a `creationDate`, since the
+    /// day count comes from it (§6.1.3, FR-18.5).
+    func canExport(_ photo: RecordPhoto) -> Bool {
+        profile != nil && photo.creationDate != nil
+    }
+
     /// The name of the record, for the remove action's title.
     var recordName: String { profile?.name ?? "" }
 

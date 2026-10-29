@@ -67,6 +67,8 @@ final class RecordListModel: ObservableObject {
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
     private let makeRulesModel: (CameraProfile) -> RulesTabModel
+    /// Saves an exported photo to 「最近項目」 only (FR-19.9).
+    private let exportSave: ExportModel.Save
     /// The record created by "新增紀錄" that the checkmark has not confirmed.
     private var draftID: UUID?
     private var subscriptions = Set<AnyCancellable>()
@@ -77,12 +79,18 @@ final class RecordListModel: ObservableObject {
     /// - Parameter makeRulesModel: builds the editor's `RulesTabModel`; the
     ///   default routes writes through a `TabProfileWriter` so a rules edit
     ///   never overwrites a field another writer just changed (#70).
+    /// - Parameter exportSave: saves an exported photo; defaults to
+    ///   `PhotoSaver.saveToRecentsOnly`.
     init(store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator? = nil,
          renderer: TemplateRenderer = TemplateRenderer(),
-         makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil) {
+         makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil,
+         exportSave: @escaping ExportModel.Save = { image, completion in
+             PhotoSaver().saveToRecentsOnly(image, completion: completion)
+         }) {
+        self.exportSave = exportSave
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
@@ -208,6 +216,19 @@ final class RecordListModel: ObservableObject {
                           resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoDetailModel {
         PhotoDetailModel(profileID: id, startingAt: photoID, store: store, library: library,
                          calendar: calendar, renderer: renderer, resolveFont: resolveFont)
+    }
+
+    /// The export page's model for `photo` of record `id` (#620): the panel
+    /// edits the record through the camera model's shared font path, and the
+    /// result is saved by `exportSave` (「最近項目」 only).
+    func exportModel(for id: UUID, photo: RecordPhoto, cameraModel: CameraScreenModel) -> ExportModel {
+        let fontLibrary = cameraModel.fontLibrary
+        return ExportModel(profileID: id, photo: photo, store: store, library: library,
+                           editor: cameraModel.makeStyleEditor(for: id),
+                           calendar: calendar, renderer: renderer,
+                           save: exportSave,
+                           resolveFont: { style in OverlayMetrics.resolvedFont(for: style, availability: fontLibrary) },
+                           fontChanges: fontLibrary.objectWillChange)
     }
 
     var canAdd: Bool { profiles.count < ProfileStore.profileLimit }

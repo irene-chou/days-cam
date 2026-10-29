@@ -158,29 +158,27 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var viewfinderRotation: ViewfinderRotation = .portrait
     private let captureRotationAngleOverride: CGFloat?
 
-    /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
-    /// Rebuilt only when `selectedProfileID` actually changes — see
+    /// The overlay panel's tab models for the selected profile (#620: built
+    /// by `ProfileStyleEditor`, shared with the export page). Rebuilt only
+    /// when `selectedProfileID` actually changes — see
     /// `refreshOverlayPanelTabModelsIfNeeded`.
-    @Published private(set) var styleTabModel: StyleTabModel?
+    @Published private(set) var styleEditor: ProfileStyleEditor?
+
+    /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
+    var styleTabModel: StyleTabModel? { styleEditor?.styleTabModel }
 
     /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
-    /// Rebuilt alongside `styleTabModel`.
-    @Published private(set) var formatTabModel: FormatTabModel?
-    /// The content tab's writer, kept so its baseline can follow the store
-    /// when the tab takes over an external change (TASK-109).
-    private var formatWriter: TabProfileWriter?
+    var formatTabModel: FormatTabModel? { styleEditor?.formatTabModel }
 
     /// The 位置 model (PRD 0.2 FR-12, TASK-24), shown by the 內容 tab's 位置 row.
-    /// Rebuilt alongside `styleTabModel`; `panelModel.overlayDragHandler` is
-    /// kept pointed at a fresh `PositionDragAdapter` wrapping this instance
-    /// every time it changes (see `positionDragAdapter`).
-    @Published private(set) var positionTabModel: PositionTabModel?
+    /// `panelModel.overlayDragHandler` points at the editor's
+    /// `PositionDragAdapter` wrapping this instance.
+    var positionTabModel: PositionTabModel? { styleEditor?.positionTabModel }
 
-    /// Bridges `panelModel.overlayDragHandler`'s translation-based reports to
-    /// `positionTabModel`'s center-based `applyDrag` (#65's "轉接"). Held
-    /// strongly here — `overlayDragHandler` is `weak` (see its own doc
-    /// comment), so nothing else keeps this alive.
-    private var positionDragAdapter: PositionDragAdapter?
+    /// Editors built for other screens (the export page, #620), so a font
+    /// that finishes downloading is announced in, and does not overtake a
+    /// newer weight chosen in, their font list too. Held weakly.
+    private let otherStyleEditors = NSHashTable<ProfileStyleEditor>.weakObjects()
 
     /// True from the moment the shutter fires until AVFoundation hands back
     /// the photo (or fails), success or failure. Only this span keeps the
@@ -511,18 +509,10 @@ final class CameraScreenModel: ObservableObject {
                 guard let self else { return }
                 self.profiles = profiles
                 // The style tab's own copy must pick up a font written outside
-                // it (`applyFont`; PRD 0.3 FR-5.18).
-                if let styleTabModel = self.styleTabModel,
-                   let latest = profiles.first(where: { $0.id == styleTabModel.profile.id }) {
-                    styleTabModel.applyExternalChanges(from: latest)
-                }
-                // The content tab's 名稱 switch is the edit page's 寫在照片上
-                // (TASK-109): whichever wrote last, the other shows it.
-                if let formatTabModel = self.formatTabModel,
-                   let latest = profiles.first(where: { $0.id == formatTabModel.displaySettings.profile.id }) {
-                    self.formatWriter?.adopt(latest)
-                    formatTabModel.displaySettings.applyExternalChanges(from: latest)
-                }
+                // it (`applyFont`; PRD 0.3 FR-5.18), and the content tab's 名稱
+                // switch is the edit page's 寫在照片上 (TASK-109): whichever
+                // wrote last, the other shows it.
+                self.styleEditor?.applyExternalChanges(from: profiles)
             }
             .store(in: &cancellables)
         // Profile writes are debounced (#464), so a failed save no longer
@@ -593,31 +583,47 @@ final class CameraScreenModel: ObservableObject {
     /// record with this tab's own copy, silently reverting whatever fields
     /// a *different* tab (or a rename elsewhere) wrote in the
     /// meantime — exactly #70's reported bug. Every closure below instead
-    /// goes through a `TabProfileWriter` (this file's own type, just below),
+    /// goes through a `TabProfileWriter` (built by `ProfileStyleEditor`),
     /// which merges only the fields that changed since that tab's own last
     /// write onto the store's current record.
     private func refreshOverlayPanelTabModelsIfNeeded() {
-        guard styleTabModel?.profile.id != selectedProfileID else { return }
+        guard styleEditor?.profileID != selectedProfileID else { return }
         guard let selectedProfile else {
-            styleTabModel = nil
-            formatTabModel = nil
-            positionTabModel = nil
-            positionDragAdapter = nil
+            styleEditor = nil
             panelModel.overlayDragHandler = nil
             return
         }
+        let editor = buildStyleEditor(for: selectedProfile)
+        styleEditor = editor
+        panelModel.overlayDragHandler = editor.dragAdapter
+    }
 
-        let styleWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        styleTabModel = StyleTabModel(
-            profile: selectedProfile,
+    /// The overlay panel's tab models for `profileID`, for another screen (the
+    /// export page, #620). Fonts are applied through this model's `applyFont`,
+    /// and announced in the editor's font list while it is open. `nil` when
+    /// the profile does not exist.
+    func makeStyleEditor(for profileID: UUID) -> ProfileStyleEditor? {
+        guard let profile = profileStore.profiles.first(where: { $0.id == profileID }) else { return nil }
+        let editor = buildStyleEditor(for: profile)
+        otherStyleEditors.add(editor)
+        return editor
+    }
+
+    /// Builds the tab models for `profileID`, writing through the store and
+    /// applying fonts through `applyFont`.
+    private func buildStyleEditor(for profile: CameraProfile) -> ProfileStyleEditor {
+        ProfileStyleEditor(
+            profile: profile,
+            profileStore: profileStore,
             fontLibrary: fontLibrary,
+            calendar: calendar,
+            calculator: calculator,
+            renderer: renderer,
             applyFont: { [weak self] fontID, profileID in
                 self?.applyFont(fontID, profileID: profileID)
             },
             allProfiles: { [weak self] in self?.profiles ?? [] },
-            updateProfile: { [weak self] profile in
-                let previous = self?.profileStore.profiles.first { $0.id == profile.id }
-                try styleWriter.write(profile)
+            didWriteStyle: { [weak self] previous, profile in
                 // A weight chosen in the font list writes font and weight
                 // without `applyFont`; it is the newest font choice for this
                 // profile, so a download still pending for it must not land
@@ -628,22 +634,11 @@ final class CameraScreenModel: ObservableObject {
                     self?.pendingFontApplications[profile.id] = nil
                 }
             })
+    }
 
-        let formatWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        self.formatWriter = formatWriter
-        let displaySettings = DisplaySettingsModel(profile: selectedProfile,
-                                                   calendar: calendar,
-                                                   calculator: calculator,
-                                                   renderer: renderer,
-                                                   updateProfile: formatWriter.write)
-        formatTabModel = FormatTabModel(displaySettings: displaySettings)
-
-        let positionWriter = TabProfileWriter(baseline: selectedProfile, profileStore: profileStore)
-        let newPositionTabModel = PositionTabModel(profile: selectedProfile, updateProfile: positionWriter.write)
-        positionTabModel = newPositionTabModel
-        let adapter = PositionDragAdapter(positionTabModel: newPositionTabModel)
-        positionDragAdapter = adapter
-        panelModel.overlayDragHandler = adapter
+    /// Every style tab model on screen: the camera's, then other editors'.
+    private var allStyleTabModels: [StyleTabModel] {
+        [styleTabModel].compactMap { $0 } + otherStyleEditors.allObjects.map(\.styleTabModel)
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
@@ -1600,6 +1595,9 @@ extension CameraScreenModel {
     }
 }
 
+/// The camera hosts the overlay panel for the selected profile until #621.
+extension CameraScreenModel: OverlayPanelHosting {}
+
 // MARK: - Fonts (PRD 0.3, TASK-35)
 
 /// What the camera screen needs from the font library: availability and the
@@ -1719,11 +1717,13 @@ extension CameraScreenModel {
         return true
     }
 
-    /// Hands the style tab the store's latest copy of its profile (FR-5.18).
+    /// Hands every style tab on screen the store's latest copy of its profile
+    /// (FR-5.18).
     fileprivate func syncStyleTabModelWithStore() {
-        guard let styleTabModel,
-              let latest = profileStore.profiles.first(where: { $0.id == styleTabModel.profile.id }) else { return }
-        styleTabModel.applyExternalChanges(from: latest)
+        for styleTabModel in allStyleTabModels {
+            guard let latest = profileStore.profiles.first(where: { $0.id == styleTabModel.profile.id }) else { continue }
+            styleTabModel.applyExternalChanges(from: latest)
+        }
     }
 
     /// Follows the library: finishes or drops pending applications, and
@@ -1751,8 +1751,10 @@ extension CameraScreenModel {
                 // The user has since picked a weight of another font for this
                 // profile and it is still downloading: that is the newer
                 // choice, so this one must not land first (#458).
-                if let list = styleTabModel?.fontList, list.profileID == profileID,
-                   let newer = list.pendingWeight, newer.fontID != fontID { continue }
+                if allStyleTabModels.contains(where: { model in
+                    model.fontList.profileID == profileID
+                        && model.fontList.pendingWeight.map({ $0.fontID != fontID }) == true
+                }) { continue }
                 if writeFont(fontID, to: profileID) { announceApplied(fontID) }
             case .notDownloaded, .failed:
                 pendingFontApplications[profileID] = nil
@@ -1762,11 +1764,11 @@ extension CameraScreenModel {
         }
     }
 
-    /// "已套用「<名稱>」" (FR-16.6): in the font list when it is open, on the
-    /// camera screen otherwise.
+    /// "已套用「<名稱>」" (FR-16.6): in the font list when it is open (the
+    /// camera's or the export page's), on the camera screen otherwise.
     private func announceApplied(_ fontID: OverlayFontID) {
         let text = "已套用「\(fontID.displayName)」"
-        if let list = styleTabModel?.fontLibraryModel {
+        if let list = allStyleTabModels.lazy.compactMap(\.fontLibraryModel).first {
             list.post(text)
         } else {
             showToast(message: text)
