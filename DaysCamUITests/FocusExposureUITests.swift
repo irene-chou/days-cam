@@ -9,7 +9,7 @@ final class FocusExposureUITests: XCTestCase {
     private func launch(_ extra: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFocus", "-UITestZoomPresets"] + extra
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestZoomPresets"] + extra
         app.launch()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
     }

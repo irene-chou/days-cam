@@ -9,7 +9,7 @@ final class NewProfileDraftUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -22,7 +22,10 @@ final class NewProfileDraftUITests: XCTestCase {
     }
     private var addButton: XCUIElement { app.buttons["新增設定檔"] }
     private var nameField: XCUIElement { app.textFields.firstMatch }
-    private var backButton: XCUIElement { app.navigationBars.firstMatch.buttons.firstMatch }
+    // The 紀錄 list's bar sits under the camera; the sheet's page is the last bar.
+    private var backButton: XCUIElement {
+        app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch
+    }
 
     private func openSheet() {
         XCTAssertTrue(profileChip.waitForExistence(timeout: 10))

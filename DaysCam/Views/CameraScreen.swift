@@ -21,6 +21,8 @@ import SwiftUI
 /// `Environment(\.colorScheme)` override, which does reliably escape.
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
+    /// Leaves the camera for the 紀錄 list (#617); `nil` shows no close key.
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The overlay text block's frame as `OverlayTextView` reports it, in the
@@ -306,7 +308,7 @@ struct CameraScreen: View {
                                                          isPanelOpen: model.panelModel.isOpen)
         return VStack(spacing: 0) {
             Spacer().frame(height: metrics.topInset)
-            CameraToolbar(model: model, isOnPhoto: isOnPhoto)
+            CameraToolbar(model: model, isOnPhoto: isOnPhoto, onClose: onClose)
                 .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)

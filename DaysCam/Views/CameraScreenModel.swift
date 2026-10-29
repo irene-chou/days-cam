@@ -1938,6 +1938,9 @@ final class TabProfileWriter {
         if updated.showFilmDate != baseline.showFilmDate { merged.showFilmDate = updated.showFilmDate }
         if updated.filmDateCorner != baseline.filmDateCorner { merged.filmDateCorner = updated.filmDateCorner }
         if updated.dayCountFormat != baseline.dayCountFormat { merged.dayCountFormat = updated.dayCountFormat }
+        if updated.albumIdentifier != baseline.albumIdentifier { merged.albumIdentifier = updated.albumIdentifier }
+        if updated.fallbackAssetIDs != baseline.fallbackAssetIDs { merged.fallbackAssetIDs = updated.fallbackAssetIDs }
+        if updated.exportFormat != baseline.exportFormat { merged.exportFormat = updated.exportFormat }
         return merged
     }
 }

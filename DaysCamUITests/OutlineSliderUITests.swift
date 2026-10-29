@@ -12,7 +12,7 @@ final class OutlineSliderUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         profileName = UUID().uuidString
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", profileName]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName]
         app.launch()
         XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         app.buttons["疊字設定"].tap()

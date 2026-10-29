@@ -23,6 +23,9 @@ struct CameraToolbar: View {
     /// toolbar) don't have to spell it out.
     var isOnPhoto: Bool = false
 
+    /// Leaves the camera for the 紀錄 list (#617); `nil` hides the key.
+    var onClose: (() -> Void)? = nil
+
     /// Both side groups get `.frame(maxWidth: .infinity, alignment:)` rather
     /// than a `Spacer` on each side of `profileChip`: two views with the
     /// same "infinitely flexible" width split whatever's left over the chip
@@ -34,8 +37,11 @@ struct CameraToolbar: View {
     /// centers the chip when both button groups already have equal width.
     var body: some View {
         HStack(spacing: 0) {
-            toolsToggleButton
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 0) {
+                if let onClose { closeButton(onClose) }
+                toolsToggleButton
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             profileChip
 
@@ -46,6 +52,18 @@ struct CameraToolbar: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, CameraScreenLayoutMetrics.toolbarHorizontalInset)
+    }
+
+    // MARK: - Left: close (#617)
+
+    private func closeButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .accessibilityLabel("回到紀錄")
+        .accessibilityIdentifier("closeCameraButton")
     }
 
     // MARK: - Left: tools toggle (issue #135)

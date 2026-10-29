@@ -11,7 +11,7 @@ final class ProfileSheetGesturesUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -70,10 +70,10 @@ final class ProfileSheetGesturesUITests: XCTestCase {
     /// Adds `count` profiles through 新增 and returns to the list each time.
     private func addProfiles(_ count: Int) {
         for _ in 0..<count {
-            let add = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '新增'")).firstMatch
+            let add = app.buttons["新增設定檔"]
             XCTAssertTrue(add.waitForExistence(timeout: 5))
             add.tap()
-            let back = app.navigationBars.firstMatch.buttons.firstMatch
+            let back = app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch
             let nameField = app.textFields.firstMatch
             XCTAssertTrue(nameField.waitForExistence(timeout: 5), "the new profile's edit page")
             // An untouched new profile is not kept (TASK-106): give it a name.

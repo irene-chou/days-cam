@@ -1,0 +1,203 @@
+import Photos
+import XCTest
+@testable import DaysCam
+
+/// #617 acceptance 2–5, 7, 8: the 紀錄 list's rows, deletion and the album
+/// picker, over a real `ProfileStore` and a `FakeRecordAlbumLibrary`.
+@MainActor
+final class RecordListModelTests: XCTestCase {
+    private final class Clock { var now: Date; init(_ now: Date) { self.now = now } }
+
+    private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    private var defaults = UserDefaults.standard
+    private var suiteName = ""
+    private var clock = Clock(Date())
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("RecordListModelTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        suiteName = "RecordListModelTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        clock = Clock(try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8)))
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: suiteName)
+        try super.tearDownWithError()
+    }
+
+    private func makeStore() -> ProfileStore {
+        let clock = clock
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { clock.now },
+                                 defaults: defaults, scheduler: ProfileStore.immediateScheduler)
+        store.load()
+        return store
+    }
+
+    private func makeModel(store: ProfileStore, library: FakeRecordAlbumLibrary) -> RecordListModel {
+        let clock = clock
+        let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { clock.now })
+        return RecordListModel(store: store, library: library, calendar: DateFixture.taipei, calculator: calculator)
+    }
+
+    @discardableResult
+    private func addRecord(_ name: String, to store: ProfileStore, start: DateComponents? = nil,
+                           albumIdentifier: String? = nil) throws -> CameraProfile {
+        clock.now = clock.now.addingTimeInterval(60)
+        return try store.add(CameraProfile(name: name, startDate: start ?? DateFixture.components(2026, 1, 1),
+                                           albumIdentifier: albumIdentifier))
+    }
+
+    private func photos(_ count: Int) -> [FakeRecordAlbumLibrary.Asset] {
+        (1...max(count, 1)).prefix(count).map { FakeRecordAlbumLibrary.Asset(id: "p\($0)") }
+    }
+
+    // MARK: Rows (2, 3, 4)
+
+    /// 2: no access reads "—".
+    func testSubtitleShowsDashWithoutAccess() throws {
+        let store = makeStore()
+        try addRecord("小寶", to: store)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .denied))
+        XCTAssertEqual(model.rows.first { $0.name == "小寶" }?.subtitle, "今天第 10 天 · —")
+    }
+
+    /// 3: with access and a bound album the count follows the album.
+    func testSubtitleCountsTheBoundAlbum() throws {
+        let store = makeStore()
+        try addRecord("小寶", to: store, albumIdentifier: "album-1")
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: photos(5),
+                                             albums: [.init(id: "album-1", title: "寶寶", assetIDs: (1...5).map { "p\($0)" })])
+        let model = makeModel(store: store, library: library)
+        XCTAssertEqual(model.rows.first { $0.name == "小寶" }?.subtitle, "今天第 10 天 · 5 張")
+    }
+
+    /// FR-16.3: a start date still ahead reads as the countdown.
+    func testFutureStartDateReadsAsCountdown() throws {
+        let store = makeStore()
+        try addRecord("預產期", to: store, start: DateFixture.components(2026, 1, 15))
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .denied))
+        XCTAssertEqual(model.rows.first { $0.name == "預產期" }?.subtitle, "還有 5 天 · —")
+    }
+
+    /// 4: newest `updatedAt` first.
+    func testRowsAreNewestFirst() throws {
+        let store = makeStore()
+        let a = try addRecord("甲", to: store)
+        try addRecord("乙", to: store)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .denied))
+        XCTAssertEqual(model.rows.map(\.name).prefix(2), ["乙", "甲"])
+
+        clock.now = clock.now.addingTimeInterval(600)
+        var edited = try XCTUnwrap(store.profiles.first { $0.id == a.id })
+        edited.name = "甲改"
+        try store.update(edited)
+        XCTAssertEqual(model.rows.first?.name, "甲改")
+    }
+
+    // MARK: Deleting (5)
+
+    func testDeletionNeedsConfirmationAndKeepsTheLastRecord() throws {
+        let store = makeStore()
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary())
+        let only = try XCTUnwrap(store.profiles.first)
+        XCTAssertFalse(model.canDelete)
+        model.requestDeletion(of: only.id)
+        XCTAssertNil(model.deletionCandidate)
+
+        let second = try addRecord("乙", to: store)
+        XCTAssertTrue(model.canDelete)
+        model.requestDeletion(of: second.id)
+        XCTAssertEqual(model.deletionCandidate?.id, second.id)
+        XCTAssertTrue(RecordListModel.deletionMessage.contains("相簿與照片不會被刪除"))
+        model.confirmDeletion()
+        XCTAssertEqual(store.profiles.count, 1)
+    }
+
+    // MARK: Album picker (7, 8)
+
+    func testPickingAnAlbumBindsItAndKeepsFallbackIDs() throws {
+        let store = makeStore()
+        var record = try addRecord("小寶", to: store)
+        record.fallbackAssetIDs = ["keep-1", "keep-2"]
+        try store.update(record)
+        let library = FakeRecordAlbumLibrary(status: .authorized,
+                                             albums: [.init(id: "album-1", title: "寶寶", assetIDs: [])])
+        let picker = AlbumPickerModel(profileID: record.id, store: store, library: library)
+
+        picker.select(albumIdentifier: "album-1")
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, "album-1")
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.fallbackAssetIDs, ["keep-1", "keep-2"])
+
+        picker.select(albumIdentifier: nil)
+        XCTAssertNil(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.fallbackAssetIDs, ["keep-1", "keep-2"])
+    }
+
+    func testAlbumBoundElsewhereIsLabelledButSelectable() async throws {
+        let store = makeStore()
+        try addRecord("甲", to: store, albumIdentifier: "album-1")
+        let mine = try addRecord("乙", to: store)
+        let library = FakeRecordAlbumLibrary(status: .authorized,
+                                             albums: [.init(id: "album-1", title: "共用", assetIDs: [])])
+        let picker = AlbumPickerModel(profileID: mine.id, store: store, library: library)
+        await picker.load()
+
+        let options = picker.options
+        XCTAssertNil(options.first?.id, "the create row comes first")
+        XCTAssertTrue(options[0].isSelected)
+        XCTAssertEqual(options[0].title, "建立新相簿「乙」")
+        let shared = try XCTUnwrap(options.first { $0.id == "album-1" })
+        XCTAssertEqual(shared.usedBy, "甲")
+        XCTAssertEqual(shared.detail, "0 張 · 已被「甲」使用")
+
+        picker.select(albumIdentifier: "album-1")
+        XCTAssertEqual(store.profiles.first { $0.id == mine.id }?.albumIdentifier, "album-1")
+        XCTAssertTrue(picker.options.first { $0.id == "album-1" }?.isSelected == true)
+    }
+
+    func testPickerRequestsAccessOnlyWhenUndetermined() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .notDetermined)
+        let model = makeModel(store: store, library: library)
+        XCTAssertEqual(library.authorizationStatus(), .notDetermined, "the list never asks")
+        _ = model.rows
+
+        let picker = model.albumPickerModel(for: record.id)
+        await picker.load()
+        XCTAssertEqual(library.authorizationStatus(), .authorized)
+    }
+
+    func testAlbumRowNeedsPermissionWhenDeniedOrLimited() throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        for status in [PHAuthorizationStatus.denied, .restricted, .limited] {
+            let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: status))
+            XCTAssertEqual(model.albumRowState(for: record), .needsPermission, "\(status)")
+        }
+        let open = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .authorized))
+        XCTAssertEqual(open.albumRowState(for: record), .available(title: "建立新相簿「\(record.name)」"))
+    }
+
+    // MARK: New record
+
+    func testBackingOutOfANewRecordDiscardsItAndCheckmarkKeepsIt() throws {
+        let store = makeStore()
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary())
+        let before = store.profiles.count
+
+        model.addRecord()
+        XCTAssertEqual(store.profiles.count, before + 1)
+        model.path = []
+        XCTAssertEqual(store.profiles.count, before)
+
+        model.addRecord()
+        let id = try XCTUnwrap(model.path.first)
+        XCTAssertEqual(model.confirmNewRecord(), id)
+        XCTAssertEqual(store.profiles.count, before + 1)
+    }
+}

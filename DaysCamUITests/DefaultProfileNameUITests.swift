@@ -10,7 +10,7 @@ final class DefaultProfileNameUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
     }
 
@@ -53,7 +53,7 @@ final class DefaultProfileNameUITests: XCTestCase {
         XCTAssertTrue(preview.label.contains("我的紀錄 第 1 天"), "119.2 preview: \(preview.label)")
         shot("PR_119.2_iPhone16_edit")
 
-        app.navigationBars.firstMatch.buttons.firstMatch.tap()
+        app.navigationBars.element(boundBy: max(app.navigationBars.count - 1, 0)).buttons.firstMatch.tap()
         let bar = app.navigationBars["設定檔"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
         let start = bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))

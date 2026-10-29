@@ -19,14 +19,14 @@ final class FormatTabReorderUITests: XCTestCase {
     private func launch(startDay: String) {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
-        seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", profiles]
+        seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         seeding.launchEnvironment["DAYSCAM_FAKE_TODAY"] = startDay
         seeding.launch()
         XCTAssertTrue(seeding.buttons["疊字設定"].waitForExistence(timeout: 10))
         seeding.terminate()
 
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", profiles]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
         app.launch()
         app.buttons["疊字設定"].tap()
