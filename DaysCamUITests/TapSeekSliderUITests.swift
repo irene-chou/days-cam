@@ -118,6 +118,17 @@ final class TapSeekSliderUITests: XCTestCase {
         XCTAssertEqual(strokeWidth.value as? String, middle, "114.6 the tapped value was saved")
     }
 
+    /// Where the size slider's thumb centre sits for `percent`, as a share of
+    /// the slider's width (70…160 over the track inside a 14pt thumb radius
+    /// at each end, as `TapSeekSlider` maps it).
+    private func thumbFraction(of slider: XCUIElement, percent: Int) -> CGFloat {
+        let width = slider.frame.width
+        let radius: CGFloat = 14
+        guard width > 2 * radius else { return 0.5 }
+        let share = CGFloat(percent - 70) / 90
+        return (radius + share * (width - 2 * radius)) / width
+    }
+
     /// #551: pressing the thumb and dragging moves the value continuously
     /// (the tap gesture must not take over the slider's own drag).
     func testDraggingTheThumbChangesTheValue() {
@@ -126,15 +137,17 @@ final class TapSeekSliderUITests: XCTestCase {
         XCTAssertTrue(slider.waitForExistence(timeout: 3))
         XCTAssertEqual(sizePercent, "字級 100%")
 
-        // 70…160: 100% sits about a third along the track.
-        let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.36, dy: 0.5))
+        // Each drag starts on the thumb's centre for the current value: a
+        // press beside the centre keeps that offset for the whole drag, so a
+        // drag to the end would stop a step or two short of it.
+        let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: 100), dy: 0.5))
         let middle = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
         thumb.press(forDuration: 0.2, thenDragTo: middle)
         let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
         XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
 
         let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
-        let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+        let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: first), dy: 0.5))
         thumbNow.press(forDuration: 0.2, thenDragTo: end)
         XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")
         attach("551_size-drag")
