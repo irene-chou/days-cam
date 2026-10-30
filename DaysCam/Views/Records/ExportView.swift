@@ -55,6 +55,8 @@ struct ExportView: View {
                                  bottomSafeAreaInset: 0,
                                  showsCollapseButton: false)
                     .frame(height: contentHeight + panelChrome)
+                    // Nothing changes while exporting (FR-19.7).
+                    .disabled(!model.isEditable)
                 note
             }
         }
@@ -186,11 +188,11 @@ struct ExportView: View {
                                 placement: profile.position,
                                 frameSize: size,
                                 font: model.overlayFont,
-                                onDragChanged: model.panelModel.isOverlayDraggable ? { center, frameSize in
-                                    model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: frameSize)
+                                onDragChanged: model.isOverlayDraggable ? { center, frameSize in
+                                    model.overlayDragChanged(center: center, frameSize: frameSize)
                                 } : nil,
-                                onDragEnded: model.panelModel.isOverlayDraggable ? { center, frameSize in
-                                    model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: frameSize)
+                                onDragEnded: model.isOverlayDraggable ? { center, frameSize in
+                                    model.overlayDragEnded(center: center, frameSize: frameSize)
                                 } : nil,
                                 dragHintSerial: model.panelModel.dragHintSerial)
                 FilmDateStampView(stamp: model.filmDateStamp, frameSize: size)

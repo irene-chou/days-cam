@@ -128,6 +128,28 @@ final class ExportModel: ObservableObject, OverlayPanelHosting {
     var formatTabModel: FormatTabModel? { editor?.formatTabModel }
     var positionTabModel: PositionTabModel? { editor?.positionTabModel }
 
+    // MARK: - Editing lock
+
+    /// Whether the panel and the preview take edits. Locked from the
+    /// checkmark until the page closes or the export fails, so what is on
+    /// screen stays what this export bakes.
+    var isEditable: Bool { !isExporting }
+
+    /// Whether the preview's text can be dragged now.
+    var isOverlayDraggable: Bool { panelModel.isOverlayDraggable && isEditable }
+
+    /// A drag on the preview moved the text; ignored while locked.
+    func overlayDragChanged(center: CGPoint, frameSize: CGSize) {
+        guard isEditable else { return }
+        panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: frameSize)
+    }
+
+    /// A drag on the preview ended: writes the position, unless locked.
+    func overlayDragEnded(center: CGPoint, frameSize: CGSize) {
+        guard isEditable else { return }
+        panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: frameSize)
+    }
+
     // MARK: - Header and preview (FR-19.1, FR-19.2)
 
     /// "第 N 天" (or "前 N 天", "日期不明") under 匯出.

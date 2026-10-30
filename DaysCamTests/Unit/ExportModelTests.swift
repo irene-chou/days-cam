@@ -334,6 +334,45 @@ final class ExportModelTests: XCTestCase {
         XCTAssertEqual(saves, 1)
     }
 
+    /// While exporting, the panel and the preview's drag are locked so the
+    /// screen keeps showing what is being baked; a failure unlocks them.
+    func testEditingIsLockedWhileExporting() async throws {
+        let (store, profile) = try makeStore()
+        let photo = photo()
+        let library = ExportLibrary(photos: [photo])
+        library.holdsFullImage = true
+        library.fullImageError = RecordAlbumError.failed("network")
+        let model = makeModel(store: store, profile: profile, photo: photo, library: library)
+        XCTAssertTrue(model.isEditable)
+        XCTAssertTrue(model.isOverlayDraggable)
+
+        let export = Task { await model.export() }
+        while library.heldCount == 0 { await Task.yield() }
+        XCTAssertFalse(model.isEditable)
+        XCTAssertFalse(model.isOverlayDraggable)
+        let before = store.profiles.first { $0.id == profile.id }?.position
+        model.overlayDragEnded(center: CGPoint(x: 20, y: 20), frameSize: CGSize(width: 200, height: 200))
+        XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.position, before, "drag ignored")
+
+        library.release()
+        await export.value
+        XCTAssertNotNil(model.exportError)
+        XCTAssertTrue(model.isEditable, "unlocked after a failure")
+        model.overlayDragEnded(center: CGPoint(x: 100, y: 50), frameSize: CGSize(width: 200, height: 200))
+        XCTAssertNotEqual(store.profiles.first { $0.id == profile.id }?.position, before)
+    }
+
+    /// Success keeps it locked until the page closes.
+    func testEditingStaysLockedAfterSuccess() async throws {
+        let (store, profile) = try makeStore()
+        let photo = photo()
+        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
+                              scheduled: { _, _ in })
+        await model.export()
+        XCTAssertFalse(model.isEditable)
+        XCTAssertFalse(model.isOverlayDraggable)
+    }
+
     // MARK: 6. Success
 
     /// 6: success announces "已匯出", shows the toast and goes back to the
