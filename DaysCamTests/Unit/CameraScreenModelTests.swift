@@ -217,6 +217,8 @@ final class CameraScreenModelTests: XCTestCase {
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
                            loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
+                           reportFailureAfterClose: @escaping @MainActor (CaptureAlertError, Int) -> Void = { _, _ in },
+                           reportRecordWriteFailure: @escaping @MainActor (Error) -> Void = { _ in },
                            saveTimeout: TimeInterval = 30) throws
         -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
         let resolvedClock = try clock ?? MutableClock(fixedNow())
@@ -237,6 +239,8 @@ final class CameraScreenModelTests: XCTestCase {
                                       save: save,
                                       captureImage: captureImage,
                                       loadLatestPhoto: loadLatestPhoto,
+                                      reportFailureAfterClose: reportFailureAfterClose,
+                                      reportRecordWriteFailure: reportRecordWriteFailure,
                                       scheduleToastDismiss: scheduleToastDismiss,
                                       saveTimeout: saveTimeout)
         return (model, service, provider, store)
@@ -729,7 +733,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         clock.current = clock.current.addingTimeInterval(3600)
         CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
-                                 albumAtSave: "album-1", in: store)
+                                 albumAtSave: "album-1", in: store, reportWriteFailure: { XCTFail("no write failure expected: \($0)") })
 
         let after = try storedRecord(record.id, in: store)
         XCTAssertEqual(after.albumIdentifier, "album-1")
@@ -762,9 +766,9 @@ final class CameraScreenModelTests: XCTestCase {
         let record = try addRecord(to: store, albumIdentifier: "other")
 
         CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
-                                 albumAtSave: nil, in: store)
+                                 albumAtSave: nil, in: store, reportWriteFailure: { XCTFail("no write failure expected: \($0)") })
         CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
-                                 albumAtSave: nil, in: store)
+                                 albumAtSave: nil, in: store, reportWriteFailure: { XCTFail("no write failure expected: \($0)") })
 
         let after = try storedRecord(record.id, in: store)
         XCTAssertEqual(after.albumIdentifier, "other")
@@ -827,7 +831,7 @@ final class CameraScreenModelTests: XCTestCase {
 
         for _ in 0..<2 {
             CameraScreenModel.record(outcome("L1", album: nil), savedFor: destination(of: record),
-                                     albumAtSave: nil, in: store)
+                                     albumAtSave: nil, in: store, reportWriteFailure: { XCTFail("no write failure expected: \($0)") })
         }
 
         XCTAssertEqual(try storedRecord(record.id, in: store).fallbackAssetIDs, ["L1"])
@@ -935,7 +939,8 @@ final class CameraScreenModelTests: XCTestCase {
 
         model.processCapturedImage(large, destination: destination(of: try XCTUnwrap(model.profile)))
 
-        waitUntil { model.captureFlights.count == 1 }
+        // Downscaling a 2000×1600 bitmap is slow on a loaded runner.
+        waitUntil({ model.captureFlights.count == 1 }, timeout: 10)
         let flight = try XCTUnwrap(model.captureFlights.first)
         // 128.2: points are `maxDimension`; pixels are points * the screen
         // scale, once (not squared by the renderer's own scale).
@@ -990,6 +995,89 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.captureFlights.first?.status, .failed, "621-4")
         XCTAssertNil(model.toastState)
         XCTAssertNil(model.latestThumbnailImage)
+    }
+
+    /// 621-4 (#636 review): a save that fails after the camera closed is
+    /// handed to the app, not left on the closed camera; nothing is in flight.
+    func test_621_4_saveFailureAfterTheCameraClosedReachesTheApp() throws {
+        let saves = SaveRecorder()
+        var reported: [(CaptureAlertError, Int)] = []
+        let (model, service, _, _) = try makeModel(save: saves.save,
+                                                   reportFailureAfterClose: { reported.append(($0, $1)) })
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { saves.calls.count == 1 }
+
+        model.onDisappear()
+        XCTAssertEqual(service.status, .idle)
+        saves.calls[0].completion(.failure(.permissionDenied))
+
+        waitUntil { model.inFlightSaveCount == 0 }
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+        XCTAssertNil(model.captureError, "the closed camera shows nothing")
+        XCTAssertEqual(reported.count, 1)
+        XCTAssertEqual(reported.first?.1, 1)
+        XCTAssertTrue(reported.first?.0.showsSettingsAction ?? false)
+    }
+
+    /// 621-4 (#636 review): a timeout after the camera closed reaches the app too.
+    func test_621_4_saveTimeoutAfterTheCameraClosedReachesTheApp() throws {
+        var reported: [(CaptureAlertError, Int)] = []
+        let (model, _, _, _) = try makeModel(save: { _, _, _, _ in },
+                                             reportFailureAfterClose: { reported.append(($0, $1)) },
+                                             saveTimeout: 0.2)
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { model.captureFlights.count == 1 }
+        model.onDisappear()
+
+        waitUntil({ model.inFlightSaveCount == 0 && !reported.isEmpty }, timeout: 3)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+        XCTAssertNil(model.captureError)
+        XCTAssertEqual(reported.map(\.0.message), ["照片儲存逾時，這張可能沒有存進相簿。請再試一次。"])
+    }
+
+    /// 621-4 (#636 review): an alert still up when the camera closes is handed
+    /// on once with its count, and the camera's own is cleared.
+    func test_621_4_pendingAlertIsHandedOnWhenTheCameraCloses() throws {
+        var reported: [(CaptureAlertError, Int)] = []
+        let (model, _, _, _) = try makeModel(reportFailureAfterClose: { reported.append(($0, $1)) })
+        model.reportPhotoFailure(message: "A", showsSettingsAction: false)
+        model.reportPhotoFailure(message: "B", showsSettingsAction: false)
+
+        model.onDisappear()
+
+        XCTAssertNil(model.captureError)
+        XCTAssertEqual(reported.count, 1)
+        XCTAssertEqual(reported.first?.0.message, "2 張照片未儲存")
+        XCTAssertEqual(reported.first?.1, 2)
+    }
+
+    /// Closing without a pending alert reports nothing.
+    func test_621_4_closingWithoutFailuresReportsNothing() throws {
+        var reported: [(CaptureAlertError, Int)] = []
+        let (model, _, _, _) = try makeModel(reportFailureAfterClose: { reported.append(($0, $1)) })
+        model.onDisappear()
+        XCTAssertTrue(reported.isEmpty)
+    }
+
+    /// #636 review: a record write that fails (disk) is reported, not dropped.
+    func test_621_3_failedRecordWriteIsReported() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let saves = SaveRecorder()
+        var writeFailures: [Error] = []
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: saves.save,
+                                             reportRecordWriteFailure: { writeFailures.append($0) })
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        saves.calls[0].completion(.success(outcome("L1", album: nil)))
+
+        XCTAssertEqual(writeFailures.count, 1, "the failed write reaches the app")
+        XCTAssertTrue(try storedRecord(record.id, in: store).fallbackAssetIDs.isEmpty, "rolled back")
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
     /// 621-4: a permission failure offers the settings button.

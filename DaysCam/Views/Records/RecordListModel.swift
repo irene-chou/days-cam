@@ -131,6 +131,29 @@ final class RecordListModel: ObservableObject {
             .store(in: &subscriptions)
     }
 
+    /// A camera failure reported after the camera closed (#621): the photo
+    /// was not saved, and the camera is no longer there to say so.
+    @Published private(set) var captureFailure: CaptureAlertError?
+    private var unacknowledgedCaptureFailures = 0
+
+    /// Shows `error` for `count` photos that were not saved; later reports
+    /// before it is dismissed add up to "N 張照片未儲存".
+    func reportCaptureFailure(_ error: CaptureAlertError, count: Int) {
+        let previous = unacknowledgedCaptureFailures > 0 ? captureFailure : nil
+        unacknowledgedCaptureFailures += max(count, 1)
+        guard let previous else {
+            captureFailure = error
+            return
+        }
+        captureFailure = CaptureAlertError(message: "\(unacknowledgedCaptureFailures) 張照片未儲存",
+                                           showsSettingsAction: error.showsSettingsAction || previous.showsSettingsAction)
+    }
+
+    func dismissCaptureFailure() {
+        captureFailure = nil
+        unacknowledgedCaptureFailures = 0
+    }
+
     /// Dismisses the one-time data-recovery alert (15.1).
     func dismissCorruptionRecoveredAlert() {
         showsCorruptionRecoveredAlert = false

@@ -17,11 +17,10 @@ struct DaysCamApp: App {
         let library = Self.makeRecordAlbumLibrary(for: profileStore)
         styleCenter = StyleEditingCenter(profileStore: profileStore,
                                          fontLibrary: Self.uiTestFontLibrary ?? FontLibrary())
-        makeCameraModel = Self.cameraModelFactory(profileStore: profileStore, library: library)
-        _recordListModel = StateObject(wrappedValue: RecordListModel(
-            store: profileStore,
-            library: library,
-            exportSave: Self.exportSave))
+        let recordListModel = RecordListModel(store: profileStore, library: library, exportSave: Self.exportSave)
+        makeCameraModel = Self.cameraModelFactory(profileStore: profileStore, library: library,
+                                                  listModel: recordListModel)
+        _recordListModel = StateObject(wrappedValue: recordListModel)
     }
 
     var body: some Scene {
@@ -104,9 +103,12 @@ struct DaysCamApp: App {
     /// Builds the camera for record `id` over the one `CameraService`.
     ///
     /// Opening the camera makes the record the last opened one (PRD 2.0
-    /// §4.2). The corner button starts on the record's newest photo.
+    /// §4.2). The corner button starts on the record's newest photo. A save
+    /// that fails after the camera closed, and a failed write of the record,
+    /// are shown by the 紀錄 list, which outlives every camera.
     private static func cameraModelFactory(profileStore: ProfileStore,
-                                           library: any RecordAlbumLibrary) -> @MainActor (UUID) -> CameraScreenModel {
+                                           library: any RecordAlbumLibrary,
+                                           listModel: RecordListModel) -> @MainActor (UUID) -> CameraScreenModel {
         let cameraService = CameraService()
         let save = cameraSave(library: library)
         return { id in
@@ -122,6 +124,10 @@ struct DaysCamApp: App {
                                                       fallbackIDs: profile.fallbackAssetIDs).last else { return nil }
                     return await library.thumbnail(id: newest.id, targetSize: CGSize(width: 200, height: 200))
                 },
+                reportFailureAfterClose: { [weak listModel] error, count in
+                    listModel?.reportCaptureFailure(error, count: count)
+                },
+                reportRecordWriteFailure: { [weak listModel] error in listModel?.lastError = error },
                 captureRotationAngleOverride: uiTestCaptureRotationAngle)
         }
     }

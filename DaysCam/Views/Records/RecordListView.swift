@@ -68,6 +68,18 @@ struct RecordListView: View {
                 Text(error.displayMessage)
             }
         }
+        // A photo that failed to save after its camera closed (#621).
+        .alert("無法完成拍照", isPresented: captureFailureBinding, presenting: model.captureFailure) { error in
+            if error.showsSettingsAction {
+                Button("前往設定") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("好", role: .cancel) { model.dismissCaptureFailure() }
+        } message: { error in
+            Text(error.message)
+        }
         .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
             Button("好") { model.dismissCorruptionRecoveredAlert() }
         }
@@ -155,6 +167,11 @@ struct RecordListView: View {
 
     private var deletionBinding: Binding<Bool> {
         Binding(get: { model.deletionCandidate != nil }, set: { if !$0 { model.cancelDeletion() } })
+    }
+
+    private var captureFailureBinding: Binding<Bool> {
+        Binding(get: { model.captureFailure != nil },
+                set: { if !$0 { model.dismissCaptureFailure() } })
     }
 
     private var corruptionAlertBinding: Binding<Bool> {

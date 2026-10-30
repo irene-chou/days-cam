@@ -163,6 +163,18 @@ final class CameraScreenModel: ObservableObject {
     private let loadLatestPhoto: @MainActor () async -> UIImage?
     private var didLoadLatestThumbnail = false
 
+    /// Where a failure goes once the camera has closed, so a photo that did
+    /// not save is never left unreported (0.2 FR-5.5): the alert the user has
+    /// not dismissed yet when the camera closes, and every failure of a save
+    /// still running after that. The count is how many photos it stands for.
+    /// The app hands it to the 紀錄 list (`RecordListModel`).
+    private let reportFailureAfterClose: @MainActor (CaptureAlertError, Int) -> Void
+    /// Where a failed write of the record (its album or fallback ids) goes.
+    private let reportRecordWriteFailure: @MainActor (Error) -> Void
+    /// Set by `onDisappear`; from then on failures go to
+    /// `reportFailureAfterClose` instead of `captureError`.
+    private(set) var isClosed = false
+
     /// Bumped whenever the calendar day changes or the app returns to the
     /// foreground (TASK-14), so the HUD re-reads the clock (PRD 0.1 §6.4).
     /// Nothing reads this value; its only job is to be `@Published`.
@@ -194,6 +206,8 @@ final class CameraScreenModel: ObservableObject {
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
          loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
+         reportFailureAfterClose: @escaping @MainActor (CaptureAlertError, Int) -> Void = { _, _ in },
+         reportRecordWriteFailure: @escaping @MainActor (Error) -> Void = { _ in },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
@@ -258,6 +272,8 @@ final class CameraScreenModel: ObservableObject {
             cameraService.prepareCapture(flashMode: flashMode)
         }
         self.loadLatestPhoto = loadLatestPhoto
+        self.reportFailureAfterClose = reportFailureAfterClose
+        self.reportRecordWriteFailure = reportRecordWriteFailure
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profile = profileStore.profiles.first { $0.id == profileID }
         bindToProfileStore()
@@ -424,13 +440,20 @@ final class CameraScreenModel: ObservableObject {
 
     /// Called when the camera goes away: stops the session (#621-9). A
     /// countdown in progress stops without a photo; a photo still saving
-    /// finishes on its own and is still recorded.
+    /// finishes on its own and is still recorded. A failure alert not yet
+    /// dismissed is handed on (`reportFailureAfterClose`), and so is any
+    /// later failure.
     func onDisappear() {
         if countdownRemaining != nil {
             countdownTicker.stop()
             countdownRemaining = nil
         }
         cameraService.stop()
+        isClosed = true
+        if let captureError {
+            reportFailureAfterClose(captureError, unacknowledgedFailureCount)
+            dismissCaptureError()
+        }
     }
 
     func switchCamera() {
@@ -765,7 +788,8 @@ extension CameraScreenModel {
             // A photo that reached the library is recorded even when the
             // timeout already reported it.
             if case let .success(outcome) = result {
-                Self.record(outcome, savedFor: destination, albumAtSave: albumIdentifier, in: store)
+                Self.record(outcome, savedFor: destination, albumAtSave: albumIdentifier, in: store,
+                            reportWriteFailure: self.reportRecordWriteFailure)
             }
             guard !slot.isSettled else { return }
             slot.settle()
@@ -798,9 +822,12 @@ extension CameraScreenModel {
     ///   `fallbackAssetIDs`; no album is created (§7.3).
     ///
     /// A record deleted in the meantime is skipped; the photo stays in the
-    /// library either way.
+    /// library either way. The write waits for the disk, and a failure goes
+    /// to `reportWriteFailure`: without it a limited-access photo would not
+    /// show on the wall.
     static func record(_ outcome: RecordSaveOutcome, savedFor destination: CaptureDestination,
-                       albumAtSave: String?, in store: ProfileStore) {
+                       albumAtSave: String?, in store: ProfileStore,
+                       reportWriteFailure: (Error) -> Void) {
         guard var latest = store.profiles.first(where: { $0.id == destination.profileID }) else { return }
         if let albumID = outcome.albumID {
             guard latest.albumIdentifier != albumID else { return }
@@ -814,7 +841,11 @@ extension CameraScreenModel {
             guard !latest.fallbackAssetIDs.contains(outcome.assetID) else { return }
             latest.fallbackAssetIDs.append(outcome.assetID)
         }
-        _ = try? store.update(latest)
+        do {
+            try store.updateAndWait(latest)
+        } catch {
+            reportWriteFailure(error)
+        }
     }
 
     /// `image` redrawn so its pixels stand upright (`imageOrientation ==
@@ -891,6 +922,10 @@ extension CameraScreenModel {
     /// read "2 張照片未儲存" instead of the second alert hiding the first
     /// (TASK-129, #469); a single failure keeps its own message.
     func reportPhotoFailure(message: String, showsSettingsAction: Bool) {
+        guard !isClosed else {
+            reportFailureAfterClose(CaptureAlertError(message: message, showsSettingsAction: showsSettingsAction), 1)
+            return
+        }
         let previous = unacknowledgedFailureCount > 0 ? captureError : nil
         unacknowledgedFailureCount += 1
         guard unacknowledgedFailureCount > 1 else {

@@ -221,6 +221,25 @@ final class RecordListModelTests: XCTestCase {
         return store
     }
 
+    /// #636 review: a camera failure reported after the camera closed shows
+    /// once; more before dismissal add up; dismissing clears it.
+    func testCaptureFailureAfterTheCameraClosedShowsAndAddsUp() {
+        let model = makeModel(store: makeStore(), library: FakeRecordAlbumLibrary())
+        XCTAssertNil(model.captureFailure)
+
+        model.reportCaptureFailure(CaptureAlertError(message: "儲存失敗", showsSettingsAction: false), count: 1)
+        XCTAssertEqual(model.captureFailure?.message, "儲存失敗")
+
+        model.reportCaptureFailure(CaptureAlertError(message: "需要權限", showsSettingsAction: true), count: 2)
+        XCTAssertEqual(model.captureFailure?.message, "3 張照片未儲存")
+        XCTAssertEqual(model.captureFailure?.showsSettingsAction, true)
+
+        model.dismissCaptureFailure()
+        XCTAssertNil(model.captureFailure)
+        model.reportCaptureFailure(CaptureAlertError(message: "儲存失敗", showsSettingsAction: false), count: 1)
+        XCTAssertEqual(model.captureFailure?.message, "儲存失敗", "counting starts over after dismissal")
+    }
+
     func testShowsCorruptionRecoveredAlertWhenTheStoreJustRecovered() throws {
         let model = makeModel(store: try makeRecoveredStore(), library: FakeRecordAlbumLibrary())
         XCTAssertTrue(model.showsCorruptionRecoveredAlert)
