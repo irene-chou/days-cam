@@ -42,6 +42,7 @@ struct PhotoWallView: View {
         .onAppear {
             model.reload()
             model.startObservingLibrary()
+            openNewestIfRequested()
         }
         .onDisappear { model.stopObservingLibrary() }
         // Back from Settings the status may have changed (§7.4).
@@ -63,8 +64,12 @@ struct PhotoWallView: View {
                 for: model.profileID, startingAt: photoID,
                 resolveFont: { [cameraModel] style in
                     OverlayMetrics.resolvedFont(for: style, availability: cameraModel.fontLibrary)
-                }))
+                }),
+                makeExportModel: { [listModel, cameraModel, profileID = model.profileID] photo in
+                    listModel.exportModel(for: profileID, photo: photo, cameraModel: cameraModel)
+                })
         }
+        .onChange(of: model.photoIDs) { _, _ in openNewestIfRequested() }
         .alert("無法加入照片", isPresented: errorBinding) {
             Button("好") { model.errorMessage = nil }
         } message: {
@@ -240,6 +245,17 @@ struct PhotoWallView: View {
         .padding(.horizontal, 20)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+
+    /// Debug UI tests: `-UITestOpenExport` opens the newest photo once per
+    /// launch, whose viewer then opens its export page (#620).
+    private func openNewestIfRequested() {
+        #if DEBUG
+        guard let newest = model.photoIDs.last, UITestExportLaunch.consumeViewer() else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { viewerPhotoID = newest }
+        #endif
     }
 
     private var errorBinding: Binding<Bool> {

@@ -4,23 +4,32 @@ import SwiftUI
 ///
 /// Each photo is shown at its own aspect ratio with the record's overlay
 /// baked on as a preview (`PhotoDetailModel.pageImage`); swiping moves
-/// through the wall's order. The export button comes with #620.
+/// through the wall's order. The 匯出 button at the bottom opens the export
+/// page of the photo on screen (FR-18.5, #620).
 struct PhotoDetailView: View {
     @StateObject private var model: PhotoDetailModel
     @Environment(\.dismiss) private var dismiss
+    /// The photo whose export page is up.
+    @State private var exportingPhoto: RecordPhoto?
+    /// Builds the export page's model for a photo of this record.
+    private let makeExportModel: (RecordPhoto) -> ExportModel
 
-    init(model: PhotoDetailModel) {
+    init(model: PhotoDetailModel, makeExportModel: @escaping (RecordPhoto) -> ExportModel) {
         _model = StateObject(wrappedValue: model)
+        self.makeExportModel = makeExportModel
     }
 
     var body: some View {
-        TabView(selection: $model.selectedID) {
-            ForEach(model.photos) { photo in
-                PhotoDetailPage(model: model, photo: photo)
-                    .tag(photo.id)
+        VStack(spacing: 0) {
+            TabView(selection: $model.selectedID) {
+                ForEach(model.photos) { photo in
+                    PhotoDetailPage(model: model, photo: photo)
+                        .tag(photo.id)
+                }
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            exportBar
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .background(CameraTheme.background.ignoresSafeArea())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("photoDetail")
@@ -33,8 +42,12 @@ struct PhotoDetailView: View {
         .onAppear {
             model.reload()
             model.startObservingLibrary()
+            openExportIfRequested()
         }
         .onDisappear { model.stopObservingLibrary() }
+        .fullScreenCover(item: $exportingPhoto) { photo in
+            ExportView(model: makeExportModel(photo))
+        }
         .onChange(of: model.shouldDismiss) { _, shouldDismiss in
             if shouldDismiss { dismiss() }
         }
@@ -86,6 +99,49 @@ struct PhotoDetailView: View {
         }
         .accessibilityLabel("更多")
         .accessibilityIdentifier("photoDetailMoreButton")
+    }
+
+    // MARK: - Export (FR-18.5)
+
+    /// The 匯出 capsule, centered; disabled for a photo without a date
+    /// (§6.1.3).
+    private var exportBar: some View {
+        Button {
+            exportingPhoto = model.currentPhoto
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 17, weight: .semibold))
+                Text("匯出")
+                    .font(.system(size: 14, weight: .heavy))
+            }
+            .foregroundColor(CameraTheme.inkOnAccent)
+            .padding(.leading, 12)
+            .padding(.trailing, 16)
+            .padding(.vertical, 9)
+            .background(Capsule().fill(CameraTheme.accent))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canExportCurrentPhoto)
+        .opacity(canExportCurrentPhoto ? 1 : 0.4)
+        .accessibilityIdentifier("exportButton")
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var canExportCurrentPhoto: Bool {
+        model.currentPhoto.map(model.canExport) ?? false
+    }
+
+    /// Debug UI tests: `-UITestOpenExport` opens the export page of the photo
+    /// on screen once per launch (#620).
+    private func openExportIfRequested() {
+        #if DEBUG
+        guard UITestExportLaunch.consumeExport(), let photo = model.currentPhoto else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { exportingPhoto = photo }
+        #endif
     }
 
     private var errorBinding: Binding<Bool> {

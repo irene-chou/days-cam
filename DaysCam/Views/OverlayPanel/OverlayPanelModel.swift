@@ -94,3 +94,25 @@ extension OverlayPanelModel {
         isOpen
     }
 }
+
+// MARK: - Panel host (#620)
+
+/// What `OverlayPanelView` reads its state from: the shell state and the
+/// tab models of the record being edited. `CameraScreenModel` hosts the panel
+/// for the selected profile (until #621); `ExportModel` hosts it for the
+/// record being exported (PRD 2.0 FR-19.3). Both build their tab models with
+/// `ProfileStyleEditor`, so the panel behaves the same in either place.
+///
+/// A host forwards `panelModel`'s changes to its own `objectWillChange`, so
+/// a view observing only the host redraws when the tab or open state changes.
+@MainActor
+protocol OverlayPanelHosting: ObservableObject {
+    /// Open state and selected tab.
+    var panelModel: OverlayPanelModel { get }
+    /// The 樣式 tab's model; `nil` until a profile is there to edit.
+    var styleTabModel: StyleTabModel? { get }
+    /// The 內容 tab's model; `nil` until a profile is there to edit.
+    var formatTabModel: FormatTabModel? { get }
+    /// The 位置 row's model; `nil` until a profile is there to edit.
+    var positionTabModel: PositionTabModel? { get }
+}

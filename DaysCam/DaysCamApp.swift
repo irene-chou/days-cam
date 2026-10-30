@@ -15,7 +15,8 @@ struct DaysCamApp: App {
         _cameraScreenModel = StateObject(wrappedValue: Self.makeCameraScreenModel(profileStore: profileStore))
         _recordListModel = StateObject(wrappedValue: RecordListModel(
             store: profileStore,
-            library: Self.makeRecordAlbumLibrary(for: profileStore)))
+            library: Self.makeRecordAlbumLibrary(for: profileStore),
+            exportSave: Self.exportSave))
     }
 
     var body: some Scene {
@@ -32,7 +33,8 @@ struct DaysCamApp: App {
     /// only.
     private static var opensFirstRecordAtLaunch: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("-UITestOpenFirstRecord")
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("-UITestOpenFirstRecord") || arguments.contains("-UITestOpenExport")
         #else
         return false
         #endif
@@ -40,15 +42,16 @@ struct DaysCamApp: App {
 
     /// The photo library behind the list. Debug UI tests with
     /// `-UITestRecordPhotos <n>` get an in-memory one holding an album
-    /// "測試相簿" with all `n` photos; `-UITestBindAlbum` also binds every
-    /// record to it.
+    /// "測試相簿" with all `n` photos; `-UITestBindAlbum` (and
+    /// `-UITestOpenExport`, #620) also binds every record to it.
     private static func makeRecordAlbumLibrary(for profileStore: ProfileStore) -> any RecordAlbumLibrary {
         #if DEBUG
         if let fake = FakeRecordAlbumLibrary.forUITests() {
             let album = FakeRecordAlbumLibrary.Album(id: "uitest-album", title: "測試相簿",
                                                      assetIDs: fake.assets.map(\.id))
             let library = FakeRecordAlbumLibrary(status: fake.status, assets: fake.assets, albums: [album])
-            if ProcessInfo.processInfo.arguments.contains("-UITestBindAlbum") {
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("-UITestBindAlbum") || arguments.contains("-UITestOpenExport") {
                 for var profile in profileStore.profiles {
                     profile.albumIdentifier = album.id
                     _ = try? profileStore.update(profile)
@@ -63,6 +66,20 @@ struct DaysCamApp: App {
         }
         #endif
         return SystemRecordAlbumLibrary()
+    }
+
+    /// Where an exported photo is saved: 「最近項目」 only (PRD 2.0 FR-19.9).
+    /// Debug UI tests with the in-memory library (`-UITestRecordPhotos`)
+    /// pretend the save worked, so no system permission alert comes up (#620).
+    private static var exportSave: ExportModel.Save {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestRecordPhotos") {
+            return { _, completion in
+                DispatchQueue.main.async { completion(.success("uitest-export")) }
+            }
+        }
+        #endif
+        return { image, completion in PhotoSaver().saveToRecentsOnly(image, completion: completion) }
     }
 
     /// Builds the one `ProfileStore` shared by the list and the camera.
