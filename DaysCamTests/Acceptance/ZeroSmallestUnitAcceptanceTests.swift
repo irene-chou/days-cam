@@ -1,12 +1,13 @@
-import AVFoundation
-import Photos
+import UIKit
 import XCTest
 @testable import DaysCam
 
-/// TASK-93 (#392) independent QA of PR #396: 93.13 (viewfinder text and baked
+/// TASK-93 (#392) independent QA of PR #396: 93.13 (preview text and baked
 /// text come from one `TemplateRenderer` output), 93.14 (capture time is
 /// passed explicitly) and 93.16 evidence (a photo baked with the 93.3
 /// settings). Everything else in 93.x is covered by the developer table tests.
+/// Since #621 the bake happens on the export page, so the preview is the
+/// export preview and the moment is the photo's own (Lead-authorized change).
 @MainActor
 final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -28,24 +29,6 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private final class StubAuthorizer: CameraAuthorizing {
-        func authorizationStatus() -> AVAuthorizationStatus { .notDetermined }
-        func requestAccess(completion: @escaping (Bool) -> Void) { completion(false) }
-    }
-
-    private final class EmptyDeviceProvider: CaptureDeviceProviding {
-        func device(for facing: CameraFacing) -> AVCaptureDevice? { nil }
-    }
-
-    private final class EmptyThumbnailLibrary: GalleryLibrary {
-        func readStatus() -> PHAuthorizationStatus { .denied }
-        func requestReadAccess() async -> PHAuthorizationStatus { .denied }
-        func latestVisiblePhotoIDs(limit: Int) -> [String] { [] }
-        func photos() -> [GalleryPhoto] { [] }
-        func deletePhoto(id: String) async -> Bool { false }
-        func image(id: String, targetSize: CGSize) async -> UIImage? { nil }
-    }
-
     private struct BakeCall { let text: String; let style: OverlayStyle; let placement: OverlayPlacement }
 
     private final class Recorder: @unchecked Sendable {
@@ -62,52 +45,51 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
                       displayUnits: units)
     }
 
-    private func makeModel(now: @escaping () -> Date, profile: CameraProfile, recorder: Recorder,
-                           bakeOutput: @escaping (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?)
-        throws -> (CameraScreenModel, ProfileStore) {
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: now, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
+    /// The export page of one photo taken at `now` (#621: the camera no
+    /// longer bakes, so preview vs. baked text is checked where the bake now
+    /// happens, PRD 2.0 §6.3).
+    private func makeExport(now: Date, profile: CameraProfile, recorder: Recorder,
+                            bakeOutput: @escaping @Sendable (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?)
+        throws -> (ExportModel, ProfileStore) {
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         _ = try store.add(profile)
         store.select(id: profile.id)
-        let service = CameraService(authorizer: StubAuthorizer(), deviceProvider: EmptyDeviceProvider(),
-                                    flashCapabilityProvider: nil, isCaptureSupported: false)
-        let source = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 40)).image { _ in }
-        let model = CameraScreenModel(
-            cameraService: service,
-            profileStore: store,
-            captureSettingsStore: CaptureSettingsStore(defaults: defaults),
-            capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)),
+        let photo = RecordPhoto(id: "qa-photo", creationDate: now)
+        let library = FakeRecordAlbumLibrary(assets: [FakeRecordAlbumLibrary.Asset(id: photo.id, creationDate: now)])
+        let model = ExportModel(
+            profileID: profile.id,
+            photo: photo,
+            store: store,
+            library: library,
+            editor: nil,
             calendar: DateFixture.taipei,
-            calculator: DayCountCalculator(calendar: DateFixture.taipei, now: now),
-            cropRect: { size, _ in CGRect(origin: .zero, size: size) },
             bake: { image, text, style, placement, _, _, _, _ in
                 recorder.add(BakeCall(text: text, style: style, placement: placement))
                 return bakeOutput(image, text, style, placement)
             },
             save: { _, completion in completion(.success("asset")) },
-            captureImage: { _, completion in completion(.success(source)) },
-            scheduleToastDismiss: { _ in },
-            makeThumbnailLibrary: { _ in EmptyThumbnailLibrary() })
+            resolveFont: { _ in .pingFang },
+            scheduleAfter: { _, _ in })
         return (model, store)
     }
 
     // MARK: - 93.13
 
-    /// Viewfinder text, shutter context text and the text handed to the bake
-    /// closure on a real shutter run are all the renderer's output: `0 個月`.
+    /// Export preview text and the text handed to the bake closure on a real
+    /// export run are both the renderer's output: `0 個月`.
     func test_acceptance_93_13_previewAndBakedTextShareOneRendererOutput() async throws {
         let now = try XCTUnwrap(DateFixture.date(2026, 10, 11, hour: 10))
         let profile = makeProfile(units: [.year, .month])
         let recorder = Recorder()
-        let (model, store) = try makeModel(now: { now }, profile: profile, recorder: recorder) { _, _, _, _ in UIImage() }
+        let (model, store) = try makeExport(now: now, profile: profile, recorder: recorder) { image, _, _, _ in image }
         let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
 
-        let expected = TemplateRenderer().render(profile: stored, capturedAt: now, calendar: DateFixture.taipei)
+        let expected = TemplateRenderer().render(profile: stored, capturedAt: now, calendar: DateFixture.taipei,
+                                                 moment: .photo)
         XCTAssertEqual(expected, "0 個月", "93.3 via the renderer")
-        XCTAssertEqual(model.overlayText, expected, "93.13 viewfinder")
-        XCTAssertEqual(model.captureContext(for: stored).text, expected, "93.13 shutter context")
+        XCTAssertEqual(model.overlayText, expected, "93.13 export preview")
 
-        model.beginCapture(profile: stored)
-        for _ in 0..<100 where recorder.all.isEmpty { try await Task.sleep(nanoseconds: 20_000_000) }
+        await model.export()
         XCTAssertEqual(recorder.all.map(\.text), ["0 個月"], "93.13 text reaching the bake step")
         XCTAssertEqual(recorder.all.first?.text, model.overlayText, "93.13 preview == baked")
     }
@@ -125,11 +107,9 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
             profile.startDate = start
             if units == [.week] { profile.countingRule = .dayOne }
             let recorder = Recorder()
-            let (model, store) = try makeModel(now: { now }, profile: profile, recorder: recorder) { _, _, _, _ in UIImage() }
-            let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+            let (model, _) = try makeExport(now: now, profile: profile, recorder: recorder) { image, _, _, _ in image }
             XCTAssertEqual(model.overlayText, expectedText, "\(units)")
-            model.beginCapture(profile: stored)
-            for _ in 0..<100 where recorder.all.isEmpty { try await Task.sleep(nanoseconds: 20_000_000) }
+            await model.export()
             XCTAssertEqual(recorder.all.first?.text, expectedText, "bake text \(units)")
             try? FileManager.default.removeItem(at: directory.appendingPathComponent("profiles.json"))
         }
@@ -167,13 +147,14 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
 
     // MARK: - 93.16 evidence
 
-    /// Bakes a photo through the real shutter pipeline with the 93.3 settings
+    /// Bakes a photo through the real export pipeline with the 93.3 settings
     /// and writes it as a PNG (B' evidence; the simulator cannot take photos).
     func test_acceptance_93_16_bakedPhotoEvidence() async throws {
         let now = try XCTUnwrap(DateFixture.date(2026, 10, 11, hour: 10))
         let profile = makeProfile(units: [.year, .month])
         let recorder = Recorder()
-        let backdrop: (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage? = { _, text, style, placement in
+        let output = LockedImage()
+        let (model, _) = try makeExport(now: now, profile: profile, recorder: recorder) { _, text, style, placement in
             let format = UIGraphicsImageRendererFormat()
             format.scale = 1
             format.opaque = true
@@ -185,17 +166,11 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
                                                          end: CGPoint(x: 900, y: 1200), options: [])
                 }
             }
-            return OverlayRenderer().bake(image: photo, text: text, style: style, placement: placement, font: .pingFang)
-        }
-        let output = LockedImage()
-        let (model, store) = try makeModel(now: { now }, profile: profile, recorder: recorder) { image, text, style, placement in
-            let baked = backdrop(image, text, style, placement)
+            let baked = OverlayRenderer().bake(image: photo, text: text, style: style, placement: placement, font: .pingFang)
             output.set(baked)
             return baked
         }
-        let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
-        model.beginCapture(profile: stored)
-        for _ in 0..<150 where output.value == nil { try await Task.sleep(nanoseconds: 20_000_000) }
+        await model.export()
         let baked = try XCTUnwrap(output.value, "93.16 bake produced no image")
         XCTAssertEqual(recorder.all.first?.text, "0 個月", "93.16 baked text")
         let png = try XCTUnwrap(baked.pngData())

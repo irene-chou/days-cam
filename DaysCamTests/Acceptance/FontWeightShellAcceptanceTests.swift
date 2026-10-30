@@ -1,13 +1,16 @@
-import AVFoundation
 import Combine
 import CryptoKit
 import Photos
+import UIKit
 import XCTest
 @testable import DaysCam
 
 /// TASK-89 independent QA of the ui-shell wiring (PR #373): 89.2 regression,
-/// 89.3 baking (preview and shutter follow the chosen weight) and the
-/// per-weight launch preparation. Unlike the developer tests it uses the
+/// 89.3 baking (preview and bake follow the chosen weight) and the
+/// per-weight launch preparation. Since #621 the bake happens on the export
+/// page and fonts are applied through `StyleEditingCenter`, so "preview" is
+/// the export preview and "shutter" is the export's bake (Lead-authorized
+/// change). Unlike the developer tests it uses the
 /// app's own resolver (no stand-in face), and, when `DAYSCAM_FONT_FIXTURES`
 /// points at a folder holding NotoSerifTC-Bold.otf and NotoSerifTC-Black.otf,
 /// registers the real fonts so the drawn pixels can be compared.
@@ -34,35 +37,96 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
 
     // MARK: - Doubles and helpers
 
-    private final class StubAuthorizer: CameraAuthorizing {
-        func authorizationStatus() -> AVAuthorizationStatus { .notDetermined }
-        func requestAccess(completion: @escaping (Bool) -> Void) { completion(false) }
+    /// What the export's bake received.
+    private final class BakeRecorder: @unchecked Sendable {
+        struct Call { let font: ResolvedOverlayFont; let style: OverlayStyle }
+        private let lock = NSLock()
+        private var calls: [Call] = []
+        var last: Call? { lock.lock(); defer { lock.unlock() }; return calls.last }
+        func add(_ call: Call) { lock.lock(); calls.append(call); lock.unlock() }
     }
 
-    private final class EmptyDeviceProvider: CaptureDeviceProviding {
-        func device(for facing: CameraFacing) -> AVCaptureDevice? { nil }
-    }
+    /// A one-photo library whose original can be held until released, so a
+    /// test can change the font library while the export is in flight.
+    @MainActor
+    private final class HeldPhotoLibrary: RecordAlbumLibrary {
+        var holds = false
+        private(set) var isWaiting = false
+        private var held: CheckedContinuation<Void, Never>?
 
-    private final class EmptyThumbnailLibrary: GalleryLibrary {
-        func readStatus() -> PHAuthorizationStatus { .denied }
-        func requestReadAccess() async -> PHAuthorizationStatus { .denied }
-        func latestVisiblePhotoIDs(limit: Int) -> [String] { [] }
-        func photos() -> [GalleryPhoto] { [] }
-        func deletePhoto(id: String) async -> Bool { false }
-        func image(id: String, targetSize: CGSize) async -> UIImage? { nil }
+        func release() {
+            holds = false
+            held?.resume()
+            held = nil
+        }
+
+        func authorizationStatus() -> PHAuthorizationStatus { .authorized }
+        func requestReadWriteAccess() async -> PHAuthorizationStatus { .authorized }
+        func photos(albumIdentifier: String?, fallbackIDs: [String]) -> [RecordPhoto] { [] }
+        func photoCount(albumIdentifier: String?, fallbackIDs: [String]) -> Int? { 0 }
+        func userAlbums() -> [AlbumSummary] { [] }
+        func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String { "album" }
+        func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {}
+        func deleteAsset(_ id: String) async -> Bool { false }
+        func changes() -> AsyncStream<Void> { AsyncStream { _ in } }
+        func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { nil }
+        func displayImage(id: String, targetSize: CGSize) async -> UIImage? { nil }
+        func fullImage(id: String, progress: @escaping @Sendable (Double) -> Void) async throws -> UIImage {
+            if holds {
+                isWaiting = true
+                await withCheckedContinuation { held = $0 }
+            }
+            return UIGraphicsImageRenderer(size: CGSize(width: 30, height: 40)).image { _ in }
+        }
     }
 
     private struct Harness {
-        let model: CameraScreenModel
+        let center: StyleEditingCenter
         let store: ProfileStore
         let library: FakeShellFontLibrary
         let profile: CameraProfile
+        let now: Date
+
+        /// The export page of a photo taken at `now`, with the app's own
+        /// resolver over `library`.
+        @MainActor
+        func makeExport(recorder: BakeRecorder, photoLibrary: HeldPhotoLibrary? = nil) -> ExportModel {
+            let library = self.library
+            let photoLibrary = photoLibrary ?? HeldPhotoLibrary()
+            return ExportModel(
+                profileID: profile.id,
+                photo: RecordPhoto(id: "photo", creationDate: now),
+                store: store,
+                library: photoLibrary,
+                editor: center.makeStyleEditor(for: profile.id),
+                calendar: DateFixture.taipei,
+                bake: { image, _, style, _, font, _, _, _ in
+                    recorder.add(BakeRecorder.Call(font: font, style: style))
+                    return image
+                },
+                save: { _, completion in completion(.success("asset")) },
+                resolveFont: { OverlayMetrics.resolvedFont(for: $0, availability: library) },
+                scheduleAfter: { _, _ in })
+        }
+
+        /// The font and style the export's bake receives right now.
+        @MainActor
+        func bakedCall() async -> BakeRecorder.Call? {
+            let recorder = BakeRecorder()
+            await makeExport(recorder: recorder).export()
+            return recorder.last
+        }
+
+        /// The face the export preview draws with right now.
+        @MainActor
+        var previewFont: ResolvedOverlayFont {
+            makeExport(recorder: BakeRecorder()).overlayFont
+        }
     }
 
     /// One selected profile, built with the **default** resolver.
     private func makeHarness(fontID: OverlayFontID, weight: String?,
-                             states: [OverlayFontID: FontState] = [:],
-                             timeout: TimeInterval = 3) throws -> Harness {
+                             states: [OverlayFontID: FontState] = [:]) throws -> Harness {
         let now = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         var profile = CameraProfile(name: "A", startDate: DateFixture.components(2026, 1, 1))
@@ -71,24 +135,11 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
         _ = try store.add(profile)
         store.select(id: profile.id)
         let library = FakeShellFontLibrary(states)
-        let service = CameraService(authorizer: StubAuthorizer(), deviceProvider: EmptyDeviceProvider(),
-                                    flashCapabilityProvider: nil, isCaptureSupported: false)
-        let model = CameraScreenModel(
-            cameraService: service,
-            profileStore: store,
-            captureSettingsStore: CaptureSettingsStore(defaults: defaults),
-            capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)),
-            calendar: DateFixture.taipei,
-            calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
-            cropRect: { size, _ in CGRect(origin: .zero, size: size) },
-            bake: { _, _, _, _, _, _, _, _ in UIImage() },
-            save: { _, completion in completion(.success("asset")) },
-            scheduleToastDismiss: { _ in },
-            makeThumbnailLibrary: { _ in EmptyThumbnailLibrary() },
-            fontLibrary: library,
-            fontPreparationTimeout: timeout)
-        return Harness(model: model, store: store, library: library,
-                       profile: try XCTUnwrap(store.profiles.first { $0.id == profile.id }))
+        let center = StyleEditingCenter(profileStore: store, fontLibrary: library, calendar: DateFixture.taipei,
+                                        calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
+                                        notify: { _ in })
+        return Harness(center: center, store: store, library: library,
+                       profile: try XCTUnwrap(store.profiles.first { $0.id == profile.id }), now: now)
     }
 
     private func registerFixtures() throws {
@@ -119,22 +170,24 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
 
     // MARK: - 89.3 shutter and preview follow the chosen weight (real resolver)
 
-    /// Black not downloaded while Bold (the default) is: both the viewfinder
-    /// and the shutter context stay PingFang; once black is available the
-    /// very face NotoSerifTC-Black is drawn, never Bold; photo pixels differ.
-    func test_acceptance_89_3_chosenWeightReachesPreviewAndShutterBake() throws {
+    /// Black not downloaded while Bold (the default) is: both the export
+    /// preview and the export's bake stay PingFang; once black is available
+    /// the very face NotoSerifTC-Black is drawn, never Bold; photo pixels differ.
+    func test_acceptance_89_3_chosenWeightReachesPreviewAndShutterBake() async throws {
         try registerFixtures()
         let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .available])
         XCTAssertEqual(harness.profile.style.fontWeight, "black")
 
-        XCTAssertEqual(harness.model.overlayFont, .pingFang, "89.3: default weight available is not black available")
-        XCTAssertEqual(harness.model.captureContext(for: harness.profile).font, .pingFang, "89.3 shutter")
+        XCTAssertEqual(harness.previewFont, .pingFang, "89.3: default weight available is not black available")
+        let before = await harness.bakedCall()
+        XCTAssertEqual(before?.font, .pingFang, "89.3 export bake")
 
         harness.library.finishDownload(.notoSerifTC, weightID: "black")
-        let preview = harness.model.overlayFont
-        let shutter = harness.model.captureContext(for: harness.profile)
+        let preview = harness.previewFont
+        let bakedAfter = await harness.bakedCall()
+        let shutter = try XCTUnwrap(bakedAfter)
         XCTAssertEqual(preview.postScriptName, "NotoSerifTC-Black", "89.3 preview")
-        XCTAssertEqual(shutter.font.postScriptName, "NotoSerifTC-Black", "89.3 shutter")
+        XCTAssertEqual(shutter.font.postScriptName, "NotoSerifTC-Black", "89.3 export bake")
         XCTAssertEqual(shutter.style.fontWeight, "black")
 
         var boldStyle = harness.profile.style
@@ -147,26 +200,36 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
                           try digest(of: .pingFang, style: shutter.style), "89.3: not PingFang")
     }
 
-    /// The bake the shutter performs uses the context font captured at press
-    /// time, even if the weight changes afterwards (FR-5.14 holds per weight).
-    func test_acceptance_89_3_contextFontIsFixedAtShutterTime() throws {
+    /// The export's bake uses the font resolved when the checkmark was
+    /// pressed, even if the weight changes while the original downloads
+    /// (FR-5.14 holds per weight); the preview follows the library afresh.
+    func test_acceptance_89_3_contextFontIsFixedAtShutterTime() async throws {
         try registerFixtures()
         let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .available])
         harness.library.finishDownload(.notoSerifTC, weightID: "black")
-        let context = harness.model.captureContext(for: harness.profile)
+        let photoLibrary = HeldPhotoLibrary()
+        photoLibrary.holds = true
+        let recorder = BakeRecorder()
+        let export = harness.makeExport(recorder: recorder, photoLibrary: photoLibrary)
+        let task = Task { await export.export() }
+        for _ in 0..<100 where !photoLibrary.isWaiting { try await Task.sleep(nanoseconds: 10_000_000) }
         harness.library.set(.notDownloaded, for: .notoSerifTC, weightID: "black")
-        XCTAssertEqual(context.font.postScriptName, "NotoSerifTC-Black")
-        XCTAssertEqual(harness.model.overlayFont, .pingFang, "preview follows the library afresh")
+        photoLibrary.release()
+        await task.value
+        XCTAssertEqual(recorder.last?.font.postScriptName, "NotoSerifTC-Black")
+        XCTAssertEqual(export.overlayFont, .pingFang, "preview follows the library afresh")
     }
 
     /// Built-in weights need no download and must come out as that exact face.
-    func test_acceptance_89_3_pingFangWeightsResolveToTheirOwnFace() throws {
+    func test_acceptance_89_3_pingFangWeightsResolveToTheirOwnFace() async throws {
         try XCTSkipIf(UIFont(name: "PingFangTC-Light", size: 20) == nil, "PingFang Light not installed here")
         for (weight, face) in [("light", "PingFangTC-Light"), ("regular", "PingFangTC-Regular"),
                                ("semibold", "PingFangTC-Semibold")] {
             let harness = try makeHarness(fontID: .pingFang, weight: weight)
-            XCTAssertEqual(harness.model.captureContext(for: harness.profile).font.postScriptName, face, weight)
-            XCTAssertEqual(harness.model.overlayFont.postScriptName, face, weight)
+            let baked = await harness.bakedCall()
+            XCTAssertEqual(baked?.font.postScriptName, face, weight)
+            XCTAssertEqual(harness.previewFont.postScriptName, face, weight)
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("profiles.json"))
         }
     }
 
@@ -174,7 +237,7 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
 
     func test_acceptance_89_3_launchPreparationNamesFontAndWeight() async throws {
         let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .available])
-        let task = Task { await harness.model.prepareFontsAtLaunch() }
+        let task = Task { await harness.center.prepareFontsAtLaunch() }
         for _ in 0..<50 where harness.library.launchPriorityWeights.isEmpty {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
@@ -183,32 +246,14 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
         XCTAssertEqual(harness.library.launchPriorityWeights, ["black"])
     }
 
-    /// The default face becoming available must not release a shutter that is
-    /// waiting on a different weight; only that weight's own state does.
-    func test_acceptance_89_3_shutterWaitsOnTheChosenWeightOnly() throws {
-        let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .preparing])
-        harness.library.set(.preparing, for: .notoSerifTC, weightID: "black")
-        XCTAssertTrue(harness.model.isWaitingForFont)
-        XCTAssertTrue(harness.model.isShutterDisabled)
-
-        harness.library.set(.available, for: .notoSerifTC)
-        XCTAssertTrue(harness.model.isWaitingForFont, "default face finishing says nothing about black")
-
-        harness.library.set(.available, for: .notoSerifTC, weightID: "black")
-        XCTAssertFalse(harness.model.isWaitingForFont)
-
-        // The reverse: default preparing, chosen weight settled -> not waiting.
-        let other = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .preparing])
-        other.library.set(.available, for: .notoSerifTC, weightID: "black")
-        XCTAssertFalse(other.model.isWaitingForFont, "waiting is about the chosen face, not the font's default")
-    }
-
-    /// Download event for a different weight of the same font must not apply
-    /// or release anything for the chosen one.
-    func test_acceptance_89_3_otherWeightsDownloadEventDoesNotMakeChosenWeightAvailable() throws {
+    /// Download event for a different weight of the same font must not make
+    /// the chosen one available, for the preview or the bake.
+    func test_acceptance_89_3_otherWeightsDownloadEventDoesNotMakeChosenWeightAvailable() async throws {
         let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .available])
         harness.library.finishDownload(.notoSerifTC, weightID: "regular")
-        XCTAssertEqual(harness.model.captureContext(for: harness.profile).font, .pingFang)
+        let baked = await harness.bakedCall()
+        XCTAssertEqual(baked?.font, .pingFang)
+        XCTAssertEqual(harness.previewFont, .pingFang)
     }
 
     // MARK: - pending font applications stay per font (PR assumption)
@@ -220,15 +265,15 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
         let harness = try makeHarness(fontID: .notoSerifTC, weight: "black", states: [.notoSerifTC: .available, .huninn: .available])
         let id = harness.profile.id
 
-        harness.model.applyFont(.notoSerifTC, profileID: id)
+        harness.center.applyFont(.notoSerifTC, profileID: id)
         XCTAssertEqual(harness.store.profiles.first { $0.id == id }?.style.fontWeight, "black",
                        "re-applying the current font keeps its weight")
 
-        harness.model.applyFont(.huninn, profileID: id)
+        harness.center.applyFont(.huninn, profileID: id)
         XCTAssertEqual(harness.store.profiles.first { $0.id == id }?.style.fontWeight,
                        FontCatalog.entry(for: .huninn).defaultWeight.id)
 
-        harness.model.applyFont(.notoSerifTC, profileID: id)
+        harness.center.applyFont(.notoSerifTC, profileID: id)
         XCTAssertEqual(harness.store.profiles.first { $0.id == id }?.style.fontWeight,
                        FontCatalog.entry(for: .notoSerifTC).defaultWeight.id,
                        "switching back lands on the default weight, not the earlier black")
@@ -240,7 +285,7 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
     func test_acceptance_89_3_pendingApplicationWaitsForTheDefaultFaceOnly() async throws {
         let harness = try makeHarness(fontID: .huninn, weight: nil, states: [.huninn: .available])
         let id = harness.profile.id
-        harness.model.applyFont(.notoSerifTC, profileID: id)
+        harness.center.applyFont(.notoSerifTC, profileID: id)
         XCTAssertEqual(harness.library.downloads, [.notoSerifTC])
         XCTAssertEqual(harness.store.profiles.first { $0.id == id }?.style.fontID, .huninn)
 
@@ -285,11 +330,13 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
     }
 
     /// A legacy profile on disk (no fontWeight key) goes through the real
-    /// shell: captureContext font equals the catalog default face's resolution.
-    func test_acceptance_89_2_legacyProfileOnShellUsesDefaultFace() throws {
+    /// export: the baked font equals the catalog default face's resolution.
+    func test_acceptance_89_2_legacyProfileOnShellUsesDefaultFace() async throws {
         let harness = try makeHarness(fontID: .pingFang, weight: nil)
         XCTAssertEqual(harness.profile.style.fontWeight, FontCatalog.entry(for: .pingFang).defaultWeight.id)
-        XCTAssertEqual(harness.model.captureContext(for: harness.profile).font.postScriptName,
+        let baked = await harness.bakedCall()
+        XCTAssertEqual(baked?.font.postScriptName,
                        OverlayMetrics.resolvedFont(for: .pingFang, availability: harness.library).postScriptName)
     }
 }
+
