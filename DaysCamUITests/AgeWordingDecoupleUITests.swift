@@ -17,16 +17,12 @@ final class AgeWordingDecoupleUITests: XCTestCase {
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         seeding.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2023-08-05"
         seeding.launch()
-        seeding.openCamera()
-        XCTAssertTrue(seeding.buttons["疊字設定"].waitForExistence(timeout: 10))
+        XCTAssertTrue(seeding.openCamera())
         seeding.terminate()
 
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(profiles: profiles), "the export page is up")
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
@@ -66,7 +62,9 @@ final class AgeWordingDecoupleUITests: XCTestCase {
         ageWording.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
     }
     private func overlay(containing text: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        // Only the preview's overlay: the page title also says 第 N 天.
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@ AND label CONTAINS %@", ["overlayText", "overlayTextDraggable"], text)).firstMatch
     }
 
     /// 139.1–139.4 in one pass, with a screenshot at each step.

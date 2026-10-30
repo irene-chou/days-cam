@@ -11,16 +11,12 @@ final class FontWeightUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         openFontPage()
     }
 
     private func openFontPage() {
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
         // After a relaunch the panel may already be open.
-        if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
@@ -67,7 +63,7 @@ final class FontWeightUITests: XCTestCase {
         attach("font-weights-light-selected")
         app.terminate()
         app.launch()
-        app.openCamera()
+        XCTAssertTrue(app.waitForExportPage(), "the export page is up")
         openFontPage()
         XCTAssertTrue(weight("light").waitForExistence(timeout: 5))
         XCTAssertTrue(weight("light").isSelected, "89.3 kept after relaunch")

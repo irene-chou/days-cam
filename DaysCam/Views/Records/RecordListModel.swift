@@ -60,6 +60,12 @@ final class RecordListModel: ObservableObject {
     }
     /// Bumped to re-read counts and album names when the library changed.
     @Published private(set) var libraryRevision = 0
+    /// True for the one launch right after `ProfileStore.load()` found an
+    /// unreadable profile file and re-seeded (PRD 0.1 §7.3, 15.1). Read once
+    /// at `init`: the store only sets it during `load()`, which has already
+    /// run. Moved here from the camera, which is no longer the first screen
+    /// (#621).
+    @Published private(set) var showsCorruptionRecoveredAlert: Bool
 
     let store: ProfileStore
     let library: any RecordAlbumLibrary
@@ -103,10 +109,31 @@ final class RecordListModel: ObservableObject {
                                  renderer: renderer, updateProfile: writer.write)
         }
         self.profiles = store.profiles
+        self.showsCorruptionRecoveredAlert = store.didRecoverFromCorruption
         store.$profiles
             .dropFirst()
             .sink { [weak self] in self?.profiles = $0 }
             .store(in: &subscriptions)
+        // Profile writes are debounced (#464), so a failed save surfaces here
+        // rather than as a throw. Only failing/not-failing is compared (the
+        // error text carries a random file name): one failure shows once,
+        // and a successful retry re-arms it. The camera showed this until
+        // #621.
+        store.$lastWriteError
+            .map { $0 != nil }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasError in
+                guard hasError, let self else { return }
+                self.lastError = self.store.lastWriteError ?? ProfileStoreError.writeFailed("")
+            }
+            .store(in: &subscriptions)
+    }
+
+    /// Dismisses the one-time data-recovery alert (15.1).
+    func dismissCorruptionRecoveredAlert() {
+        showsCorruptionRecoveredAlert = false
     }
 
     /// Starts following library changes so counts stay current.
@@ -219,12 +246,12 @@ final class RecordListModel: ObservableObject {
     }
 
     /// The export page's model for `photo` of record `id` (#620): the panel
-    /// edits the record through the camera model's shared font path, and the
-    /// result is saved by `exportSave` (「最近項目」 only).
-    func exportModel(for id: UUID, photo: RecordPhoto, cameraModel: CameraScreenModel) -> ExportModel {
-        let fontLibrary = cameraModel.fontLibrary
+    /// edits the record through the app's shared font path (`styleCenter`),
+    /// and the result is saved by `exportSave` (「最近項目」 only).
+    func exportModel(for id: UUID, photo: RecordPhoto, styleCenter: StyleEditingCenter) -> ExportModel {
+        let fontLibrary = styleCenter.fontLibrary
         return ExportModel(profileID: id, photo: photo, store: store, library: library,
-                           editor: cameraModel.makeStyleEditor(for: id),
+                           editor: styleCenter.makeStyleEditor(for: id),
                            calendar: calendar, renderer: renderer,
                            save: exportSave,
                            resolveFont: { style in OverlayMetrics.resolvedFont(for: style, availability: fontLibrary) },

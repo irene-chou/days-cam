@@ -1,8 +1,9 @@
 import XCTest
 
-/// #568: with the panel open, the overlay text can be dragged from either tab
-/// and is exposed to tests as `overlayTextDraggable` (the dashed frame itself only
-/// shows while pressed or briefly on open, #599); closed, it does not drag.
+/// #568: the overlay text can be dragged from either tab and is exposed to
+/// tests as `overlayTextDraggable` (the dashed frame itself only shows while
+/// pressed or briefly on open, #599). Since #621 this is the export page's
+/// preview; the camera no longer draws the overlay.
 /// With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
 /// screenshots are also written there.
 final class OverlayDragUITests: XCTestCase {
@@ -12,23 +13,16 @@ final class OverlayDragUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
     }
 
-    private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
-    }
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
     private var row: XCUIElement { app.buttons["positionRow"] }
 
     private func openPanel() {
-        app.buttons["疊字設定"].tap()
-        XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5), "the panel opened")
+        XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5), "the panel is there")
     }
 
     private func shot(_ name: String) {
@@ -46,10 +40,11 @@ final class OverlayDragUITests: XCTestCase {
         }
     }
 
-    /// Drags the text up and to the left by about a quarter of the screen.
+    /// Drags the text up and to the left by a third of the preview.
     private func dragText(_ text: XCUIElement) {
+        let preview = element("exportPreview").frame
         let start = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: -app.frame.width * 0.25, dy: -app.frame.height * 0.12)),
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: -preview.width * 0.3, dy: -preview.height * 0.3)),
                     withVelocity: .slow, thenHoldForDuration: 0.2)
     }
 
@@ -118,21 +113,7 @@ final class OverlayDragUITests: XCTestCase {
         XCTAssertEqual(row.label, "位置，自訂位置", "568.5 saved as custom")
     }
 
-    /// #568-6／7: closed, not draggable, a drag does not move the text, a tap opens the panel.
-    func testClosedPanelDoesNotDrag() {
-        XCTAssertTrue(overlayText.waitForExistence(timeout: 5))
-        XCTAssertTrue(element("overlayText").exists, "568.7 plain identifier while closed")
-        XCTAssertFalse(element("overlayTextDraggable").exists, "568.7 not draggable while closed")
-        let before = overlayText.frame
-        dragText(overlayText)
-        XCTAssertEqual(overlayText.frame.midX, before.midX, accuracy: 2, "568.6 did not move")
-        XCTAssertEqual(overlayText.frame.midY, before.midY, accuracy: 2)
-        XCTAssertFalse(app.buttons["樣式"].exists, "568.6 a drag does not open the panel")
-        overlayText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5), "568.6 a tap opens it")
-    }
-
-    /// #568: a plain tap on the text while the panel is open leaves 右下 alone.
+    /// #568: a plain tap on the text leaves 右下 alone.
     func testTapWhileOpenKeepsTheAnchor() {
         openPanel()
         let text = element("overlayTextDraggable")

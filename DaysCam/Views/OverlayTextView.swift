@@ -193,9 +193,6 @@ struct OverlayTextView: View {
                 // shows on press / hint (#599); UI tests (#568) tell
                 // "draggable" apart by this identifier instead.
                 .accessibilityIdentifier(isInteractive ? "overlayTextDraggable" : "overlayText")
-                // TASK-96 (#400): the first-launch tour's step 2 lights this
-                // block up where it actually is — a look-only cut-out.
-                .onboardingTarget(.overlayText)
                 .position(x: displayOrigin.x + blockSize.width / 2, y: displayOrigin.y + blockSize.height / 2)
                 // Where the block sits, in the viewfinder's coordinates, for
                 // the camera screen to keep tap-to-focus off it (TASK-105).

@@ -35,22 +35,22 @@ final class CameraScreenModelPrepareCaptureTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private func makeModel(prepared: @escaping (FlashMode) -> Void) -> CameraScreenModel {
+    private func makeModel(prepared: @escaping (FlashMode) -> Void) throws -> CameraScreenModel {
         let service = CameraService(authorizer: StubAuthorizer(), deviceProvider: EmptyDeviceProvider(),
                                     isCaptureSupported: false)
         let profiles = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { Date() }, defaults: defaults)
         profiles.load()
         return CameraScreenModel(cameraService: service,
                                  profileStore: profiles,
+                                 profileID: try XCTUnwrap(profiles.profiles.first?.id),
                                  captureSettingsStore: CaptureSettingsStore(defaults: defaults),
-                                 capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)),
                                  prepareCapture: prepared)
     }
 
     /// The current mode is sent at once, then every change, with the new value.
-    func testFlashModeChangesAreSentToTheCamera() {
+    func testFlashModeChangesAreSentToTheCamera() throws {
         var modes: [FlashMode] = []
-        let model = makeModel { modes.append($0) }
+        let model = try makeModel { modes.append($0) }
         XCTAssertEqual(modes, [.off], "initial mode")
 
         model.captureSettingsStore.cycleFlash()
@@ -60,9 +60,9 @@ final class CameraScreenModelPrepareCaptureTests: XCTestCase {
     }
 
     /// Appearing again sends the current mode, so the camera has it once the session starts.
-    func testOnAppearSendsTheCurrentFlashMode() {
+    func testOnAppearSendsTheCurrentFlashMode() throws {
         var modes: [FlashMode] = []
-        let model = makeModel { modes.append($0) }
+        let model = try makeModel { modes.append($0) }
         model.captureSettingsStore.cycleFlash()
         modes.removeAll()
 

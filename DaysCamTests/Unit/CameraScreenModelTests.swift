@@ -1,26 +1,21 @@
 import AVFoundation
 import Combine
-import Photos
 import UIKit
 import XCTest
 @testable import DaysCam
 
-/// Covers `CameraScreenModel`: how it turns `CameraService`'s published state
-/// into what the viewfinder should show (placeholder, shutter-disabled,
-/// transient status message), that it forwards its lifecycle/action calls to
-/// the service (TASK-07), and how it turns the selected `CameraProfile` into
-/// overlay text/theme/position via `TemplateRenderer` (TASK-08).
+/// Covers `CameraScreenModel` (PRD 2.0 FR-20, #621): how it turns
+/// `CameraService`'s published state into what the viewfinder should show,
+/// the 「第 N 天」 HUD, the shutter's capture state machine and how the clean
+/// original is saved into the record's album and written back to the record.
 ///
 /// Like `CameraServiceTests`, every test stubs `CameraAuthorizing` and
 /// `CaptureDeviceProviding` so nothing here touches real hardware or a real
-/// permission prompt. A `CaptureDeviceProviding` that hands back a real
-/// device is impossible on the simulator, so — matching `CameraServiceTests`'
-/// own documented boundary — the fully-`.running` shutter-enabled state is a
-/// B-level (device) acceptance item, not covered here.
+/// permission prompt. The fully-`.running` shutter-enabled state is a B-level
+/// (device) acceptance item, not covered here.
 ///
 /// The profile side uses a real `ProfileStore` backed by a temporary
-/// directory and an isolated `UserDefaults` suite, same as
-/// `ProfileManagerModelTests`.
+/// directory and an isolated `UserDefaults` suite.
 @MainActor
 final class CameraScreenModelTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
@@ -64,6 +59,12 @@ final class CameraScreenModelTests: XCTestCase {
         }
     }
 
+    private final class StubFlashCapabilityProvider: FlashCapabilityProviding {
+        let hasFlash: Bool
+        init(hasFlash: Bool) { self.hasFlash = hasFlash }
+        func hasFlash(for facing: CameraFacing) -> Bool { hasFlash }
+    }
+
     /// A `CountdownTicker` a test drives one tick at a time, instead of
     /// waiting on a real clock (TASK-21, acceptance 19.8–19.10).
     private final class FakeCountdownTicker: CountdownTicker {
@@ -89,120 +90,34 @@ final class CameraScreenModelTests: XCTestCase {
         }
     }
 
-    // MARK: - Helpers
-
-    private func fixedNow() throws -> Date {
-        try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-    }
-
-    /// `seedShowsName` keeps the TASK-119 default (name on) for the seeded
-    /// profile; most tests predate it and assert text without the name.
-    private func makeProfileStore(now: Date, seed: [CameraProfile] = [], seedShowsName: Bool = false) -> ProfileStore {
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
-        if seed.isEmpty {
-            store.load() // seeds the one default profile
-            if !seedShowsName, var seeded = store.profiles.first {
-                seeded.showName = false
-                try? store.update(seeded)
-            }
-        } else {
-            for profile in seed {
-                _ = try? store.add(profile)
-            }
+    /// Records every save the model starts and holds its completion, so a
+    /// test answers (or never answers) each one by hand.
+    private final class SaveRecorder {
+        struct Call {
+            let image: UIImage
+            let albumIdentifier: String?
+            let albumTitle: String
+            let completion: (Result<RecordSaveOutcome, PhotoSaveError>) -> Void
         }
-        return store
+
+        private(set) var calls: [Call] = []
+
+        func save(_ image: UIImage, _ albumIdentifier: String?, _ albumTitle: String,
+                  _ completion: @escaping (Result<RecordSaveOutcome, PhotoSaveError>) -> Void) {
+            calls.append(Call(image: image, albumIdentifier: albumIdentifier,
+                              albumTitle: albumTitle, completion: completion))
+        }
     }
 
-    private func makeModel(status: AVAuthorizationStatus = .notDetermined,
-                           captureSupported: Bool = false,
-                           profileStore: ProfileStore? = nil,
-                           now: Date = Date(),
-                           flashCapabilityProvider: FlashCapabilityProviding? = nil,
-                           captureSettingsStore: CaptureSettingsStore? = nil,
-                           countdownTicker: CountdownTicker = SystemCountdownTicker(),
-                           cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { size, _ in CGRect(origin: .zero, size: size) },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { _, _, _, _, _, _, _, _ in UIImage() },
-                           save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
-                           captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
-                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
-                           thumbnailLibrary: GalleryLibrary? = nil,
-                           fontLibrary: (any FontShellControlling)? = nil,
-                           saveTimeout: TimeInterval = 30) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
-        makeModel(status: status,
-                 captureSupported: captureSupported,
-                 profileStore: profileStore,
-                 nowProvider: { now },
-                 flashCapabilityProvider: flashCapabilityProvider,
-                 captureSettingsStore: captureSettingsStore,
-                 countdownTicker: countdownTicker,
-                 cropRect: cropRect,
-                 bake: bake,
-                 save: save,
-                 captureImage: captureImage,
-                 scheduleToastDismiss: scheduleToastDismiss,
-                 thumbnailLibrary: thumbnailLibrary,
-                 fontLibrary: fontLibrary,
-                 saveTimeout: saveTimeout)
-    }
+    /// Holds the shutter's capture completions, so a test hands photos back
+    /// one at a time.
+    private final class CaptureRecorder {
+        private(set) var completions: [(Result<UIImage, CameraCaptureError>) -> Void] = []
 
-    /// Like `makeModel(...)`, but takes a clock closure rather than a fixed
-    /// `Date` — for tests that need to move time *after* construction to
-    /// prove a value is recomputed rather than cached (see `MutableClock`).
-    ///
-    /// `scheduleToastDismiss` defaults to never firing, so a toast a test
-    /// presents stays put until the test inspects it; tests that care about
-    /// the dismiss itself (or the ordering between two scheduled dismissals)
-    /// pass their own `SchedulerSpy` and invoke it explicitly.
-    ///
-    /// `captureSettingsStore` defaults to a fresh store backed by this test's
-    /// own isolated `defaults` suite (not `.standard`) — otherwise the
-    /// persisted `captureAspectRatio`/`showsGrid` fields would leak between
-    /// test runs the way `ProfileStore`'s own isolation already prevents for
-    /// profiles. `capturedPhotoStore` similarly gets its own subdirectory of
-    /// this test's temporary `directory`, so `recordCapturedAsset` never
-    /// touches the real `Application Support/DaysCam/photos.json`.
-    private func makeModel(status: AVAuthorizationStatus = .notDetermined,
-                           captureSupported: Bool = false,
-                           profileStore: ProfileStore? = nil,
-                           nowProvider: @escaping () -> Date,
-                           flashCapabilityProvider: FlashCapabilityProviding? = nil,
-                           captureSettingsStore: CaptureSettingsStore? = nil,
-                           countdownTicker: CountdownTicker = SystemCountdownTicker(),
-                           cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { size, _ in CGRect(origin: .zero, size: size) },
-                           bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { _, _, _, _, _, _, _, _ in UIImage() },
-                           save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in completion(.success("asset-1")) },
-                           captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
-                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
-                           thumbnailLibrary: GalleryLibrary? = nil,
-                           fontLibrary: (any FontShellControlling)? = nil,
-                           fontPreparationTimeout: TimeInterval = 3,
-                           saveTimeout: TimeInterval = 30) -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
-        let authorizer = StubAuthorizer(status: status)
-        let provider = EmptyDeviceProvider()
-        let service = CameraService(authorizer: authorizer,
-                                    deviceProvider: provider,
-                                    flashCapabilityProvider: flashCapabilityProvider,
-                                    isCaptureSupported: captureSupported)
-        let store = profileStore ?? makeProfileStore(now: nowProvider())
-        let resolvedCaptureSettingsStore = captureSettingsStore ?? CaptureSettingsStore(defaults: defaults)
-        let capturedPhotoStore = CapturedPhotoStore(directory: directory.appendingPathComponent("captured-photos", isDirectory: true))
-        let model = CameraScreenModel(cameraService: service,
-                                      profileStore: store,
-                                      captureSettingsStore: resolvedCaptureSettingsStore,
-                                      capturedPhotoStore: capturedPhotoStore,
-                                      calendar: DateFixture.taipei,
-                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: nowProvider),
-                                      cropRect: cropRect,
-                                      countdownTicker: countdownTicker,
-                                      bake: bake,
-                                      save: save,
-                                      captureImage: captureImage,
-                                      scheduleToastDismiss: scheduleToastDismiss,
-                                      makeThumbnailLibrary: { _ in thumbnailLibrary ?? FakeThumbnailLibrary(status: .denied) },
-                                      fontLibrary: fontLibrary,
-                                      fontPreparationTimeout: fontPreparationTimeout,
-                                      saveTimeout: saveTimeout)
-        return (model, service, provider, store)
+        func capture(_ flashMode: FlashMode,
+                     _ completion: @escaping (Result<UIImage, CameraCaptureError>) -> Void) {
+            completions.append(completion)
+        }
     }
 
     /// Records scheduled dismiss callbacks without running them, so a test
@@ -216,13 +131,115 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     /// A clock whose reading can be moved after construction, so a test can
-    /// prove a value is recomputed live rather than cached at `init` time —
-    /// two separately-constructed models each with their own *fixed* clock
-    /// cannot tell those apart (code review finding).
+    /// prove a value is recomputed live rather than cached at `init` time.
     private final class MutableClock {
         var current: Date
         init(_ date: Date) { current = date }
         func now() -> Date { current }
+    }
+
+    /// A latest-photo read that waits for the test to let it finish — models
+    /// a slow library read.
+    @MainActor
+    private final class GatedPhotoLoader {
+        private(set) var isWaiting = false
+        private var continuation: CheckedContinuation<Void, Never>?
+        let image: UIImage?
+
+        init(image: UIImage?) { self.image = image }
+
+        func load() async -> UIImage? {
+            isWaiting = true
+            await withCheckedContinuation { continuation = $0 }
+            isWaiting = false
+            return image
+        }
+
+        func resume() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func fixedNow() throws -> Date {
+        try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
+    }
+
+    private func outcome(_ assetID: String = "asset-1", album: String? = nil) -> RecordSaveOutcome {
+        RecordSaveOutcome(assetID: assetID, albumID: album)
+    }
+
+    /// A store holding the one seeded default record.
+    private func makeProfileStore(clock: MutableClock) -> ProfileStore {
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: clock.now,
+                                 defaults: defaults, scheduler: ProfileStore.immediateScheduler)
+        store.load()
+        return store
+    }
+
+    @discardableResult
+    private func addRecord(to store: ProfileStore,
+                           name: String = "小寶",
+                           start: DateComponents = DateFixture.components(2026, 1, 1),
+                           albumIdentifier: String? = nil,
+                           fallbackAssetIDs: [String] = []) throws -> CameraProfile {
+        var profile = CameraProfile(name: name, startDate: start, albumIdentifier: albumIdentifier)
+        profile.fallbackAssetIDs = fallbackAssetIDs
+        return try store.add(profile)
+    }
+
+    private func storedRecord(_ id: UUID, in store: ProfileStore) throws -> CameraProfile {
+        try XCTUnwrap(store.profiles.first { $0.id == id })
+    }
+
+    private func destination(of record: CameraProfile) -> CameraScreenModel.CaptureDestination {
+        CameraScreenModel.CaptureDestination(profileID: record.id, albumTitle: record.name)
+    }
+
+    /// Builds a model for `record` (the store's first record when `nil`).
+    /// `clock` defaults to 2026-01-10 08:00; `captureSettingsStore` to a store
+    /// backed by this test's own `defaults` suite so settings never leak
+    /// between runs. `scheduleToastDismiss` defaults to never firing, so a
+    /// toast stays put until the test inspects it.
+    private func makeModel(status: AVAuthorizationStatus = .notDetermined,
+                           captureSupported: Bool = false,
+                           clock: MutableClock? = nil,
+                           profileStore: ProfileStore? = nil,
+                           record: CameraProfile? = nil,
+                           flashCapabilityProvider: FlashCapabilityProviding? = nil,
+                           captureSettingsStore: CaptureSettingsStore? = nil,
+                           countdownTicker: CountdownTicker = SystemCountdownTicker(),
+                           save: @escaping CameraScreenModel.Save = { _, _, _, completion in
+                               completion(.success(RecordSaveOutcome(assetID: "asset-1", albumID: nil)))
+                           },
+                           captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
+                           scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
+                           loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
+                           saveTimeout: TimeInterval = 30) throws
+        -> (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore) {
+        let resolvedClock = try clock ?? MutableClock(fixedNow())
+        let provider = EmptyDeviceProvider()
+        let service = CameraService(authorizer: StubAuthorizer(status: status),
+                                    deviceProvider: provider,
+                                    flashCapabilityProvider: flashCapabilityProvider,
+                                    isCaptureSupported: captureSupported)
+        let store = profileStore ?? makeProfileStore(clock: resolvedClock)
+        let profileID = try XCTUnwrap(record?.id ?? store.profiles.first?.id)
+        let model = CameraScreenModel(cameraService: service,
+                                      profileStore: store,
+                                      profileID: profileID,
+                                      captureSettingsStore: captureSettingsStore ?? CaptureSettingsStore(defaults: defaults),
+                                      calendar: DateFixture.taipei,
+                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: resolvedClock.now),
+                                      countdownTicker: countdownTicker,
+                                      save: save,
+                                      captureImage: captureImage,
+                                      loadLatestPhoto: loadLatestPhoto,
+                                      scheduleToastDismiss: scheduleToastDismiss,
+                                      saveTimeout: saveTimeout)
+        return (model, service, provider, store)
     }
 
     private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 2) {
@@ -241,53 +258,68 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertTrue(condition(), "condition never became true within \(timeout)s")
     }
 
+    private func solidImage(_ color: UIColor) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+    }
+
+    /// A photo whose pixel buffer is `pixelSize`, shown at `scale` and
+    /// `orientation` the way AVFoundation hands one over.
+    private func makePhoto(pixelSize: CGSize, scale: CGFloat = 1,
+                           orientation: UIImage.Orientation = .up) throws -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let base = UIGraphicsImageRenderer(size: pixelSize, format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(origin: .zero, size: pixelSize))
+        }
+        let cgImage = try XCTUnwrap(base.cgImage)
+        return UIImage(cgImage: cgImage, scale: scale, orientation: orientation)
+    }
+
     // MARK: - showsPlaceholder / isCaptureUnsupported
     //
-    // Code review finding: the original `isShutterDisabled` tests below this
-    // point each asserted the *composite* while only ever driving one
-    // sub-condition — deleting any single clause from the real
-    // implementation would still leave these green, because `status` can
-    // never reach `.running` without a real capture device (same limitation
-    // `CameraServiceTests` documents), so `isSessionNotRunning` is
-    // unconditionally true everywhere in this test target regardless of what
-    // else is true. Testing each sub-property (`isCaptureUnsupported`,
-    // `needsPermissionGuidance`, `isSessionNotRunning`) directly, rather than
-    // only through the OR'd composite, is what actually catches a broken
-    // individual condition.
+    // `status` can never reach `.running` without a real capture device (same
+    // limitation `CameraServiceTests` documents), so `isSessionNotRunning` is
+    // unconditionally true everywhere in this test target. Testing each
+    // sub-property directly, rather than only through the OR'd composite
+    // `isShutterDisabled`, is what catches a broken individual condition.
 
-    func testIsCaptureUnsupportedTrueWhenCaptureNotSupported() {
-        let (model, _, _, _) = makeModel(captureSupported: false)
+    func testIsCaptureUnsupportedTrueWhenCaptureNotSupported() throws {
+        let (model, _, _, _) = try makeModel(captureSupported: false)
         XCTAssertTrue(model.isCaptureUnsupported)
         XCTAssertTrue(model.showsPlaceholder)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testIsCaptureUnsupportedFalseWhenCaptureSupported() {
-        let (model, _, _, _) = makeModel(captureSupported: true)
+    func testIsCaptureUnsupportedFalseWhenCaptureSupported() throws {
+        let (model, _, _, _) = try makeModel(captureSupported: true)
         XCTAssertFalse(model.isCaptureUnsupported)
         XCTAssertFalse(model.showsPlaceholder)
     }
 
     // MARK: - needsPermissionGuidance
 
-    func testNeedsPermissionGuidanceTrueWhenDenied() {
-        let (model, service, _, _) = makeModel(status: .denied, captureSupported: true)
+    func testNeedsPermissionGuidanceTrueWhenDenied() throws {
+        let (model, service, _, _) = try makeModel(status: .denied, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .denied }
         XCTAssertTrue(model.needsPermissionGuidance)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testNeedsPermissionGuidanceTrueWhenRestricted() {
-        let (model, service, _, _) = makeModel(status: .restricted, captureSupported: true)
+    func testNeedsPermissionGuidanceTrueWhenRestricted() throws {
+        let (model, service, _, _) = try makeModel(status: .restricted, captureSupported: true)
         model.onAppear()
         waitUntil { service.permission == .restricted }
         XCTAssertTrue(model.needsPermissionGuidance)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testNeedsPermissionGuidanceFalseWhenAuthorized() {
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+    func testNeedsPermissionGuidanceFalseWhenAuthorized() throws {
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.permission == .authorized }
         XCTAssertFalse(model.needsPermissionGuidance)
@@ -295,17 +327,16 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - isSessionNotRunning
 
-    func testIsSessionNotRunningTrueBeforeOnAppear() {
-        let (model, _, _, _) = makeModel(captureSupported: true)
+    func testIsSessionNotRunningTrueBeforeOnAppear() throws {
+        let (model, _, _, _) = try makeModel(captureSupported: true)
         XCTAssertTrue(model.isSessionNotRunning)
         XCTAssertTrue(model.isShutterDisabled)
     }
 
-    func testIsSessionNotRunningTrueForSimulatorPlaceholderStatus() {
-        // Documents the actual boundary explained above: `.unavailable(.simulator)`
-        // is as close to "not idle" as this test target can reach, and it is
-        // still not `.running`.
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+    func testIsSessionNotRunningTrueForSimulatorPlaceholderStatus() throws {
+        // `.unavailable(.simulator)` is as close to "not idle" as this test
+        // target can reach, and it is still not `.running`.
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.status == .unavailable(.simulator) }
         XCTAssertTrue(model.isSessionNotRunning)
@@ -313,47 +344,44 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - statusMessage
 
-    func testStatusMessageNilWhenIdle() {
-        let (model, _, _, _) = makeModel(captureSupported: true)
+    func testStatusMessageNilWhenIdle() throws {
+        let (model, _, _, _) = try makeModel(captureSupported: true)
         XCTAssertNil(model.statusMessage)
     }
 
-    func testStatusMessageNilForSimulatorPlaceholder() {
+    func testStatusMessageNilForSimulatorPlaceholder() throws {
         // The simulator gets its own placeholder + label; the generic
         // "相機暫時無法使用" message would be redundant on top of it.
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.status == .unavailable(.simulator) }
         XCTAssertNil(model.statusMessage)
     }
 
-    func testStatusMessageForNoCaptureDevice() {
+    func testStatusMessageForNoCaptureDevice() throws {
         // `EmptyDeviceProvider` always hands back nil, so an authorized,
         // capture-supported session still fails to configure.
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: true)
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: true)
         model.onAppear()
         waitUntil { service.status == .unavailable(.noCaptureDevice) }
         XCTAssertEqual(model.statusMessage, "相機暫時無法使用")
     }
 
-    func testStatusMessageForInterruption() {
-        let (model, service, _, _) = makeModel(captureSupported: true)
+    func testStatusMessageForInterruption() throws {
+        let (model, service, _, _) = try makeModel(captureSupported: true)
         NotificationCenter.default.post(name: AVCaptureSession.wasInterruptedNotification, object: service.session)
         waitUntil { service.status == .interrupted }
         XCTAssertEqual(model.statusMessage, "相機暫時無法使用")
     }
 
-    // MARK: - CameraService change forwarding (Critical, code review finding)
+    // MARK: - CameraService change forwarding
 
-    func testModelPublishesWhenCameraServicePermissionChanges() {
+    func testModelPublishesWhenCameraServicePermissionChanges() throws {
         // `cameraService` is a nested `ObservableObject` this model reads
-        // directly (`permission`, `status`) but `CameraScreen` only
-        // `@ObservedObject`s this model, not `cameraService` itself — without
-        // forwarding `cameraService.objectWillChange`, SwiftUI never learns a
-        // permission grant/denial or a status change happened, so the
-        // guidance screen would never appear/disappear and the shutter could
-        // stay disabled forever once `.running` is reached on a device.
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+        // directly (`permission`, `status`) but `CameraScreen` only observes
+        // this model — without forwarding `cameraService.objectWillChange`,
+        // SwiftUI never learns a permission or status change happened.
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         var fired = false
         let cancellable = model.objectWillChange.sink { fired = true }
         defer { cancellable.cancel() }
@@ -366,404 +394,119 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - Lifecycle forwarding
 
-    func testOnAppearStartsTheService() {
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+    func testOnAppearStartsTheService() throws {
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         XCTAssertEqual(service.permission, .notDetermined)
         model.onAppear()
         waitUntil { service.permission == .authorized }
     }
 
-    func testOnDisappearStopsTheService() {
-        let (model, service, _, _) = makeModel(status: .authorized, captureSupported: false)
+    /// 621-9: closing the camera stops the session.
+    func test_621_9_onDisappearStopsTheService() throws {
+        let (model, service, _, _) = try makeModel(status: .authorized, captureSupported: false)
         model.onAppear()
         waitUntil { service.status == .unavailable(.simulator) }
         model.onDisappear()
         waitUntil { service.status == .idle }
     }
 
+    /// Closing the camera mid-countdown stops the ticker and takes no photo.
+    func testOnDisappearCancelsARunningCountdownWithoutCapturing() throws {
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // 3 seconds
+        let ticker = FakeCountdownTicker()
+        let captures = CaptureRecorder()
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings, countdownTicker: ticker,
+                                             captureImage: captures.capture)
+        model.beginCapture()
+        XCTAssertEqual(model.countdownRemaining, 3)
+
+        model.onDisappear()
+
+        XCTAssertNil(model.countdownRemaining)
+        XCTAssertEqual(ticker.stopCallCount, 1)
+        ticker.tick()
+        XCTAssertTrue(captures.completions.isEmpty)
+    }
+
     // MARK: - switchCamera forwarding
 
-    func testSwitchCameraNoOpsWhenCaptureNotSupported() {
-        let (model, _, provider, _) = makeModel(captureSupported: false)
+    func testSwitchCameraNoOpsWhenCaptureNotSupported() throws {
+        let (model, _, provider, _) = try makeModel(captureSupported: false)
         model.switchCamera()
         // The guard in `CameraService.switchCamera()` returns before ever
         // touching the session queue, so this is observable synchronously.
         XCTAssertTrue(provider.requestedFacings.isEmpty)
     }
 
-    func testSwitchCameraForwardsToServiceWhenCaptureSupported() {
-        let (model, _, provider, _) = makeModel(captureSupported: true)
+    func testSwitchCameraForwardsToServiceWhenCaptureSupported() throws {
+        let (model, _, provider, _) = try makeModel(captureSupported: true)
         model.switchCamera()
         waitUntil { !provider.requestedFacings.isEmpty }
         XCTAssertEqual(provider.requestedFacings, [.front])
     }
 
-    // MARK: - Profile-driven overlay (TASK-08)
+    // MARK: - Day HUD (FR-20.2)
 
-    func testOverlayTextForFreshInstallIsDayOne() throws {
-        // 8.1: a fresh install seeds one default profile with startDate ==
-        // today, so the overlay reads "我的紀錄 第 1 天" (TASK-119) with no further setup.
-        let now = try fixedNow() // 2026-01-10
-        let store = makeProfileStore(now: now, seedShowsName: true)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(model.overlayText, "\(ProfileStore.defaultProfileName) 第 1 天")
+    /// 2026-01-01 start, today 2026-01-10: 「第 10 天」.
+    func testDayHUDShowsTheElapsedDay() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
+        XCTAssertEqual(model.dayHUDText, "第 10 天")
     }
 
-    func testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment() throws {
-        // 8.2: re-rendering a day later must read "第 2 天", proving
-        // `overlayText` is computed from the live capture moment on every
-        // access rather than cached from when the profile was seeded
-        // (PRD §6.4). One model with a *mutable* clock, not two separately
-        // constructed models each with a fixed clock — two independent
-        // models each reading a value fixed at construction cannot tell a
-        // cached value apart from a correctly recomputed one; that would
-        // pass even if `overlayText` snapshotted the text once in `init`
-        // (code review finding).
-        let seedDay = try fixedNow() // 2026-01-10
-        let clock = MutableClock(seedDay)
-        let store = makeProfileStore(now: seedDay)
-        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
-        XCTAssertEqual(model.overlayText, "第 1 天")
+    /// The HUD reads the clock on every access, it is not cached.
+    func testDayHUDFollowsTheClock() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
+        XCTAssertEqual(model.dayHUDText, "第 10 天")
 
         clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        XCTAssertEqual(model.overlayText, "第 2 天")
+        XCTAssertEqual(model.dayHUDText, "第 11 天")
     }
 
-    func testDateOnlyConfigurationShowsTheDateAlone() throws {
-        // 8.3 again (TASK-107 #426 reverses TASK-47): a date-only profile is
-        // stored as such and prints the capture date alone the next day —
-        // never "第 2 天" (PRD FR-2.17, 107.6).
-        let seedDay = try fixedNow() // 2026-01-10
-        let store = makeProfileStore(now: seedDay)
-        var dateOnly = try XCTUnwrap(store.profiles.first)
+    /// A start date still ahead reads 「還有 N 天」.
+    func testDayHUDCountsDownToAFutureStartDate() throws {
+        let clock = MutableClock(try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8)))
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
+        XCTAssertEqual(model.dayHUDText, "還有 31 天")
+    }
+
+    /// Whatever units, format or parts the record prints, the HUD is the
+    /// elapsed days alone.
+    func testDayHUDIgnoresTheRecordsUnitsFormatAndParts() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+
+        var unitsAndFormat = CameraProfile(name: "年月日", startDate: DateFixture.components(2026, 1, 1))
+        unitsAndFormat.displayUnits = [.year, .month, .day]
+        unitsAndFormat.dayCountFormat = .dDay
+        let first = try store.add(unitsAndFormat)
+
+        var dateOnly = CameraProfile(name: "只有日期", startDate: DateFixture.components(2026, 1, 1))
         dateOnly.showDayCount = false
         dateOnly.showDate = true
-        try store.update(dateOnly)
+        dateOnly.showName = true
+        let second = try store.add(dateOnly)
 
-        let nextDay = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        let (model, _, _, _) = makeModel(profileStore: store, now: nextDay)
-        XCTAssertEqual(model.overlayText, "2026.01.11", "107.6")
-    }
-
-    func testOverlayTextPrefixesTheNameWhenShowNameIsOn() throws {
-        // 8.4/8.5: name on prepends "{name} ", name off leaves no stray space.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        var withName = try XCTUnwrap(store.profiles.first) // name defaults to the seed name
-        withName.showName = true
-        try store.update(withName)
-
-        let (shown, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(shown.overlayText, "\(ProfileStore.defaultProfileName) 第 1 天")
-
-        withName.showName = false
-        try store.update(withName)
-        let (hidden, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(hidden.overlayText, "第 1 天")
-    }
-
-    func testOverlayThemeAndPositionFollowTheSelectedProfileAndSwitchingDoesNotLeak() throws {
-        // 8.13: each profile keeps its own position/theme; switching between
-        // them must not overwrite the other's.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let defaultProfile = try XCTUnwrap(store.profiles.first)
-
-        var second = CameraProfile(name: "小寶",
-                                   startDate: DateFixture.components(2026, 1, 1),
-                                   position: .anchor(.topLeading),
-                                   style: OverlayStyle(legacyTheme: .retroOrange))
-        second = try store.add(second) // FR-1.10: add also auto-selects it
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(model.selectedProfileID, second.id)
-        XCTAssertEqual(model.overlayPlacement, .anchor(.topLeading))
-        XCTAssertEqual(model.overlayStyle, OverlayStyle(legacyTheme: .retroOrange))
-
-        store.select(id: defaultProfile.id)
-        // The mirroring sink is dispatched via `.receive(on: .main)`, so it
-        // needs a main-queue pump before it is observable, same as
-        // `ProfileManagerModelTests`.
-        waitUntil { model.selectedProfileID == defaultProfile.id }
-        XCTAssertEqual(model.overlayPlacement, .anchor(.bottomTrailing))
-        XCTAssertEqual(model.overlayStyle, OverlayStyle())
-    }
-
-    func testProfilesAndSelectionMirrorTheStoreAfterConstruction() throws {
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        let expectation = expectation(description: "profiles mirrored")
-        DispatchQueue.main.async { expectation.fulfill() }
-        wait(for: [expectation], timeout: 1)
-
-        XCTAssertEqual(model.profiles.map(\.name), [ProfileStore.defaultProfileName, "小寶"])
-        XCTAssertEqual(model.selectedProfileID, store.selectedProfileID)
-    }
-
-    // MARK: - Profile switcher (TASK-13)
-
-    func testCurrentProfileNameReflectsTheSelectedProfile() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now)
-        XCTAssertEqual(model.currentProfileName, ProfileStore.defaultProfileName)
-    }
-
-    func testSelectProfileForwardsToTheStoreAndUpdatesTheOverlay() throws {
-        // 13.4/13.5: switching must reach the store (so `lastUsedProfileID`
-        // persists, FR-1.5) and the viewfinder's overlay must follow.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        let defaultProfile = try XCTUnwrap(store.profiles.first { $0.id != second.id })
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(model.selectedProfileID, second.id) // FR-1.10 auto-select on add
-
-        model.selectProfile(id: defaultProfile.id)
-
-        XCTAssertEqual(store.selectedProfileID, defaultProfile.id)
-        XCTAssertEqual(store.lastUsedProfileID, defaultProfile.id)
-        waitUntil { model.currentProfileName == ProfileStore.defaultProfileName }
-        // Default profile was seeded with startDate == `now` itself, so under
-        // `.dayOne` this is day 1.
-        XCTAssertEqual(model.overlayText, "第 1 天")
-    }
-
-    func testPresentProfileManagementShowsThePanel() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now)
-        XCTAssertFalse(model.isProfileManagerPresented)
-
-        model.presentProfileManagement()
-        XCTAssertTrue(model.isProfileManagerPresented)
-
-        model.dismissProfileManagement()
-        XCTAssertFalse(model.isProfileManagerPresented)
-    }
-
-    func testProfileManagerModelSharesTheSameStoreAsTheScreen() throws {
-        // The management panel and the switcher must never fall out of sync —
-        // both are views onto the same `ProfileStore`.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        XCTAssertEqual(model.profileManagerModel.profiles.map(\.id), store.profiles.map(\.id))
-
-        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        XCTAssertEqual(model.profileManagerModel.profiles.count, 2)
-        waitUntil { model.profiles.count == 2 }
-    }
-
-    func testAddingFromTheManagerKeepsTheSheetAndPanelAsTheyWere() throws {
-        // #226 R-7: new profile selected and its edit page pushed; the sheet
-        // stays open and the overlay panel is left untouched.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        model.openOverlayPanel()
-        model.panelModel.selectedTab = .style
-        model.presentProfileManagement()
-
-        model.profileManagerModel.addProfile()
-
-        XCTAssertEqual(store.profiles.count, 2)
-        XCTAssertEqual(store.selectedProfileID, store.profiles.last?.id)
-        XCTAssertTrue(model.isProfileManagerPresented)
-        XCTAssertEqual(model.profileManagerModel.path, [store.profiles.last?.id].compactMap { $0 })
-        XCTAssertEqual(model.panelModel.selectedTab, .style)
-        XCTAssertTrue(model.panelModel.isOpen)
-    }
-
-    // MARK: - Shutter capture context (TASK-10 acceptance 10.3, 10.4)
-
-    func testCaptureContextRecomputesTextForANewCapturedMoment() throws {
-        // 10.3/14.1/14.8/14.9: rendering once at 2026-01-10 then again at
-        // 2026-01-11 for the same profile must produce "第 2 天", not a
-        // value stuck at "第 1 天" — proof the text is recomputed from
-        // `capturedAt`, never cached. One model with a *mutable* clock, not
-        // two separately constructed models each with a fixed clock — same
-        // reasoning as `testOverlayTextIncrementsWithTheCaptureMomentNotTheSeedMoment`
-        // (code review finding). This also covers 14.8/14.9 (the two
-        // acceptance items TASK-14's own notes call the easiest to miss):
-        // `refreshOverlay()`/`refreshTick` are never touched anywhere in
-        // this test, so it equally proves a capture is correct whether or
-        // not a viewfinder refresh happened first (an earlier, separate test
-        // for that turned out to be redundant with this one — same review).
-        let seedDay = try fixedNow() // 2026-01-10
-        let clock = MutableClock(seedDay)
-        let store = makeProfileStore(now: seedDay)
-        let profile = try XCTUnwrap(store.profiles.first) // startDate == seedDay, dayOne
-        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
-
-        XCTAssertEqual(model.captureContext(for: profile).text, "第 1 天")
-
-        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        XCTAssertEqual(model.captureContext(for: profile).text, "第 2 天")
-    }
-
-    func testCaptureContextCapturedAtOriginatesFromTheInjectedClockOnly() throws {
-        // 10.4: `capturedAt` must come from exactly the clock this model was
-        // given — nothing in the call chain (`TemplateRenderer` included)
-        // reads the system clock on its own. `grep -n "Date()"
-        // DaysCam/Services/TemplateRenderer.swift` finds no matches, which is
-        // what makes this deterministic instead of merely "close enough."
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now)
-        let profile = try XCTUnwrap(model.profiles.first)
-
-        XCTAssertEqual(model.captureContext(for: profile).capturedAt, now)
-    }
-
-    func testCaptureContextCarriesTheProfilesThemeAndPosition() throws {
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        var styled = try XCTUnwrap(store.profiles.first)
-        styled.style = OverlayStyle(legacyTheme: .filmStrip)
-        styled.position = .anchor(.topLeading)
-        try store.update(styled)
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let context = model.captureContext(for: styled)
-        XCTAssertEqual(context.style, OverlayStyle(legacyTheme: .filmStrip))
-        XCTAssertEqual(context.placement, .anchor(.topLeading))
-    }
-
-    // MARK: - Film date (TASK-153 #522)
-
-    private func filmDateProfile(in store: ProfileStore, show: Bool, corner: FilmDateCorner,
-                                 showDate: Bool = false) throws -> CameraProfile {
-        var profile = try XCTUnwrap(store.profiles.first)
-        profile.showFilmDate = show
-        profile.filmDateCorner = corner
-        profile.showDate = showDate
-        try store.update(profile)
-        return profile
-    }
-
-    /// 153.3: the stamp text comes from the injected capture moment, the
-    /// corner from the profile.
-    func test_153_3_captureContextCarriesTheFilmDateOfTheCaptureMoment() throws {
-        let capturedAt = try XCTUnwrap(DateFixture.date(2025, 10, 12, hour: 23, minute: 59, second: 59))
-        let store = makeProfileStore(now: capturedAt)
-        let profile = try filmDateProfile(in: store, show: true, corner: .topTrailing)
-        let (model, _, _, _) = makeModel(profileStore: store, now: capturedAt)
-
-        let stamp = try XCTUnwrap(model.captureContext(for: profile).filmDate)
-        XCTAssertEqual(stamp, FilmDateStamp(text: "'25 10 12", corner: .topTrailing))
-    }
-
-    /// 153.3: off means `nil`, for every corner.
-    func test_153_3_captureContextHasNoFilmDateWhenItIsOff() throws {
-        let capturedAt = try XCTUnwrap(DateFixture.date(2025, 10, 12, hour: 8))
-        let store = makeProfileStore(now: capturedAt)
-        let profile = try filmDateProfile(in: store, show: false, corner: .bottomTrailing)
-        let (model, _, _, _) = makeModel(profileStore: store, now: capturedAt)
-
-        XCTAssertNil(model.captureContext(for: profile).filmDate)
-    }
-
-    /// 153.3: `processCapturedImage` hands the context's stamp to `bake`
-    /// untouched, and `nil` when there is none (153.7).
-    func test_153_3_processCapturedImagePassesTheFilmDateToBake() throws {
-        let now = try fixedNow()
-        for expected in [FilmDateStamp(text: "'26 01 10", corner: .topLeading), nil] {
-            let lock = NSLock()
-            var received: [FilmDateStamp?] = []
-            let bakeExp = expectation(description: "bake called")
-            let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _, _, filmDate, _ in
-                lock.lock(); received.append(filmDate); lock.unlock()
-                bakeExp.fulfill()
-                return UIImage()
-            })
-            var context = sampleContext(now)
-            context.filmDate = expected
-
-            model.processCapturedImage(UIImage(), context: context)
-
-            wait(for: [bakeExp], timeout: 2)
-            XCTAssertEqual(received.count, 1)
-            XCTAssertEqual(received.first ?? nil, expected)
+        for record in [first, second] {
+            let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
+            XCTAssertEqual(model.dayHUDText, "第 10 天", record.name)
         }
-    }
-
-    /// 153.4: the main date text and the stamp are computed from the same
-    /// `capturedAt`, on both sides of midnight.
-    func test_153_4_mainDateAndFilmDateAgreeAcrossMidnight() throws {
-        let before = try XCTUnwrap(DateFixture.date(2025, 10, 12, hour: 23, minute: 59, second: 59))
-        let after = try XCTUnwrap(DateFixture.date(2025, 10, 13, hour: 0, minute: 0, second: 0))
-        let clock = MutableClock(before)
-        let store = makeProfileStore(now: before)
-        let profile = try filmDateProfile(in: store, show: true, corner: .bottomLeading, showDate: true)
-        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
-
-        let first = model.captureContext(for: profile)
-        XCTAssertEqual(first.capturedAt, before)
-        XCTAssertTrue(first.text.contains("2025.10.12"), first.text)
-        XCTAssertEqual(first.filmDate?.text, "'25 10 12")
-
-        clock.current = after
-        let second = model.captureContext(for: profile)
-        XCTAssertEqual(second.capturedAt, after)
-        XCTAssertTrue(second.text.contains("2025.10.13"), second.text)
-        XCTAssertEqual(second.filmDate?.text, "'25 10 13")
-    }
-
-    /// 153.1/153.2: the viewfinder stamp follows the selected profile's
-    /// switch and corner at once, and the clock like the main text.
-    func test_153_1_viewfinderStampFollowsTheProfileAndTheClock() throws {
-        let clock = MutableClock(try XCTUnwrap(DateFixture.date(2025, 10, 12, hour: 23, minute: 59)))
-        let store = makeProfileStore(now: clock.current)
-        var profile = try filmDateProfile(in: store, show: false, corner: .bottomLeading)
-        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
-        XCTAssertNil(model.filmDateStamp, "off by default")
-
-        profile.showFilmDate = true
-        try store.update(profile)
-        waitUntil { model.filmDateStamp != nil }
-        XCTAssertEqual(model.filmDateStamp, FilmDateStamp(text: "'25 10 12", corner: .bottomLeading))
-
-        profile.filmDateCorner = .topTrailing
-        try store.update(profile)
-        waitUntil { model.filmDateStamp?.corner == .topTrailing }
-        XCTAssertEqual(model.filmDateStamp?.corner, .topTrailing)
-
-        clock.current = try XCTUnwrap(DateFixture.date(2025, 10, 13, hour: 0, minute: 1))
-        model.refreshOverlay()
-        XCTAssertEqual(model.filmDateStamp?.text, "'25 10 13")
-
-        profile.showFilmDate = false
-        try store.update(profile)
-        waitUntil { model.filmDateStamp == nil }
-        XCTAssertNil(model.filmDateStamp)
-    }
-
-    func testCapturePhotoIsANoOpWhenTheShutterIsDisabled() throws {
-        // `isShutterDisabled` requires `cameraService.status == .running`,
-        // which never happens without a real capture device (same boundary
-        // `CameraServiceTests` documents — `EmptyDeviceProvider` always
-        // returns nil). `capturePhoto()` must not flip `isCapturing` or crash
-        // when tapped in that state, matching what the disabled shutter
-        // button already prevents in the UI.
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now)
-        XCTAssertTrue(model.isShutterDisabled)
-
-        model.capturePhoto()
-
-        XCTAssertFalse(model.isCapturing)
     }
 
     // MARK: - Cross-midnight / foreground refresh (TASK-14)
 
     func testRefreshOverlayPublishesAChange() throws {
-        // The viewfinder's re-render trigger, independent of the
-        // notification plumbing below — `refreshOverlay()` is what the
-        // notification observers call, and what these tests call directly.
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+        // The HUD's re-render trigger, independent of the notification
+        // plumbing below.
+        let (model, _, _, _) = try makeModel()
         var fired = false
         let cancellable = model.objectWillChange.sink { fired = true }
         defer { cancellable.cancel() }
@@ -774,18 +517,9 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     /// Subscribes to `model.$refreshTick` and captures which thread the
-    /// *first* change after subscribing is delivered on.
-    ///
-    /// Combine delivers to every subscriber of a publisher on whatever
-    /// thread that publisher's value was actually produced on, unless
-    /// something upstream redirects it — so this test subscriber sees
-    /// exactly the same thread `CameraScreenModel`'s own internal sink would
-    /// have mutated `refreshTick` from. Posting from a background queue
-    /// (rather than the main queue an earlier version of this test used) is
-    /// what makes this a real test: `NSCalendarDayChanged` is not
-    /// documented to arrive on the main thread, and posting from main would
-    /// pass even without `bindToClockNotifications`'s `.receive(on: .main)`
-    /// (code review finding).
+    /// *first* change after subscribing is delivered on. Posting from a
+    /// background queue is what makes this a real test: `NSCalendarDayChanged`
+    /// is not documented to arrive on the main thread.
     private func threadRefreshTickChangeIsDeliveredOn(_ model: CameraScreenModel,
                                                        postingFrom queue: DispatchQueue = .global(),
                                                        post: @escaping () -> Void) -> Bool? {
@@ -804,11 +538,7 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testCalendarDayChangedNotificationTriggersARefreshOnTheMainThread() throws {
-        // 14.3/14.4: the calendar rolling over while the app sits on the
-        // camera screen must not require anything else to happen first, and
-        // must land on the main thread even though it was posted from a
-        // background queue (a real possibility for this notification).
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let (model, _, _, _) = try makeModel()
 
         let deliveredOnMain = threadRefreshTickChangeIsDeliveredOn(model) {
             NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
@@ -818,9 +548,7 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testWillEnterForegroundNotificationTriggersARefreshOnTheMainThread() throws {
-        // 14.3/14.7: returning from the background must refresh immediately,
-        // not wait for some other unrelated change, and must land on main.
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let (model, _, _, _) = try makeModel()
 
         let deliveredOnMain = threadRefreshTickChangeIsDeliveredOn(model) {
             NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -829,85 +557,26 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(deliveredOnMain, true)
     }
 
-    func testCaptureContextTextForDateOnlyReflectsTheNewCapturedDate() throws {
-        // 14.2: the date-only branch must track the capture moment exactly
-        // like the day-count branch does (14.1, same as TASK-10's 10.3 —
-        // see testCaptureContextRecomputesTextForANewCapturedMoment).
-        let seedDay = try fixedNow() // 2026-01-10
-        let clock = MutableClock(seedDay)
-        let store = makeProfileStore(now: seedDay)
-        var dateOnly = try XCTUnwrap(store.profiles.first)
-        dateOnly.showDayCount = false
-        dateOnly.showDate = true
-        try store.update(dateOnly)
-        let (model, _, _, _) = makeModel(profileStore: store, nowProvider: clock.now)
-
-        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.10")
-
-        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        XCTAssertEqual(model.captureContext(for: dateOnly).text, "2026.01.11")
-    }
-
-    // MARK: - Data-recovery alert (TASK-15 acceptance 15.1)
-
-    /// Writes unreadable bytes straight to `store`'s file, bypassing every
-    /// check the store makes — mirrors `ProfileStoreTests`' own
-    /// `writeRawProfiles` helper, just for garbage instead of valid records.
-    private func corrupt(_ store: ProfileStore) throws {
-        let garbage = try XCTUnwrap("這不是 JSON".data(using: .utf8))
-        try garbage.write(to: store.fileURL)
-    }
-
-    func testShowsCorruptionRecoveredAlertTrueWhenTheStoreJustRecovered() throws {
-        let now = try fixedNow()
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
-        try corrupt(store)
-        store.load()
-        XCTAssertTrue(store.didRecoverFromCorruption) // sanity check on the fixture
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
-    }
-
-    func testShowsCorruptionRecoveredAlertFalseOnANormalLaunch() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow()) // makeProfileStore seeds cleanly
-        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
-    }
-
-    func testDismissCorruptionRecoveredAlertClearsIt() throws {
-        let now = try fixedNow()
-        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
-        try corrupt(store)
-        store.load()
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
-
-        model.dismissCorruptionRecoveredAlert()
-
-        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
-    }
-
-    // MARK: - Saved toast (TASK-15, PRD FR-5.4; 0.2 TASK-21 generalizes this to showToast)
+    // MARK: - Toast ("已取消")
 
     func testShowToastShowsTheGivenMessage() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        model.showToast(message: "已儲存")
-        XCTAssertEqual(model.toastState?.message, "已儲存")
+        let (model, _, _, _) = try makeModel()
+        model.showToast(message: "已取消")
+        XCTAssertEqual(model.toastState?.message, "已取消")
     }
 
     func testShowToastCarriesTheThumbnail() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let (model, _, _, _) = try makeModel()
         let thumbnail = UIImage()
-        model.showToast(message: "已儲存", thumbnail: thumbnail)
+        model.showToast(message: "已取消", thumbnail: thumbnail)
         XCTAssertTrue(model.toastState?.thumbnail === thumbnail)
     }
 
     func testShowToastDismissesWhenTheScheduledCallbackFires() throws {
         let spy = SchedulerSpy()
-        let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
+        let (model, _, _, _) = try makeModel(scheduleToastDismiss: spy.schedule)
 
-        model.showToast(message: "已儲存")
+        model.showToast(message: "已取消")
         XCTAssertNotNil(model.toastState)
         XCTAssertEqual(spy.scheduled.count, 1)
 
@@ -917,16 +586,14 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testANewerToastSurvivesAnOlderDismissTimerFiringLate() throws {
-        // PRD acceptance 10.22 (rapid shutter presses): the toast must not
-        // be cut short by an earlier save's dismiss timer firing after a
-        // second, newer toast has already replaced it — nor must the toasts
-        // stack up.
+        // The toast must not be cut short by an earlier toast's dismiss timer
+        // firing after a newer toast has already replaced it.
         let spy = SchedulerSpy()
-        let (model, _, _, _) = makeModel(now: try fixedNow(), scheduleToastDismiss: spy.schedule)
+        let (model, _, _, _) = try makeModel(scheduleToastDismiss: spy.schedule)
 
-        model.showToast(message: "已儲存")
+        model.showToast(message: "已取消")
         let firstID = model.toastState?.id
-        model.showToast(message: "已儲存")
+        model.showToast(message: "已取消")
         let secondID = model.toastState?.id
         XCTAssertNotEqual(firstID, secondID)
         XCTAssertEqual(spy.scheduled.count, 2)
@@ -940,219 +607,240 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertNil(model.toastState)
     }
 
-    // MARK: - "尚未開始" for a future start date (TASK-15 acceptance 15.3–15.5)
+    // MARK: - Shutter entry point
 
-    private func makeFutureProfile(store: ProfileStore) throws -> CameraProfile {
-        var future = try XCTUnwrap(store.profiles.first)
-        future.startDate = DateFixture.components(2026, 1, 1) // after `now` below
-        try store.update(future)
-        return future
+    func testCapturePhotoIsANoOpWhenTheShutterIsDisabled() throws {
+        // `isShutterDisabled` requires `cameraService.status == .running`,
+        // which never happens without a real capture device. `capturePhoto()`
+        // must not flip `isCapturing` or crash in that state.
+        let (model, _, _, _) = try makeModel()
+        XCTAssertTrue(model.isShutterDisabled)
+
+        model.capturePhoto()
+
+        XCTAssertFalse(model.isCapturing)
     }
 
-    func testOverlayTextShowsNotStartedForAFutureStartDate() throws {
-        // 15.3: start date 2026-01-01, "now" 2025-12-01.
-        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
-        let store = makeProfileStore(now: now)
-        _ = try makeFutureProfile(store: store)
+    // MARK: - Capture trigger
 
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+    func testCaptureTriggerFiresWhenTheShutterReallyFiresNotWhileCountingDownOrCancelling() throws {
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // 3 seconds
+        let ticker = FakeCountdownTicker()
+        let captures = CaptureRecorder()
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings, countdownTicker: ticker,
+                                             captureImage: captures.capture)
 
-        XCTAssertEqual(model.overlayText, "還有 31 天")
+        model.beginCapture()
+        XCTAssertEqual(model.captureTriggerCount, 0)
+        ticker.tick()
+        ticker.tick()
+        XCTAssertEqual(model.captureTriggerCount, 0)
+        ticker.tick() // reaches zero
+        XCTAssertEqual(model.captureTriggerCount, 1)
     }
 
-    func testOverlayTextShowsNotStartedForEveryLegalUnitPair() throws {
-        // 15.3: "八種單位組合逐一切換皆顯示尚未開始", re-baselined by
-        // TASK-140 (#487): the countdown reads in the checked units.
-        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
-        let store = makeProfileStore(now: now)
-        var future = try makeFutureProfile(store: store)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+    func testCaptureTriggerFiresImmediatelyWithoutATimer() throws {
+        let captures = CaptureRecorder()
+        let (model, _, _, _) = try makeModel(captureImage: captures.capture)
+        model.beginCapture()
+        XCTAssertEqual(model.captureTriggerCount, 1)
+    }
 
-        // The eight 0.1 pairs as their PRD 0.2 §4.3 unit sets.
-        let legacySets: [(Set<DisplayUnit>, String)] = [
-            ([.day], "還有 31 天"), ([.week, .day], "還有 4 週又 3 天"), ([.week], "還有 4 週"),
-            ([.month, .day], "還有 1 個月"), ([.month], "還有 1 個月"),
-            ([.year, .month, .day], "還有 1 個月"), ([.year, .month], "還有 1 個月"), ([.year], "還有 31 天")
+    // MARK: - Where a photo goes (FR-20.4)
+
+    /// The shutter saves into the album of the record the camera belongs to,
+    /// titled with the record's name.
+    func testShutterSavesForTheCamerasRecordTitledWithItsName() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶", albumIdentifier: "album-1")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             save: saves.save, captureImage: captures.capture)
+
+        model.beginCapture()
+        captures.completions[0](.success(UIImage()))
+
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls[0].albumTitle, "小寶")
+        XCTAssertEqual(saves.calls[0].albumIdentifier, "album-1")
+    }
+
+    // MARK: - 621-1 the saved photo is the original
+
+    /// 621-1: whatever orientation the camera hands over, the save receives
+    /// the same pixels, upright and uncropped.
+    func test_621_1_saveReceivesTheOriginalPixelSizeUpright() throws {
+        let cases: [(orientation: UIImage.Orientation, scale: CGFloat, expectedPixels: CGSize)] = [
+            (.up, 1, CGSize(width: 400, height: 300)),
+            (.right, 1, CGSize(width: 300, height: 400)),
+            (.up, 2, CGSize(width: 400, height: 300)),
+            (.right, 2, CGSize(width: 300, height: 400))
         ]
-        for (units, expected) in legacySets {
-            future.displayUnits = units
-            try store.update(future)
-            // The model mirrors the store on the main queue; without this
-            // every iteration would read the first set's profile.
-            let mirrored = expectation(description: "profiles mirrored")
-            DispatchQueue.main.async { mirrored.fulfill() }
-            wait(for: [mirrored], timeout: 1)
-            XCTAssertEqual(model.overlayText, expected, "\(units)")
+        for testCase in cases {
+            let saves = SaveRecorder()
+            let clock = MutableClock(try fixedNow())
+            let store = makeProfileStore(clock: clock)
+            let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, save: saves.save)
+            let record = try XCTUnwrap(store.profiles.first)
+            let photo = try makePhoto(pixelSize: CGSize(width: 400, height: 300), scale: testCase.scale,
+                                      orientation: testCase.orientation)
+
+            model.processCapturedImage(photo, destination: destination(of: record))
+
+            waitUntil { saves.calls.count == 1 }
+            let saved = saves.calls[0].image
+            let label = "orientation \(testCase.orientation.rawValue) @\(testCase.scale)x"
+            XCTAssertEqual(saved.size.width * saved.scale, testCase.expectedPixels.width, "621-1 \(label)")
+            XCTAssertEqual(saved.size.height * saved.scale, testCase.expectedPixels.height, "621-1 \(label)")
+            XCTAssertEqual(saved.imageOrientation, .up, "621-1 \(label)")
         }
     }
 
-    func testDateOnlyConfigurationShowsTheDateAloneBeforeTheStart() throws {
-        // 15.4 again (TASK-107 reverses TASK-47): with the day count off a
-        // future start date prints nothing about it — the date part alone.
-        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
-        let store = makeProfileStore(now: now)
-        var future = try makeFutureProfile(store: store)
-        future.showDayCount = false
-        future.showDate = true
-        try store.update(future)
+    // MARK: - 621-2 full access
 
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
+    /// 621-2: a record with no album learns the one the first photo created.
+    func test_621_2_authorizedWritesTheNewAlbumIDWhenTheRecordHadNone() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: saves.save)
 
-        XCTAssertEqual(model.overlayText, "2025.12.01", "107.2")
-    }
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertNil(saves.calls[0].albumIdentifier)
+        XCTAssertEqual(saves.calls[0].albumTitle, "小寶")
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
 
-    func testOverlayTextPrefixesNameEvenWhenNotStarted() throws {
-        // 15.5: showName still applies on top of "尚未開始".
-        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
-        let store = makeProfileStore(now: now)
-        var future = try makeFutureProfile(store: store)
-        future.name = "小寶"
-        future.showName = true
-        try store.update(future)
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        XCTAssertEqual(model.overlayText, "小寶 還有 31 天")
-    }
-
-    func testCaptureContextShowsNotStartedForAFutureStartDate() throws {
-        // The bake path must agree with the viewfinder on this, same as
-        // every other overlayText/captureContext pairing in this file.
-        let now = try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8))
-        let store = makeProfileStore(now: now)
-        let future = try makeFutureProfile(store: store)
-
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-
-        XCTAssertEqual(model.captureContext(for: future).text, "還有 31 天")
-    }
-
-    // MARK: - processCapturedImage (TASK-10 bake wiring)
-
-    private func sampleContext(_ now: Date) -> CameraScreenModel.CaptureContext {
-        (capturedAt: now, text: "第 1 天", style: OverlayStyle(), placement: .anchor(.bottomTrailing), font: .pingFang, filmDate: nil, tone: .standard)
-    }
-
-    func testProcessCapturedImagePassesTheContextThroughToBake() throws {
-        let now = try fixedNow()
-        var received: (image: UIImage?, text: String?, style: OverlayStyle?, placement: OverlayPlacement?)
-        let bakeExp = expectation(description: "bake called")
-        let sourceImage = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { image, text, style, placement, _, _, _, _ in
-            received = (image, text, style, placement)
-            bakeExp.fulfill()
-            return UIImage()
-        })
-
-        model.processCapturedImage(sourceImage, context: sampleContext(now))
-
-        wait(for: [bakeExp], timeout: 2)
-        XCTAssertTrue(received.image === sourceImage)
-        XCTAssertEqual(received.text, "第 1 天")
-        XCTAssertEqual(received.style, OverlayStyle())
-        XCTAssertEqual(received.placement, .anchor(.bottomTrailing))
-    }
-
-    /// 128.1: one `bake` call, carrying the crop window for the configured
-    /// ratio computed from the photo's pixel size (orientation-normalized).
-    func testProcessCapturedImageBakesOnceWithTheCropWindow() throws {
-        let now = try fixedNow()
-        let settings = CaptureSettingsStore(defaults: defaults)
-        settings.setAspectRatio(.oneByOne)
-        let photoSize = CGSize(width: 400, height: 300)
-        let photo = UIGraphicsImageRenderer(size: photoSize,
-                                            format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }())
-            .image { _ in }
-        var receivedPixelSize: CGSize?
-        var receivedRatio: CaptureAspectRatio?
-        var bakeRects: [CGRect?] = []
-        let lock = NSLock()
-        let bakeExp = expectation(description: "bake called")
-        let (model, _, _, _) = makeModel(now: now,
-                                         captureSettingsStore: settings,
-                                         cropRect: { size, ratio in
-                                             receivedPixelSize = size
-                                             receivedRatio = ratio
-                                             return CGRect(x: 50, y: 0, width: 300, height: 300)
-                                         },
-                                         bake: { _, _, _, _, _, rect, _, _ in
-                                             lock.lock(); bakeRects.append(rect); lock.unlock()
-                                             bakeExp.fulfill()
-                                             return UIImage()
-                                         })
-
-        model.processCapturedImage(photo, context: sampleContext(now))
-
-        wait(for: [bakeExp], timeout: 2)
-        XCTAssertEqual(receivedPixelSize, photoSize, "128.1")
-        XCTAssertEqual(receivedRatio, .oneByOne, "128.1")
-        XCTAssertEqual(bakeRects.count, 1, "128.1")
-        XCTAssertEqual(bakeRects.first ?? nil, CGRect(x: 50, y: 0, width: 300, height: 300), "128.1")
-    }
-
-    func testProcessCapturedImageSurfacesCaptureErrorWhenBakeFails() throws {
-        // PRD §7.3: baking failure — not one of PhotoSaver's save errors,
-        // does not depend on it landing.
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _, _, _, _ in nil })
-        XCTAssertNil(model.captureError)
-
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-        // `processCapturedImage` counts the photo synchronously, before
-        // dispatching to the background queue.
-        XCTAssertEqual(model.inFlightSaveCount, 1)
-
-        waitUntil { model.captureError != nil }
-        XCTAssertEqual(model.captureError?.message, "照片處理失敗，請再試一次。")
-        XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
-        // 10.22: the bake-failure branch must not leave the shutter stuck
-        // disabled — a genuine 1 → 0 transition, not merely "still 0".
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-1")
+        XCTAssertTrue(try storedRecord(record.id, in: store).fallbackAssetIDs.isEmpty)
         waitUntil { model.inFlightSaveCount == 0 }
     }
 
-    func testProcessCapturedImageDoesNotCallSaveWhenBakeFails() throws {
-        var saveCalled = false
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in nil },
-                                         save: { _, completion in
-                                             saveCalled = true
-                                             completion(.success("asset-1"))
-                                         })
+    /// 621-2: the same album id is not written again.
+    func test_621_2_authorizedWithTheSameAlbumIDDoesNotRewriteTheRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, albumIdentifier: "album-1")
+        let before = try storedRecord(record.id, in: store)
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        clock.current = clock.current.addingTimeInterval(3600)
+        CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
+                                 albumAtSave: "album-1", in: store)
 
-        waitUntil { model.captureError != nil }
-        XCTAssertFalse(saveCalled)
+        let after = try storedRecord(record.id, in: store)
+        XCTAssertEqual(after.albumIdentifier, "album-1")
+        XCTAssertTrue(after.fallbackAssetIDs.isEmpty)
+        XCTAssertEqual(after.updatedAt, before.updatedAt, "621-2 no rewrite")
     }
 
-    func testProcessCapturedImagePassesTheBakedImageToSave() throws {
-        let now = try fixedNow()
-        let bakedImage = UIImage()
-        var receivedImage: UIImage?
-        let saveExp = expectation(description: "save called")
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in bakedImage },
-                                         save: { image, completion in
-                                             receivedImage = image
-                                             saveExp.fulfill()
-                                             completion(.success("asset-1"))
-                                         })
+    /// 621-2: an album deleted in 「照片」 and created again replaces the old id.
+    func test_621_2_authorizedWritesTheRecreatedAlbumID() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, albumIdentifier: "old")
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: saves.save)
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls[0].albumIdentifier, "old")
+        saves.calls[0].completion(.success(outcome("A", album: "new")))
 
-        wait(for: [saveExp], timeout: 2)
-        XCTAssertTrue(receivedImage === bakedImage)
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "new")
+        waitUntil { model.inFlightSaveCount == 0 }
     }
+
+    /// 621-2: a record bound to another album while the save ran keeps that
+    /// binding; the photo is kept by id so it still shows on the wall.
+    func test_621_2_authorizedKeepsAnAlbumBoundWhileTheSaveRan() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, albumIdentifier: "other")
+
+        CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
+                                 albumAtSave: nil, in: store)
+        CameraScreenModel.record(outcome("A", album: "album-1"), savedFor: destination(of: record),
+                                 albumAtSave: nil, in: store)
+
+        let after = try storedRecord(record.id, in: store)
+        XCTAssertEqual(after.albumIdentifier, "other")
+        XCTAssertEqual(after.fallbackAssetIDs, ["A"], "once, not twice")
+    }
+
+    /// 621-2: two photos in a row for a record without an album create one
+    /// album: saves run one at a time and the album is read when a save
+    /// starts, so the second one goes into the first one's album.
+    func test_621_2_secondPhotoSavesIntoTheAlbumTheFirstCreated() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: saves.save)
+
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { model.captureFlights.count == 2 && saves.calls.count == 1 }
+        XCTAssertNil(saves.calls[0].albumIdentifier)
+        XCTAssertEqual(saves.calls.count, 1, "the second save waits for the first")
+
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
+
+        XCTAssertEqual(saves.calls.count, 2)
+        XCTAssertEqual(saves.calls[1].albumIdentifier, "album-1", "621-2")
+        saves.calls[1].completion(.success(outcome("B", album: "album-1")))
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-1")
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    // MARK: - 621-3 limited access
+
+    /// 621-3: no album id back (limited access): the asset id joins
+    /// `fallbackAssetIDs` and the album binding is left alone.
+    func test_621_3_limitedAppendsTheAssetIDAndLeavesTheAlbumAlone() throws {
+        for album in [nil, "album-1"] as [String?] {
+            let clock = MutableClock(try fixedNow())
+            let store = makeProfileStore(clock: clock)
+            let record = try addRecord(to: store, albumIdentifier: album, fallbackAssetIDs: ["earlier"])
+            let saves = SaveRecorder()
+            let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: saves.save)
+
+            model.processCapturedImage(UIImage(), destination: destination(of: record))
+            waitUntil { saves.calls.count == 1 }
+            saves.calls[0].completion(.success(outcome("L1", album: nil)))
+
+            let after = try storedRecord(record.id, in: store)
+            XCTAssertEqual(after.fallbackAssetIDs, ["earlier", "L1"], "621-3 album \(String(describing: album))")
+            XCTAssertEqual(after.albumIdentifier, album, "621-3 no album is created")
+            waitUntil { model.inFlightSaveCount == 0 }
+        }
+    }
+
+    /// 621-3: the same asset id is not added twice.
+    func test_621_3_limitedDoesNotAppendTheSameAssetIDTwice() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+
+        for _ in 0..<2 {
+            CameraScreenModel.record(outcome("L1", album: nil), savedFor: destination(of: record),
+                                     albumAtSave: nil, in: store)
+        }
+
+        XCTAssertEqual(try storedRecord(record.id, in: store).fallbackAssetIDs, ["L1"])
+    }
+
+    // MARK: - Flights, thumbnail and announcements
 
     func testProcessCapturedImageStartsAFlightInsteadOfAToastOnSaveSuccess() throws {
         // Issue #148 (S.10): no "已儲存" toast; one flight instead.
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success("asset-1")) })
+        let (model, _, _, _) = try makeModel()
+        let record = try XCTUnwrap(model.profile)
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
 
         waitUntil { model.captureFlights.count == 1 }
         XCTAssertEqual(model.captureFlights.first?.status, .saved)
@@ -1164,11 +852,8 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testLandingASavedFlightReplacesTheThumbnailAndRemovesIt() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success("asset-1")) })
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        let (model, _, _, _) = try makeModel()
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
         waitUntil { model.captureFlights.count == 1 }
         let id = try XCTUnwrap(model.captureFlights.first?.id)
 
@@ -1181,19 +866,16 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testThumbnailStaysOnTheNewPhotoAfterLandingEvenWhenALaterCaptureFails() throws {
         // Issue #148 (flicker fix): once a flight lands, the thumbnail must
-        // never fall back to nil (the placeholder icon) — a later failed
-        // capture or flight removal included.
-        let now = try fixedNow()
-        var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(results.removeFirst()) })
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        // never fall back to nil — a later failed capture included.
+        var results: [Result<RecordSaveOutcome, PhotoSaveError>] = [.success(outcome()), .failure(.saveFailed("x"))]
+        let (model, _, _, _) = try makeModel(save: { _, _, _, completion in completion(results.removeFirst()) })
+        let target = destination(of: try XCTUnwrap(model.profile))
+        model.processCapturedImage(UIImage(), destination: target)
         waitUntil { model.captureFlights.count == 1 }
         model.flightDidLand(id: model.captureFlights[0].id)
         let landed = try XCTUnwrap(model.latestThumbnailImage)
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(UIImage(), destination: target)
         waitUntil { model.captureFlights.first?.status == .failed }
         model.removeCaptureFlight(id: model.captureFlights[0].id)
 
@@ -1201,92 +883,57 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testSaveSuccessAnnouncesForVoiceOverAndFailureDoesNot() throws {
-        let now = try fixedNow()
-        var results: [Result<String, PhotoSaveError>] = [.success("asset-1"), .failure(.saveFailed("x"))]
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(results.removeFirst()) })
+        var results: [Result<RecordSaveOutcome, PhotoSaveError>] = [.success(outcome()), .failure(.saveFailed("x"))]
+        let (model, _, _, _) = try makeModel(save: { _, _, _, completion in completion(results.removeFirst()) })
+        let target = destination(of: try XCTUnwrap(model.profile))
         var announcements: [String] = []
         model.announce = { announcements.append($0) }
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(UIImage(), destination: target)
         waitUntil { announcements == ["已儲存"] }
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(UIImage(), destination: target)
         waitUntil { model.captureFlights.contains { $0.status == .failed } }
 
         XCTAssertEqual(announcements, ["已儲存"])
     }
 
-    func testCaptureTriggerFiresWhenTheShutterReallyFiresNotWhileCountingDownOrCancelling() throws {
-        let now = try fixedNow()
-        let settings = CaptureSettingsStore(defaults: defaults)
-        settings.cycleTimer() // 3 seconds
-        let ticker = FakeCountdownTicker()
-        let (model, _, _, store) = makeModel(now: now, captureSettingsStore: settings, countdownTicker: ticker,
-                                             captureImage: { _, _ in })
-        let profile = try XCTUnwrap(store.profiles.first)
-
-        model.beginCapture(profile: profile)
-        XCTAssertEqual(model.captureTriggerCount, 0)
-        ticker.tick()
-        ticker.tick()
-        XCTAssertEqual(model.captureTriggerCount, 0)
-        ticker.tick() // reaches zero
-        XCTAssertEqual(model.captureTriggerCount, 1)
-    }
-
-    func testCaptureTriggerFiresImmediatelyWithoutATimer() throws {
-        let now = try fixedNow()
-        let (model, _, _, store) = makeModel(now: now, captureImage: { _, _ in })
-        model.beginCapture(profile: try XCTUnwrap(store.profiles.first))
-        XCTAssertEqual(model.captureTriggerCount, 1)
-    }
-
     func testFlightLandingBeforeSaveCompletesWaitsForTheSave() throws {
-        let now = try fixedNow()
-        var finishSave: ((Result<String, PhotoSaveError>) -> Void)?
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in finishSave = completion })
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-        waitUntil { model.captureFlights.count == 1 && finishSave != nil }
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { model.captureFlights.count == 1 && saves.calls.count == 1 }
         let id = try XCTUnwrap(model.captureFlights.first?.id)
 
         model.flightDidLand(id: id)
         XCTAssertNil(model.latestThumbnailImage)
         XCTAssertEqual(model.captureFlights.count, 1)
 
-        finishSave?(.success("asset-1"))
+        saves.calls[0].completion(.success(outcome()))
         XCTAssertNotNil(model.latestThumbnailImage)
         XCTAssertTrue(model.captureFlights.isEmpty)
     }
 
     func testBackToBackCapturesEachGetTheirOwnFlight() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success("asset")) })
+        let (model, _, _, _) = try makeModel()
+        let target = destination(of: try XCTUnwrap(model.profile))
         for _ in 0..<3 {
-            model.processCapturedImage(UIImage(), context: sampleContext(now))
+            model.processCapturedImage(UIImage(), destination: target)
         }
         waitUntil { model.captureFlights.count == 3 }
         XCTAssertEqual(Set(model.captureFlights.map(\.id)).count, 3)
     }
 
     func testProcessCapturedImageDownscalesTheThumbnailAndFlightImage() throws {
-        // The thumbnail (88px) and flight picture (600px) must not hold the
-        // full-resolution baked photo.
-        let now = try fixedNow()
+        // The thumbnail (88pt) and flight picture (300pt) must not hold the
+        // full-resolution photo.
         let largeSize = CGSize(width: 2000, height: 1600)
         let large = UIGraphicsImageRenderer(size: largeSize).image { context in
             UIColor.black.setFill()
             context.fill(CGRect(origin: .zero, size: largeSize))
         }
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in large },
-                                         save: { _, completion in completion(.success("asset-1")) })
+        let (model, _, _, _) = try makeModel()
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        model.processCapturedImage(large, destination: destination(of: try XCTUnwrap(model.profile)))
 
         waitUntil { model.captureFlights.count == 1 }
         let flight = try XCTUnwrap(model.captureFlights.first)
@@ -1323,616 +970,341 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(small.cgImage?.width, 2000, "never upscaled")
     }
 
-    func testProcessCapturedImageSurfacesCaptureErrorOnPermissionDenied() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.failure(.permissionDenied)) })
+    // MARK: - 621-4 failures and timeouts
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+    /// 621-4: a failed save raises the alert, frees the place and shows no
+    /// success feedback.
+    func test_621_4_saveFailureRaisesTheAlertAndFreesThePlace() throws {
+        let (model, _, _, _) = try makeModel(save: { _, _, _, completion in
+            completion(.failure(.saveFailed("磁碟空間不足")))
+        })
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
 
-        waitUntil { model.captureError != nil }
-        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
-        XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
-        XCTAssertNil(model.toastState)
-        // Issue #148 (S.10): the flight is marked failed and the thumbnail never changes.
-        XCTAssertEqual(model.captureFlights.first?.status, .failed)
-        XCTAssertNil(model.latestThumbnailImage)
-        waitUntil { model.inFlightSaveCount == 0 }
-    }
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
 
-    func testProcessCapturedImageSurfacesCaptureErrorOnSaveFailed() throws {
-        let now = try fixedNow()
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.failure(.saveFailed("磁碟空間不足"))) })
-
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-
-        waitUntil { model.captureError != nil }
+        waitUntil { model.captureError != nil && model.inFlightSaveCount == 0 }
         XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
         XCTAssertFalse(model.captureError?.showsSettingsAction ?? true)
+        XCTAssertFalse(announcements.contains("已儲存"), "621-4 no success feedback")
+        XCTAssertEqual(model.captureFlights.first?.status, .failed, "621-4")
         XCTAssertNil(model.toastState)
-        waitUntil { model.inFlightSaveCount == 0 }
+        XCTAssertNil(model.latestThumbnailImage)
     }
 
-    func testProcessCapturedImageDropsTheInFlightCountWhenSaveCompletes() throws {
-        // 10.22: `save` must not leave the shutter permanently disabled once
-        // it calls back, whichever way it resolves.
-        let now = try fixedNow()
-        var storedCompletion: ((Result<String, PhotoSaveError>) -> Void)?
-        let completionStored = expectation(description: "save completion captured")
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in
-                                             storedCompletion = completion
-                                             completionStored.fulfill()
-                                         })
+    /// 621-4: a permission failure offers the settings button.
+    func test_621_4_permissionDeniedOffersTheSettingsAction() throws {
+        let (model, _, _, _) = try makeModel(save: { _, _, _, completion in
+            completion(.failure(.permissionDenied))
+        })
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-        XCTAssertEqual(model.inFlightSaveCount, 1) // counted synchronously, before backgrounding
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
 
-        wait(for: [completionStored], timeout: 2)
-
-        // Not resolved yet: `save`'s own completion is still pending,
-        // deliberately not called above — the count must still be 1 here,
-        // or this test would prove nothing about the drop below actually
-        // being *caused* by the completion firing.
-        XCTAssertNotNil(storedCompletion)
-        XCTAssertEqual(model.inFlightSaveCount, 1)
-
-        storedCompletion?(.success("asset-1"))
-
-        waitUntil { model.inFlightSaveCount == 0 }
+        waitUntil { model.captureError != nil && model.inFlightSaveCount == 0 }
+        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
+        XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
     }
 
-    // MARK: - TASK-129 (#469) shutter unlocks after capture; bake/save pipeline
+    /// A failed save does not touch the record.
+    func testFailedSaveLeavesTheRecordUntouched() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, albumIdentifier: "album-1")
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record, save: { _, _, _, completion in
+            completion(.failure(.saveFailed("x")))
+        })
 
-    private final class CaptureHarness {
-        var captures: [(Result<UIImage, CameraCaptureError>) -> Void] = []
-        var saves: [(Result<String, PhotoSaveError>) -> Void] = []
-        let lock = NSLock()
-        var bakedTexts: [String] = []
-        var firstBakeGate: DispatchSemaphore?
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { model.inFlightSaveCount == 0 && model.captureError != nil }
+
+        let after = try storedRecord(record.id, in: store)
+        XCTAssertEqual(after.albumIdentifier, "album-1")
+        XCTAssertTrue(after.fallbackAssetIDs.isEmpty)
     }
 
-    private func makePipelineModel(harness: CaptureHarness, profileStore: ProfileStore, clock: MutableClock,
-                                   saveTimeout: TimeInterval = 30) -> CameraScreenModel {
-        let (model, _, _, _) = makeModel(
-            profileStore: profileStore,
-            nowProvider: clock.now,
-            bake: { _, text, _, _, _, _, _, _ in
-                harness.lock.lock()
-                let isFirst = harness.bakedTexts.isEmpty
-                harness.bakedTexts.append(text)
-                harness.lock.unlock()
-                if isFirst { harness.firstBakeGate?.wait() }
-                return UIImage()
-            },
-            save: { _, completion in harness.saves.append(completion) },
-            captureImage: { _, completion in harness.captures.append(completion) },
-            saveTimeout: saveTimeout)
-        return model
-    }
-
-    private func twoProfiles() throws -> (ProfileStore, CameraProfile, CameraProfile, MutableClock) {
-        let day = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 8))
-        let a = CameraProfile(name: "A", startDate: DateFixture.components(2026, 1, 1))
-        let b = CameraProfile(name: "B", startDate: DateFixture.components(2026, 1, 5))
-        let store = makeProfileStore(now: day, seed: [a, b])
-        return (store, store.profiles[0], store.profiles[1], MutableClock(day))
-    }
-
-    /// 129.1: the shutter is free again as soon as the camera hands the
-    /// photo back, even while the first photo is still being saved, and the
-    /// second photo's result never lands on the first one's flight.
-    func testShutterIsFreeWhileTheFirstPhotoIsStillSaving() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
-
-        model.beginCapture(profile: a)
-        XCTAssertTrue(model.isShutterBusy, "129.1 busy while the camera is capturing")
-        harness.captures[0](.success(UIImage()))
-        waitUntil { harness.saves.count == 1 }
-        XCTAssertFalse(model.isCapturing)
-        XCTAssertEqual(model.inFlightSaveCount, 1)
-        XCTAssertFalse(model.isShutterBusy, "129.1 the shutter can be pressed again")
-
-        model.beginCapture(profile: a)
-        harness.captures[1](.success(UIImage()))
-        waitUntil { harness.saves.count == 2 }
-        let ids = model.captureFlights.map(\.id)
-        XCTAssertEqual(ids.count, 2)
-
-        harness.saves[1](.success("asset-2"))
-        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .saving, "129.1 first untouched")
-        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved)
-        harness.saves[0](.success("asset-1"))
-        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .saved)
-    }
-
-    /// 129.2: two photos in flight keep the shutter disabled; either one
-    /// finishing frees it.
-    func testShutterIsDisabledWithTwoInFlightAndFreedWhenEitherFinishes() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
-
-        for index in 0..<2 {
-            model.beginCapture(profile: a)
-            harness.captures[index](.success(UIImage()))
-            waitUntil { harness.saves.count == index + 1 }
-        }
-        XCTAssertEqual(model.inFlightSaveCount, 2)
-        XCTAssertTrue(model.isShutterBusy, "129.2 at the limit")
-
-        harness.saves[1](.success("asset-2")) // the later one finishes first
-        XCTAssertEqual(model.inFlightSaveCount, 1)
-        XCTAssertFalse(model.isShutterBusy, "129.2 freed")
-
-        model.beginCapture(profile: a)
-        harness.captures[2](.success(UIImage()))
-        waitUntil { harness.saves.count == 3 }
-        XCTAssertTrue(model.isShutterBusy, "129.2 full again")
-        harness.saves[0](.failure(.saveFailed("x")))
-        XCTAssertFalse(model.isShutterBusy, "129.2 a failure frees it too")
-    }
-
-    /// 129.3: a failed first save and a successful second one each land on
-    /// their own photo.
-    func testEachPhotoReportsItsOwnSaveResult() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+    /// 621-4: a save that never calls back is given up on after the timeout:
+    /// the photo is reported as failed (never saved), its place is freed.
+    func test_621_4_saveTimeoutRaisesTheAlertAndFreesThePlace() throws {
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save, saveTimeout: 0.05)
         var announcements: [String] = []
         model.announce = { announcements.append($0) }
 
-        for index in 0..<2 {
-            model.beginCapture(profile: a)
-            harness.captures[index](.success(UIImage()))
-            waitUntil { harness.saves.count == index + 1 }
-        }
-        let ids = model.captureFlights.map(\.id)
-
-        harness.saves[0](.failure(.saveFailed("磁碟空間不足")))
-        harness.saves[1](.success("asset-2"))
-
-        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .failed, "129.3 first failed")
-        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved, "129.3 second saved")
-        XCTAssertNotNil(model.captureError, "129.3 the failure is reported")
-        XCTAssertEqual(announcements, ["已儲存"], "129.3 only the successful photo is announced as saved")
-        XCTAssertEqual(model.inFlightSaveCount, 0)
-    }
-
-    /// 129.4: each photo is baked with the profile and moment it was taken
-    /// with, even when the profile changes while the first is still baking.
-    func testEachPhotoIsBakedWithTheSettingsAtItsOwnCaptureTime() throws {
-        let (store, a, b, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        harness.firstBakeGate = DispatchSemaphore(value: 0)
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
-
-        model.beginCapture(profile: a) // Jan 10: A is day 10
-        harness.captures[0](.success(UIImage()))
-        waitUntil { harness.lock.lock(); defer { harness.lock.unlock() }; return harness.bakedTexts.count == 1 }
-
-        // The first photo is still baking; the profile changes and time moves on.
-        clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        model.beginCapture(profile: b) // Jan 11: B is day 7
-        harness.captures[1](.success(UIImage()))
-        harness.firstBakeGate?.signal()
-        waitUntil { harness.saves.count == 2 }
-
-        XCTAssertEqual(harness.bakedTexts, ["第 10 天", "第 7 天"], "129.4")
-    }
-
-    /// Two failed photos before the alert is dismissed read as a count; after
-    /// dismissing, a new failure shows its own message again.
-    func testTwoFailuresAreCountedInOneAlert() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
-
-        for index in 0..<2 {
-            model.beginCapture(profile: a)
-            harness.captures[index](.success(UIImage()))
-            waitUntil { harness.saves.count == index + 1 }
-        }
-        harness.saves[0](.failure(.saveFailed("磁碟空間不足")))
-        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
-        harness.saves[1](.failure(.permissionDenied))
-
-        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
-        XCTAssertEqual(model.captureError?.showsSettingsAction, true, "the settings button is kept if any failure needs it")
-
-        model.dismissCaptureError()
-        model.beginCapture(profile: a)
-        harness.captures[2](.success(UIImage()))
-        waitUntil { harness.saves.count == 3 }
-        harness.saves[2](.failure(.saveFailed("磁碟空間不足")))
-        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
-    }
-
-    /// 151.1: a save that never calls back is given up on after the timeout:
-    /// the photo is reported as failed (never saved), its place is freed and
-    /// the shutter works again.
-    func testSaveTimeoutFreesThePlaceAndReportsFailure() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.1)
-        var announcements: [String] = []
-        model.announce = { announcements.append($0) }
-
-        for index in 0..<2 {
-            model.beginCapture(profile: a)
-            harness.captures[index](.success(UIImage()))
-            waitUntil { harness.saves.count == index + 1 }
-        }
-        XCTAssertTrue(model.isShutterBusy, "151.1 both places taken")
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        XCTAssertEqual(model.inFlightSaveCount, 1)
 
         waitUntil { model.inFlightSaveCount == 0 }
-
-        XCTAssertFalse(model.isShutterBusy, "151.1 the shutter works again")
-        XCTAssertEqual(model.captureFlights.map(\.status), [.failed, .failed], "151.1 failed, not saved")
-        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
-        XCTAssertTrue(announcements.isEmpty, "151.1 nothing is announced as saved")
+        XCTAssertEqual(model.captureError?.message, "照片儲存逾時，這張可能沒有存進相簿。請再試一次。")
+        XCTAssertEqual(model.captureFlights.first?.status, .failed, "621-4 failed, not saved")
+        XCTAssertTrue(announcements.isEmpty, "621-4 nothing is announced as saved")
+        XCTAssertFalse(model.isShutterBusy)
     }
 
-    /// 151.2: the callback arriving after the timeout reports nothing again
-    /// and the count stays at zero, even with a later photo in flight.
-    func testLateSaveCallbackAfterTheTimeoutIsIgnored() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.1)
+    /// 621-4: the callback arriving after the timeout reports nothing again
+    /// and the count never goes negative, but the photo that did reach the
+    /// library is still recorded on the record.
+    func test_621_4_lateSaveCallbackAfterTheTimeoutIsIgnoredButStillRecorded() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             save: saves.save, saveTimeout: 0.05)
         var announcements: [String] = []
         model.announce = { announcements.append($0) }
 
-        model.beginCapture(profile: a)
-        harness.captures[0](.success(UIImage()))
-        waitUntil { harness.saves.count == 1 }
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
         waitUntil { model.inFlightSaveCount == 0 }
         let errorAfterTimeout = model.captureError
-        XCTAssertEqual(model.captureFlights.first?.status, .failed)
+        XCTAssertNotNil(errorAfterTimeout)
+        XCTAssertNil(try storedRecord(record.id, in: store).albumIdentifier)
 
-        harness.saves[0](.success("late-asset"))
+        saves.calls[0].completion(.success(outcome("late-asset", album: "album-9")))
 
-        XCTAssertEqual(model.inFlightSaveCount, 0, "151.2 never negative")
-        XCTAssertEqual(model.captureFlights.first?.status, .failed, "151.2 still failed")
-        XCTAssertEqual(model.captureError, errorAfterTimeout, "151.2 not reported twice")
+        XCTAssertEqual(model.inFlightSaveCount, 0, "621-4 never negative")
+        XCTAssertEqual(model.captureFlights.first?.status, .failed, "621-4 still failed")
+        XCTAssertEqual(model.captureError, errorAfterTimeout, "621-4 not reported twice")
         XCTAssertTrue(announcements.isEmpty)
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-9", "621-4 still recorded")
 
         // A photo saved normally later is counted on its own.
-        model.beginCapture(profile: a)
-        harness.captures[1](.success(UIImage()))
-        waitUntil { harness.saves.count == 2 }
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 2 }
         XCTAssertEqual(model.inFlightSaveCount, 1)
-        harness.saves[1](.success("asset-2"))
+        saves.calls[1].completion(.success(outcome("asset-2", album: "album-9")))
         XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
     /// A save answered in time is not touched by its (cancelled) timeout.
     func testSaveAnsweredInTimeIsNotReportedAsTimedOut() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock, saveTimeout: 0.2)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save, saveTimeout: 0.2)
 
-        model.beginCapture(profile: a)
-        harness.captures[0](.success(UIImage()))
-        waitUntil { harness.saves.count == 1 }
-        harness.saves[0](.success("asset-1"))
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.success(outcome()))
 
-        let wait = expectation(description: "timeout window passes")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { wait.fulfill() }
-        self.wait(for: [wait], timeout: 2)
+        let timeoutWindow = expectation(description: "timeout window passes")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { timeoutWindow.fulfill() }
+        wait(for: [timeoutWindow], timeout: 2)
 
         XCTAssertEqual(model.captureFlights.first?.status, .saved)
         XCTAssertNil(model.captureError)
         XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
+    /// Two failed photos before the alert is dismissed read as a count; after
+    /// dismissing, a new failure shows its own message again.
+    func testTwoFailuresAreCountedInOneAlert() throws {
+        let (model, captures, saves) = try makePipelineModel()
+
+        for index in 0..<2 {
+            takePhoto(model, captures, at: index)
+            waitUntil { model.captureFlights.count == index + 1 }
+        }
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+        waitUntil { saves.calls.count == 2 }
+        saves.calls[1].completion(.failure(.permissionDenied))
+
+        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
+        XCTAssertEqual(model.captureError?.showsSettingsAction, true, "the settings button is kept if any failure needs it")
+
+        model.dismissCaptureError()
+        takePhoto(model, captures, at: 2)
+        waitUntil { saves.calls.count == 3 }
+        saves.calls[2].completion(.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(model.captureError?.message, "儲存失敗：磁碟空間不足。請確認裝置儲存空間後再試一次。")
+    }
+
     /// A camera-level failure frees the shutter and leaves nothing in flight.
     func testCameraFailureLeavesNothingInFlight() throws {
-        let (store, a, _, clock) = try twoProfiles()
-        let harness = CaptureHarness()
-        let model = makePipelineModel(harness: harness, profileStore: store, clock: clock)
+        let (model, captures, _) = try makePipelineModel()
 
-        model.beginCapture(profile: a)
-        harness.captures[0](.failure(.failed("x")))
+        model.beginCapture()
+        captures.completions[0](.failure(.failed("x")))
 
         XCTAssertFalse(model.isShutterBusy, "129.5 the shutter never stays stuck")
         XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
-    // MARK: - Overlay panel shell (PRD 0.2 FR-8, TASK-22 acceptance 22.4)
+    /// The save count goes 1 → 0 when the save calls back, whichever way.
+    func testProcessCapturedImageDropsTheInFlightCountWhenSaveCompletes() throws {
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save)
 
-    func testPanelModelChangesAreForwardedToTheScreenModel() throws {
-        // PR #60 review: CameraScreen only observes CameraScreenModel, so the
-        // nested panel model's changes must re-publish through it.
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        var sends = 0
-        let cancellable = model.objectWillChange.sink { _ in sends += 1 }
-        defer { cancellable.cancel() }
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        XCTAssertEqual(model.inFlightSaveCount, 1) // counted synchronously, before backgrounding
 
-        model.panelModel.open()
-        XCTAssertGreaterThan(sends, 0, "open() must re-render CameraScreen")
-        let afterOpen = sends
-        model.panelModel.selectedTab = .content
-        XCTAssertGreaterThan(sends, afterOpen, "switching tabs must re-render")
-        let afterTab = sends
-        model.panelModel.close()
-        XCTAssertGreaterThan(sends, afterTab, "close() must re-render")
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(model.inFlightSaveCount, 1, "not answered yet")
+
+        saves.calls[0].completion(.success(outcome()))
+
+        waitUntil { model.inFlightSaveCount == 0 }
     }
 
-    func testCapturingWhilePanelIsOpenRunsNormallyAndKeepsItOpen() throws {
-        // 22.4: opening the panel must not disable the shutter or otherwise
-        // couple into the capture pipeline, and a capture must not close it.
-        let now = try fixedNow()
-        var captureCallCount = 0
-        let (model, _, _, _) = makeModel(now: now,
-                                         captureImage: { _, completion in
-                                             captureCallCount += 1
-                                             completion(.success(UIImage()))
-                                         })
-        let profile = try XCTUnwrap(model.selectedProfile)
-        model.panelModel.open()
+    // MARK: - 621-5 concurrency limit
 
-        model.beginCapture(profile: profile) // bypasses the hardware-gated
-                                              // public `capturePhoto()`, same
-                                              // reasoning as every other
-                                              // direct call in this file.
-
-        XCTAssertEqual(captureCallCount, 1)
-        XCTAssertTrue(model.panelModel.isOpen, "capturing must not close the panel")
+    private func makePipelineModel(saveTimeout: TimeInterval = 30) throws
+        -> (CameraScreenModel, CaptureRecorder, SaveRecorder) {
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save, captureImage: captures.capture,
+                                             saveTimeout: saveTimeout)
+        return (model, captures, saves)
     }
 
-    // MARK: - 樣式／格式／位置 tab wiring (#65, P.2–P.4)
-
-    func testStyleFormatPositionTabModelsAreNotNilOnceAProfileIsSelected() throws {
-        // P.2
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        XCTAssertNotNil(model.styleTabModel)
-        XCTAssertNotNil(model.formatTabModel)
-        XCTAssertNotNil(model.positionTabModel)
+    /// Fires the shutter and hands the camera's photo back.
+    private func takePhoto(_ model: CameraScreenModel, _ captures: CaptureRecorder, at index: Int) {
+        model.beginCapture()
+        captures.completions[index](.success(UIImage()))
     }
 
-    func testStyleFormatPositionTabModelsTrackTheSelectedProfile() throws {
-        // P.2
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let firstStyle = try XCTUnwrap(model.styleTabModel)
-        let firstFormat = try XCTUnwrap(model.formatTabModel)
-        let firstPosition = try XCTUnwrap(model.positionTabModel)
-        XCTAssertEqual(firstStyle.profile.id, model.selectedProfileID)
-        XCTAssertEqual(firstFormat.displaySettings.profile.id, model.selectedProfileID)
-        XCTAssertEqual(firstPosition.profile.id, model.selectedProfileID)
+    /// 621-5: the shutter is free again as soon as the camera hands the photo
+    /// back, even while the first photo is still being saved, and the second
+    /// photo's result never lands on the first one's flight.
+    func test_621_5_shutterIsFreeWhileTheFirstPhotoIsStillSaving() throws {
+        let (model, captures, saves) = try makePipelineModel()
 
-        let second = try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        waitUntil { model.selectedProfileID == second.id }
+        model.beginCapture()
+        XCTAssertTrue(model.isShutterBusy, "621-5 busy while the camera is capturing")
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertFalse(model.isCapturing)
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        XCTAssertFalse(model.isShutterBusy, "621-5 the shutter can be pressed again")
 
-        let updatedStyle = try XCTUnwrap(model.styleTabModel)
-        let updatedFormat = try XCTUnwrap(model.formatTabModel)
-        let updatedPosition = try XCTUnwrap(model.positionTabModel)
-        XCTAssertEqual(updatedStyle.profile.id, second.id)
-        XCTAssertEqual(updatedFormat.displaySettings.profile.id, second.id)
-        XCTAssertEqual(updatedPosition.profile.id, second.id)
+        takePhoto(model, captures, at: 1)
+        waitUntil { model.captureFlights.count == 2 }
+        let ids = model.captureFlights.map(\.id)
+        XCTAssertEqual(saves.calls.count, 1, "the second save waits for the first")
+
+        saves.calls[0].completion(.success(outcome("asset-1")))
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .saved)
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saving, "621-5 second untouched")
+        XCTAssertEqual(saves.calls.count, 2)
+        saves.calls[1].completion(.success(outcome("asset-2")))
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved)
     }
 
-    func testStyleFormatPositionTabModelsKeepTheSameInstanceAcrossUnrelatedChanges() throws {
-        // Same reasoning as `testStyleTabModelKeepsTheSameInstanceAcrossUnrelatedChanges`.
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        let firstStyle = try XCTUnwrap(model.styleTabModel)
-        let firstFormat = try XCTUnwrap(model.formatTabModel)
-        let firstPosition = try XCTUnwrap(model.positionTabModel)
+    /// 621-5: two photos in flight keep the shutter disabled; either one
+    /// finishing frees it.
+    func test_621_5_shutterIsDisabledWithTwoInFlightAndFreedWhenOneFinishes() throws {
+        let (model, captures, saves) = try makePipelineModel()
 
-        model.refreshOverlay() // bumps `refreshTick`, unrelated to the profile
-
-        XCTAssertTrue(firstStyle === model.styleTabModel)
-        XCTAssertTrue(firstFormat === model.formatTabModel)
-        XCTAssertTrue(firstPosition === model.positionTabModel)
-    }
-
-    // MARK: - 拖曳轉接 (#65's `PositionDragAdapter`, equivalent to 24.8/24.9 — P.3, P.4)
-
-    func testOverlayDragHandlerConvertsAViewfinderCenterDragIntoHalfHalf() throws {
-        // P.3
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        XCTAssertEqual(model.positionTabModel?.profile.position, .anchor(.middleCenter))
-
-        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
-        handler.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
-
-        XCTAssertEqual(model.positionTabModel?.profile.position, .custom(x: 0.5, y: 0.5))
-    }
-
-    func testOverlayDragHandlerClampsADragThatEndsOutsideTheViewfinder() throws {
-        // P.4
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
-
-        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
-        // Past the 288x384 viewfinder.
-        handler.overlayDragEnded(center: CGPoint(x: 400, y: 500),
-                                 viewfinderSize: CGSize(width: 288, height: 384))
-
-        guard case let .custom(x, y) = model.positionTabModel?.profile.position else {
-            return XCTFail("expected a .custom position")
+        for index in 0..<2 {
+            takePhoto(model, captures, at: index)
+            waitUntil { model.captureFlights.count == index + 1 }
         }
-        XCTAssertLessThanOrEqual(x, 1, "P.4")
-        XCTAssertLessThanOrEqual(y, 1, "P.4")
+        XCTAssertEqual(model.inFlightSaveCount, 2)
+        XCTAssertEqual(CameraScreenModel.maxInFlightSaves, 2)
+        XCTAssertTrue(model.isShutterBusy, "621-5 at the limit")
+
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.success(outcome("asset-1")))
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        XCTAssertFalse(model.isShutterBusy, "621-5 freed")
+
+        takePhoto(model, captures, at: 2)
+        waitUntil { model.captureFlights.count == 2 }
+        XCTAssertTrue(model.isShutterBusy, "621-5 full again")
+        waitUntil { saves.calls.count == 2 }
+        saves.calls[1].completion(.failure(.saveFailed("x")))
+        XCTAssertFalse(model.isShutterBusy, "621-5 a failure frees it too")
     }
 
-    // MARK: - 跨分頁不互相覆蓋 (#70, M.1–M.5)
+    /// 621-5: a failed first save and a successful second one each land on
+    /// their own photo.
+    func test_621_5_eachPhotoReportsItsOwnSaveResult() throws {
+        let (model, captures, saves) = try makePipelineModel()
+        var announcements: [String] = []
+        model.announce = { announcements.append($0) }
 
-    func testSequentialEditsAcrossAllThreeTabsAllSurvive() throws {
-        // M.1
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
+        for index in 0..<2 {
+            takePhoto(model, captures, at: index)
+            waitUntil { model.captureFlights.count == index + 1 }
+        }
+        let ids = model.captureFlights.map(\.id)
 
-        model.styleTabModel?.selectFont(.huninn)
-        model.positionTabModel?.selectAnchor(.bottomLeading)
-        model.formatTabModel?.displaySettings.setShowDate(true)
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.failure(.saveFailed("磁碟空間不足")))
+        XCTAssertEqual(saves.calls.count, 2)
+        saves.calls[1].completion(.success(outcome("asset-2")))
 
-        let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .huninn, "M.1: 樣式改動仍在")
-        XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.1: 位置改動仍在")
-        XCTAssertTrue(stored.showDate, "M.1: 格式改動仍在")
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[0] }?.status, .failed, "621-5 first failed")
+        XCTAssertEqual(model.captureFlights.first { $0.id == ids[1] }?.status, .saved, "621-5 second saved")
+        XCTAssertNotNil(model.captureError, "621-5 the failure is reported")
+        XCTAssertEqual(announcements, ["已儲存"], "621-5 only the successful photo is announced as saved")
+        XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
-    func testSequentialEditsAcrossAllThreeTabsInReverseOrderAllSurvive() throws {
-        // M.2
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
+    /// A save that times out hands the queue to the next photo.
+    func testTimedOutSaveLetsTheNextPhotoSave() throws {
+        let (model, captures, saves) = try makePipelineModel(saveTimeout: 0.05)
 
-        model.formatTabModel?.displaySettings.setShowDate(true)
-        model.positionTabModel?.selectAnchor(.bottomLeading)
-        model.styleTabModel?.selectFont(.huninn)
+        for index in 0..<2 {
+            takePhoto(model, captures, at: index)
+            waitUntil { model.captureFlights.count == index + 1 }
+        }
+        waitUntil { saves.calls.count == 2 }
+        waitUntil { model.inFlightSaveCount == 0 }
 
-        let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .huninn, "M.2: 樣式改動仍在")
-        XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.2: 位置改動仍在")
-        XCTAssertTrue(stored.showDate, "M.2: 格式改動仍在")
+        XCTAssertEqual(model.captureFlights.map(\.status), [.failed, .failed])
+        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
     }
 
-    func testDragThenStyleChangeKeepsTheDraggedPosition() throws {
-        // M.3
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1), position: .anchor(.middleCenter))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
+    // MARK: - The camera closing while saving
 
-        let handler = try XCTUnwrap(model.panelModel.overlayDragHandler)
-        handler.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
-        model.styleTabModel?.selectFont(.huninn)
+    /// A photo still saving when the camera closes (the model is released) is
+    /// still saved, and its album is still written back to the record.
+    func testSaveStillRecordsWhenTheModelIsReleasedBeforeItAnswers() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let saves = SaveRecorder()
+        var made: (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore)? =
+            try makeModel(clock: clock, profileStore: store, record: record, save: saves.save)
 
-        let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.position, .custom(x: 0.5, y: 0.5), "M.3: 拖曳結果仍在")
-        XCTAssertEqual(stored.style.fontID, .huninn)
+        made?.0.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
+        made?.0.onDisappear()
+        made = nil // the camera closed
+
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
+
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-1")
     }
 
-    func testRenamingOutsideThePanelThenChangingStyleKeepsTheNewName() throws {
-        // M.4
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let selected = try XCTUnwrap(model.selectedProfile)
+    /// Closing the camera does not cancel a save in progress.
+    func testOnDisappearKeepsASaveInProgress() throws {
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { saves.calls.count == 1 }
 
-        // Simulates a rename from outside the panel (e.g. the management
-        // list, TASK-26) — not through any tab model's own `updateProfile`.
-        var renamed = selected
-        renamed.name = "阿寶"
-        try store.update(renamed)
+        model.onDisappear()
+        XCTAssertEqual(model.inFlightSaveCount, 1)
+        saves.calls[0].completion(.success(outcome()))
 
-        model.styleTabModel?.selectTextColor(.black)
-
-        let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.name, "阿寶", "M.4: 面板外的改名仍在")
-        XCTAssertEqual(stored.style.textColor, .black)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+        XCTAssertNil(model.captureError)
     }
 
-    func testSwitchingToFormatTabAfterAStyleChangeDoesNotLoseTheStyleInTheStore() throws {
-        // M.5: the store itself must never lose the style change — whether
-        // `formatTabModel`'s own working copy also reflects it live is a
-        // separate, ui-panel-owned concern (see this test's own comment).
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
-        ])
-        let (model, _, _, _) = makeModel(profileStore: store, now: now, fontLibrary: FakeShellFontLibrary([.huninn: .available]))
-
-        model.styleTabModel?.selectFont(.huninn)
-        model.panelModel.selectedTab = .content // switching tabs never rebuilds (same profile)
-
-        let stored = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(stored.style.fontID, .huninn, "M.5: store 端沒有遺失樣式改動")
-        // Not asserted: `model.formatTabModel?.displaySettings.profile.style`
-        // — `FormatTabView` never reads `style`/`position` today (grep
-        // confirms), so this is not currently user-visible; syncing a tab's
-        // own working copy live across tabs would need ui-panel to add a
-        // refresh API to `DisplaySettingsModel`/`StyleTabModel`/
-        // `PositionTabModel`/`RulesTabModel`, which this card does not do
-        // (flagged to Lead per #70's own escape hatch).
-    }
-
-    // MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.5)
-
-    private final class StubFlashCapabilityProvider: FlashCapabilityProviding {
-        let hasFlash: Bool
-        init(hasFlash: Bool) { self.hasFlash = hasFlash }
-        func hasFlash(for facing: CameraFacing) -> Bool { hasFlash }
-    }
-
-    func testPresentProfileManagementOpensOnTheListWithPanelUntouched() throws {
-        // 44.1/44.2 (replaces 21.1's menu items): the chip opens the sheet on
-        // its list whatever the panel is doing, and leaves the panel alone.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        try store.add(CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1)))
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        model.openOverlayPanel()
-        model.panelModel.selectedTab = .content
-        model.profileManagerModel.edit(id: store.profiles[1].id)
-
-        model.presentProfileManagement()
-
-        XCTAssertTrue(model.isProfileManagerPresented)
-        XCTAssertTrue(model.profileManagerModel.path.isEmpty)
-        XCTAssertTrue(model.panelModel.isOpen)
-        XCTAssertEqual(model.panelModel.selectedTab, .content)
-    }
-
-    func testEditPageWritesMergeOntoFieldsAnotherTabChanged() throws {
-        // 44.11 (#70): the edit page's write must not revert a field another
-        // tab wrote after the page's model was built.
-        let now = try fixedNow()
-        let store = makeProfileStore(now: now)
-        let (model, _, _, _) = makeModel(profileStore: store, now: now)
-        let original = try XCTUnwrap(store.profiles.first)
-        let rules = model.profileManagerModel.rulesModel(for: original)
-
-        var other = original
-        other.showDate = !original.showDate
-        try store.update(other)
-        rules.setName("改名")
-
-        let saved = try XCTUnwrap(store.profiles.first)
-        XCTAssertEqual(saved.name, "改名")
-        XCTAssertEqual(saved.showDate, other.showDate, "showDate written elsewhere must survive")
-    }
+    // MARK: - Camera tools (PRD 0.2 FR-7, TASK-21 acceptance 21.1–21.3)
 
     func testFlashToolIsDisabledWhenNoFlashIsAvailable() throws {
-        // 21.2. `switchCamera()` cannot actually reach the front camera in
-        // this test harness (`EmptyDeviceProvider` always returns `nil`, the
-        // same boundary PR #41's 19.4 documents), so this exercises
-        // `isFlashAvailable`'s other `false` condition — a back camera with
-        // no flash unit — which disables the button the same way the front
-        // camera does. Flagged in this PR's description so this isn't
-        // mistaken for an untested "front camera" branch.
-        let (model, _, _, _) = makeModel(now: try fixedNow(),
-                                         flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: false))
+        // A back camera with no flash unit disables the button the same way
+        // the front camera does (`EmptyDeviceProvider` cannot reach the front
+        // camera in this harness).
+        let (model, _, _, _) = try makeModel(flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: false))
         XCTAssertTrue(model.isFlashToolDisabled)
     }
 
     func testFlashToolIsNotDisabledWhenFlashIsAvailable() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow(),
-                                         flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: true))
+        let (model, _, _, _) = try makeModel(flashCapabilityProvider: StubFlashCapabilityProvider(hasFlash: true))
         XCTAssertFalse(model.isFlashToolDisabled)
     }
 
@@ -1942,7 +1314,7 @@ final class CameraScreenModelTests: XCTestCase {
         settings.cycleFlash() // .off -> .auto
         settings.cycleTimer() // .off -> .threeSeconds
         settings.toggleGrid() // false -> true
-        let (model, _, _, _) = makeModel(now: try fixedNow(), captureSettingsStore: settings)
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings)
 
         XCTAssertTrue(model.isFlashToolActive)
         XCTAssertTrue(model.isTimerToolActive)
@@ -1950,177 +1322,103 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testToolsAreNotActiveAtTheirDefaults() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+        let (model, _, _, _) = try makeModel()
         XCTAssertFalse(model.isFlashToolActive)
         XCTAssertFalse(model.isTimerToolActive)
         XCTAssertFalse(model.isGridToolActive)
     }
 
-    // MARK: - Ratio button cycling (PRD 0.2 FR-7.7, acceptance 90/B.2/B.5)
+    // MARK: - Latest photo (FR-20.5)
 
-    func testCycleAspectRatioStepsThroughAllCasesInDeclaredOrder() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .threeByFour)
-
-        model.cycleAspectRatio()
-        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .oneByOne)
-
-        model.cycleAspectRatio()
-        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .nineBySixteen)
-
-        model.cycleAspectRatio()
-        XCTAssertEqual(model.captureSettingsStore.captureAspectRatio, .threeByFour)
-    }
-
-    func testCycleAspectRatioPersistsAcrossRelaunch() throws {
-        // 90/B.5: still backed by `CaptureSettingsStore`'s existing
-        // `UserDefaults` persistence — cycling doesn't bypass it.
-        let settings = CaptureSettingsStore(defaults: defaults)
-        let (model, _, _, _) = makeModel(now: try fixedNow(), captureSettingsStore: settings)
-        model.cycleAspectRatio()
-
-        let relaunchedSettings = CaptureSettingsStore(defaults: defaults)
-        XCTAssertEqual(relaunchedSettings.captureAspectRatio, .oneByOne)
-    }
-
-    // MARK: - Bottom-bar thumbnail (PRD 0.2 FR-15.2, TASK-21 acceptance 21.4/21.5)
-
-    func testLatestThumbnailIsNilBeforeAnyCaptureThisLaunch() throws {
-        // 21.4 (the reachable half — no read permission is ever requested by
-        // this model, so the "icon" fallback in the view is simply whatever
-        // renders when this is `nil`).
-        let (model, _, _, _) = makeModel(now: try fixedNow())
+    func testLatestThumbnailIsNilBeforeAnyCapture() throws {
+        let (model, _, _, _) = try makeModel()
         XCTAssertNil(model.latestThumbnailImage)
     }
 
-    func testLatestThumbnailIsTheBakedResultAfterACaptureThisLaunch() throws {
-        // 21.5.
-        let now = try fixedNow()
-        let baked = UIImage()
-        let (model, _, _, _) = makeModel(now: now, bake: { _, _, _, _, _, _, _, _ in baked })
+    func testLoadLatestThumbnailShowsTheLoadedPhoto() async throws {
+        let loaded = solidImage(.red)
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { loaded })
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        await model.loadLatestThumbnail()
 
-        waitUntil { model.captureFlights.count == 1 }
-        model.flightDidLand(id: model.captureFlights[0].id)
-        XCTAssertNotNil(model.latestThumbnailImage)
+        XCTAssertTrue(model.latestThumbnailImage === loaded)
     }
 
-    func testSuccessfulSaveRecordsTheAssetInCapturedPhotoStore() throws {
-        // PRD 0.2 FR-15.1: the identifier `save` returns must reach
-        // `capturedPhotoStore.capturedAssetIDs`, not just the in-memory
-        // thumbnail.
-        let now = try fixedNow()
-        let capturedPhotoStore = CapturedPhotoStore(directory: directory.appendingPathComponent("recorded-photos", isDirectory: true))
-        let store = makeProfileStore(now: now)
-        let service = CameraService(authorizer: StubAuthorizer(status: .notDetermined), deviceProvider: EmptyDeviceProvider())
-        let model = CameraScreenModel(cameraService: service,
-                                      profileStore: store,
-                                      capturedPhotoStore: capturedPhotoStore,
-                                      calendar: DateFixture.taipei,
-                                      calculator: DayCountCalculator(calendar: DateFixture.taipei, now: { now }),
-                                      bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                      save: { _, completion in completion(.success("new-asset-id")) })
+    func testLoadLatestThumbnailKeepsNilWhenTheRecordHasNoPhoto() async throws {
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { nil })
 
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
+        await model.loadLatestThumbnail()
 
-        waitUntil { capturedPhotoStore.capturedAssetIDs.contains("new-asset-id") }
+        XCTAssertNil(model.latestThumbnailImage)
+    }
+
+    /// The read happens once per camera, however often the view asks.
+    func testLoadLatestThumbnailReadsOnlyOnce() async throws {
+        var readCount = 0
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: {
+            readCount += 1
+            return UIImage()
+        })
+
+        await model.loadLatestThumbnail()
+        await model.loadLatestThumbnail()
+
+        XCTAssertEqual(readCount, 1)
+    }
+
+    /// A photo that lands while the read is still running wins over it.
+    func testPhotoLandingDuringTheLatestPhotoReadIsNotOverwritten() throws {
+        let loader = GatedPhotoLoader(image: solidImage(.red))
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { await loader.load() })
+        let finished = expectation(description: "latest photo read finished")
+        Task {
+            await model.loadLatestThumbnail()
+            finished.fulfill()
+        }
+        waitUntil { loader.isWaiting }
+
+        model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
+        waitUntil { model.captureFlights.count == 1 }
+        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
+        let landed = try XCTUnwrap(model.latestThumbnailImage)
+
+        loader.resume()
+        wait(for: [finished], timeout: 3)
+
+        XCTAssertTrue(model.latestThumbnailImage === landed)
+    }
+
+    // MARK: - Tools capsule is closed by the controls
+
+    func testSwitchCameraAndShutterCollapseTheToolsCapsule() throws {
+        let (model, _, _, _) = try makeModel()
+        model.toggleCameraTools()
+        model.switchCamera()
+        XCTAssertFalse(model.isCameraToolsExpanded)
+
+        model.toggleCameraTools()
+        model.capturePhoto()
+        XCTAssertFalse(model.isCameraToolsExpanded)
     }
 
     // MARK: - Timer countdown (PRD 0.2 FR-7.6, TASK-21 acceptance 19.8–19.10)
-
-    // MARK: - #590 color tone
-
-    func testSetColorToneWritesTheStoreAndKeepsThePickerOpen() throws {
-        let settings = CaptureSettingsStore(defaults: defaults)
-        let (model, _, _, _) = makeModel(now: try fixedNow(), captureSettingsStore: settings)
-        XCTAssertFalse(model.isToneToolActive)
-        model.toggleCameraTools()
-        model.toggleTonePicker()
-        XCTAssertTrue(model.isTonePickerOpen)
-        model.setColorTone(.warm1)
-        XCTAssertEqual(settings.colorTone, .warm1, "590.2")
-        XCTAssertTrue(model.isToneToolActive)
-        XCTAssertTrue(model.isTonePickerOpen, "590.2 the picker stays open")
-        model.setColorTone(.standard)
-        XCTAssertFalse(model.isToneToolActive)
-    }
-
-    func testClosingTheCapsuleClosesThePicker() throws {
-        let (model, _, _, _) = makeModel(now: try fixedNow())
-        model.toggleCameraTools()
-        model.toggleTonePicker()
-        model.toggleCameraTools()
-        XCTAssertFalse(model.isTonePickerOpen, "590.2")
-        model.toggleCameraTools()
-        model.toggleTonePicker()
-        model.collapseCameraTools()
-        XCTAssertFalse(model.isTonePickerOpen, "590.2 collapse closes it too")
-    }
-
-    func testBakeReceivesTheToneFixedWhenTheShutterFires() throws {
-        let settings = CaptureSettingsStore(defaults: defaults)
-        settings.setColorTone(.cool2)
-        var finishCapture: ((Result<UIImage, CameraCaptureError>) -> Void)?
-        let received = expectation(description: "baked")
-        var receivedTone: ColorTone?
-        let (model, _, _, _) = makeModel(now: try fixedNow(),
-                                         captureSettingsStore: settings,
-                                         bake: { _, _, _, _, _, _, _, tone in
-                                             receivedTone = tone
-                                             received.fulfill()
-                                             return UIImage()
-                                         },
-                                         captureImage: { _, completion in finishCapture = completion })
-        model.beginCapture(profile: try XCTUnwrap(model.selectedProfile))
-        settings.setColorTone(.warm2) // changed after the shutter, before the photo comes back
-        finishCapture?(.success(UIImage()))
-        wait(for: [received], timeout: 3)
-        XCTAssertEqual(receivedTone, .cool2, "590.5 the tone of the shutter instant")
-    }
-
-    func testBakeReceivesTheToneChosenWhenTheCountdownEnds() throws {
-        let settings = CaptureSettingsStore(defaults: defaults)
-        settings.cycleTimer()
-        settings.setColorTone(.cool2)
-        let ticker = FakeCountdownTicker()
-        let received = expectation(description: "baked")
-        var receivedTone: ColorTone?
-        let (model, _, _, _) = makeModel(now: try fixedNow(),
-                                         captureSettingsStore: settings,
-                                         countdownTicker: ticker,
-                                         bake: { _, _, _, _, _, _, _, tone in
-                                             receivedTone = tone
-                                             received.fulfill()
-                                             return UIImage()
-                                         },
-                                         captureImage: { _, completion in completion(.success(UIImage())) })
-        model.beginCapture(profile: try XCTUnwrap(model.selectedProfile))
-        settings.setColorTone(.warm2) // changed while counting down
-        ticker.tick(); ticker.tick(); ticker.tick()
-        wait(for: [received], timeout: 3)
-        XCTAssertEqual(receivedTone, .warm2, "590.5")
-    }
 
     func testCountdownTicksDownThenCapturesExactlyOnce() throws {
         // 19.8: 3-second timer, 3 injected ticks → countdownRemaining goes
         // 3, 2, 1, nil, and the real capture fires exactly once, after the
         // third tick (not before).
-        let now = try fixedNow()
         let settings = CaptureSettingsStore(defaults: defaults)
         settings.cycleTimer() // .off -> .threeSeconds
         let ticker = FakeCountdownTicker()
         var captureCallCount = 0
-        let (model, _, _, _) = makeModel(now: now,
-                                         captureSettingsStore: settings,
-                                         countdownTicker: ticker,
-                                         captureImage: { _, completion in
-                                             captureCallCount += 1
-                                             completion(.success(UIImage()))
-                                         })
-        let profile = try XCTUnwrap(model.selectedProfile)
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings,
+                                             countdownTicker: ticker,
+                                             captureImage: { _, completion in
+                                                 captureCallCount += 1
+                                                 completion(.success(UIImage()))
+                                             })
 
-        model.beginCapture(profile: profile)
+        model.beginCapture()
         XCTAssertEqual(model.countdownRemaining, 3)
         XCTAssertEqual(captureCallCount, 0)
 
@@ -2141,22 +1439,19 @@ final class CameraScreenModelTests: XCTestCase {
         // 19.9: 10-second timer, 2 ticks, then the shutter is pressed again
         // → cancels: countdownRemaining nil, capture never fires, "已取消"
         // toast.
-        let now = try fixedNow()
         let settings = CaptureSettingsStore(defaults: defaults)
         settings.cycleTimer() // .off -> .threeSeconds
         settings.cycleTimer() // .threeSeconds -> .tenSeconds
         let ticker = FakeCountdownTicker()
         var captureCallCount = 0
-        let (model, _, _, _) = makeModel(now: now,
-                                         captureSettingsStore: settings,
-                                         countdownTicker: ticker,
-                                         captureImage: { _, completion in
-                                             captureCallCount += 1
-                                             completion(.success(UIImage()))
-                                         })
-        let profile = try XCTUnwrap(model.selectedProfile)
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings,
+                                             countdownTicker: ticker,
+                                             captureImage: { _, completion in
+                                                 captureCallCount += 1
+                                                 completion(.success(UIImage()))
+                                             })
 
-        model.beginCapture(profile: profile)
+        model.beginCapture()
         ticker.tick()
         ticker.tick()
         XCTAssertEqual(model.countdownRemaining, 8)
@@ -2172,258 +1467,36 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.toastState?.message, "已取消")
     }
 
-    func testCountdownCapturesAtTheInstantItActuallyFinishesNotWhenItStarted() throws {
-        // 19.10: countdown starts at 23:59:59, finishes at 00:00:02 the next
-        // day — the baked text must reflect the moment the countdown
-        // actually finished (第 11 天), not the moment the shutter was first
-        // pressed (which would still be 第 10 天).
-        let seedDay = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 23, minute: 59, second: 59))
-        let clock = MutableClock(seedDay)
-        // Started 2026-01-01, dayOne: Jan 10 is 第 10 天, Jan 11 is 第 11 天
-        // (the shared fixture in `docs/CONVENTIONS.md`).
-        let store = makeProfileStore(now: seedDay, seed: [
-            CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
-        ])
-        let profile = try XCTUnwrap(store.profiles.first)
+    func testCountdownThatEndsAfterMidnightStillCapturesOnceAndTheHUDFollowsTheClock() throws {
+        // 19.10: the countdown starts at 23:59:59 and ends the next day. The
+        // photo carries no moment (FR-20.6); only the HUD reads the clock.
+        let clock = MutableClock(try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 23, minute: 59, second: 59)))
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
         let settings = CaptureSettingsStore(defaults: defaults)
         settings.cycleTimer() // .off -> .threeSeconds
         let ticker = FakeCountdownTicker()
-        var receivedText: String?
-        let (model, _, _, _) = makeModel(profileStore: store,
-                                         nowProvider: clock.now,
-                                         captureSettingsStore: settings,
-                                         countdownTicker: ticker,
-                                         bake: { _, text, _, _, _, _, _, _ in
-                                             receivedText = text
-                                             return UIImage()
-                                         },
-                                         captureImage: { _, completion in completion(.success(UIImage())) })
+        var captureCallCount = 0
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             captureSettingsStore: settings,
+                                             countdownTicker: ticker,
+                                             captureImage: { _, completion in
+                                                 captureCallCount += 1
+                                                 completion(.success(UIImage()))
+                                             })
+        XCTAssertEqual(model.dayHUDText, "第 10 天")
 
-        model.beginCapture(profile: profile)
+        model.beginCapture()
         clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 0, minute: 0, second: 2))
         ticker.tick()
         ticker.tick()
         ticker.tick()
 
-        waitUntil { receivedText != nil }
-        XCTAssertEqual(receivedText, "第 11 天")
+        XCTAssertEqual(captureCallCount, 1)
+        XCTAssertEqual(model.dayHUDText, "第 11 天")
     }
 
-    // MARK: - Launch thumbnail from the library (FR-15.2 second branch, issue #182)
-
-    @MainActor
-    private final class FakeThumbnailLibrary: GalleryLibrary {
-        var status: PHAuthorizationStatus
-        /// Newest first; an id missing from `images` has no loadable image.
-        var items: [String]
-        var images: [String: UIImage]
-        private(set) var requestCount = 0
-
-        init(status: PHAuthorizationStatus, items: [String] = [], images: [String: UIImage] = [:]) {
-            self.status = status
-            self.items = items
-            self.images = images
-        }
-
-        func readStatus() -> PHAuthorizationStatus { status }
-        func requestReadAccess() async -> PHAuthorizationStatus {
-            requestCount += 1
-            return status
-        }
-        /// Counts the pruning read (`photos()` drops ids from the store); the
-        /// launch thumbnail must never use it.
-        private(set) var photosCallCount = 0
-        func latestVisiblePhotoIDs(limit: Int) -> [String] { Array(items.prefix(limit)) }
-        func photos() -> [GalleryPhoto] {
-            photosCallCount += 1
-            return items.map { GalleryPhoto(id: $0, creationDate: nil) }
-        }
-        func deletePhoto(id: String) async -> Bool {
-            items.removeAll { $0 == id }
-            return true
-        }
-        /// When set, the next `image(id:)` captures its result, then waits for
-        /// `resumeSuspendedImage()` — models a slow library read.
-        var suspendNextImage = false
-        private(set) var isSuspended = false
-        private var continuation: CheckedContinuation<Void, Never>?
-
-        func image(id: String, targetSize: CGSize) async -> UIImage? {
-            let result = images[id]
-            if suspendNextImage {
-                suspendNextImage = false
-                isSuspended = true
-                await withCheckedContinuation { continuation = $0 }
-                isSuspended = false
-            }
-            return result
-        }
-
-        func resumeSuspendedImage() {
-            continuation?.resume()
-            continuation = nil
-        }
-    }
-
-    private func solidImage(_ color: UIColor) -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
-            color.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
-        }
-    }
-
-    func testLaunchThumbnailUsesFirstPhotoWhenReadAccessGranted() async throws {
-        let first = solidImage(.red)
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b", "c"],
-                                           images: ["a": first, "b": solidImage(.green), "c": solidImage(.blue)])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-
-        await model.loadLaunchThumbnail()
-
-        XCTAssertTrue(model.latestThumbnailImage === first)
-    }
-
-    func testLaunchThumbnailUsesSecondPhotoWhenFirstIsGone() async throws {
-        // The deleted first photo is simply no longer listed.
-        let second = solidImage(.green)
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["b", "c"],
-                                           images: ["b": second, "c": solidImage(.blue)])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-
-        await model.loadLaunchThumbnail()
-
-        XCTAssertTrue(model.latestThumbnailImage === second)
-    }
-
-    func testLaunchThumbnailSkipsAPhotoWhoseImageCannotBeLoaded() async throws {
-        let second = solidImage(.green)
-        let library = FakeThumbnailLibrary(status: .limited, items: ["a", "b"], images: ["b": second])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-
-        await model.loadLaunchThumbnail()
-
-        XCTAssertTrue(model.latestThumbnailImage === second)
-    }
-
-    func testLaunchThumbnailStaysIconWithoutReadAccessAndNeverPrompts() async throws {
-        for status in [PHAuthorizationStatus.notDetermined, .denied, .restricted] {
-            let library = FakeThumbnailLibrary(status: status, items: ["a"], images: ["a": solidImage(.red)])
-            let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-
-            await model.loadLaunchThumbnail()
-
-            XCTAssertNil(model.latestThumbnailImage, "status \(status.rawValue)")
-            XCTAssertEqual(library.requestCount, 0, "status \(status.rawValue)")
-        }
-    }
-
-    func testLaunchThumbnailDoesNotReplaceThisLaunchsBakedPhoto() throws {
-        let now = try fixedNow()
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success("asset-1")) },
-                                         thumbnailLibrary: library)
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-        waitUntil { model.captureFlights.count == 1 }
-        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
-        let baked = try XCTUnwrap(model.latestThumbnailImage)
-
-        let loaded = expectation(description: "launch thumbnail load finished")
-        Task {
-            await model.loadLaunchThumbnail()
-            loaded.fulfill()
-        }
-        wait(for: [loaded], timeout: 3)
-
-        XCTAssertTrue(model.latestThumbnailImage === baked)
-    }
-
-    func testLaunchThumbnailNeverUsesThePruningRead() async throws {
-        let library = FakeThumbnailLibrary(status: .limited, items: ["a"], images: ["a": solidImage(.red)])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-
-        await model.loadLaunchThumbnail()
-        await model.refreshThumbnailFromLibrary(replacingExisting: true)
-
-        XCTAssertEqual(library.photosCallCount, 0)
-    }
-
-    func testFailedImageLoadKeepsTheCurrentThumbnail() async throws {
-        let shown = solidImage(.red)
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": shown])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-        await model.loadLaunchThumbnail()
-        XCTAssertTrue(model.latestThumbnailImage === shown)
-
-        library.images = [:] // e.g. iCloud offline: ids listed, nothing loads
-        await model.refreshThumbnailFromLibrary(replacingExisting: true)
-
-        XCTAssertTrue(model.latestThumbnailImage === shown)
-    }
-
-    func testStaleLaunchReadFinishingLateDoesNotOverwriteNewerRefresh() async throws {
-        let stale = solidImage(.red)
-        let fresh = solidImage(.green)
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": stale, "b": fresh])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-        library.suspendNextImage = true
-        let launch = Task { await model.loadLaunchThumbnail() }
-        while !library.isSuspended { await Task.yield() }
-
-        // The user deletes the newest photo and closes the gallery meanwhile.
-        _ = await library.deletePhoto(id: "a")
-        await model.refreshThumbnailFromLibrary(replacingExisting: true)
-        XCTAssertTrue(model.latestThumbnailImage === fresh)
-
-        library.resumeSuspendedImage()
-        await launch.value
-
-        XCTAssertTrue(model.latestThumbnailImage === fresh)
-    }
-
-    func testCaptureLandingDuringLibraryReadWins() throws {
-        let now = try fixedNow()
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a"], images: ["a": solidImage(.red)])
-        let (model, _, _, _) = makeModel(now: now,
-                                         bake: { _, _, _, _, _, _, _, _ in UIImage() },
-                                         save: { _, completion in completion(.success("asset-1")) },
-                                         thumbnailLibrary: library)
-        library.suspendNextImage = true
-        let finished = expectation(description: "launch read finished")
-        Task {
-            await model.loadLaunchThumbnail()
-            finished.fulfill()
-        }
-        waitUntil { library.isSuspended }
-
-        model.processCapturedImage(UIImage(), context: sampleContext(now))
-        waitUntil { model.captureFlights.count == 1 }
-        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
-        let baked = try XCTUnwrap(model.latestThumbnailImage)
-
-        library.resumeSuspendedImage()
-        wait(for: [finished], timeout: 3)
-
-        XCTAssertTrue(model.latestThumbnailImage === baked)
-    }
-
-    func testClosingGalleryAfterDeletingNewestPhotoUpdatesThumbnail() async throws {
-        let first = solidImage(.red)
-        let second = solidImage(.green)
-        let library = FakeThumbnailLibrary(status: .authorized, items: ["a", "b"], images: ["a": first, "b": second])
-        let (model, _, _, _) = makeModel(thumbnailLibrary: library)
-        await model.loadLaunchThumbnail()
-        XCTAssertTrue(model.latestThumbnailImage === first)
-
-        _ = await library.deletePhoto(id: "a")
-        await model.refreshThumbnailFromLibrary(replacingExisting: true)
-        XCTAssertTrue(model.latestThumbnailImage === second)
-
-        _ = await library.deletePhoto(id: "b")
-        await model.refreshThumbnailFromLibrary(replacingExisting: true)
-        XCTAssertNil(model.latestThumbnailImage)
-    }
+    // MARK: - SaveSlot
 
     /// Codex P2 on #532: a settled slot must not stay alive through its own
     /// timeout closure, or every photo would leak one.
@@ -2442,34 +1515,35 @@ final class CameraScreenModelTests: XCTestCase {
 
     // MARK: - viewfinderRotation (#572)
 
-    private func makeRotationModel(override: CGFloat?) -> (CameraScreenModel, CameraService) {
+    private func makeRotationModel(override: CGFloat?) throws -> (CameraScreenModel, CameraService) {
         let service = CameraService(isCaptureSupported: false)
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
         let model = CameraScreenModel(
             cameraService: service,
-            profileStore: makeProfileStore(now: Date()),
+            profileStore: store,
+            profileID: try XCTUnwrap(store.profiles.first?.id),
             captureSettingsStore: CaptureSettingsStore(defaults: defaults),
-            capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("rotation-photos", isDirectory: true)),
-            makeThumbnailLibrary: { _ in FakeThumbnailLibrary(status: .denied) },
             captureRotationAngleOverride: override)
         return (model, service)
     }
 
     /// #572-4: without a camera the service stays at 90, which is portrait.
-    func testViewfinderRotationIsPortraitWithoutACamera() {
-        let (model, _) = makeRotationModel(override: nil)
+    func testViewfinderRotationIsPortraitWithoutACamera() throws {
+        let (model, _) = try makeRotationModel(override: nil)
         XCTAssertEqual(model.viewfinderRotation, .portrait)
     }
 
     /// #572-4: the override fixes the rotation from the start.
-    func testViewfinderRotationUsesTheOverride() {
-        XCTAssertEqual(makeRotationModel(override: 0).0.viewfinderRotation, .landscapeTopLeft)
-        XCTAssertEqual(makeRotationModel(override: 180).0.viewfinderRotation, .landscapeTopRight)
-        XCTAssertEqual(makeRotationModel(override: 270).0.viewfinderRotation, .upsideDown)
+    func testViewfinderRotationUsesTheOverride() throws {
+        XCTAssertEqual(try makeRotationModel(override: 0).0.viewfinderRotation, .landscapeTopLeft)
+        XCTAssertEqual(try makeRotationModel(override: 180).0.viewfinderRotation, .landscapeTopRight)
+        XCTAssertEqual(try makeRotationModel(override: 270).0.viewfinderRotation, .upsideDown)
     }
 
     /// #572-4: with no override the rotation follows the service's angle.
-    func testViewfinderRotationFollowsTheServiceAngle() {
-        let (model, service) = makeRotationModel(override: nil)
+    func testViewfinderRotationFollowsTheServiceAngle() throws {
+        let (model, service) = try makeRotationModel(override: nil)
         service.publish(viewfinderRotationAngle: 0)
         waitUntil { model.viewfinderRotation == .landscapeTopLeft }
         service.publish(viewfinderRotationAngle: 90)
@@ -2477,8 +1551,8 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     /// #572-4: the override wins over later service changes.
-    func testOverrideWinsOverTheService() {
-        let (model, service) = makeRotationModel(override: 0)
+    func testOverrideWinsOverTheService() throws {
+        let (model, service) = try makeRotationModel(override: 0)
         service.publish(viewfinderRotationAngle: 180)
         let settled = expectation(description: "main queue drains")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { settled.fulfill() }

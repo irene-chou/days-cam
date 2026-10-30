@@ -99,7 +99,7 @@ final class PhotoWallUITests: XCTestCase {
     func testCameraOpensFromTheWallAndClosesBack() {
         launchWall(photos: 2)
         XCTAssertTrue(app.openCamera())
-        app.buttons["closeCameraButton"].tap()
+        app.buttons["cameraCloseButton"].tap()
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
     }
 }

@@ -10,24 +10,12 @@ final class DateTimelineUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        openEditor()
+        XCTAssertTrue(app.launchOnRecordEditor(), "the record editor is up")
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "the start-date picker is on the editor")
     }
 
     private var picker: XCUIElement { app.descendants(matching: .any)["startDatePicker"] }
     private var timeline: XCUIElement { app.descendants(matching: .any)["rulesDayPreview"] }
-
-    private func openEditor() {
-        let profiles = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
-        XCTAssertTrue(profiles.waitForExistence(timeout: 10))
-        profiles.tap()
-        let edit = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '編輯'")).firstMatch
-        XCTAssertTrue(edit.waitForExistence(timeout: 5))
-        edit.tap()
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
-    }
 
     /// Drags the edit page's content up from the middle of the form.
     private func scrollForm() {

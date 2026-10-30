@@ -3,15 +3,15 @@ import Foundation
 /// The overlay panel's tab models for one profile, wired to write back to the
 /// store (PRD 0.2 FR-10–FR-12, 2.0 FR-19.3／FR-19.4).
 ///
-/// Extracted from `CameraScreenModel` (#620) so the camera (until #621) and
-/// the export page edit a record through the same models: the 樣式 tab, the
+/// Extracted from `CameraScreenModel` (#620); the export page edits a record
+/// through these models since the camera dropped the panel (#621): the 樣式 tab, the
 /// 內容 tab's switches and the 位置 row plus the drag adapter. Every tab
 /// writes through its own `TabProfileWriter`, which merges only that tab's
 /// changes onto the store's current record (#70).
 ///
 /// Font *application* is not done here: `applyFont` is handed in, so a font
 /// downloading for this profile still lands through the one shared path
-/// (`CameraScreenModel.applyFont`, PRD 0.3 FR-5.18).
+/// (`StyleEditingCenter.applyFont`, PRD 0.3 FR-5.18).
 @MainActor
 final class ProfileStyleEditor {
     /// The record these models edit.

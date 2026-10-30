@@ -168,16 +168,6 @@ final class FocusExposureUITests: XCTestCase {
         XCTAssertFalse(reticle.exists)
     }
 
-    /// 73.6: with the panel open a tap on the viewfinder only closes it.
-    func testNoFocusWhilePanelIsOpen() {
-        launch()
-        app.buttons["疊字設定"].tap()
-        sleep(1)
-        viewfinder(0.5, 0.2).tap()
-        sleep(1)
-        XCTAssertFalse(reticle.exists)
-    }
-
     /// 73.6: a two-finger pinch starts no focus.
     func testPinchDoesNotFocus() {
         launch()

@@ -2,7 +2,8 @@ import XCTest
 
 /// TASK-107 (#426): the content tab's 天數 switch is back; a date-only
 /// profile prints only the date, the last of 天數／日期 springs back, the
-/// units collapse (TASK-141), and the profile list says 只顯示日期.
+/// units collapse (TASK-141). The profile list's 只顯示日期 subtitle (107.5)
+/// went with the camera's profile sheet in #621.
 final class DayCountToggleUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -10,17 +11,17 @@ final class DayCountToggleUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
     }
 
     private func toggle(_ name: String) -> XCUIElement {
         let switches = app.switches[name]
         return switches.exists ? switches : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
     }
+    /// The overlay on the export preview (the title above it also says 第 N 天).
     private var overlayText: XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 ' OR label BEGINSWITH '20'")).firstMatch
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
     }
     private var units: XCUIElement { app.descendants(matching: .any).matching(identifier: "dayCountUnits").firstMatch }
 
@@ -29,7 +30,6 @@ final class DayCountToggleUITests: XCTestCase {
     }
 
     private func openContentTab() {
-        app.buttons["疊字設定"].tap()
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
@@ -37,7 +37,7 @@ final class DayCountToggleUITests: XCTestCase {
     }
 
     /// 107.1／107.2／107.4: three switches, default 天數 on; turning the date
-    /// on and the day count off leaves only the date on the viewfinder and
+    /// on and the day count off leaves only the date on the preview and
     /// collapses the units (TASK-141); name on adds the name after the date.
     func testDateOnlyProfilePrintsOnlyTheDate() {
         openContentTab()
@@ -82,20 +82,5 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertFalse(isOn(toggle("天數")))
         toggle("日期").tap()
         XCTAssertTrue(isOn(toggle("日期")), "107.3 the date stays on while the day count is off")
-    }
-
-    /// 107.5: the profile list's subtitle of a date-only profile reads 只顯示日期.
-    func testProfileListSaysDateOnly() {
-        openContentTab()
-        toggle("日期").tap()
-        toggle("天數").tap()
-        // Close the panel by tapping the viewfinder (FR-8.7).
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-        let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔：'")).firstMatch
-        XCTAssertTrue(chip.waitForExistence(timeout: 5))
-        chip.tap()
-        let row = app.descendants(matching: .any).matching(identifier: "profileRow").firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
-        XCTAssertTrue(row.label.hasSuffix("起・只顯示日期"), "107.5: \(row.label)")
     }
 }

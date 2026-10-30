@@ -2,26 +2,31 @@ import Combine
 import Foundation
 import UIKit
 
-/// Drives PRD S-1, the camera screen: camera lifecycle, permission/status
-/// interpretation, the profile-driven overlay (TASK-08), the profile
-/// switcher (TASK-13), the management panel entry (TASK-26), the shutter's
-/// capture state machine (TASK-10) and the cross-midnight/foreground refresh
-/// (TASK-14). `CameraScreen` only lays out whatever this model currently
-/// says, so UI-level acceptance criteria are tested here rather than in
-/// the view.
+/// Drives the camera of one record (PRD 2.0 FR-20): camera lifecycle,
+/// permission/status interpretation, the 「第 N 天」 HUD, the tools capsule,
+/// the shutter's capture state machine and saving the clean original into
+/// the record's album. `CameraScreen` only lays out whatever this model
+/// currently says, so UI-level acceptance criteria are tested here rather
+/// than in the view.
 ///
-/// Like `ProfileManagerModel`, this is one of the boundary types
-/// that does depend on `ProfileStore`'s concrete type — a screen-level model
-/// has to be the place real services get wired together. It mirrors the
-/// store's `@Published profiles`/`selectedProfileID` the same way that
-/// adapter does.
+/// Built each time the camera opens, for the record whose photo wall opened
+/// it (#621). The photo is never cropped, toned or baked: the overlay is
+/// added only by the export page (§6.3).
 @MainActor
 final class CameraScreenModel: ObservableObject {
+    /// Saves one photo for a record: into its album (full access, creating
+    /// one titled `albumTitle` when `albumIdentifier` is `nil` or gone) or
+    /// into 「最近項目」 only (limited access). The completion runs once, on
+    /// the main queue.
+    typealias Save = (_ image: UIImage,
+                      _ albumIdentifier: String?,
+                      _ albumTitle: String,
+                      _ completion: @escaping (Result<RecordSaveOutcome, PhotoSaveError>) -> Void) -> Void
+
     let cameraService: CameraService
     /// Pinch-to-zoom state of the viewfinder (TASK-61). Only `isPinching` is
-    /// forwarded to this object's changes (the overlay drag switch reads it);
-    /// the rest changes every frame of a pinch and is observed by the capsule
-    /// alone (issue #280).
+    /// forwarded to this object's changes; the rest changes every frame of a
+    /// pinch and is observed by the capsule alone (issue #280).
     let zoomModel: ViewfinderZoomModel
     /// Tap-to-focus, exposure drag and AE/AF lock on the viewfinder (issue
     /// #303). Observed by `FocusExposureOverlay` alone, so a drag redraws
@@ -32,168 +37,44 @@ final class CameraScreenModel: ObservableObject {
     #endif
     /// Whether the quick-zoom capsule is open (issue #302).
     let zoomExpansion = ZoomPresetExpansion()
-    /// The camera tools' state (PRD 0.2 §4.4): flash, timer, aspect ratio,
-    /// grid. Exposed (not `private`) the same way `cameraService` is, so
-    /// `CameraToolbar` can read it directly; this model forwards its change
-    /// notifications the same way it does for `cameraService`
-    /// (`bindToCaptureSettingsStore`).
+    /// The camera tools' state: flash, timer and grid (PRD 0.2 §4.4). The
+    /// ratio and tone fields stay in the file unread (PRD 2.0 §4.2).
     let captureSettingsStore: CaptureSettingsStore
-    /// Where a successful save's asset identifier is recorded (PRD 0.2
-    /// FR-15.1). Reading it directly (e.g. the gallery in TASK-29) never
-    /// needs this model.
-    let capturedPhotoStore: CapturedPhotoStore
     private let profileStore: ProfileStore
-    /// Where each overlay font's availability, download and launch
-    /// preparation come from (PRD 0.3). The real `FontLibrary` in the app;
-    /// tests inject a fake.
-    let fontLibrary: any FontShellControlling
-    /// Seconds the shutter waits for a `preparing` font before giving up and
-    /// drawing PingFang (PRD 0.3 FR-5.15). Injectable so tests need not wait
-    /// the real 3 seconds.
-    private let fontPreparationTimeout: TimeInterval
-    /// Turns a style's font and weight into the face to draw
-    /// (`OverlayMetrics.resolvedFont(for: style, ...)` in the app).
-    /// Injectable so tests can resolve to a face that ships with iOS instead
-    /// of a downloaded one.
-    private let resolveFont: @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont
-    /// "Profile → font" the user asked for that is still downloading; the
-    /// download finishing writes it (PRD 0.3 FR-5.18, A-8). One entry per
-    /// profile, the last request wins. Owned here, not by the font list, so
-    /// closing the list changes nothing (FR-16.11).
-    private var pendingFontApplications: [UUID: OverlayFontID] = [:]
-    /// Fonts whose launch/switch preparation ran past the timeout; the
-    /// shutter no longer waits for them (they still resolve to PingFang until
-    /// `available`).
-    private var timedOutPreparingFonts: Set<FontDownloadID> = []
-    private var preparationTimeoutTasks: [FontDownloadID: Task<Void, Never>] = [:]
-    /// The profile the font hooks last saw as current.
-    private var lastSeenProfileID: UUID?
-    /// Profile/font pairs the "needs re-download" notice was already shown
-    /// for during this launch (FR-16.14: once).
-    private var noticedUnavailableFonts: Set<UnavailableFontNotice> = []
-    private struct UnavailableFontNotice: Hashable {
-        let profileID: UUID
-        let fontID: OverlayFontID
-    }
-    private let makeGalleryModel: @MainActor (CapturedPhotoStore) -> GalleryModel
-    private let makeThumbnailLibrary: @MainActor (CapturedPhotoStore) -> GalleryLibrary
-    private var didLoadLaunchThumbnail = false
-    /// Bumped by every library refresh; only the newest request may write.
-    private var thumbnailRefreshGeneration = 0
+    /// The record this camera saves into: the one whose photo wall opened it.
+    let profileID: UUID
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
-    /// Picks the crop window for a captured photo of the given pixel size at
-    /// `captureSettingsStore.captureAspectRatio` (PRD 0.2 FR-5.7′). The
-    /// window is handed to `bake`, which crops and draws in one pass
-    /// (TASK-128). Defaults to `ImageCropper.cropRect`. Injectable so tests
-    /// can confirm what `bake` receives without depending on real pixel math
-    /// (already covered by `ImageCropperTests`).
-    private let cropRect: (CGSize, CaptureAspectRatio) -> CGRect
-    /// Drives the timer countdown (PRD 0.2 FR-7.6). Defaults to the real
-    /// `SystemCountdownTicker`. Injectable so tests can advance the
-    /// countdown one tick at a time instead of waiting on a real clock.
+    /// Drives the timer countdown (PRD 0.2 FR-7.6). Injectable so tests can
+    /// advance the countdown one tick at a time.
     private let countdownTicker: CountdownTicker
 
-    /// Mirrors `profileStore.profiles`. The caller (`DaysCamApp`) is expected
-    /// to have already called `profileStore.load()` before building this
-    /// model, so this starts non-empty (PRD §2.2/§4.3 guarantee at least one
-    /// profile always exists).
-    @Published private(set) var profiles: [CameraProfile] = []
-    /// Mirrors `profileStore.selectedProfileID`.
-    @Published private(set) var selectedProfileID: UUID?
-    /// Whether the management panel (PRD 0.2 FR-9, S-6) is showing.
-    @Published var isProfileManagerPresented = false
-    /// The photo browsing screen (TASK-29), presented full screen once read
-    /// access has been answered (`openGallery()`).
-    @Published var isGalleryPresented = false
-    /// The browsing screen's model, created fresh each time it opens.
-    private(set) var galleryModel: GalleryModel?
+    /// The record as the store has it now; `nil` once it was deleted.
+    @Published private(set) var profile: CameraProfile?
 
     /// Whether the flash／timer／grid capsule below the toolbar is showing
-    /// (issue #135). Never persisted: every launch starts collapsed.
+    /// (issue #135). Never persisted.
     @Published private(set) var isCameraToolsExpanded = false
 
-    /// Whether the five-step tone picker under the tools capsule is showing
-    /// (#590). Memory only; closes together with the capsule.
-    @Published private(set) var isTonePickerOpen = false
-
-    /// Drives the 設定檔 sheet. Built once and reused: it mirrors the store
-    /// itself, so there is nothing to go stale between presentations. Its
-    /// edit page writes through a `TabProfileWriter` (#70, R-8).
-    private(set) lazy var profileManagerModel = ProfileManagerModel(
-        store: profileStore,
-        calculator: calculator,
-        renderer: renderer,
-        makeRulesModel: { [weak self] profile in
-            guard let self else { return RulesTabModel(profile: profile) { _ in } }
-            let writer = TabProfileWriter(baseline: profile, profileStore: self.profileStore)
-            return RulesTabModel(profile: profile,
-                                 calendar: self.calendar,
-                                 calculator: self.calculator,
-                                 renderer: self.renderer,
-                                 updateProfile: writer.write)
-        }
-    )
-
-    /// Drives the overlay panel's shell (PRD 0.2 FR-8, TASK-22): whether
-    /// it's open and which first-level tab is selected. Built once and
-    /// reused, same reasoning as `profileManagerModel` — it owns no data that
-    /// depends on `selectedProfile`, so there is nothing to go stale.
-    let panelModel = OverlayPanelModel()
-
-    /// The first-launch two-step spotlight (TASK-96, #400). Its changes are
-    /// forwarded to this object's `objectWillChange` (see
-    /// `bindToOnboarding`), the same way `cameraService`'s are, so
-    /// `CameraScreen` re-renders when a step changes.
-    let onboarding: OnboardingSpotlightModel
-    /// Where the overlay text block currently sits, in the viewfinder's
-    /// coordinates; the view keeps it current (TASK-105). Not published: it
-    /// only gates touches and must not redraw anything.
-    var overlayTextFrame: CGRect = .null
-
-    /// How the phone is held, for the overlay layer and the icons (#572).
-    /// Follows `CameraService.captureRotationAngle` unless a fixed angle was
+    /// How the phone is held, for the icons (#572). Follows
+    /// `CameraService.viewfinderRotationAngle` unless a fixed angle was
     /// passed to `init`.
     @Published private(set) var viewfinderRotation: ViewfinderRotation = .portrait
     private let captureRotationAngleOverride: CGFloat?
 
-    /// The overlay panel's tab models for the selected profile (#620: built
-    /// by `ProfileStyleEditor`, shared with the export page). Rebuilt only
-    /// when `selectedProfileID` actually changes — see
-    /// `refreshOverlayPanelTabModelsIfNeeded`.
-    @Published private(set) var styleEditor: ProfileStyleEditor?
-
-    /// The 樣式 tab's model (PRD 0.2 FR-10, TASK-23's `StyleTabView`).
-    var styleTabModel: StyleTabModel? { styleEditor?.styleTabModel }
-
-    /// The 格式 tab's model (PRD 0.2 FR-11, TASK-24's `FormatTabView`).
-    var formatTabModel: FormatTabModel? { styleEditor?.formatTabModel }
-
-    /// The 位置 model (PRD 0.2 FR-12, TASK-24), shown by the 內容 tab's 位置 row.
-    /// `panelModel.overlayDragHandler` points at the editor's
-    /// `PositionDragAdapter` wrapping this instance.
-    var positionTabModel: PositionTabModel? { styleEditor?.positionTabModel }
-
-    /// Editors built for other screens (the export page, #620), so a font
-    /// that finishes downloading is announced in, and does not overtake a
-    /// newer weight chosen in, their font list too. Held weakly.
-    private let otherStyleEditors = NSHashTable<ProfileStyleEditor>.weakObjects()
-
     /// True from the moment the shutter fires until AVFoundation hands back
-    /// the photo (or fails), success or failure. Only this span keeps the
-    /// shutter from firing again (PRD FR-5.5, as read by TASK-129, #469);
-    /// baking and saving are counted by `inFlightSaveCount`.
+    /// the photo (or fails). Only this span keeps the shutter from firing
+    /// again (PRD 0.2 FR-5.5, #469); saving is counted by `inFlightSaveCount`.
     @Published private(set) var isCapturing = false
 
-    /// How many captured photos are still being baked or saved. Goes up when
-    /// a photo arrives from the camera and down when that photo's bake fails
-    /// or its save calls back, success or failure.
+    /// How many captured photos are still being prepared or saved. Goes up
+    /// when a photo arrives from the camera and down when that photo fails
+    /// or its save calls back (or times out), success or failure.
     @Published private(set) var inFlightSaveCount = 0
 
-    /// The most photos baked or saved at once; at the limit the shutter stays
-    /// disabled so full-resolution images cannot pile up in memory (~100MB
-    /// each, TASK-129 assumption).
+    /// The most photos prepared or saved at once; at the limit the shutter
+    /// stays disabled so full-resolution images cannot pile up in memory.
     static let maxInFlightSaves = 2
 
     /// Whether a capture or a full pipeline keeps the shutter disabled.
@@ -223,45 +104,37 @@ final class CameraScreenModel: ObservableObject {
         }
     }
 
-    /// Bakes one photo at a time, in capture order.
+    /// Prepares one photo at a time, in capture order.
     private let pipelineQueue = DispatchQueue(label: "dayscam.capture-pipeline", qos: .userInitiated)
 
-    /// The pending capture-time failure alert, if any (PRD §7.3). `nil` when
-    /// nothing should be shown.
+    /// Photos waiting for the save before them to answer. Saves run one at a
+    /// time so a record without an album gets exactly one new album, not one
+    /// per photo taken in quick succession.
+    private var waitingSaves: [() -> Void] = []
+    private var isSaveRunning = false
+
+    /// The pending capture-time failure alert, if any (PRD 0.1 §7.3).
     @Published private(set) var captureError: CaptureAlertError?
 
     /// Photos that failed since the failure alert was last dismissed.
     private var unacknowledgedFailureCount = 0
 
     /// The remaining whole seconds of an in-progress timer countdown (PRD 0.2
-    /// FR-7.6); `nil` when no countdown is running. Set the instant the
-    /// shutter starts one (before the first tick), then ticks down once per
-    /// second via `countdownTicker` until it reaches `nil`, at which point
-    /// the photo is actually captured.
+    /// FR-7.6); `nil` when no countdown is running.
     @Published private(set) var countdownRemaining: Int?
 
-    /// The most recently baked photo from *this app launch*, held in memory
-    /// (PRD 0.2 FR-15.2's first branch — needs no photo-library read
-    /// permission). `nil` until the first successful save; the bottom bar's
-    /// thumbnail button falls back to the photo icon while it is `nil`.
-    ///
-    /// Before anything is captured this launch it is filled from the photo
-    /// library (FR-15.2's second branch) by `loadLaunchThumbnail()`, but only
-    /// when read access was already granted — never by asking for it
-    /// (FR-15.3). Closing the gallery re-reads it, so deleting the newest
-    /// photo there updates the thumbnail (`dismissGallery()`).
+    /// The record's newest photo for the 44pt corner button (FR-20.5): read
+    /// from the library when the camera opens (`loadLatestThumbnail()`),
+    /// then replaced by each photo taken here once it has landed.
     @Published private(set) var latestThumbnailImage: UIImage?
 
     /// Photos currently flying from the viewfinder into the thumbnail
-    /// button, one entry per capture (issue #148). Replaces the old save-confirmation
-    /// toast on success. `CaptureFlightView` plays each one and reports back
-    /// through `flightDidLand(id:)`/`removeCaptureFlight(id:)`.
+    /// button, one entry per capture (issue #148).
     @Published private(set) var captureFlights: [CaptureFlight] = []
 
     /// Bumped the instant the shutter really fires — no timer: when the
-    /// button is pressed; with a timer: when the countdown reaches zero.
-    /// Never bumped while counting down or on cancel. The view flashes the
-    /// viewfinder and plays the light haptic off this (issue #148).
+    /// button is pressed; with a timer: when the countdown reaches zero. The
+    /// view flashes the viewfinder and plays the light haptic off this.
     @Published private(set) var captureTriggerCount = 0
 
     /// Speaks `message` to VoiceOver (a no-op when it is off). Replaceable so
@@ -274,137 +147,60 @@ final class CameraScreenModel: ObservableObject {
     /// the thumbnail button can play its small bounce.
     @Published private(set) var thumbnailLandingCount = 0
 
-    /// Bakes the overlay into a captured image. Defaults to the real
-    /// `OverlayRenderer`. Injectable so this model is testable without a
-    /// real `UIGraphicsImageRenderer` pass, and so `capturePhoto()` can run
-    /// it off the main thread without capturing `self` into a background
-    /// closure (see `processCapturedImage`).
-    private let bake: (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage?
+    /// Saves a photo for the record. Defaults to
+    /// `PhotoSaver.saveToRecordAlbum`. Injectable for tests.
+    private let save: Save
 
-    /// Saves a baked photo to the system photo library, returning its new
-    /// `PHAsset.localIdentifier` on success (PRD 0.2 FR-15.1). Defaults to
-    /// the real `PhotoSaver.saveReturningIdentifier`. Injectable for tests,
-    /// and so `processCapturedImage` can call it from a background queue
-    /// without capturing `self` (same reasoning as `bake`).
-    private let save: (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void
-
-    /// Fires the actual shutter. Defaults to `cameraService.capturePhoto`
-    /// (set in `init` rather than in the parameter list, since the default
-    /// has to close over the specific `cameraService` instance this model
-    /// was built with — unlike `bake`/`save`/`cropRect`, which each construct an
-    /// unrelated fresh object). Injectable so `CameraScreenModelTests` can
-    /// exercise the countdown state machine (acceptance 19.8–19.10) end to
-    /// end without needing `cameraService.status == .running`, which — like
-    /// every other real-hardware path in this app — cannot be reached from a
-    /// unit test (same boundary `CameraServiceTests` documents).
+    /// Fires the actual shutter. Defaults to `cameraService.capturePhoto`.
+    /// Injectable so tests can drive a capture without real hardware.
     private let captureImage: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void
 
-    /// Tells the camera which flash mode the next photo will use, so the photo
-    /// output can prepare for it (TASK-130). Defaults to
-    /// `cameraService.prepareCapture`; injectable so tests can see the calls.
+    /// Tells the camera which flash mode the next photo will use (TASK-130).
     private let prepareCapture: (FlashMode) -> Void
 
+    /// Reads the record's newest photo for the thumbnail button; `nil` when
+    /// it has none or access is missing.
+    private let loadLatestPhoto: @MainActor () async -> UIImage?
+    private var didLoadLatestThumbnail = false
+
     /// Bumped whenever the calendar day changes or the app returns to the
-    /// foreground (TASK-14). `overlayText` already recomputes from the live
-    /// clock on every access, so nothing about *that* was ever stale — the
-    /// bug this fixes is that nothing told SwiftUI to ask again: none of
-    /// this model's other `@Published` properties change just because time
-    /// passed, so without this tick the viewfinder would keep showing
-    /// whatever it last rendered until something unrelated (a profile edit,
-    /// a permission change) happened to trigger a re-render. Nothing reads
-    /// this value; its only job is to be `@Published` (PRD §6.4).
+    /// foreground (TASK-14), so the HUD re-reads the clock (PRD 0.1 §6.4).
+    /// Nothing reads this value; its only job is to be `@Published`.
     @Published private(set) var refreshTick = 0
 
-    /// True for the one launch right after `profileStore.load()` found an
-    /// unreadable `profiles.json` and silently re-seeded (PRD §7.3, TASK-15
-    /// acceptance 15.1). Captured once at `init` rather than mirrored from
-    /// `profileStore.$didRecoverFromCorruption` — the store only ever sets
-    /// this during `load()`, which has already happened by the time this
-    /// model is constructed, so it can't change again during this launch,
-    /// and capturing it once is what keeps the alert from reappearing if
-    /// `profiles` happens to re-publish later for an unrelated reason.
-    @Published private(set) var showsCorruptionRecoveredAlert: Bool
-
-    /// The pending toast (only "已取消" now), if any (PRD FR-5.4). `nil` when nothing
-    /// should be shown.
+    /// The pending toast (only "已取消" now), if any.
     @Published private(set) var toastState: ToastState?
 
-    /// How `showToast` schedules the toast's own auto-dismiss.
-    /// Injected so tests don't have to wait a real 1.5 seconds; the default
-    /// is the real delay.
-    ///
-    /// Pre-existing "passing non-sendable parameter 'work' to function
-    /// expecting a @Sendable closure" warning here (present since `d2d7329`,
-    /// before this file's `bake`/`processCapturedImage` work): marking `work`
-    /// `@Sendable` to silence it turns out to be a real fix, not a
-    /// formality — the default implementation's dismiss closure mutates
-    /// `self.toastState`, a main-actor-isolated property, and `@Sendable`
-    /// makes the compiler correctly refuse that from what it then treats as
-    /// a "could run anywhere" closure. Fixing it properly needs
-    /// `@MainActor @Sendable` on the parameter (the closure is Sendable *and*
-    /// guaranteed to run on the main actor) plus checking every call site
-    /// still type-checks — left alone for now to keep this PR to its actual
-    /// scope; tracked as a follow-up.
+    /// How `showToast` schedules the toast's own auto-dismiss. Injected so
+    /// tests don't have to wait a real 1.5 seconds.
     private let scheduleToastDismiss: (@escaping () -> Void) -> Void
 
     private var cancellables = Set<AnyCancellable>()
-    private var saveFailureToastPending = false
-    /// Whether the app is in the foreground and active; injectable for tests.
-    private let isApplicationActive: () -> Bool
 
-    /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, not
-    ///   `.current`. `.current` is a snapshot taken once, at call time — a
-    ///   user who launches the app in Taipei and later opens it again in New
-    ///   York would still have the overlay compute midnight in Taipei,
-    ///   silently violating PRD §6.3's "the day count follows the device's
-    ///   current time zone" (a review finding; PRD §6.3 was corrected to
-    ///   name `.autoupdatingCurrent` explicitly). Tests still pass a pinned
-    ///   `Calendar` (e.g. `DateFixture.taipei`), which is unaffected.
+    /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, so the HUD
+    ///   follows the device's current time zone (PRD 0.1 §6.3).
     init(cameraService: CameraService,
          profileStore: ProfileStore,
+         profileID: UUID,
          captureSettingsStore: CaptureSettingsStore = CaptureSettingsStore(),
-         capturedPhotoStore: CapturedPhotoStore = CapturedPhotoStore(),
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
-         cropRect: @escaping (CGSize, CaptureAspectRatio) -> CGRect = { pixelSize, aspectRatio in
-             ImageCropper.cropRect(forPixelSize: pixelSize, ratio: aspectRatio)
-         },
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
-         bake: @escaping (UIImage, String, OverlayStyle, OverlayPlacement, ResolvedOverlayFont, CGRect?, FilmDateStamp?, ColorTone) -> UIImage? = { image, text, style, placement, font, cropRect, filmDate, tone in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement, font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
-         },
-         save: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
-             PhotoSaver().saveReturningIdentifier(image, completion: completion)
+         save: @escaping Save = { image, albumIdentifier, albumTitle, completion in
+             PhotoSaver().saveToRecordAlbum(image, albumIdentifier: albumIdentifier,
+                                            albumTitle: albumTitle, completion: completion)
          },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
-         isApplicationActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
+         loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
-         makeGalleryModel: @escaping @MainActor (CapturedPhotoStore) -> GalleryModel = { store in
-             GalleryModel(library: SystemGalleryLibrary(store: store))
-         },
-         makeThumbnailLibrary: @escaping @MainActor (CapturedPhotoStore) -> GalleryLibrary = { store in
-             SystemGalleryLibrary(store: store)
-         },
-         fontLibrary: (any FontShellControlling)? = nil,
-         onboarding: OnboardingSpotlightModel = OnboardingSpotlightModel(),
-         fontPreparationTimeout: TimeInterval = FontLibrary.defaultLaunchTimeout,
          saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
-         resolveFont: @escaping @MainActor (OverlayStyle, any FontAvailabilityProviding) -> ResolvedOverlayFont = {
-             OverlayMetrics.resolvedFont(for: $0, availability: $1)
-         },
          captureRotationAngleOverride: CGFloat? = nil) {
         self.captureRotationAngleOverride = captureRotationAngleOverride
-        self.resolveFont = resolveFont
         self.saveTimeout = saveTimeout
-        self.onboarding = onboarding
-        self.fontLibrary = fontLibrary ?? InertFontLibrary()
-        self.fontPreparationTimeout = fontPreparationTimeout
-        self.makeGalleryModel = makeGalleryModel
-        self.makeThumbnailLibrary = makeThumbnailLibrary
         self.cameraService = cameraService
         #if DEBUG
         let fakeFocusBackend = FakeFocusExposureBackend.isEnabled ? FakeFocusExposureBackend() : nil
@@ -448,14 +244,12 @@ final class CameraScreenModel: ObservableObject {
                                                  cameraService.setZoom(displayFactor: $0, animated: true)
                                              })
         self.captureSettingsStore = captureSettingsStore
-        self.capturedPhotoStore = capturedPhotoStore
         self.profileStore = profileStore
+        self.profileID = profileID
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
-        self.cropRect = cropRect
         self.countdownTicker = countdownTicker
-        self.bake = bake
         self.save = save
         self.captureImage = captureImage ?? { [cameraService] flashMode, completion in
             cameraService.capturePhoto(flashMode: flashMode, completion: completion)
@@ -463,197 +257,35 @@ final class CameraScreenModel: ObservableObject {
         self.prepareCapture = prepareCapture ?? { [cameraService] flashMode in
             cameraService.prepareCapture(flashMode: flashMode)
         }
-        self.isApplicationActive = isApplicationActive
+        self.loadLatestPhoto = loadLatestPhoto
         self.scheduleToastDismiss = scheduleToastDismiss
-        self.profiles = profileStore.profiles
-        self.selectedProfileID = profileStore.selectedProfileID
-        self.lastSeenProfileID = profileStore.selectedProfileID
-        self.showsCorruptionRecoveredAlert = profileStore.didRecoverFromCorruption
+        self.profile = profileStore.profiles.first { $0.id == profileID }
         bindToProfileStore()
         bindToCameraService()
         bindToZoomModel()
         bindToFocusModel()
         bindToCaptureSettingsStore()
         bindToFlashMode()
-        bindToPanelModel()
         bindToClockNotifications()
-        bindToFontLibrary()
-        bindToOnboarding()
-        refreshOverlayPanelTabModelsIfNeeded()
-        // The launch-time preparation of the current profile's font starts
-        // counting its 3 seconds now (FR-5.15); `prepareFontsAtLaunch()`
-        // does the actual work.
-        if let style = selectedProfile?.style {
-            startPreparationTimeoutIfNeeded(for: Self.downloadID(of: style))
-        }
     }
-
-    /// Shows the save-failed toast held back while the app was inactive, if
-    /// the failure is still unresolved. Internal so tests can call it.
-    func showPendingSaveFailureToast() {
-        guard saveFailureToastPending, profileStore.lastWriteError != nil else {
-            saveFailureToastPending = false
-            return
-        }
-        saveFailureToastPending = false
-        showToast(message: Self.profileSaveFailedMessage)
-    }
-
-    /// Shown when the profile file could not be written.
-    static let profileSaveFailedMessage = "無法儲存設定"
 
     private func bindToProfileStore() {
         profileStore.$profiles
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] profiles in
                 guard let self else { return }
-                self.profiles = profiles
-                // The style tab's own copy must pick up a font written outside
-                // it (`applyFont`; PRD 0.3 FR-5.18), and the content tab's 名稱
-                // switch is the edit page's 寫在照片上 (TASK-109): whichever
-                // wrote last, the other shows it.
-                self.styleEditor?.applyExternalChanges(from: profiles)
+                self.profile = profiles.first { $0.id == self.profileID }
             }
             .store(in: &cancellables)
-        // Profile writes are debounced (#464), so a failed save no longer
-        // surfaces as a throw from `update`; this is where the user hears of
-        // it. Only failing/not-failing is compared, not the error text (it
-        // carries a random temp file name): one failure shows once, however
-        // many retries fail again, and a successful retry re-arms it.
-        profileStore.$lastWriteError
-            .map { $0 != nil }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] hasError in
-                guard let self else { return }
-                guard hasError else {
-                    self.saveFailureToastPending = false
-                    return
-                }
-                // The 設定檔 sheet covers the screen's toast, and every
-                // add／duplicate／delete／reorder／edit there now looks
-                // successful to `ProfileManagerModel`: use the sheet's own
-                // alert, which stays until dismissed.
-                if self.isProfileManagerPresented {
-                    self.profileManagerModel.lastError = self.profileStore.lastWriteError
-                        ?? ProfileStoreError.writeFailed("")
-                    return
-                }
-                // A flush on the way to the background fails while nobody is
-                // looking, and the toast would time out before they return:
-                // hold it until the app is active again.
-                if self.isApplicationActive() {
-                    self.showToast(message: Self.profileSaveFailedMessage)
-                } else {
-                    self.saveFailureToastPending = true
-                }
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.showPendingSaveFailureToast() }
-            .store(in: &cancellables)
-        profileStore.$selectedProfileID
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                self?.selectedProfileID = $0
-                self?.refreshOverlayPanelTabModelsIfNeeded()
-                self?.selectedProfileDidChange()
-            }
-            .store(in: &cancellables)
-    }
-
-    /// Rebuilds every overlay-panel tab model — `styleTabModel`,
-    /// `formatTabModel` and `positionTabModel` (plus its drag adapter) — only
-    /// when `selectedProfileID` has actually changed since they were last
-    /// built (rebuilding on every unrelated re-render would discard whatever
-    /// the user is mid-edit on).
-    ///
-    /// All three are rebuilt together, gated on the same check, so they can
-    /// never point at different profiles at once.
-    ///
-    /// Each tab model holds its own full `CameraProfile` copy and always
-    /// calls its `updateProfile` closure with that *entire* copy, even
-    /// though any one mutation only ever touches the handful of fields that
-    /// tab actually owns (樣式 → `style`; 位置 → `position`; 格式 →
-    /// `showDayCount`/`showDate`/`showName`/`displayUnits`/`useAgeWording`/`dayCountFormat`,
-    /// and also `position`/`style`, as `DisplaySettingsModel` carries them; 天數規則 → `name`/`startDate`/
-    /// `countingRule`). Passing that closure straight to
-    /// `profileStore.update` would blindly overwrite the store's current
-    /// record with this tab's own copy, silently reverting whatever fields
-    /// a *different* tab (or a rename elsewhere) wrote in the
-    /// meantime — exactly #70's reported bug. Every closure below instead
-    /// goes through a `TabProfileWriter` (built by `ProfileStyleEditor`),
-    /// which merges only the fields that changed since that tab's own last
-    /// write onto the store's current record.
-    private func refreshOverlayPanelTabModelsIfNeeded() {
-        guard styleEditor?.profileID != selectedProfileID else { return }
-        guard let selectedProfile else {
-            styleEditor = nil
-            panelModel.overlayDragHandler = nil
-            return
-        }
-        let editor = buildStyleEditor(for: selectedProfile)
-        styleEditor = editor
-        panelModel.overlayDragHandler = editor.dragAdapter
-    }
-
-    /// The overlay panel's tab models for `profileID`, for another screen (the
-    /// export page, #620). Fonts are applied through this model's `applyFont`,
-    /// and announced in the editor's font list while it is open. `nil` when
-    /// the profile does not exist.
-    func makeStyleEditor(for profileID: UUID) -> ProfileStyleEditor? {
-        guard let profile = profileStore.profiles.first(where: { $0.id == profileID }) else { return nil }
-        let editor = buildStyleEditor(for: profile)
-        otherStyleEditors.add(editor)
-        return editor
-    }
-
-    /// Builds the tab models for `profileID`, writing through the store and
-    /// applying fonts through `applyFont`.
-    private func buildStyleEditor(for profile: CameraProfile) -> ProfileStyleEditor {
-        ProfileStyleEditor(
-            profile: profile,
-            profileStore: profileStore,
-            fontLibrary: fontLibrary,
-            calendar: calendar,
-            calculator: calculator,
-            renderer: renderer,
-            applyFont: { [weak self] fontID, profileID in
-                self?.applyFont(fontID, profileID: profileID)
-            },
-            allProfiles: { [weak self] in self?.profiles ?? [] },
-            didWriteStyle: { [weak self] previous, profile in
-                // A weight chosen in the font list writes font and weight
-                // without `applyFont`; it is the newest font choice for this
-                // profile, so a download still pending for it must not land
-                // afterwards (#458).
-                if let previous,
-                   previous.style.fontID != profile.style.fontID
-                    || previous.style.fontWeight != profile.style.fontWeight {
-                    self?.pendingFontApplications[profile.id] = nil
-                }
-            })
-    }
-
-    /// Every style tab model on screen: the camera's, then other editors'.
-    private var allStyleTabModels: [StyleTabModel] {
-        [styleTabModel].compactMap { $0 } + otherStyleEditors.allObjects.map(\.styleTabModel)
     }
 
     /// Forwards `cameraService`'s own change notifications to this object's.
     ///
-    /// `cameraService` is a nested `ObservableObject` read directly by both
-    /// this model (`permission`, `status`, `isCaptureSupported`) and
-    /// `CameraScreen` (`cameraService.permission.needsGuidance`) — but
-    /// `CameraScreen` only `@ObservedObject`s *this* model, and SwiftUI has
-    /// no idea a view depends on a second object nested inside the first.
-    /// Without this, a permission grant/denial or a status change
-    /// (`.idle` → `.running`, an interruption starting or ending) never
-    /// triggers a re-render: the guidance screen wouldn't appear or
-    /// disappear, and the shutter would stay disabled forever once `.running`
-    /// is actually reached on a device (code review finding, verified by the
-    /// team lead).
+    /// `CameraScreen` only observes *this* model, and SwiftUI has no idea a
+    /// view depends on a second object nested inside the first: without
+    /// this, a permission or status change never re-renders the guidance
+    /// screen or the shutter.
     private func bindToCameraService() {
         cameraService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -670,25 +302,6 @@ final class CameraScreenModel: ObservableObject {
         }
     }
 
-    /// Makes the tour's fresh-install decision, forwards its changes like
-    /// `bindToCameraService` does, and feeds it every camera permission
-    /// value: a due tour starts once the permission prompt has been
-    /// answered — granted or denied — never while the system prompt is
-    /// still up (TASK-96, 96.8, 96.16, 96.17).
-    /// `CameraService.publish(permission:)` already delivers on the main
-    /// queue.
-    private func bindToOnboarding() {
-        // The one-time fresh-install decision (#400): `ProfileStore.load()`
-        // already ran in `DaysCamApp` by the time this model exists.
-        onboarding.decideIfNeeded(isFreshInstall: profileStore.didSeedFreshInstall)
-        onboarding.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        cameraService.$permission
-            .sink { [weak self] permission in self?.onboarding.cameraPermissionDidChange(permission) }
-            .store(in: &cancellables)
-    }
-
     /// The quick-zoom buttons the current camera offers (issue #279); empty
     /// until a camera is configured.
     var zoomPresets: [ZoomPreset] {
@@ -703,6 +316,17 @@ final class CameraScreenModel: ObservableObject {
     private static var usesUITestZoomPlan: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("-UITestZoomPresets")
+        #else
+        false
+        #endif
+    }
+
+    /// The simulator cannot capture; UI tests pass `-UITestFakeCapture` to
+    /// get an enabled shutter whose photo is generated (#621). Debug builds
+    /// only.
+    static var usesUITestCapture: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestFakeCapture")
         #else
         false
         #endif
@@ -728,14 +352,13 @@ final class CameraScreenModel: ObservableObject {
     private func bindToFocusModel() {
         focusModel.canAcceptGesture = { [weak self] in
             guard let self else { return false }
-            guard !panelModel.isOpen, !isCameraToolsExpanded, !zoomExpansion.isExpanded else { return false }
+            guard !isCameraToolsExpanded, !zoomExpansion.isExpanded else { return false }
             #if DEBUG
             if fakeFocusBackend != nil { return true }
             #endif
             return !isCaptureUnsupported && !needsPermissionGuidance && !isSessionNotRunning
         }
         focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
-        focusModel.shouldIgnoreTouch = { [weak self] in self?.viewfinderTouchStartsOnOverlayText(at: $0) ?? false }
         cameraService.focusExposureStatePublisher
             .sink { [weak self] in self?.focusModel.receive($0) }
             .store(in: &cancellables)
@@ -756,9 +379,7 @@ final class CameraScreenModel: ObservableObject {
     }
 
     /// Same reasoning as `bindToCameraService`: `captureSettingsStore` is a
-    /// nested `ObservableObject`, and `CameraToolbar` only observes this
-    /// model, so a flash/timer/ratio/grid change would never trigger a
-    /// re-render without forwarding it here.
+    /// nested `ObservableObject` and `CameraToolbar` only observes this model.
     private func bindToCaptureSettingsStore() {
         captureSettingsStore.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -766,8 +387,7 @@ final class CameraScreenModel: ObservableObject {
     }
 
     /// Prepares the photo output for the flash mode now selected and for each
-    /// later change (TASK-130). The current value is delivered at once; the
-    /// camera remembers it until its session is configured.
+    /// later change (TASK-130).
     private func bindToFlashMode() {
         captureSettingsStore.$flashMode
             .removeDuplicates()
@@ -775,31 +395,9 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Same reasoning as `bindToCameraService`: `CameraScreen` and
-    /// `OverlayPanelView` observe only this model and read `panelModel`'s
-    /// state through it, so opening/closing the panel or switching tabs would
-    /// never re-render without forwarding the nested model's changes here
-    /// (PR #60 review).
-    private func bindToPanelModel() {
-        panelModel.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-    }
-
-    /// Listens for the two clock-driven events that can make `overlayText`
-    /// stale on screen (PRD §6.4, TASK-14): the calendar day rolling over
-    /// while the app sits on the camera screen, and the app returning to the
-    /// foreground after any amount of time away.
-    ///
-    /// Goes through `NotificationCenter.default.publisher(for:)` rather than
-    /// the closure-based `addObserver(forName:object:queue:using:)` on
-    /// purpose: that API's closure is `nonisolated`, so calling
-    /// `refreshOverlay()` (a main-actor method) from inside it is only a
-    /// warning today but an error under the Swift 6 language mode (review
-    /// finding). The publisher form's `.receive(on:)` keeps the delivery
-    /// hop explicit and lets Combine (not a raw `queue:` argument) do the
-    /// actor hop, and folds the subscriptions into `cancellables` — no
-    /// separate observer bookkeeping or `deinit` needed.
+    /// Re-reads the clock for the HUD when the calendar day rolls over while
+    /// the camera is up, and when the app returns to the foreground (PRD 0.1
+    /// §6.4, TASK-14).
     private func bindToClockNotifications() {
         let center = NotificationCenter.default
         center.publisher(for: .NSCalendarDayChanged)
@@ -812,35 +410,26 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Forces the viewfinder to re-render against the current moment.
-    ///
-    /// Exists as its own method (rather than inlined into the notification
-    /// closures) so tests can call it directly without posting real
-    /// `NotificationCenter` notifications.
+    /// Forces the HUD to re-render against the current moment.
     func refreshOverlay() {
         refreshTick += 1
     }
 
-    /// Called when the screen appears. Permission is requested here, not at
-    /// app launch (PRD §2.2).
+    /// Called when the camera appears. Permission is requested here, not at
+    /// app launch (PRD 0.1 §2.2).
     func onAppear() {
         prepareCapture(captureSettingsStore.flashMode)
         cameraService.start()
     }
 
-    /// Called when the screen disappears. Pairs with `onAppear` — per
-    /// `CameraService.stop()`'s own doc comment, a screen that stops on
-    /// backgrounding must call `onAppear` again on the way back.
-    ///
-    /// In the app as it stands today this effectively never fires:
-    /// `CameraScreen` is the `WindowGroup`'s only, root-level view, so
-    /// neither presenting a sheet over it nor backgrounding the app removes
-    /// it from the view hierarchy (SwiftUI only calls `onDisappear` when a
-    /// view actually leaves the hierarchy). Kept for correctness — a future
-    /// multi-screen navigation would make it fire — and so `cameraService`
-    /// isn't left running if that changes. Reacting to backgrounding itself
-    /// is TASK-14's scope, not this one's.
+    /// Called when the camera goes away: stops the session (#621-9). A
+    /// countdown in progress stops without a photo; a photo still saving
+    /// finishes on its own and is still recorded.
     func onDisappear() {
+        if countdownRemaining != nil {
+            countdownTicker.stop()
+            countdownRemaining = nil
+        }
         cameraService.stop()
     }
 
@@ -853,7 +442,6 @@ final class CameraScreenModel: ObservableObject {
     static let simulatorPlaceholderText = "模擬器不支援拍照"
 
     /// Whether this build cannot capture at all (the simulator, PRD §2.4).
-    /// Also decides whether the viewfinder shows the placeholder background.
     var isCaptureUnsupported: Bool {
         !cameraService.isCaptureSupported
     }
@@ -864,9 +452,7 @@ final class CameraScreenModel: ObservableObject {
         cameraService.permission.needsGuidance
     }
 
-    /// Whether the session is not actually showing a live picture right now:
-    /// covers `.idle` (not started yet), `.interrupted` and every
-    /// `.unavailable` reason alike.
+    /// Whether the session is not actually showing a live picture right now.
     var isSessionNotRunning: Bool {
         cameraService.status != .running
     }
@@ -877,31 +463,17 @@ final class CameraScreenModel: ObservableObject {
         isCaptureUnsupported
     }
 
-    /// Whether the shutter should be disabled right now.
-    ///
-    /// True whenever a live picture is not actually on screen (no capture
-    /// support, permission not granted, session not `.running`), or while a
-    /// capture is already in flight (PRD FR-5.5). Single source of truth for
-    /// both the button's `.disabled` state and `capturePhoto()`'s own guard.
+    /// Whether the shutter should be disabled right now: no live picture on
+    /// screen, or a capture or the saves already at their limit (PRD 0.2
+    /// FR-5.5). Single source of truth for the button and `capturePhoto()`.
     var isShutterDisabled: Bool {
-        isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isShutterBusy
-            || isWaitingForFont
-    }
-
-    /// Whether the current profile's font is still being matched after
-    /// launch or a profile switch, within its 3 seconds (PRD 0.3 FR-5.15):
-    /// the shutter waits so a photo is never baked in PingFang by mistake.
-    var isWaitingForFont: Bool {
-        guard let style = selectedProfile?.style else { return false }
-        let unit = Self.downloadID(of: style)
-        return fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing
-            && !timedOutPreparingFonts.contains(unit)
+        if Self.usesUITestCapture { return isShutterBusy }
+        return isCaptureUnsupported || needsPermissionGuidance || isSessionNotRunning || isShutterBusy
     }
 
     /// A transient reason the viewfinder cannot show a live picture even
-    /// though permission is fine — an interruption or a session failure
-    /// (PRD §2.4). `nil` when nothing needs to be said (including the
-    /// simulator, which has its own placeholder rather than this message).
+    /// though permission is fine (PRD §2.4). `nil` when nothing needs to be
+    /// said.
     var statusMessage: String? {
         switch cameraService.status {
         case .interrupted, .unavailable(.sessionFailure), .unavailable(.noCaptureDevice):
@@ -912,208 +484,50 @@ final class CameraScreenModel: ObservableObject {
     }
 }
 
-// MARK: - Profile-driven overlay (TASK-08)
+// MARK: - Day HUD (FR-20.2)
 
 extension CameraScreenModel {
-    /// The profile currently applied to the viewfinder, or `nil` only in the
-    /// brief window before `profileStore.load()` has populated `profiles`
-    /// (never observable once the app has actually launched, PRD FR-1.8).
-    var selectedProfile: CameraProfile? {
-        profiles.first { $0.id == selectedProfileID }
-    }
-
-    /// The overlay text for `selectedProfile` as of right now.
-    ///
-    /// Re-rendered on every access rather than cached, using
-    /// `TemplateRenderer` directly — the same renderer TASK-10's shutter must
-    /// call again at capture time (PRD §6.4), so the viewfinder is never the
-    /// source of truth for what gets baked into the photo.
-    var overlayText: String {
-        guard let selectedProfile else { return "" }
-        return renderer.render(profile: selectedProfile, capturedAt: calculator.now(), calendar: calendar)
-    }
-
-    /// The film date stamp the viewfinder draws as of right now, or `nil`
-    /// while the selected profile has it off (TASK-153 #522). Computed on
-    /// every access from the same clock as `overlayText`, so it follows the
-    /// midnight rollover through the same `refreshTick`.
-    var filmDateStamp: FilmDateStamp? {
-        guard let selectedProfile else { return nil }
-        return filmDateStamp(for: selectedProfile, capturedAt: calculator.now())
-    }
-
-    /// The stamp for `profile` at the moment `capturedAt`, `nil` when its
-    /// film date is off. Shared by the viewfinder and the shutter so both
-    /// print the same date from the same moment.
-    private func filmDateStamp(for profile: CameraProfile, capturedAt: Date) -> FilmDateStamp? {
-        guard profile.showFilmDate else { return nil }
-        let components = DayCountCalculator(calendar: calendar, now: { capturedAt }).currentDateComponents()
-        return FilmDateStamp(text: FilmDateStamp.text(for: components), corner: profile.filmDateCorner)
-    }
-
-    /// The style `selectedProfile` draws its overlay with (PRD 0.2 §4.2).
-    var overlayStyle: OverlayStyle {
-        selectedProfile?.style ?? OverlayStyle()
-    }
-
-    /// The face the viewfinder draws `overlayStyle` with: the profile's font
-    /// when it is `available`, PingFang otherwise (PRD 0.3 FR-5.14). Resolved
-    /// afresh on every read, so the viewfinder follows the library.
-    var overlayFont: ResolvedOverlayFont {
-        resolveFont(overlayStyle, fontLibrary)
-    }
-
-    /// Where `selectedProfile` draws its overlay: a grid anchor or a custom
-    /// center (PRD 0.2 §4.1).
-    var overlayPlacement: OverlayPlacement {
-        selectedProfile?.position ?? .default
+    /// 「第 N 天」 for the record as of right now (FR-20.2): the elapsed days
+    /// alone, by the record's counting rule, whatever units, wording or other
+    /// parts the record prints; 「還有 N 天」 while the start date is still
+    /// ahead. Read afresh on every access; `refreshTick` redraws it.
+    var dayHUDText: String {
+        guard var elapsedOnly = profile else { return "" }
+        elapsedOnly.showDayCount = true
+        elapsedOnly.showDate = false
+        elapsedOnly.showName = false
+        elapsedOnly.displayUnits = [.day]
+        elapsedOnly.dayCountFormat = .ordinal
+        return renderer.render(profile: elapsedOnly, capturedAt: calculator.now(),
+                               calendar: calendar, moment: .today)
     }
 }
 
-// MARK: - Profile switcher (TASK-13)
-
-extension CameraScreenModel {
-    /// The label the switcher button shows, e.g. "預設" (PRD FR-1.4).
-    var currentProfileName: String {
-        selectedProfile?.name ?? ""
-    }
-
-    /// Switches the camera to `id` without leaving the camera screen
-    /// (PRD FR-1.4). Forwards straight to the store, which also persists
-    /// `lastUsedProfileID` (PRD FR-1.5) — this model does not repeat that.
-    func selectProfile(id: UUID) {
-        collapseCameraTools()
-        profileStore.select(id: id)
-    }
-
-    /// Opens the 設定檔 sheet on its list (#226 R-1), whatever the panel is
-    /// doing; the panel's state is left alone.
-    func presentProfileManagement() {
-        collapseCameraTools()
-        profileManagerModel.resetNavigation()
-        isProfileManagerPresented = true
-    }
-
-    /// A highlighted tour target was tapped (TASK-96, 96.4／96.5): the tour
-    /// ends, recorded as seen, and the button does what it always does.
-    func onboardingTargetTapped(_ target: OnboardingTarget) {
-        onboarding.targetTapped()
-        switch target {
-        case .profileChip: presentProfileManagement()
-        case .overlayPanelButton: openOverlayPanel()
-        // Look-only (96.19): the mask never lets a tap reach it.
-        case .overlayText: break
-        }
-    }
-
-    /// The thumbnail was tapped (PRD 0.2 FR-15.3): ask for `.readWrite`
-    /// the first time (never earlier), then open the gallery — it shows its
-    /// own permission-denied state when the answer was no.
-    func openGallery() {
-        guard galleryModel == nil else { return }
-        collapseCameraTools()
-        let model = makeGalleryModel(capturedPhotoStore)
-        galleryModel = model
-        Task { [weak self] in
-            await model.requestAccessAndLoad()
-            self?.isGalleryPresented = true
-        }
-    }
-
-    func dismissGallery() {
-        isGalleryPresented = false
-        galleryModel = nil
-        // The user may have deleted the newest photo in the gallery.
-        Task { [weak self] in await self?.refreshThumbnailFromLibrary(replacingExisting: true) }
-    }
-
-    /// Fills the thumbnail from the library on launch (PRD 0.2 FR-15.2,
-    /// second branch). Runs once; does nothing when a photo was already
-    /// captured this launch or when read access is not already granted, so
-    /// it never prompts (FR-15.3).
-    func loadLaunchThumbnail() async {
-        guard !didLoadLaunchThumbnail else { return }
-        didLoadLaunchThumbnail = true
-        await refreshThumbnailFromLibrary(replacingExisting: false)
-    }
-
-    /// Shows the first still-existing captured photo, or the photo icon when
-    /// none is left. `replacingExisting` lets the gallery-close path
-    /// override the in-memory baked image; a capture landing while the read
-    /// is in flight always wins.
-    func refreshThumbnailFromLibrary(replacingExisting: Bool) async {
-        guard replacingExisting || latestThumbnailImage == nil else { return }
-        let library = makeThumbnailLibrary(capturedPhotoStore)
-        switch library.readStatus() {
-        case .authorized, .limited: break
-        default: return
-        }
-        let landings = thumbnailLandingCount
-        thumbnailRefreshGeneration += 1
-        let generation = thumbnailRefreshGeneration
-        // Never `photos()`: that prunes ids under `.limited` access.
-        let ids = library.latestVisiblePhotoIDs(limit: 3)
-        var loaded: UIImage?
-        for id in ids {
-            loaded = await library.image(id: id, targetSize: Self.libraryThumbnailSize)
-            if loaded != nil { break }
-        }
-        // A newer refresh supersedes this one; a capture landing wins too.
-        guard generation == thumbnailRefreshGeneration,
-              landings == thumbnailLandingCount else { return }
-        if let loaded {
-            latestThumbnailImage = loaded
-        } else if ids.isEmpty && replacingExisting {
-            // Only a confirmed-empty list clears the thumbnail; a failed
-            // load (offline iCloud, PhotoKit error) keeps what is shown.
-            latestThumbnailImage = nil
-        }
-    }
-
-    private static let libraryThumbnailSize = CGSize(width: 200, height: 200)
-
-    func dismissProfileManagement() {
-        isProfileManagerPresented = false
-        // Swiping the sheet down or tapping outside it leaves whatever page
-        // it was on — including a just-added profile's (TASK-106).
-        profileManagerModel.sheetDidDismiss()
-    }
-
-}
-
-// MARK: - Camera toolbar (PRD 0.2 FR-7, TASK-21)
+// MARK: - Camera tools (PRD 0.2 FR-7, TASK-21; FR-20.3)
 
 extension CameraScreenModel {
     /// Whether the flash button should be disabled: the front camera, or a
-    /// back camera with no flash unit (PRD 0.2 FR-7.4, acceptance 21.2).
+    /// back camera with no flash unit (PRD 0.2 FR-7.4).
     var isFlashToolDisabled: Bool {
         !cameraService.isFlashAvailable
     }
 
-    /// Whether the flash icon should render in the `active` color (PRD 0.2
-    /// FR-7.10, acceptance 21.3): on whenever the mode isn't `.off`, even if
-    /// `isFlashToolDisabled` — the front camera still shows what it's set
-    /// to, it just can't fire it.
+    /// Whether the flash icon renders in the `active` color (FR-7.10).
     var isFlashToolActive: Bool {
         captureSettingsStore.flashMode != .off
     }
 
-    /// Whether the timer icon should render in the `active` color (PRD 0.2
-    /// FR-7.10, acceptance 21.3).
+    /// Whether the timer icon renders in the `active` color (FR-7.10).
     var isTimerToolActive: Bool {
         captureSettingsStore.timerSeconds != .off
     }
 
-    /// Whether the grid icon should render in the `active` color (PRD 0.2
-    /// FR-7.10, acceptance 21.3).
+    /// Whether the grid icon renders in the `active` color (FR-7.10).
     var isGridToolActive: Bool {
         captureSettingsStore.showsGrid
     }
 
-    /// Cycles the flash button (PRD 0.2 FR-7.4). A no-op while
-    /// `isFlashToolDisabled` is not enforced here — the button itself is
-    /// disabled in the view, matching every other disabled control in this
-    /// model (e.g. the shutter).
+    /// Cycles the flash button (PRD 0.2 FR-7.4).
     func cycleFlash() {
         captureSettingsStore.cycleFlash()
     }
@@ -1123,405 +537,310 @@ extension CameraScreenModel {
         captureSettingsStore.cycleTimer()
     }
 
-    /// Selects the capture aspect ratio (PRD 0.2 FR-7.7).
-    func selectAspectRatio(_ ratio: CaptureAspectRatio) {
-        captureSettingsStore.setAspectRatio(ratio)
-    }
-
-    /// Cycles to the next ratio in `CaptureAspectRatio.allCases`' declared
-    /// order (3:4 → 1:1 → 9:16 → 3:4…), wrapping back to the first after the
-    /// last (PRD 0.2 FR-7.7, human decision 2026-09-27: the ratio button now
-    /// cycles on tap instead of opening a picker menu).
-    func cycleAspectRatio() {
-        collapseCameraTools()
-        let ratios = CaptureAspectRatio.allCases
-        let currentIndex = ratios.firstIndex(of: captureSettingsStore.captureAspectRatio) ?? 0
-        let nextIndex = (currentIndex + 1) % ratios.count
-        selectAspectRatio(ratios[nextIndex])
+    /// Flips the grid overlay (PRD 0.2 FR-7.9).
+    func toggleGrid() {
+        captureSettingsStore.toggleGrid()
     }
 
     /// Opens or closes the tools capsule (issue #135).
     func toggleCameraTools() {
         isCameraToolsExpanded.toggle()
-        if !isCameraToolsExpanded { isTonePickerOpen = false }
     }
 
-    /// Opens or closes the tone picker (#590); never changes the tone.
-    func toggleTonePicker() {
-        isTonePickerOpen.toggle()
-    }
-
-    /// Picks a color tone (#590); the picker stays open.
-    func setColorTone(_ tone: ColorTone) {
-        captureSettingsStore.setColorTone(tone)
-    }
-
-    /// Whether the tone tool shows in the `active` color: any tone but
-    /// `.standard` (#590).
-    var isToneToolActive: Bool {
-        captureSettingsStore.colorTone != .standard
-    }
-
-    /// Closes the tools capsule; a no-op when it is already closed. Called by
-    /// every other control that acts while the capsule is up (issue #135).
+    /// Closes the tools capsule; a no-op when it is already closed.
     func collapseCameraTools() {
         if isCameraToolsExpanded {
             isCameraToolsExpanded = false
         }
-        isTonePickerOpen = false
     }
 
-    /// Opens the overlay panel, collapsing the tools capsule first (issue #135).
-    func openOverlayPanel() {
-        collapseCameraTools()
-        panelModel.open()
-        noticeUnavailableFontIfNeeded()
-    }
-
-    /// Closes the overlay panel, collapsing the tools capsule too (issue #135).
-    func closeOverlayPanel() {
-        collapseCameraTools()
-        panelModel.close()
-    }
-
-    /// A tap on the viewfinder outside the overlay text: the same thing as
-    /// any other tap outside the panel (`handleTapOutsidePanel`). A tap that
-    /// closes something does not also focus (73.6, #541).
+    /// A tap on the viewfinder closes the zoom and tools capsules; a tap
+    /// that closes something does not also focus (73.6, #541).
     func handleViewfinderTap() {
-        let closesSomething = panelModel.isOpen || isCameraToolsExpanded || zoomExpansion.isExpanded
-        handleTapOutsidePanel()
+        let closesSomething = isCameraToolsExpanded || zoomExpansion.isExpanded
+        zoomExpansion.collapse()
+        collapseCameraTools()
         if closesSomething { focusModel.ignoreTouchConsumedByTap() }
-    }
-
-    /// A tap on the overlay text itself (TASK-105, #420): opens the panel
-    /// while it is closed, on whichever tab it was last on; does nothing
-    /// while it is open — the text is what the panel edits, so tapping it
-    /// must not collapse the panel (contrast `handleViewfinderTap`).
-    func handleOverlayTextTap() {
-        zoomExpansion.collapse()
-        guard !panelModel.isOpen else { return }
-        openOverlayPanel()
-    }
-
-    /// Whether a viewfinder touch beginning at `point` (viewfinder
-    /// coordinates) lands on the overlay text, where it belongs to the text's
-    /// own tap and must not focus or adjust exposure (105.3).
-    func viewfinderTouchStartsOnOverlayText(at point: CGPoint) -> Bool {
-        !overlayTextFrame.isNull && overlayTextFrame.contains(point)
-    }
-
-    /// A tap anywhere outside the panel — the viewfinder, the blank space
-    /// beside and below it, the gaps between the toolbar's buttons (TASK-97,
-    /// #401; PRD 0.2 FR-8.7). While the tools capsule is up it only closes
-    /// the capsule — the tap is consumed, so an open panel stays open (issue
-    /// #135); otherwise it closes the panel. The toolbar's buttons never
-    /// reach here: they do their own thing and leave the panel open (human
-    /// decision 2026-10-10).
-    func handleTapOutsidePanel() {
-        zoomExpansion.collapse()
-        if isCameraToolsExpanded {
-            collapseCameraTools()
-        } else if panelModel.isOpen {
-            panelModel.close()
-        }
-    }
-
-    /// Flips the grid overlay (PRD 0.2 FR-7.9).
-    func toggleGrid() {
-        captureSettingsStore.toggleGrid()
     }
 }
 
-// MARK: - Shutter (TASK-10)
+// MARK: - Shutter (TASK-10, FR-20.4)
 
 extension CameraScreenModel {
-    /// What the shutter would bake into a photo of `profile` taken right now.
-    ///
-    /// `capturedAt` comes from `calculator.now()` — the one place in the
-    /// whole app that reads the clock for the photo pipeline (PRD §6.5.5,
-    /// TASK-10 acceptance 10.4). `TemplateRenderer` never calls `Date()`
-    /// itself, and neither will `OverlayRenderer` once it lands; both only
-    /// ever receive `capturedAt` as a parameter.
-    ///
-    /// The text is rendered fresh on every call — never read from the
-    /// already-computed `overlayText` — so two calls separated by the clock
-    /// moving (a shutter press straddling midnight, PRD §6.4) or the profile
-    /// changing produce different text instead of a stale, baked-in string
-    /// (TASK-10 acceptance 10.3).
-    ///
-    /// Deliberately not `private`: `CameraService.capturePhoto` can only
-    /// reach `.success` with a real capture device, which is unavailable in
-    /// the simulator (same boundary `CameraServiceTests` documents), so this
-    /// is what `CameraScreenModelTests` calls directly to verify 10.3/10.4
-    /// without needing to drive a full capture through real hardware.
-    ///
-    /// `font` is resolved here, on the main actor, at the moment the shutter
-    /// fires (a timer: when the countdown reaches zero) and travels with the
-    /// context to the background baking, which never reads the font library
-    /// (PRD 0.3 FR-5.14, FR-16.14).
-    func captureContext(for profile: CameraProfile) -> CaptureContext {
-        let capturedAt = calculator.now()
-        let text = renderer.render(profile: profile, capturedAt: capturedAt, calendar: calendar)
-        let font = resolveFont(profile.style, fontLibrary)
-        return (capturedAt, text, profile.style, profile.position, font,
-                filmDateStamp(for: profile, capturedAt: capturedAt), captureSettingsStore.colorTone)
+    /// Where a photo goes, fixed when the shutter fires: the record, and the
+    /// title a new album for it gets. The album itself is read when the save
+    /// starts, so a photo taken right after the first one of a record without
+    /// an album lands in the album the first one created.
+    struct CaptureDestination: Equatable {
+        let profileID: UUID
+        let albumTitle: String
     }
-
-    /// Everything the baking needs, fixed at the instant the shutter fires
-    /// (the color tone included, #590).
-    typealias CaptureContext = (capturedAt: Date, text: String, style: OverlayStyle, placement: OverlayPlacement, font: ResolvedOverlayFont, filmDate: FilmDateStamp?, tone: ColorTone)
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
     /// FR-7.6).
     ///
     /// While `countdownRemaining != nil` this always cancels, regardless of
-    /// `isShutterDisabled` — the countdown itself already proved the shutter
-    /// was enabled when it started, and a disabled check here would strand
-    /// the countdown with no way to cancel it if some other state changed
-    /// mid-count (acceptance 19.9).
-    ///
-    /// Otherwise a no-op while `isShutterDisabled` (which already covers "a
-    /// capture is already in flight," so this doubles as the FR-5.5
-    /// debounce) or before any profile is selected.
+    /// `isShutterDisabled` (acceptance 19.9). Otherwise a no-op while
+    /// `isShutterDisabled` (the FR-5.5 debounce) or once the record is gone.
     func capturePhoto() {
         collapseCameraTools()
         guard countdownRemaining == nil else {
             cancelCountdown()
             return
         }
-        guard !isShutterDisabled, let selectedProfile else { return }
-        beginCapture(profile: selectedProfile)
+        guard !isShutterDisabled, profile != nil else { return }
+        beginCapture()
     }
 
-    /// Starts capturing `profile`: immediately when
-    /// `captureSettingsStore.timerSeconds == .off` (exactly like before
-    /// TASK-21), otherwise it starts the countdown and the real capture
-    /// happens only once `tickCountdown` reaches zero (PRD 0.2 FR-7.6).
-    ///
-    /// Deliberately not `private`, for the same reason `captureContext(for:)`
-    /// below is not: reaching this from a real `capturePhoto()` call needs
-    /// `cameraService.status == .running`, unavailable without real capture
-    /// hardware (same boundary `CameraServiceTests` documents). This is what
-    /// `CameraScreenModelTests` calls directly to drive the countdown state
-    /// machine end to end (acceptance 19.8–19.10) with an injected
-    /// `countdownTicker`/`captureImage`, without needing a real device.
-    func beginCapture(profile: CameraProfile) {
+    /// Starts a capture: immediately without a timer, otherwise once the
+    /// countdown reaches zero (PRD 0.2 FR-7.6). Not `private` so tests can
+    /// drive it without a running session.
+    func beginCapture() {
         let seconds = captureSettingsStore.timerSeconds.rawValue
         guard seconds > 0 else {
-            performCapture(profile: profile)
+            performCapture()
             return
         }
         countdownRemaining = seconds
         countdownTicker.start { [weak self] in
-            self?.tickCountdown(profile: profile)
+            self?.tickCountdown()
         }
     }
 
-    /// One second of an in-progress countdown (PRD 0.2 FR-7.6, acceptance
-    /// 19.8): decrements `countdownRemaining`, and on the tick that reaches
-    /// zero, stops the ticker, clears `countdownRemaining` to `nil` and
-    /// triggers the real capture — never before then, so the overlay's date
-    /// and day count are computed from the instant the countdown actually
-    /// finishes, not the instant the shutter was first pressed (PRD §6.4,
-    /// acceptance 19.10).
-    private func tickCountdown(profile: CameraProfile) {
+    /// One second of an in-progress countdown (acceptance 19.8): on the tick
+    /// that reaches zero it stops the ticker and captures.
+    private func tickCountdown() {
         guard let remaining = countdownRemaining else { return }
         let next = remaining - 1
         guard next > 0 else {
             countdownTicker.stop()
             countdownRemaining = nil
-            performCapture(profile: profile)
+            performCapture()
             return
         }
         countdownRemaining = next
     }
 
-    /// Cancels an in-progress countdown without capturing (PRD 0.2 FR-7.6,
-    /// acceptance 19.9).
+    /// Cancels an in-progress countdown without capturing (acceptance 19.9).
     private func cancelCountdown() {
         countdownTicker.stop()
         countdownRemaining = nil
         showToast(message: "已取消")
     }
 
-    /// Actually fires the shutter — either immediately (no timer) or once a
-    /// countdown reaches zero.
-    private func performCapture(profile: CameraProfile) {
+    /// Actually fires the shutter. The destination is the record as it is at
+    /// this instant. The shutter time is used by nothing but the HUD
+    /// (FR-20.6), so no moment travels with the photo.
+    private func performCapture() {
+        guard let profile else { return }
         isCapturing = true
         captureTriggerCount += 1
-        // Computed here, synchronously, on the main actor — before the
-        // capture even starts, let alone before anything hops to a
-        // background queue. `capturedAt` must be the instant the shutter
-        // actually fires, not the instant the shutter was first pressed if a
-        // countdown was running (PRD §6.5.5, TASK-10 10.4, 0.2 acceptance
-        // 19.10).
-        let context = captureContext(for: profile)
+        let destination = CaptureDestination(profileID: profile.id, albumTitle: profile.name)
         let flashMode = captureSettingsStore.flashMode
+        let capture: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void =
+            Self.usesUITestCapture ? Self.uiTestCaptureImage : captureImage
 
-        captureImage(flashMode) { [weak self] result in
+        capture(flashMode) { [weak self] result in
             guard let self else { return }
             switch result {
             case let .success(image):
-                // The photo is counted as in flight before the capture span
-                // ends, so the shutter never flickers enabled in between.
-                self.processCapturedImage(image, context: context)
+                // Counted as in flight before the capture span ends, so the
+                // shutter never flickers enabled in between.
+                self.processCapturedImage(image, destination: destination)
                 self.isCapturing = false
             case .failure:
-                // A pre-TASK-9/10 capture-level failure (no hardware, not
-                // running, AVFoundation error). Not one of PRD §7.3's named
-                // scenarios (those are the bake/save failures the pipeline
-                // below reports) — the shutter simply becomes tappable again
-                // rather than staying disabled forever, same as any other
-                // completion.
+                // A capture-level failure: nothing reached the pipeline, the
+                // shutter simply becomes tappable again.
                 self.isCapturing = false
             }
         }
     }
 
-    /// Bakes `image` and saves the result, off the main thread (baking a
-    /// 12-megapixel photo measured ~60–80ms in the simulator; core-dev's own
-    /// numbers for a real device were pending as of this commit, but
-    /// stalling the main thread for that long every shutter press is not
-    /// acceptable regardless).
+    /// The photo `-UITestFakeCapture` takes: a 3:4 grey picture.
+    private static func uiTestCaptureImage(_ flashMode: FlashMode,
+                                           completion: @escaping (Result<UIImage, CameraCaptureError>) -> Void) {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400), format: format).image { context in
+            UIColor.gray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        }
+        DispatchQueue.main.async { completion(.success(image)) }
+    }
+
+    /// Saves `image` as taken (FR-20.4): orientation normalized off the main
+    /// thread, then saved for the record — never cropped, toned or baked.
     ///
-    /// `bake` and `save` are captured into locals *before* dispatching
-    /// rather than referenced as `self.bake`/`self.save` from inside the
-    /// background closure: `self` is `@MainActor`-isolated, and the
-    /// background closure must not touch it until the explicit hop back to
-    /// `DispatchQueue.main` for the bake-failure branch below (the
-    /// save-completion branch needs no such hop — see its own comment).
-    /// `bake`/`save` are themselves just plain function values once
-    /// captured, not main-actor-isolated accesses.
+    /// On success the record learns where the photo went (`record(_:...)`).
+    /// Failure and timeout raise the alert and never count as saved (0.2
+    /// FR-5.5, FR-15.11).
     ///
-    /// Deliberately not `private`: reaching this from a real `capturePhoto()`
-    /// call needs `cameraService.status == .running`, which — like
-    /// `captureContext(for:)` above — is unavailable without real capture
-    /// hardware (same boundary `CameraServiceTests` documents). This is what
-    /// `CameraScreenModelTests` calls directly to verify the bake-failure,
-    /// save-success and save-failure branches, and that `inFlightSaveCount`
-    /// drops back on every one of them (PRD acceptance 10.22).
-    func processCapturedImage(_ image: UIImage, context: CaptureContext) {
+    /// The pipeline holds this model until the photo's save has answered, so
+    /// a photo still saving when the camera closes is still saved and
+    /// recorded.
+    ///
+    /// Not `private`: reaching it from a real `capturePhoto()` needs a
+    /// running session, unavailable without capture hardware.
+    func processCapturedImage(_ image: UIImage, destination: CaptureDestination) {
         // Counted here, synchronously on the main actor, so a test calling
         // this directly goes through the same `+1` → `-1` transition as the
-        // real flow. `context` was fixed when the shutter fired, so a profile
-        // switch while this photo is still baking cannot change it.
+        // real flow.
         inFlightSaveCount += 1
-        let cropRect = self.cropRect
-        let bake = self.bake
-        let save = self.save
-        let aspectRatio = captureSettingsStore.captureAspectRatio
         // Only the capture's ID is kept for the timing log, so a pending save
         // timeout does not hold the full-resolution photo in memory.
         let timingID = CaptureTiming.timingID(of: image)
         pipelineQueue.async {
-            // core-dev's reminder: a 12MP photo in a wide-gamut color space
-            // can make `UIGraphicsImageRenderer` pick a 16-bit format, ~97MB
-            // per bake — without this, memory piles up across rapid presses
-            // (PRD acceptance 10.22) instead of being reclaimed between them.
-            let baked = autoreleasepool { () -> UIImage? in
-                // One pass: `bake` crops to the window and draws the overlay
-                // (PRD 0.2 FR-5.7′). The overlay's margin and font size are
-                // derived from the *cropped* canvas's short edge, matching
-                // what the viewfinder already showed for the same aspect
-                // ratio (FR-5.9, FR-5.11).
-                let pixelSize = CGSize(width: image.size.width * image.scale,
-                                       height: image.size.height * image.scale)
-                let window = cropRect(pixelSize, aspectRatio)
-                return bake(image, context.text, context.style, context.placement, context.font, window, context.filmDate, context.tone)
-            }
-            guard let baked else {
-                // PRD §7.3: baking failure. Not saved, no success toast.
+            // A 12MP wide-gamut redraw can be ~100MB; release it between
+            // rapid presses (PRD 0.1 acceptance 10.22).
+            let upright = autoreleasepool { Self.uprightImage(image) }
+            guard let upright else {
                 CaptureTiming.discard(id: timingID)
-                DispatchQueue.main.async { [weak self] in
-                    self?.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
-                    self?.inFlightSaveCount -= 1
+                DispatchQueue.main.async {
+                    self.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
+                    self.inFlightSaveCount -= 1
                 }
                 return
             }
-            // Downscaled here, off the main thread, alongside the bake work
-            // it depends on: a 12MP `UIImage` is not something the thumbnail
-            // (88px) or the flight animation (~600px) should hold on to.
-            let thumbnail = Self.thumbnail(of: baked)
+            // Downscaled here, off the main thread: a 12MP image is not
+            // something the thumbnail or the flight should hold on to.
+            let thumbnail = Self.thumbnail(of: upright)
             CaptureTiming.mark(.baked, id: timingID)
-            let flightImage = Self.thumbnail(of: baked, maxDimension: Self.flightImageMaxDimension)
+            let flightImage = Self.thumbnail(of: upright, maxDimension: Self.flightImageMaxDimension)
             let flightID = UUID()
 
-            // The flight starts as soon as the photo is baked, in parallel
-            // with the library write (issue #148 assumption 2). `save` is
-            // started from main, after the flight exists, so its completion
-            // can never arrive before the flight it updates.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+            // The flight starts as soon as the photo is ready, in parallel
+            // with the library write (issue #148).
+            DispatchQueue.main.async {
                 self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail))
-                let slot = SaveSlot()
-                let timeout = DispatchWorkItem { [weak self] in
-                    guard let self, !slot.isSettled else { return }
-                    // The save never called back: give the place up and say
-                    // so, rather than report a save nobody confirmed.
-                    slot.settle()
-                    CaptureTiming.discard(id: timingID)
-                    self.markFlightFailed(id: flightID)
-                    self.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
-                                            showsSettingsAction: false)
-                    self.inFlightSaveCount -= 1
-                }
-                slot.timeout = timeout
-                DispatchQueue.main.asyncAfter(deadline: .now() + self.saveTimeout, execute: timeout)
-                save(baked) { [weak self] result in
-                    guard let self else { return }
-                    // `PhotoSaver.saveReturningIdentifier`'s completion
-                    // already guarantees main.
-                    guard !slot.isSettled else {
-                        // Answered after the timeout already reported this
-                        // photo and freed its place: nothing is reported or
-                        // counted twice, but a photo that did reach the
-                        // library is still recorded for the gallery.
-                        if case let .success(assetID) = result {
-                            self.capturedPhotoStore.recordCapturedAsset(assetID)
-                        }
-                        return
-                    }
-                    slot.settle()
-                    switch result {
-                    case let .success(assetID):
-                        CaptureTiming.mark(.saved, id: timingID)
-                        // PRD 0.2 FR-15.1/FR-15.2: record the new asset so
-                        // the gallery (TASK-29) can find it later.
-                        self.capturedPhotoStore.recordCapturedAsset(assetID)
-                        self.markFlightSaved(id: flightID)
-                        // Nothing is shown on screen for a save any more, so
-                        // VoiceOver users hear it instead (issue #148).
-                        self.announce("已儲存")
-                    case let .failure(error):
-                        CaptureTiming.discard(id: timingID)
-                        self.markFlightFailed(id: flightID)
-                        self.reportPhotoFailure(message: error.displayMessage,
-                                                showsSettingsAction: error.showsSettingsAction)
-                    }
-                    self.inFlightSaveCount -= 1
+                self.enqueueSave { finished in
+                    self.startSave(upright, destination: destination, flightID: flightID,
+                                   timingID: timingID, finished: finished)
                 }
             }
         }
     }
 
+    /// Runs `start` once every earlier save has answered (or timed out).
+    /// `start` calls the closure it is handed exactly once when its save is
+    /// over, which starts the next.
+    private func enqueueSave(_ start: @escaping (_ finished: @escaping () -> Void) -> Void) {
+        waitingSaves.append { start { self.saveDidFinish() } }
+        startNextSaveIfIdle()
+    }
+
+    private func startNextSaveIfIdle() {
+        guard !isSaveRunning, !waitingSaves.isEmpty else { return }
+        isSaveRunning = true
+        waitingSaves.removeFirst()()
+    }
+
+    private func saveDidFinish() {
+        isSaveRunning = false
+        startNextSaveIfIdle()
+    }
+
+    /// Saves one prepared photo, with its timeout (TASK-151).
+    private func startSave(_ image: UIImage, destination: CaptureDestination, flightID: UUID,
+                           timingID: UUID?, finished: @escaping () -> Void) {
+        let store = profileStore
+        // The album as the record has it now: an earlier photo may just have
+        // created it.
+        let albumIdentifier = store.profiles.first { $0.id == destination.profileID }?.albumIdentifier
+        let slot = SaveSlot()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard !slot.isSettled else { return }
+            // The save never called back: give the place up and say so,
+            // rather than report a save nobody confirmed.
+            slot.settle()
+            CaptureTiming.discard(id: timingID)
+            self?.markFlightFailed(id: flightID)
+            self?.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
+                                     showsSettingsAction: false)
+            self?.inFlightSaveCount -= 1
+            finished()
+        }
+        slot.timeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + saveTimeout, execute: timeout)
+        save(image, albumIdentifier, destination.albumTitle) { result in
+            // A photo that reached the library is recorded even when the
+            // timeout already reported it.
+            if case let .success(outcome) = result {
+                Self.record(outcome, savedFor: destination, albumAtSave: albumIdentifier, in: store)
+            }
+            guard !slot.isSettled else { return }
+            slot.settle()
+            switch result {
+            case .success:
+                CaptureTiming.mark(.saved, id: timingID)
+                self.markFlightSaved(id: flightID)
+                // Nothing is shown on screen for a save, so VoiceOver users
+                // hear it instead (issue #148).
+                self.announce("已儲存")
+            case let .failure(error):
+                CaptureTiming.discard(id: timingID)
+                self.markFlightFailed(id: flightID)
+                self.reportPhotoFailure(message: error.displayMessage,
+                                        showsSettingsAction: error.showsSettingsAction)
+            }
+            self.inFlightSaveCount -= 1
+            finished()
+        }
+    }
+
+    /// Tells the record where a saved photo went (FR-20.4).
+    ///
+    /// - Full access (`albumID` set): the album becomes the record's when it
+    ///   differs — the first photo of a record without an album, or an album
+    ///   deleted in the 「照片」 App and created again. If the record was
+    ///   bound to another album while this save ran, the photo's ID is kept
+    ///   in `fallbackAssetIDs` instead, so it still shows on the wall.
+    /// - Limited access (`albumID` nil): the asset ID joins
+    ///   `fallbackAssetIDs`; no album is created (§7.3).
+    ///
+    /// A record deleted in the meantime is skipped; the photo stays in the
+    /// library either way.
+    static func record(_ outcome: RecordSaveOutcome, savedFor destination: CaptureDestination,
+                       albumAtSave: String?, in store: ProfileStore) {
+        guard var latest = store.profiles.first(where: { $0.id == destination.profileID }) else { return }
+        if let albumID = outcome.albumID {
+            guard latest.albumIdentifier != albumID else { return }
+            if latest.albumIdentifier == albumAtSave {
+                latest.albumIdentifier = albumID
+            } else {
+                guard !latest.fallbackAssetIDs.contains(outcome.assetID) else { return }
+                latest.fallbackAssetIDs.append(outcome.assetID)
+            }
+        } else {
+            guard !latest.fallbackAssetIDs.contains(outcome.assetID) else { return }
+            latest.fallbackAssetIDs.append(outcome.assetID)
+        }
+        _ = try? store.update(latest)
+    }
+
+    /// `image` redrawn so its pixels stand upright (`imageOrientation ==
+    /// .up`), at the same size, scale and color range; `image` itself when
+    /// it already is. `nil` when the redraw produced no bitmap.
+    nonisolated static func uprightImage(_ image: UIImage) -> UIImage? {
+        guard image.imageOrientation != .up else { return image }
+        let drawn = UIGraphicsImageRenderer(size: image.size, format: image.imageRendererFormat).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        return drawn.cgImage == nil ? nil : drawn
+    }
+
     /// Longest side of the picture used for the flight animation, in points.
-    /// The picture is drawn at its start frame for a moment and then shrinks,
-    /// so it is sized for the animation, not for the full viewfinder.
     static let flightImageMaxDimension: CGFloat = 300
 
-    /// Longest side of the toast / footer thumbnail, in points. The tile
-    /// those two show is 44pt and aspect-fills, so 88pt keeps the short side
-    /// at 44pt or more down to a 1:2 photo.
+    /// Longest side of the corner thumbnail, in points. The tile is 44pt and
+    /// aspect-fills, so 88pt keeps the short side at 44pt or more down to a
+    /// 1:2 photo.
     static let thumbnailMaxDimension: CGFloat = 88
 
-    /// A small copy of `image`, for the toast (PRD FR-5.4) — never the
-    /// full-resolution baked photo.
+    /// A small copy of `image` — never the full-resolution photo.
     ///
     /// `maxDimension` is in points; the bitmap is `maxDimension * scale`
     /// pixels on its longest side and the returned image carries that
-    /// `scale`, so it displays sharp at `maxDimension` points and is not
-    /// multiplied by the screen scale a second time (#468). `scale` defaults
-    /// to the main screen's.
+    /// `scale`, so it displays sharp at `maxDimension` points (#468).
     static func thumbnail(of image: UIImage,
                           maxDimension: CGFloat = thumbnailMaxDimension,
                           scale: CGFloat = UIScreen.main.scale) -> UIImage {
@@ -1543,16 +862,25 @@ extension CameraScreenModel {
     }
 }
 
+// MARK: - Latest photo (FR-20.5)
+
+extension CameraScreenModel {
+    /// Fills the corner button with the record's newest photo, once per
+    /// camera. A photo taken here before the read finishes wins.
+    func loadLatestThumbnail() async {
+        guard !didLoadLatestThumbnail else { return }
+        didLoadLatestThumbnail = true
+        let landings = thumbnailLandingCount
+        let image = await loadLatestPhoto()
+        guard landings == thumbnailLandingCount, let image else { return }
+        latestThumbnailImage = image
+    }
+}
+
 // MARK: - Error handling & toast (TASK-15)
 
 extension CameraScreenModel {
-    /// Dismisses the one-time data-recovery alert (PRD §7.3, 15.1). Call
-    /// when the user taps the alert's only button.
-    func dismissCorruptionRecoveredAlert() {
-        showsCorruptionRecoveredAlert = false
-    }
-
-    /// Dismisses a capture-time failure alert (PRD §7.3, TASK-10).
+    /// Dismisses a capture-time failure alert (PRD 0.1 §7.3).
     func dismissCaptureError() {
         captureError = nil
         unacknowledgedFailureCount = 0
@@ -1573,255 +901,16 @@ extension CameraScreenModel {
                                          showsSettingsAction: showsSettingsAction || (previous?.showsSettingsAction ?? false))
     }
 
-    /// Shows a transient confirmation toast and schedules it to fade out
-    /// after 1.5 seconds (PRD FR-5.4, 0.2 FR-7.6's "已取消"). Called from
-    /// `processCapturedImage`'s `save` completion on a successful save (with
-    /// an already-downscaled thumbnail, never the full-resolution baked
-    /// photo) and from `cancelCountdown()` (no thumbnail).
-    ///
-    /// Each call gets a fresh `ToastState.id`, so two toasts close together
-    /// restart the fade-out rather than comparing equal and no-oping (see
-    /// `ToastState`'s own doc comment) — and the dismiss guards on that same
-    /// `id`, so an older toast's timer firing late can't cut a newer one
-    /// short (PRD acceptance 10.22: rapid shutter presses must not make the
-    /// toast disappear early or stack up).
+    /// Shows a transient toast and schedules it to fade out after 1.5
+    /// seconds ("已取消", 0.2 FR-7.6). Each call gets a fresh `ToastState.id`
+    /// and the dismiss guards on it, so an older timer firing late cannot cut
+    /// a newer toast short.
     func showToast(message: String, thumbnail: UIImage? = nil) {
         let state = ToastState(message: message, thumbnail: thumbnail)
         toastState = state
         scheduleToastDismiss { [weak self] in
             guard self?.toastState?.id == state.id else { return }
             self?.toastState = nil
-        }
-    }
-}
-
-/// The camera hosts the overlay panel for the selected profile until #621.
-extension CameraScreenModel: OverlayPanelHosting {}
-
-// MARK: - Fonts (PRD 0.3, TASK-35)
-
-/// What the camera screen needs from the font library: availability and the
-/// list's cancel/delete (`FontListControlling`), plus download, preparation
-/// and the background cancel. `FontLibrary` conforms; tests inject a fake.
-@MainActor
-protocol FontShellControlling: FontListControlling {
-    /// Fires with the exact font and weight each time a download finishes
-    /// successfully; the state is already `.available` by then. The older
-    /// per-font event only speaks for the default weight.
-    var weightDownloadDidFinish: PassthroughSubject<FontDownloadID, Never> { get }
-    /// Starts a download; `false` when none was started.
-    @discardableResult func download(_ fontID: OverlayFontID) -> Bool
-    /// Settles one `.preparing` font now (FR-5.16).
-    func prepare(_ fontID: OverlayFontID) async
-    /// Settles one exact face.
-    func prepare(_ fontID: OverlayFontID, weightID: String?) async
-    /// Settles the fonts on the device after launch (FR-5.15).
-    func prepareAtLaunch(priority: OverlayFontID?) async
-    /// Same, with the priority font's exact weight first.
-    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async
-    /// Cancels every download in progress (FR-16.11).
-    func cancelAllDownloads()
-}
-
-extension FontLibrary: FontShellControlling {}
-
-/// The library `CameraScreenModel` uses when none is injected: only PingFang
-/// is usable and nothing downloads. Keeps previews and unrelated tests off
-/// the file system and the network.
-@MainActor
-private final class InertFontLibrary: FontShellControlling {
-    let objectWillChange = ObservableObjectPublisher()
-    let weightDownloadDidFinish = PassthroughSubject<FontDownloadID, Never>()
-
-    func state(for fontID: OverlayFontID) -> FontState {
-        fontID == .pingFang ? .available : .notDownloaded
-    }
-    func cancel(_ fontID: OverlayFontID) {}
-    func delete(_ fontID: OverlayFontID) -> Bool { false }
-    func download(_ fontID: OverlayFontID) -> Bool { false }
-    func prepare(_ fontID: OverlayFontID) async {}
-    func prepare(_ fontID: OverlayFontID, weightID: String?) async {}
-    func prepareAtLaunch(priority: OverlayFontID?) async {}
-    func prepareAtLaunch(priority: OverlayFontID?, weightID: String?) async {}
-    func cancelAllDownloads() {}
-}
-
-extension CameraScreenModel {
-    /// The exact face `style` draws with, as the font library counts it.
-    static func downloadID(of style: OverlayStyle) -> FontDownloadID {
-        FontDownloadID(fontID: style.fontID, weightID: style.resolvedFontWeight.id)
-    }
-
-    /// Settles the fonts on the device after launch, the current profile's
-    /// font first (PRD 0.3 FR-5.15). Returns once that font is settled; the
-    /// shutter waits for it, for at most `fontPreparationTimeout`. Call once,
-    /// from the screen's `.task`.
-    func prepareFontsAtLaunch() async {
-        await fontLibrary.prepareAtLaunch(priority: selectedProfile?.style.fontID,
-                                          weightID: selectedProfile?.style.resolvedFontWeight.id)
-    }
-
-    /// The app went to the background: pending downloads stop and nobody is
-    /// left waiting to be applied (PRD 0.3 FR-16.11).
-    func sceneDidEnterBackground() {
-        pendingFontApplications.removeAll()
-        fontLibrary.cancelAllDownloads()
-    }
-
-    /// The one way a font is written to a profile (PRD 0.3 FR-5.18).
-    ///
-    /// An `available` font is written to `profileID` at once, and any earlier
-    /// request still pending for that profile is dropped. Anything else is
-    /// downloaded, and written to **that** profile once the download finishes
-    /// (A-8), even if the list was closed or another profile is current by
-    /// then; a later request for the same profile replaces this one, and a
-    /// cancelled, failed or interrupted download drops it.
-    func applyFont(_ fontID: OverlayFontID, profileID: UUID) {
-        switch fontLibrary.state(for: fontID) {
-        case .available:
-            pendingFontApplications[profileID] = nil
-            writeFont(fontID, to: profileID)
-        case .preparing:
-            pendingFontApplications[profileID] = fontID
-            Task { [weak self] in
-                await self?.fontLibrary.prepare(fontID)
-                self?.fontLibraryDidChange()
-            }
-        case .notDownloaded, .failed, .downloading:
-            pendingFontApplications[profileID] = fontID
-            fontLibrary.download(fontID)
-            fontLibraryDidChange()
-        }
-    }
-
-    /// Writes `fontID` into the stored profile and keeps the style tab's copy
-    /// in step. A profile that no longer exists is skipped.
-    ///
-    /// - Returns: whether the profile now has `fontID`; `false` for a missing
-    ///   profile or a failed save (which shows its own message).
-    @discardableResult
-    private func writeFont(_ fontID: OverlayFontID, to profileID: UUID) -> Bool {
-        guard var latest = profileStore.profiles.first(where: { $0.id == profileID }) else { return false }
-        if latest.style.fontID != fontID {
-            latest.style.fontID = fontID
-            do {
-                // Waits for the disk: "applied" must not be announced for a
-                // save that then fails (#492).
-                try profileStore.updateAndWait(latest)
-            } catch {
-                showToast(message: "無法儲存字型設定")
-                return false
-            }
-        }
-        syncStyleTabModelWithStore()
-        return true
-    }
-
-    /// Hands every style tab on screen the store's latest copy of its profile
-    /// (FR-5.18).
-    fileprivate func syncStyleTabModelWithStore() {
-        for styleTabModel in allStyleTabModels {
-            guard let latest = profileStore.profiles.first(where: { $0.id == styleTabModel.profile.id }) else { continue }
-            styleTabModel.applyExternalChanges(from: latest)
-        }
-    }
-
-    /// Follows the library: finishes or drops pending applications, and
-    /// redraws what depends on font state (the viewfinder, the shutter).
-    fileprivate func bindToFontLibrary() {
-        fontLibrary.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-                // `objectWillChange` fires before the change lands.
-                DispatchQueue.main.async { self?.fontLibraryDidChange() }
-            }
-            .store(in: &cancellables)
-        fontLibrary.weightDownloadDidFinish
-            .sink { [weak self] _ in self?.fontLibraryDidChange() }
-            .store(in: &cancellables)
-    }
-
-    /// Settles every pending application against the font's current state.
-    func fontLibraryDidChange() {
-        for (profileID, fontID) in pendingFontApplications {
-            switch fontLibrary.state(for: fontID) {
-            case .available:
-                pendingFontApplications[profileID] = nil
-                guard profileStore.profiles.contains(where: { $0.id == profileID }) else { continue }
-                // The user has since picked a weight of another font for this
-                // profile and it is still downloading: that is the newer
-                // choice, so this one must not land first (#458).
-                if allStyleTabModels.contains(where: { model in
-                    model.fontList.profileID == profileID
-                        && model.fontList.pendingWeight.map({ $0.fontID != fontID }) == true
-                }) { continue }
-                if writeFont(fontID, to: profileID) { announceApplied(fontID) }
-            case .notDownloaded, .failed:
-                pendingFontApplications[profileID] = nil
-            case .preparing, .downloading:
-                break
-            }
-        }
-    }
-
-    /// "已套用「<名稱>」" (FR-16.6): in the font list when it is open (the
-    /// camera's or the export page's), on the camera screen otherwise.
-    private func announceApplied(_ fontID: OverlayFontID) {
-        let text = "已套用「\(fontID.displayName)」"
-        if let list = allStyleTabModels.lazy.compactMap(\.fontLibraryModel).first {
-            list.post(text)
-        } else {
-            showToast(message: text)
-        }
-    }
-
-    /// The selected profile changed: a `.preparing` font starts matching now
-    /// instead of waiting in the launch queue (FR-5.16), and an unusable one
-    /// is announced once (FR-16.14).
-    func selectedProfileDidChange() {
-        guard let profile = selectedProfile, profile.id != lastSeenProfileID else { return }
-        lastSeenProfileID = profile.id
-        let unit = Self.downloadID(of: profile.style)
-        if fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing {
-            timedOutPreparingFonts.remove(unit)
-            startPreparationTimeoutIfNeeded(for: unit)
-            Task { [weak self] in
-                await self?.fontLibrary.prepare(unit.fontID, weightID: unit.weightID)
-                guard self?.selectedProfileID == profile.id else { return }
-                self?.noticeUnavailableFontIfNeeded()
-            }
-        } else {
-            noticeUnavailableFontIfNeeded()
-        }
-    }
-
-    /// Gives a `.preparing` font its 3 seconds from now; after that the
-    /// shutter stops waiting (FR-5.15, FR-5.16).
-    fileprivate func startPreparationTimeoutIfNeeded(for unit: FontDownloadID) {
-        guard fontLibrary.state(for: unit.fontID, weightID: unit.weightID) == .preparing else { return }
-        preparationTimeoutTasks[unit]?.cancel()
-        let seconds = fontPreparationTimeout
-        preparationTimeoutTasks[unit] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard !Task.isCancelled, let self else { return }
-            self.timedOutPreparingFonts.insert(unit)
-            self.objectWillChange.send()
-        }
-    }
-
-    /// "「<名稱>」需要重新下載，暫時用蘋方", once per profile and font during
-    /// this launch, when the current profile's font is neither available,
-    /// preparing nor downloading (FR-16.14).
-    func noticeUnavailableFontIfNeeded() {
-        guard let profile = selectedProfile else { return }
-        let fontID = profile.style.fontID
-        switch fontLibrary.state(for: fontID, weightID: profile.style.resolvedFontWeight.id) {
-        case .available, .preparing, .downloading:
-            return
-        case .notDownloaded, .failed:
-            let notice = UnavailableFontNotice(profileID: profile.id, fontID: fontID)
-            guard noticedUnavailableFonts.insert(notice).inserted else { return }
-            showToast(message: "「\(fontID.displayName)」需要重新下載，暫時用蘋方")
         }
     }
 }
@@ -1837,19 +926,15 @@ extension CameraScreenModel {
 /// `CameraProfile` copy.
 ///
 /// Every tab model (`StyleTabModel`, `DisplaySettingsModel`,
-/// `PositionTabModel`, `RulesTabModel` — three of those four owned by
-/// ui-panel, off-limits for this card per #70) always calls its
-/// `updateProfile` closure with its *entire* working copy on every change,
-/// even though a single mutation only ever touches the handful of fields
-/// that tab owns. Diffing that copy against `baseline` — this tab's own
-/// copy immediately before the mutation that just happened — recovers which
-/// fields actually changed without needing any of those types to expose
-/// that themselves.
+/// `PositionTabModel`, `RulesTabModel`) always calls its `updateProfile`
+/// closure with its *entire* working copy on every change, even though a
+/// single mutation only ever touches the handful of fields that tab owns.
+/// Diffing that copy against `baseline` — this tab's own copy immediately
+/// before the mutation that just happened — recovers which fields actually
+/// changed without needing any of those types to expose that themselves.
 ///
-/// Assumes only one tab writes at a time (this card's own stated
-/// assumption, matching how the panel's UI only ever has one tab active) —
-/// not built to reconcile two genuinely concurrent writes to the same
-/// profile.
+/// Assumes only one tab writes at a time — not built to reconcile two
+/// genuinely concurrent writes to the same profile.
 @MainActor
 final class TabProfileWriter {
     private var baseline: CameraProfile
@@ -1866,10 +951,8 @@ final class TabProfileWriter {
     /// diffs against this one.
     func write(_ updated: CameraProfile) throws {
         guard let latest = profileStore.profiles.first(where: { $0.id == updated.id }) else {
-            // The profile was deleted out from under this tab (e.g. from the
-            // management list) — nothing sane to merge into. Let the tab
-            // surface this as its own `lastError`, same as any other
-            // `updateProfile` failure.
+            // The profile was deleted out from under this tab — nothing sane
+            // to merge into. Let the tab surface this as its own `lastError`.
             throw ProfileStoreError.profileNotFound(id: updated.id)
         }
         let merged = Self.merging(updated, from: baseline, onto: latest)

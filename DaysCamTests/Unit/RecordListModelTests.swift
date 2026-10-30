@@ -201,4 +201,104 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(model.path, [.wall(id)], "the checkmark opens the new record's wall")
         XCTAssertEqual(store.profiles.count, before + 1)
     }
+
+    // MARK: Data recovery alert (15.1, moved from the camera in #621)
+
+    /// Writes unreadable bytes straight to `store`'s file, bypassing every
+    /// check the store makes.
+    private func corrupt(_ store: ProfileStore) throws {
+        let garbage = try XCTUnwrap("這不是 JSON".data(using: .utf8))
+        try garbage.write(to: store.fileURL)
+    }
+
+    private func makeRecoveredStore() throws -> ProfileStore {
+        let clock = clock
+        let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { clock.now },
+                                 defaults: defaults, scheduler: ProfileStore.immediateScheduler)
+        try corrupt(store)
+        store.load()
+        XCTAssertTrue(store.didRecoverFromCorruption) // sanity check on the fixture
+        return store
+    }
+
+    func testShowsCorruptionRecoveredAlertWhenTheStoreJustRecovered() throws {
+        let model = makeModel(store: try makeRecoveredStore(), library: FakeRecordAlbumLibrary())
+        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
+    }
+
+    func testShowsNoCorruptionRecoveredAlertOnANormalLaunch() {
+        let model = makeModel(store: makeStore(), library: FakeRecordAlbumLibrary())
+        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
+    }
+
+    func testDismissCorruptionRecoveredAlertClearsIt() throws {
+        let model = makeModel(store: try makeRecoveredStore(), library: FakeRecordAlbumLibrary())
+        XCTAssertTrue(model.showsCorruptionRecoveredAlert)
+
+        model.dismissCorruptionRecoveredAlert()
+
+        XCTAssertFalse(model.showsCorruptionRecoveredAlert)
+    }
+
+    // MARK: Save failure (#492, moved from the camera in #621)
+
+    private func setDirectoryWritable(_ writable: Bool) throws {
+        try FileManager.default.setAttributes([.posixPermissions: writable ? 0o700 : 0o500],
+                                              ofItemAtPath: directory.path)
+    }
+
+    /// Lets main-queue hops (store change delivery) run.
+    private func settle() async {
+        try? await Task.sleep(nanoseconds: 80_000_000)
+    }
+
+    /// A debounced write that fails reaches `lastError` once; a later success
+    /// clears the store's error without a new alert, and a new failure after
+    /// that shows again.
+    func testBackgroundWriteFailureSetsLastErrorOnceAndRetryReArmsIt() async throws {
+        let store = makeStore()
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary())
+        var edited = try XCTUnwrap(store.profiles.first)
+        edited.name = "改名"
+        try setDirectoryWritable(false)
+        defer { try? setDirectoryWritable(true) }
+
+        try store.update(edited)
+        await settle()
+        XCTAssertNotNil(model.lastError, "the failed write is surfaced")
+
+        model.lastError = nil
+        store.flush() // still failing: same error, no second alert
+        await settle()
+        XCTAssertNil(model.lastError)
+
+        try setDirectoryWritable(true)
+        store.flush()
+        await settle()
+        XCTAssertNil(store.lastWriteError)
+        XCTAssertNil(model.lastError, "no alert for a successful retry")
+
+        edited.name = "再改名"
+        try setDirectoryWritable(false)
+        try store.update(edited)
+        await settle()
+        XCTAssertNotNil(model.lastError, "a new failure shows again")
+    }
+
+    // MARK: Export model (#620)
+
+    /// The export page's model edits the record through the shared
+    /// `StyleEditingCenter`.
+    func testExportModelIsBuiltOverTheStyleCenter() throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary())
+        let center = StyleEditingCenter(profileStore: store, fontLibrary: FakeShellFontLibrary(),
+                                        calendar: DateFixture.taipei)
+
+        let export = model.exportModel(for: record.id, photo: RecordPhoto(id: "p1", creationDate: nil),
+                                       styleCenter: center)
+
+        XCTAssertEqual(export.profileID, record.id)
+    }
 }

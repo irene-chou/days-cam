@@ -10,17 +10,13 @@ final class RetapFocusQATests: XCTestCase {
     private func launch() {
         continueAfterFailure = false
         app = XCUIApplication()
-        // The tap points assume the default 3:4 viewfinder with the panel
-        // closed. The ratio lives in the standard defaults, so a test that
-        // left 1:1 behind puts the overlay text under (0.8, 0.65), and that
-        // tap opens the panel; pin the ratio and start from fresh profiles.
+        // The camera has no overlay text or panel since #621, so the tap
+        // points land on the bare viewfinder; start from fresh profiles.
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFocus", "-UITestZoomPresets",
-                                "-UITestFreshProfiles", UUID().uuidString,
-                                "-captureAspectRatio", "threeByFour"]
+                                "-UITestFreshProfiles", UUID().uuidString]
         app.launch()
         app.openCamera()
         XCTAssertTrue(app.buttons["zoomRoundButton"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the overlay panel must start closed")
     }
 
     private func query(_ identifier: String) -> XCUIElementQuery {

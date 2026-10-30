@@ -3,8 +3,8 @@ import Foundation
 /// The overlay panel's shell state (PRD 0.2 FR-8): whether it is open, and
 /// which first-level tab is currently selected.
 ///
-/// Pure state, no service dependency, owned by `CameraScreenModel` the same
-/// way `profileListModel` is (TASK-22). `selectedTab` deliberately is *not*
+/// Pure state, no service dependency, owned by the panel's host (the export
+/// page since #621; TASK-22). `selectedTab` deliberately is *not*
 /// persisted to disk: PRD 0.2 A-4 only wants it remembered while the app
 /// stays open — surviving `close()`/`open()` within the same launch
 /// (acceptance 22.2) — not across relaunches, so a freshly constructed
@@ -36,9 +36,9 @@ final class OverlayPanelModel: ObservableObject {
     /// Re-opening while open, closing and switching tabs never bump it.
     @Published private(set) var dragHintSerial = 0
 
-    /// The position model's drag adapter (`CameraScreenModel` assigns it).
-    /// `nil` until then, so the overlay is simply not draggable yet — see
-    /// `CameraScreen`'s use of this alongside `isOverlayDraggable`.
+    /// The position model's drag adapter (the host assigns it). `nil` until
+    /// then, so the overlay is simply not draggable yet — see `ExportView`'s
+    /// use of this alongside `isOverlayDraggable`.
     weak var overlayDragHandler: OverlayDragHandling?
 
     init() {}
@@ -98,10 +98,9 @@ extension OverlayPanelModel {
 // MARK: - Panel host (#620)
 
 /// What `OverlayPanelView` reads its state from: the shell state and the
-/// tab models of the record being edited. `CameraScreenModel` hosts the panel
-/// for the selected profile (until #621); `ExportModel` hosts it for the
-/// record being exported (PRD 2.0 FR-19.3). Both build their tab models with
-/// `ProfileStyleEditor`, so the panel behaves the same in either place.
+/// tab models of the record being edited. `ExportModel` hosts it for the
+/// record being exported (PRD 2.0 FR-19.3), with tab models built by
+/// `ProfileStyleEditor`; the camera hosted it until #621.
 ///
 /// A host forwards `panelModel`'s changes to its own `objectWillChange`, so
 /// a view observing only the host redraws when the tab or open state changes.

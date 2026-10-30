@@ -12,11 +12,7 @@ final class OutlineSliderUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         profileName = UUID().uuidString
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profileName]
-        app.launch()
-        app.openCamera()
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(profiles: profileName), "the export page is up")
         app.buttons["樣式"].tap()
         app.buttons["外框"].tap()
     }
@@ -101,8 +97,7 @@ final class OutlineSliderUITests: XCTestCase {
         XCTAssertEqual(points(strokeSlider), dragged)
         app.terminate()
         app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.waitForExportPage(), "the export page is up")
         app.buttons["樣式"].tap()
         app.buttons["外框"].tap()
         XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3), "relaunch finds the same profile")

@@ -1,7 +1,8 @@
 import XCTest
 @testable import DaysCam
 
-/// Covers the tools capsule's expand/collapse rules (issue #135, C.11).
+/// Covers the tools capsule's expand/collapse rules (issue #135, C.11); the
+/// overlay panel they once also closed is gone from the camera (#621).
 @MainActor
 final class CameraScreenModelCameraToolsTests: XCTestCase {
     private var directory: URL!
@@ -21,29 +22,29 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeModel() -> CameraScreenModel {
+    private func makeModel() throws -> CameraScreenModel {
         let store = ProfileStore(directory: directory, scheduler: ProfileStore.immediateScheduler)
         store.load()
         return CameraScreenModel(cameraService: CameraService(),
                                  profileStore: store,
-                                 captureSettingsStore: CaptureSettingsStore(defaults: defaults),
-                                 capturedPhotoStore: CapturedPhotoStore(directory: directory.appendingPathComponent("photos", isDirectory: true)))
+                                 profileID: try XCTUnwrap(store.profiles.first?.id),
+                                 captureSettingsStore: CaptureSettingsStore(defaults: defaults))
     }
 
-    func testStartsCollapsed() {
-        XCTAssertFalse(makeModel().isCameraToolsExpanded)
+    func testStartsCollapsed() throws {
+        XCTAssertFalse(try makeModel().isCameraToolsExpanded)
     }
 
-    func testToggleExpandsThenCollapses() {
-        let model = makeModel()
+    func testToggleExpandsThenCollapses() throws {
+        let model = try makeModel()
         model.toggleCameraTools()
         XCTAssertTrue(model.isCameraToolsExpanded)
         model.toggleCameraTools()
         XCTAssertFalse(model.isCameraToolsExpanded)
     }
 
-    func testCyclingToolsKeepsCapsuleOpen() {
-        let model = makeModel()
+    func testCyclingToolsKeepsCapsuleOpen() throws {
+        let model = try makeModel()
         model.toggleCameraTools()
         model.cycleFlash()
         model.cycleTimer()
@@ -51,72 +52,24 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         XCTAssertTrue(model.isCameraToolsExpanded)
     }
 
-    func testViewfinderTapOnlyCollapsesCapsuleAndLeavesOpenPanelAlone() {
-        let model = makeModel()
-        model.panelModel.open()
+    /// A viewfinder tap closes the tools capsule.
+    func testViewfinderTapCollapsesCapsule() throws {
+        let model = try makeModel()
         model.toggleCameraTools()
         model.handleViewfinderTap()
-        XCTAssertFalse(model.isCameraToolsExpanded)
-        XCTAssertTrue(model.panelModel.isOpen)
-        model.handleViewfinderTap()
-        XCTAssertFalse(model.panelModel.isOpen)
-    }
-
-    /// TASK-97 (#401), 97.11／97.6: a tap on any blank space outside the
-    /// panel goes through `handleTapOutsidePanel` — capsule up: only the
-    /// capsule closes; capsule down: the panel closes.
-    func testTapOutsidePanelOnlyCollapsesCapsuleFirstThenClosesPanel() {
-        let model = makeModel()
-        model.panelModel.open()
-        model.toggleCameraTools()
-        model.handleTapOutsidePanel()
-        XCTAssertFalse(model.isCameraToolsExpanded, "97.6 first tap: capsule only")
-        XCTAssertTrue(model.panelModel.isOpen, "97.6 the panel stays open")
-        model.handleTapOutsidePanel()
-        XCTAssertFalse(model.panelModel.isOpen, "97.6 second tap closes the panel")
-    }
-
-    /// 97.11: with the capsule collapsed a tap outside closes the panel at once.
-    func testTapOutsidePanelClosesPanelWhenCapsuleIsCollapsed() {
-        let model = makeModel()
-        model.panelModel.open()
-        XCTAssertFalse(model.isCameraToolsExpanded)
-        model.handleTapOutsidePanel()
-        XCTAssertFalse(model.panelModel.isOpen, "97.2–97.4")
-    }
-
-    /// 97.9: with the panel closed a tap outside changes nothing.
-    func testTapOutsidePanelWhileClosedIsHarmless() {
-        let model = makeModel()
-        model.handleTapOutsidePanel()
-        XCTAssertFalse(model.panelModel.isOpen)
         XCTAssertFalse(model.isCameraToolsExpanded)
     }
 
     /// TASK-72, 72.3: a viewfinder tap also closes the zoom capsule.
-    func testViewfinderTapCollapsesZoomCapsule() {
-        let model = makeModel()
+    func testViewfinderTapCollapsesZoomCapsule() throws {
+        let model = try makeModel()
         model.zoomExpansion.expand()
         model.handleViewfinderTap()
         XCTAssertFalse(model.zoomExpansion.isExpanded)
     }
 
-    func testOpeningPanelCollapsesCapsule() {
-        let model = makeModel()
-        model.toggleCameraTools()
-        model.openOverlayPanel()
-        XCTAssertFalse(model.isCameraToolsExpanded)
-        XCTAssertTrue(model.panelModel.isOpen)
-    }
-
-    func testOtherButtonsCollapseCapsuleAndStillAct() {
-        let model = makeModel()
-        let ratioBefore = model.captureSettingsStore.captureAspectRatio
-
-        model.toggleCameraTools()
-        model.cycleAspectRatio()
-        XCTAssertFalse(model.isCameraToolsExpanded)
-        XCTAssertNotEqual(model.captureSettingsStore.captureAspectRatio, ratioBefore)
+    func testOtherButtonsCollapseCapsuleAndStillAct() throws {
+        let model = try makeModel()
 
         model.toggleCameraTools()
         model.switchCamera()
@@ -125,21 +78,10 @@ final class CameraScreenModelCameraToolsTests: XCTestCase {
         model.toggleCameraTools()
         model.capturePhoto()
         XCTAssertFalse(model.isCameraToolsExpanded)
-
-        model.toggleCameraTools()
-        model.presentProfileManagement()
-        XCTAssertFalse(model.isCameraToolsExpanded)
-        XCTAssertTrue(model.isProfileManagerPresented)
-
-        model.toggleCameraTools()
-        if let id = model.selectedProfileID {
-            model.selectProfile(id: id)
-        }
-        XCTAssertFalse(model.isCameraToolsExpanded)
     }
 
-    func testCollapseWhenAlreadyCollapsedIsNoOp() {
-        let model = makeModel()
+    func testCollapseWhenAlreadyCollapsedIsNoOp() throws {
+        let model = try makeModel()
         model.collapseCameraTools()
         XCTAssertFalse(model.isCameraToolsExpanded)
     }

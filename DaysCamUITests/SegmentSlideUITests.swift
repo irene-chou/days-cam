@@ -12,13 +12,8 @@ final class SegmentSlideUITests: XCTestCase {
     private func launch(extra: [String] = []) {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString,
-                                "-UITestSegmentChip"] + extra
-        app.launch()
-        app.openCamera()
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
-        app.buttons["疊字設定"].tap()
-        XCTAssertTrue(styleTab.waitForExistence(timeout: 5), "the panel opened")
+        XCTAssertTrue(app.launchOnExportPage(extraArguments: ["-UITestSegmentChip"] + extra), "the export page is up")
+        XCTAssertTrue(styleTab.waitForExistence(timeout: 5), "the panel is there")
     }
 
     private var styleTab: XCUIElement { app.buttons["樣式"] }
@@ -97,15 +92,14 @@ final class SegmentSlideUITests: XCTestCase {
         XCTAssertEqual(chips.count, 1)
     }
 
-    /// 154.5: the body still swaps in place and the collapse chevron works.
-    func testBodyAndCollapseStillWork() {
+    /// 154.5: the body still swaps in place (the collapse chevron is gone
+    /// from the export page, #621).
+    func testBodyStillSwapsInPlace() {
         launch()
         XCTAssertTrue(app.buttons["字型"].waitForExistence(timeout: 5), "樣式 shows its sub-tabs")
         contentTab.tap()
         waitUntil("154.5 the style sub-tabs are gone") { !app.buttons["字型"].exists }
         XCTAssertTrue(contentTab.isSelected)
-        app.buttons["panelCollapseButton"].tap()
-        waitUntil("154.5 the panel collapsed") { !self.contentTab.exists }
     }
 
     /// 154.6: at the largest text size the chip is still exactly one segment.
