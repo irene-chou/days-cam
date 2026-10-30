@@ -120,6 +120,8 @@ struct ExportView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!model.canCancel)
+            .opacity(model.canCancel ? 1 : 0.35)
             .accessibilityLabel("取消")
             .accessibilityIdentifier("exportCancelButton")
             Spacer()
