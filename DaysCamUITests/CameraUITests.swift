@@ -117,6 +117,41 @@ final class CameraUITests: XCTestCase {
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
     }
 
+    /// FR-20.7 (human decision 2026-10-31): xmark alone at the top left, HUD
+    /// in the middle, the tools toggle at the top right with its capsule
+    /// opening under it; newest photo, shutter, flip along the bottom.
+    func testLayoutPutsToolsTopRightAndFlipBesideTheShutter() {
+        launchCamera()
+        let close = element("cameraCloseButton")
+        let hud = element("cameraDayHUD")
+        let tools = app.buttons["相機設定"]
+        let thumbnail = element("cameraLatestThumbnail")
+        let shutter = app.buttons["快門"]
+        let flip = app.buttons["翻轉鏡頭"]
+        for item in [close, hud, tools, thumbnail, shutter, flip] {
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "\(item)")
+        }
+        XCTAssertLessThan(close.frame.midX, hud.frame.minX, "xmark left of the HUD")
+        XCTAssertGreaterThan(tools.frame.midX, hud.frame.maxX, "tools toggle right of the HUD")
+        XCTAssertEqual(tools.frame.midY, close.frame.midY, accuracy: 2, "one top row")
+        XCTAssertGreaterThan(tools.frame.midX, app.frame.width * 0.75, "the toggle sits at the top right")
+        XCTAssertLessThan(close.frame.midX, app.frame.width * 0.25, "xmark sits at the top left")
+
+        XCTAssertLessThan(thumbnail.frame.maxX, shutter.frame.minX, "newest photo left of the shutter")
+        XCTAssertGreaterThan(flip.frame.minX, shutter.frame.maxX, "flip right of the shutter")
+        XCTAssertEqual(flip.frame.midY, shutter.frame.midY, accuracy: 2, "one bottom row")
+        XCTAssertEqual(thumbnail.frame.midY, shutter.frame.midY, accuracy: 2, "one bottom row")
+        XCTAssertEqual(app.frame.width - flip.frame.midX, thumbnail.frame.midX, accuracy: 2, "mirrored side keys")
+
+        tools.tap()
+        let flash = app.buttons["閃光燈"]
+        XCTAssertTrue(flash.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(flash.frame.minY, tools.frame.maxY, "the capsule opens below the toggle")
+        let grid = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '格線'")).firstMatch
+        XCTAssertEqual(grid.frame.maxX, tools.frame.maxX, accuracy: 8, "the capsule lines up at the right")
+        shot("camera-tools-open")
+    }
+
     /// 11: the camera held upright.
     func test_621_11_portraitScreenshot() {
         launchCamera()

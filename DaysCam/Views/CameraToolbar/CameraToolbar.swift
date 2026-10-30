@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// The camera's top bar (PRD 2.0 FR-20.1–FR-20.3): `xmark` and the tools
-/// toggle on the left (flash, timer and grid live in `CameraToolsCapsule`),
-/// the 「第 N 天」 HUD centered, flip on the right. No ratio, tone or profile
-/// menu any more (#621).
+/// The camera's top bar (PRD 2.0 FR-20.1–FR-20.3): `xmark` alone on the
+/// left, the 「第 N 天」 HUD centered, the tools toggle on the right (flash,
+/// timer and grid live in `CameraToolsCapsule`). Flip sits beside the
+/// shutter (`CameraScreen`, human decision 2026-10-31). No ratio, tone or
+/// profile menu any more (#621).
 ///
 /// All state and actions come from `model` (`CameraScreenModel`); this view
 /// only lays it out and never touches `CaptureSettingsStore`/`CameraService`
@@ -25,18 +26,13 @@ struct CameraToolbar: View {
     /// many buttons sit on either side (D-1).
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) {
-                closeButton
-                toolsToggleButton
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            closeButton
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             dayHUD
 
-            HStack(spacing: 0) {
-                flipButton
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            toolsToggleButton
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, CameraScreenLayoutMetrics.toolbarHorizontalInset)
     }
@@ -53,7 +49,7 @@ struct CameraToolbar: View {
         .accessibilityIdentifier("cameraCloseButton")
     }
 
-    // MARK: - Left: tools toggle (issue #135)
+    // MARK: - Right: tools toggle (issue #135)
 
     /// Opens/closes `CameraToolsCapsule`. A faint `CameraTheme.fill` disc
     /// behind the icon marks the expanded state.
@@ -89,24 +85,14 @@ struct CameraToolbar: View {
             .accessibilityIdentifier("cameraDayHUD")
     }
 
-    // MARK: - Right: flip
+    // MARK: - Size
 
     /// Tap target of every toolbar button (issue #137; was 38).
     static let buttonSize: CGFloat = 44
-
-    private var flipButton: some View {
-        Button(action: model.switchCamera) {
-            Image(systemName: "arrow.triangle.2.circlepath.camera")
-                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
-                .rotatedChrome(model.viewfinderRotation)
-        }
-        .disabled(model.isCaptureUnsupported)
-        .opacity(model.isCaptureUnsupported ? 0.35 : 1)
-        .accessibilityLabel("翻轉鏡頭")
-    }
 }
 
-/// The horizontal pill that floats below the toolbar's toggle (issue #135,
+/// The horizontal pill that floats below the toolbar's toggle, right-aligned
+/// under it (issue #135,
 /// D-1's `.pop` style) holding flash, timer and grid. Tapping a tool cycles
 /// it and leaves the pill open, so several can be adjusted in a row. The pill
 /// has its own white background, so icons always use `CameraTheme.ink`.

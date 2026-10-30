@@ -180,14 +180,17 @@ struct CameraScreen: View {
 
     // MARK: - Tools capsule (issue #135)
 
-    /// Floats above the viewfinder, left-aligned with the toolbar's own
-    /// inset and 4pt below the toggle button.
+    /// Floats above the viewfinder, right-aligned with the toolbar's own
+    /// inset and 4pt below the toggle button, which sits at the top right
+    /// (human decision 2026-10-31).
     @ViewBuilder
     private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isCameraToolsExpanded {
+            let inset = CameraScreenLayoutMetrics.toolbarHorizontalInset
             CameraToolsCapsule(model: model)
-                .offset(x: CameraScreenLayoutMetrics.toolbarHorizontalInset, y: metrics.toolsCapsuleTop)
-                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
+                .frame(width: metrics.screenSize.width - 2 * inset, alignment: .trailing)
+                .offset(x: inset, y: metrics.toolsCapsuleTop)
+                .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
         }
     }
 
@@ -314,11 +317,12 @@ struct CameraScreen: View {
 
     // MARK: - Bottom bar (FR-20.5)
 
-    /// Newest photo at the left, the shutter in the middle. No text labels,
-    /// no background — every button is just an icon (PRD 0.2 FR-14.2).
+    /// Newest photo at the left, the shutter in the middle, flip at the right
+    /// (human decision 2026-10-31). No text labels, no background — every
+    /// button is just an icon (PRD 0.2 FR-14.2).
     ///
-    /// The thumbnail's center sits `footerSideButtonCenterInset` from the
-    /// screen edge; the row sits 16pt above the bottom of the footer region.
+    /// The side buttons' centers sit `footerSideButtonCenterInset` from the
+    /// screen edges; the row sits 16pt above the bottom of the footer region.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
         return ZStack {
@@ -326,6 +330,7 @@ struct CameraScreen: View {
             HStack {
                 thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
+                flipButton(isOnPhoto: isOnPhoto)
             }
             .padding(.horizontal, sideInset)
         }
@@ -367,6 +372,21 @@ struct CameraScreen: View {
         .modifier(ThumbnailLandingEffect(landingCount: model.thumbnailLandingCount))
         .accessibilityLabel("最新照片，回到照片牆")
         .accessibilityIdentifier("cameraLatestThumbnail")
+    }
+
+    /// Right key: switches between the back and front cameras.
+    private func flipButton(isOnPhoto: Bool) -> some View {
+        Button(action: model.switchCamera) {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(.system(size: Self.footerIconSize, weight: .medium))
+                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
+                .legibleOverPhoto(isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .disabled(model.isCaptureUnsupported)
+        .opacity(model.isCaptureUnsupported ? 0.35 : 1)
+        .accessibilityLabel("翻轉鏡頭")
     }
 
     private func showThumbnail(_ image: UIImage?) {
