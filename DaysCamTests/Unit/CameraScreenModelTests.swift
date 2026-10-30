@@ -211,6 +211,7 @@ final class CameraScreenModelTests: XCTestCase {
                            flashCapabilityProvider: FlashCapabilityProviding? = nil,
                            captureSettingsStore: CaptureSettingsStore? = nil,
                            countdownTicker: CountdownTicker = SystemCountdownTicker(),
+                           saveCoordinator: CaptureSaveCoordinator? = nil,
                            save: @escaping CameraScreenModel.Save = { _, _, _, completion in
                                completion(.success(RecordSaveOutcome(assetID: "asset-1", albumID: nil)))
                            },
@@ -236,6 +237,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       calendar: DateFixture.taipei,
                                       calculator: DayCountCalculator(calendar: DateFixture.taipei, now: resolvedClock.now),
                                       countdownTicker: countdownTicker,
+                                      saveCoordinator: saveCoordinator,
                                       save: save,
                                       captureImage: captureImage,
                                       loadLatestPhoto: loadLatestPhoto,
@@ -1302,6 +1304,78 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { saves.calls.count == 2 }
         saves.calls[1].completion(.failure(.saveFailed("x")))
         XCTAssertFalse(model.isShutterBusy, "621-5 a failure frees it too")
+    }
+
+    /// 621-5 (#636 review): a camera opened while the previous one's photos
+    /// are still saving shares their count, so closing and reopening never
+    /// passes the limit.
+    func test_621_5_reopenedCameraSharesTheInFlightLimit() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, albumIdentifier: "album-1")
+        let coordinator = CaptureSaveCoordinator()
+        let saves = SaveRecorder()
+        let (first, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        first.processCapturedImage(UIImage(), destination: destination(of: record))
+        first.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { first.captureFlights.count == 2 && saves.calls.count == 1 }
+        first.onDisappear()
+
+        let (second, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                              saveCoordinator: coordinator, save: saves.save)
+        XCTAssertEqual(second.inFlightSaveCount, 2, "the closed camera's photos still count")
+        XCTAssertTrue(second.isShutterBusy, "621-5 the new camera starts at the limit")
+        XCTAssertTrue(second.isShutterDisabled)
+
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
+        XCTAssertEqual(second.inFlightSaveCount, 1)
+        XCTAssertFalse(second.isShutterBusy, "one answered frees one place")
+
+        second.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { second.captureFlights.count == 1 }
+        XCTAssertEqual(coordinator.inFlightCount, 2)
+        XCTAssertTrue(second.isShutterBusy, "never more than two across cameras")
+
+        waitUntil { saves.calls.count == 2 }
+        saves.calls[1].completion(.success(outcome("B", album: "album-1")))
+        waitUntil { saves.calls.count == 3 }
+        saves.calls[2].completion(.success(outcome("C", album: "album-1")))
+        waitUntil { coordinator.inFlightCount == 0 }
+        XCTAssertEqual(coordinator.inFlightCount, 0)
+    }
+
+    /// 621-2 (#636 review): a record without an album gets one album even
+    /// when two camera models save for it: the second waits for the first
+    /// and saves into the album it created.
+    func test_621_2_twoCamerasCreateOneAlbumForARecordWithoutOne() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let coordinator = CaptureSaveCoordinator()
+        let saves = SaveRecorder()
+        let (first, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        first.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { saves.calls.count == 1 }
+        first.onDisappear()
+
+        let (second, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                              saveCoordinator: coordinator, save: saves.save)
+        second.processCapturedImage(UIImage(), destination: destination(of: record))
+        waitUntil { second.captureFlights.count == 1 }
+        XCTAssertEqual(saves.calls.count, 1, "the second camera's save waits for the first")
+        XCTAssertNil(saves.calls[0].albumIdentifier)
+
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
+        waitUntil { saves.calls.count == 2 }
+        XCTAssertEqual(saves.calls[1].albumIdentifier, "album-1", "saved into the album the first created")
+        saves.calls[1].completion(.success(outcome("B", album: "album-1")))
+
+        let stored = try storedRecord(record.id, in: store)
+        XCTAssertEqual(stored.albumIdentifier, "album-1")
+        XCTAssertTrue(stored.fallbackAssetIDs.isEmpty, "no second album, nothing to fall back on")
+        waitUntil { coordinator.inFlightCount == 0 }
     }
 
     /// 621-5: a failed first save and a successful second one each land on

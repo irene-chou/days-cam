@@ -110,6 +110,10 @@ struct DaysCamApp: App {
                                            library: any RecordAlbumLibrary,
                                            listModel: RecordListModel) -> @MainActor (UUID) -> CameraScreenModel {
         let cameraService = CameraService()
+        // One count and one save queue for every camera opened, so closing
+        // and reopening cannot pass the in-flight limit or create a second
+        // album for a record (#636 review).
+        let saveCoordinator = CaptureSaveCoordinator()
         let save = cameraSave(library: library)
         return { id in
             profileStore.select(id: id)
@@ -117,6 +121,7 @@ struct DaysCamApp: App {
                 cameraService: cameraService,
                 profileStore: profileStore,
                 profileID: id,
+                saveCoordinator: saveCoordinator,
                 save: save,
                 loadLatestPhoto: {
                     guard let profile = profileStore.profiles.first(where: { $0.id == id }),

@@ -68,18 +68,22 @@ final class CameraScreenModel: ObservableObject {
     /// again (PRD 0.2 FR-5.5, #469); saving is counted by `inFlightSaveCount`.
     @Published private(set) var isCapturing = false
 
-    /// How many captured photos are still being prepared or saved. Goes up
-    /// when a photo arrives from the camera and down when that photo fails
-    /// or its save calls back (or times out), success or failure.
-    @Published private(set) var inFlightSaveCount = 0
+    /// The app's camera saves, shared with every other camera model: the
+    /// in-flight count and the one-at-a-time save queue (#636 review).
+    let saveCoordinator: CaptureSaveCoordinator
 
-    /// The most photos prepared or saved at once; at the limit the shutter
-    /// stays disabled so full-resolution images cannot pile up in memory.
-    static let maxInFlightSaves = 2
+    /// How many captured photos are still being prepared or saved, by this
+    /// camera or one closed before it. Goes up when a photo arrives from the
+    /// camera and down when that photo fails or its save calls back (or
+    /// times out), success or failure.
+    var inFlightSaveCount: Int { saveCoordinator.inFlightCount }
+
+    /// The most photos prepared or saved at once, across cameras.
+    static let maxInFlightSaves = CaptureSaveCoordinator.maxInFlightSaves
 
     /// Whether a capture or a full pipeline keeps the shutter disabled.
     var isShutterBusy: Bool {
-        isCapturing || inFlightSaveCount >= Self.maxInFlightSaves
+        isCapturing || saveCoordinator.isAtLimit
     }
 
     /// How long a photo may wait for its save to call back before it is given
@@ -106,12 +110,6 @@ final class CameraScreenModel: ObservableObject {
 
     /// Prepares one photo at a time, in capture order.
     private let pipelineQueue = DispatchQueue(label: "dayscam.capture-pipeline", qos: .userInitiated)
-
-    /// Photos waiting for the save before them to answer. Saves run one at a
-    /// time so a record without an album gets exactly one new album, not one
-    /// per photo taken in quick succession.
-    private var waitingSaves: [() -> Void] = []
-    private var isSaveRunning = false
 
     /// The pending capture-time failure alert, if any (PRD 0.1 §7.3).
     @Published private(set) var captureError: CaptureAlertError?
@@ -199,6 +197,7 @@ final class CameraScreenModel: ObservableObject {
          calculator: DayCountCalculator = DayCountCalculator(),
          renderer: TemplateRenderer = TemplateRenderer(),
          countdownTicker: CountdownTicker = SystemCountdownTicker(),
+         saveCoordinator: CaptureSaveCoordinator? = nil,
          save: @escaping Save = { image, albumIdentifier, albumTitle, completion in
              PhotoSaver().saveToRecordAlbum(image, albumIdentifier: albumIdentifier,
                                             albumTitle: albumTitle, completion: completion)
@@ -264,6 +263,7 @@ final class CameraScreenModel: ObservableObject {
         self.calculator = calculator
         self.renderer = renderer
         self.countdownTicker = countdownTicker
+        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.save = save
         self.captureImage = captureImage ?? { [cameraService] flashMode, completion in
             cameraService.capturePhoto(flashMode: flashMode, completion: completion)
@@ -277,6 +277,7 @@ final class CameraScreenModel: ObservableObject {
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profile = profileStore.profiles.first { $0.id == profileID }
         bindToProfileStore()
+        bindToSaveCoordinator()
         bindToCameraService()
         bindToZoomModel()
         bindToFocusModel()
@@ -293,6 +294,13 @@ final class CameraScreenModel: ObservableObject {
                 guard let self else { return }
                 self.profile = profiles.first { $0.id == self.profileID }
             }
+            .store(in: &cancellables)
+    }
+
+    /// The shutter and the count follow saves of other cameras too.
+    private func bindToSaveCoordinator() {
+        saveCoordinator.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
     }
 
@@ -708,7 +716,7 @@ extension CameraScreenModel {
         // Counted here, synchronously on the main actor, so a test calling
         // this directly goes through the same `+1` → `-1` transition as the
         // real flow.
-        inFlightSaveCount += 1
+        saveCoordinator.photoDidArrive()
         // Only the capture's ID is kept for the timing log, so a pending save
         // timeout does not hold the full-resolution photo in memory.
         let timingID = CaptureTiming.timingID(of: image)
@@ -720,7 +728,7 @@ extension CameraScreenModel {
                 CaptureTiming.discard(id: timingID)
                 DispatchQueue.main.async {
                     self.reportPhotoFailure(message: "照片處理失敗，請再試一次。", showsSettingsAction: false)
-                    self.inFlightSaveCount -= 1
+                    self.saveCoordinator.photoDidFinish()
                 }
                 return
             }
@@ -735,7 +743,7 @@ extension CameraScreenModel {
             // with the library write (issue #148).
             DispatchQueue.main.async {
                 self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail))
-                self.enqueueSave { finished in
+                self.saveCoordinator.enqueueSave { finished in
                     self.startSave(upright, destination: destination, flightID: flightID,
                                    timingID: timingID, finished: finished)
                 }
@@ -743,29 +751,11 @@ extension CameraScreenModel {
         }
     }
 
-    /// Runs `start` once every earlier save has answered (or timed out).
-    /// `start` calls the closure it is handed exactly once when its save is
-    /// over, which starts the next.
-    private func enqueueSave(_ start: @escaping (_ finished: @escaping () -> Void) -> Void) {
-        waitingSaves.append { start { self.saveDidFinish() } }
-        startNextSaveIfIdle()
-    }
-
-    private func startNextSaveIfIdle() {
-        guard !isSaveRunning, !waitingSaves.isEmpty else { return }
-        isSaveRunning = true
-        waitingSaves.removeFirst()()
-    }
-
-    private func saveDidFinish() {
-        isSaveRunning = false
-        startNextSaveIfIdle()
-    }
-
     /// Saves one prepared photo, with its timeout (TASK-151).
     private func startSave(_ image: UIImage, destination: CaptureDestination, flightID: UUID,
                            timingID: UUID?, finished: @escaping () -> Void) {
         let store = profileStore
+        let coordinator = saveCoordinator
         // The album as the record has it now: an earlier photo may just have
         // created it.
         let albumIdentifier = store.profiles.first { $0.id == destination.profileID }?.albumIdentifier
@@ -779,7 +769,7 @@ extension CameraScreenModel {
             self?.markFlightFailed(id: flightID)
             self?.reportPhotoFailure(message: "照片儲存逾時，這張可能沒有存進相簿。請再試一次。",
                                      showsSettingsAction: false)
-            self?.inFlightSaveCount -= 1
+            coordinator.photoDidFinish()
             finished()
         }
         slot.timeout = timeout
@@ -806,7 +796,7 @@ extension CameraScreenModel {
                 self.reportPhotoFailure(message: error.displayMessage,
                                         showsSettingsAction: error.showsSettingsAction)
             }
-            self.inFlightSaveCount -= 1
+            self.saveCoordinator.photoDidFinish()
             finished()
         }
     }
