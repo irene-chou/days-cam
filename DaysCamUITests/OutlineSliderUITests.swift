@@ -91,7 +91,9 @@ final class OutlineSliderUITests: XCTestCase {
         app.buttons["描邊"].tap()
         XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3))
         strokeSlider.adjust(toNormalizedSliderPosition: 1)
-        // The drag can stop one step short of the end (5.5 of 6).
+        // On a slow CI runner the synthesized drag can stop well short; drag
+        // once more before checking. It can still stop one step short (5.5 of 6).
+        if points(strokeSlider) < 5.5 { strokeSlider.adjust(toNormalizedSliderPosition: 1) }
         let dragged = points(strokeSlider)
         XCTAssertGreaterThanOrEqual(dragged, 5.5)
         app.buttons["底框"].tap()
