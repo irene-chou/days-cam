@@ -135,6 +135,10 @@ final class ExportModel: ObservableObject, OverlayPanelHosting {
     /// screen stays what this export bakes.
     var isEditable: Bool { !isExporting }
 
+    /// Whether the xmark can leave the page: never while exporting, so the
+    /// background export cannot save a photo or raise an error nobody sees (#633).
+    var canCancel: Bool { !isExporting }
+
     /// Whether the preview's text can be dragged now.
     var isOverlayDraggable: Bool { panelModel.isOverlayDraggable && isEditable }
 

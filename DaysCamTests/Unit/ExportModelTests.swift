@@ -362,6 +362,40 @@ final class ExportModelTests: XCTestCase {
         XCTAssertNotEqual(store.profiles.first { $0.id == profile.id }?.position, before)
     }
 
+    /// #633 驗收 1: the xmark cannot leave the page while exporting (so no
+    /// orphan export saves a photo); a failure gives it back.
+    func testCancelIsDisabledWhileExportingAndReturnsAfterFailure() async throws {
+        let (store, profile) = try makeStore()
+        let photo = photo()
+        let library = ExportLibrary(photos: [photo])
+        library.holdsFullImage = true
+        library.fullImageError = RecordAlbumError.failed("network")
+        let model = makeModel(store: store, profile: profile, photo: photo, library: library)
+        XCTAssertTrue(model.canCancel)
+
+        let export = Task { await model.export() }
+        while library.heldCount == 0 { await Task.yield() }
+        XCTAssertFalse(model.canCancel)
+
+        library.release()
+        await export.value
+        XCTAssertNotNil(model.exportError)
+        XCTAssertTrue(model.canCancel, "unlocked after a failure")
+    }
+
+    /// #633 驗收 2: the page cannot be left while exporting, so it cannot be
+    /// reopened to bypass the one-at-a-time guard; success stays locked until
+    /// the page dismisses.
+    func testCancelStaysDisabledAfterSuccessUntilDismiss() async throws {
+        let (store, profile) = try makeStore()
+        let photo = photo()
+        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
+                              scheduled: { _, _ in })
+        await model.export()
+        XCTAssertFalse(model.canCancel)
+        XCTAssertFalse(model.canExport)
+    }
+
     /// Success keeps it locked until the page closes.
     func testEditingStaysLockedAfterSuccess() async throws {
         let (store, profile) = try makeStore()
