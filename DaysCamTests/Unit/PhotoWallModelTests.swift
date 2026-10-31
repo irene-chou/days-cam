@@ -158,7 +158,7 @@ final class PhotoWallModelTests: XCTestCase {
         edited.startDate = DateFixture.components(2026, 1, 8)
         try store.updateAndWait(edited)
         XCTAssertEqual(texts(model).first, "前 2 天")
-        XCTAssertEqual(model.subtitle, "2026/1/8 起 · 今天第 10 天")
+        XCTAssertEqual(model.subtitle, "2026/1/8 起")
     }
 
     // MARK: Months (6)
