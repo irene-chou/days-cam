@@ -139,8 +139,8 @@ struct PhotoWallView: View {
         .accessibilityIdentifier("wallTitle")
     }
 
-    // 選取, 全選 and 取消 use the default text color, not the theme's
-    // (2026-11-01 ruling, #662).
+    // The whole top bar (選取, ⋯, 全選, 取消) uses the default text color,
+    // not the theme's (2026-11-01 ruling, #662).
 
     /// 選取, left of ⋯; off for an empty record (FR-17.9, FR-17.10).
     private var selectButton: some View {
@@ -208,6 +208,7 @@ struct PhotoWallView: View {
         } label: {
             Image(systemName: "ellipsis")
         }
+        .tint(.primary)
         .accessibilityLabel("更多")
         .accessibilityIdentifier("wallMoreButton")
     }
