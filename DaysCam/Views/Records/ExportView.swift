@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The export page of one photo (PRD 2.0 FR-19, D-7 screen 4).
 ///
-/// Top bar `xmark`｜匯出 + 第 N 天｜`checkmark`; a preview about 52% of the
+/// Top bar `xmark`｜編輯文字樣式 + 第 N 天｜匯出; a preview about 52% of the
 /// width at the photo's own aspect ratio, with the record's overlay drawn by
 /// the same `OverlayTextView`／`FilmDateStampView` the bake matches; the
 /// overlay panel (樣式｜內容) below it, always open; one line at the bottom.
@@ -126,7 +126,7 @@ struct ExportView: View {
             .accessibilityIdentifier("exportCancelButton")
             Spacer()
             VStack(spacing: 1) {
-                Text("匯出")
+                Text("編輯文字樣式")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(CameraTheme.ink)
                 Text(model.dayTitle)
@@ -143,7 +143,7 @@ struct ExportView: View {
         .frame(height: Self.headerHeight)
     }
 
-    /// The checkmark; a spinner with the download progress while exporting
+    /// The 匯出 text button; a spinner with the download progress while exporting
     /// (FR-19.7).
     private var confirmButton: some View {
         Button {
@@ -155,17 +155,17 @@ struct ExportView: View {
                         .progressViewStyle(.circular)
                         .tint(CameraTheme.active)
                 } else {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
+                    Text("匯出")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(model.canExport ? CameraTheme.active : CameraTheme.inkTertiary)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!model.canExport)
-        .accessibilityLabel(model.isExporting ? "匯出中" : "完成")
+        .accessibilityLabel(model.isExporting ? "匯出中" : "匯出")
         .accessibilityIdentifier("exportConfirmButton")
     }
 

@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Each photo is shown at its own aspect ratio with the record's overlay
 /// baked on as a preview (`PhotoDetailModel.pageImage`); swiping moves
-/// through the wall's order. The 匯出 button at the bottom opens the export
+/// through the wall's order. The 編輯文字樣式 button at the bottom opens the export
 /// page of the photo on screen (FR-18.5, #620).
 struct PhotoDetailView: View {
     @StateObject private var model: PhotoDetailModel
@@ -103,16 +103,16 @@ struct PhotoDetailView: View {
 
     // MARK: - Export (FR-18.5)
 
-    /// The 匯出 capsule, centered; disabled for a photo without a date
+    /// The 編輯文字樣式 capsule, centered; disabled for a photo without a date
     /// (§6.1.3).
     private var exportBar: some View {
         Button {
             exportingPhoto = model.currentPhoto
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up")
+                Image(systemName: "textformat")
                     .font(.system(size: 17, weight: .semibold))
-                Text("匯出")
+                Text("編輯文字樣式")
                     .font(.system(size: 14, weight: .heavy))
             }
             .foregroundColor(CameraTheme.inkOnAccent)

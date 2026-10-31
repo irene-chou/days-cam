@@ -54,7 +54,7 @@ final class ExportUITests: XCTestCase {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let device = UIDevice.current.name.replacingOccurrences(of: " ", with: "")
                 .replacingOccurrences(of: "(", with: "").replacingOccurrences(of: ")", with: "")
-            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR620_\(name)_\(device).png"))
+            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR643_\(name)_\(device).png"))
         }
     }
 
@@ -69,7 +69,7 @@ final class ExportUITests: XCTestCase {
         launch(portrait: true)
         let title = element("exportTitle")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertTrue(title.label.contains("匯出"), title.label)
+        XCTAssertTrue(title.label.contains("編輯文字樣式"), title.label)
         XCTAssertTrue(title.label.contains("第 10 天"), title.label)
         let preview = element("exportPreview")
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
@@ -79,13 +79,14 @@ final class ExportUITests: XCTestCase {
         XCTAssertEqual(preview.frame.height / preview.frame.width, 4.0 / 3.0, accuracy: 0.03, "the photo's 3:4")
         XCTAssertTrue(app.staticTexts["存成新照片到「最近項目」，原圖不動"].exists)
         XCTAssertTrue(element("exportConfirmButton").isEnabled)
+        XCTAssertEqual(element("exportConfirmButton").label, "匯出", "2 the top right is the 匯出 text button")
         XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the panel stays open here")
 
         // 樣式, after the open-time dashed frame (#599) has faded.
         XCTAssertTrue(app.buttons["樣式"].isSelected)
         Thread.sleep(forTimeInterval: 2)
         assertOnScreen(preview, "preview in view")
-        assertOnScreen(element("exportConfirmButton"), "checkmark in view")
+        assertOnScreen(element("exportConfirmButton"), "匯出 in view")
         assertOnScreen(app.buttons["內容"], "segmented row in view")
         shot("style")
 
@@ -97,7 +98,7 @@ final class ExportUITests: XCTestCase {
         shot("content")
     }
 
-    /// 6: the checkmark exports and the viewer is back, with no error alert.
+    /// 6: the 匯出 button exports and the viewer is back, with no error alert.
     /// The 0.9-second toast is shorter than XCUITest's ~1s polling, so its
     /// text and the announcement are checked by `ExportModelTests` instead.
     func testExportReturnsToViewer() {
@@ -140,7 +141,7 @@ final class ExportUITests: XCTestCase {
         XCTAssertEqual(draggableText.frame.midY, moved.midY, accuracy: 3, "position kept")
     }
 
-    /// FR-18.5: the viewer's 匯出 button opens the page of the photo on screen,
+    /// FR-18.5: the viewer's 編輯文字樣式 button opens the page of the photo on screen,
     /// and `xmark` closes it.
     func testViewerExportButtonOpensThePage() {
         launch(opensExport: false)
@@ -150,6 +151,9 @@ final class ExportUITests: XCTestCase {
         let exportButton = element("exportButton")
         XCTAssertTrue(exportButton.waitForExistence(timeout: 5))
         XCTAssertTrue(exportButton.isEnabled)
+        XCTAssertTrue(exportButton.label.contains("編輯文字樣式"), "1 \(exportButton.label)")
+        assertOnScreen(exportButton, "1 button in view")
+        shot("viewer")
         exportButton.tap()
         let title = element("exportTitle")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
