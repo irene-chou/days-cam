@@ -161,7 +161,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 | FR-17.6 | 底部列：左「加入照片」膠囊鍵（`photo.on.rectangle.angled`，`accent` 底、`#2A1A08` 字，沿用 0.2 FR-15 的 CTA 樣式）、右相機圓鍵（`camera`，無框） |
 | FR-17.7 | 「加入照片」用 `PHPickerViewController`（`photoLibrary: .shared()`，多選、只有圖片）。選完把 `assetIdentifier` 加進相簿（`PHAssetCollectionChangeRequest.addAssets`）；相簿不存在就先建（名稱＝紀錄名稱）再加。加入失敗要報錯，不得報成成功 |
 | FR-17.8 | 相簿變動（`PHPhotoLibraryChangeObserver`）即時反映，包括使用者在「照片」App 加進或移出 |
-| FR-17.9 | 右上 ⋯：「編輯紀錄」、「允許取用所有照片」（只在限制取用時出現，開系統設定，§7.3）、「刪除紀錄」（紅）。不顯示灰字佔位（2026-11-01 人類裁定，#642） |
+| FR-17.9 | 右上 ⋯：「編輯紀錄」、「設定照片權限」（只在限制取用時出現，開系統設定，§7.3）、「刪除紀錄」（紅）。不顯示灰字佔位（2026-11-01 人類裁定，#642） |
 | FR-17.10 | 空狀態（相簿空、也沒有 fallback）：中央「還沒有照片」＋「從相簿加入，或用相機拍一張」；不放中央按鈕，只用底部同一顆「加入照片」鍵 |
 
 ### 5.3 FR-18：大圖（D-7 畫面 3）
@@ -252,7 +252,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 |---|---|
 | 7.1 | 第一次點進任何紀錄（照片牆）時請求 `.readWrite`。說明文字（`project.yml` 的 `NSPhotoLibraryUsageDescription`）改為「DaysCam 需要讀取相簿來顯示每張照片是第幾天，並把你挑的照片整理進紀錄的相簿。照片本身不會被修改。」 |
 | 7.2 | `.authorized`：全部功能 |
-| 7.3 | `.limited`（限制取用）：看不到相簿也不能改相簿，而且 `PHPicker` 選出的照片若不在限制集合裡，之後也讀不到（不可依賴 picker）。這時紀錄的照片＝**該紀錄 `fallbackAssetIDs` 中仍在限制集合內的照片**（2026-10-31 人類裁定，#640；原「App 可見的全部照片 ∪ `fallbackAssetIDs`」讓每個紀錄看到同一批照片，實機回報令人疑惑）。App 可見但沒有紀錄記下的照片不出現在任何紀錄；使用者從限制集合取消勾選的照片讀不到、自然不顯示，`fallbackAssetIDs` 不清除。「加入照片」改開 `presentLimitedLibraryPicker(from:completionHandler:)`，把回傳的**新勾選** ID 去重後附加到**當下這個紀錄**的 `fallbackAssetIDs`（系統只回傳這次新勾選的；原本就在限制集合內的照片不會回傳，因此不會被加入，已知限制）；相機存檔走 `.addOnly` 路徑並把 ID 寫進當下紀錄的 `fallbackAssetIDs`（App 自己建的照片在限制取用下可讀，0.2 A-7）。遷移來的舊照片只在 §4.3 指定的紀錄。照片牆頂端顯示可關閉的 banner「只允許部分照片，不會同步「照片」App 的相簿。」，右側 `xmark`（44pt 點擊區、VoiceOver「關閉提示」）；關閉後記在 UserDefaults（App 層級、不分紀錄），不再顯示，直到權限變成非 limited 後又回到 limited 才重新顯示。改成完整存取的入口在右上 ⋯「允許取用所有照片」（只在 limited 出現，開系統設定；回到 App 後重新讀取）（2026-11-01 人類裁定，#642）。`albumIdentifier` 不建不用 |
+| 7.3 | `.limited`（限制取用）：看不到相簿也不能改相簿，而且 `PHPicker` 選出的照片若不在限制集合裡，之後也讀不到（不可依賴 picker）。這時紀錄的照片＝**該紀錄 `fallbackAssetIDs` 中仍在限制集合內的照片**（2026-10-31 人類裁定，#640；原「App 可見的全部照片 ∪ `fallbackAssetIDs`」讓每個紀錄看到同一批照片，實機回報令人疑惑）。App 可見但沒有紀錄記下的照片不出現在任何紀錄；使用者從限制集合取消勾選的照片讀不到、自然不顯示，`fallbackAssetIDs` 不清除。「加入照片」改開 `presentLimitedLibraryPicker(from:completionHandler:)`，把回傳的**新勾選** ID 去重後附加到**當下這個紀錄**的 `fallbackAssetIDs`（系統只回傳這次新勾選的；原本就在限制集合內的照片不會回傳，因此不會被加入，已知限制）；相機存檔走 `.addOnly` 路徑並把 ID 寫進當下紀錄的 `fallbackAssetIDs`（App 自己建的照片在限制取用下可讀，0.2 A-7）。遷移來的舊照片只在 §4.3 指定的紀錄。照片牆頂端顯示可關閉的 banner「目前沒有開放完整權限，照片不會和原生相簿同步。前往設定 ›」（「前往設定 ›」強調色；文字部分可點，開系統設定），右側 `xmark`（44pt 點擊區、VoiceOver「關閉提示」）；關閉後記在 UserDefaults（App 層級、不分紀錄），不再顯示，直到權限變成非 limited 後又回到 limited 才重新顯示。改成完整存取的入口在右上 ⋯「設定照片權限」（只在 limited 出現，開系統設定；回到 App 後重新讀取）（2026-11-01 人類裁定，#642；banner 文字也可點開設定為同日追加）。`albumIdentifier` 不建不用 |
 | 7.4 | `.denied`／`.restricted`：照片牆換成權限頁（沿用 0.2 FR-15.8 的版面，文案改為 2.0 的理由）＋「前往設定」；紀錄列表仍可進、可編輯（相簿列例外，FR-21.4） |
 | 7.5 | 匯出存檔不另外請求權限（已有 `.readWrite` 或 `.limited` 都允許新增） |
 | 7.6 | 0.2 FR-5.3′「存檔只請求 addOnly」在 2.0 不再適用（因為進紀錄就要讀相簿）；AGENTS.md 的對應 review 規則要同步改 |

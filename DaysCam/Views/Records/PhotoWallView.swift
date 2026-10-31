@@ -113,7 +113,7 @@ struct PhotoWallView: View {
                 Button {
                     model.openLimitedAccessSettings()
                 } label: {
-                    Label("允許取用所有照片", systemImage: "photo.on.rectangle.angled")
+                    Label("設定照片權限", systemImage: "photo.on.rectangle.angled")
                 }
                 .accessibilityIdentifier("wallAllowAllPhotosItem")
             }
@@ -192,16 +192,28 @@ struct PhotoWallView: View {
                                        targetSize: CGSize(width: side * scale, height: side * scale))
     }
 
-    /// Limited access notice on top of the wall, dismissible (§7.3).
+    /// "前往設定 ›" joined with word joiners so it never breaks across lines.
+    private static let settingsLinkText = "前往設定 ›".map(String.init).joined(separator: "\u{2060}")
+
+    /// Limited access notice on top of the wall: the text opens Settings,
+    /// the xmark dismisses (§7.3).
     private var limitedBanner: some View {
         HStack(spacing: 0) {
-            Text("只允許部分照片，不會同步「照片」App 的相簿。")
-                .font(.system(size: 12.5))
-                .foregroundColor(CameraTheme.inkSecondary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 16)
-                .padding(.vertical, 8)
+            Button { model.openLimitedAccessSettings() } label: {
+                (Text("目前沒有開放完整權限，照片不會和原生相簿同步。")
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    + Text(Self.settingsLinkText)
+                    .foregroundColor(CameraTheme.active))
+                    .font(.system(size: 12.5))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 16)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("limitedAccessBannerSettings")
             Button { model.dismissLimitedNotice() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))

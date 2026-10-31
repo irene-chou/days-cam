@@ -51,7 +51,7 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "limited")
         let banner = element("limitedAccessBanner")
         XCTAssertTrue(banner.waitForExistence(timeout: 10), "1")
-        XCTAssertTrue(banner.staticTexts["只允許部分照片，不會同步「照片」App 的相簿。"].exists, "1")
+        XCTAssertTrue(app.buttons["limitedAccessBannerSettings"].label.replacingOccurrences(of: "\u{2060}", with: "") == "目前沒有開放完整權限，照片不會和原生相簿同步。前往設定 ›", "1")
         XCTAssertTrue(app.buttons["關閉提示"].exists, "1 xmark")
         XCTAssertGreaterThanOrEqual(app.buttons["關閉提示"].frame.height, 44, "1 44pt")
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
@@ -75,7 +75,7 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "limited")
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        XCTAssertTrue(app.buttons["允許取用所有照片"].waitForExistence(timeout: 5), "3")
+        XCTAssertTrue(app.buttons["設定照片權限"].waitForExistence(timeout: 5), "3")
         XCTAssertTrue(app.buttons["編輯紀錄"].exists)
         shot("limited-more-menu")
         app.terminate()
@@ -83,7 +83,7 @@ final class PhotoAccessUITests: XCTestCase {
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
         XCTAssertTrue(app.buttons["編輯紀錄"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["允許取用所有照片"].exists, "3")
+        XCTAssertFalse(app.buttons["設定照片權限"].exists, "3")
     }
 
     /// 3, 6: denied access replaces the wall with the permission page.
