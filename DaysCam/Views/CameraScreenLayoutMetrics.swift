@@ -233,9 +233,20 @@ struct CameraScreenLayoutMetrics {
     /// The toolbar's icon button height.
     static let toolbarButtonHeight: CGFloat = 44
 
-    /// Top edge of the tools capsule: the toggle button is vertically
-    /// centered in the header region below the top inset; the capsule sits
-    /// 4pt under it.
+    /// Gap between the two round keys at the top right (D9): the tools
+    /// toggle (inner) and flip (outermost).
+    static let toolbarRoundKeySpacing: CGFloat = 8
+
+    /// Distance from the screen's right edge to the tools capsule's right
+    /// edge: the capsule opens under the toggle, which sits one key and one
+    /// gap inside the flip button (FR-20.7, D9).
+    static var toolsCapsuleTrailingInset: CGFloat {
+        toolbarHorizontalInset + toolbarButtonHeight + toolbarRoundKeySpacing
+    }
+
+    /// Top edge of the tools capsule and of the record switcher's menu: the
+    /// top bar's buttons are vertically centered in the header region below
+    /// the top inset; both sit 4pt under them.
     var toolsCapsuleTop: CGFloat {
         let contentHeight = headerBottom - topInset
         return topInset + (contentHeight - Self.toolbarButtonHeight) / 2 + Self.toolbarButtonHeight + 4
@@ -310,6 +321,40 @@ struct CameraScreenLayoutMetrics {
         let scale = CGSize(width: layoutSize.width > 0 ? size.width / layoutSize.width : 1,
                            height: layoutSize.height > 0 ? size.height / layoutSize.height : 1)
         return ViewfinderPlacement(layoutSize: layoutSize, scale: scale, center: CGPoint(x: box.midX, y: box.midY))
+    }
+
+    // MARK: - Record menu (FR-20.8, #655)
+
+    /// Space kept between the record menu's bottom and the bottom bar's
+    /// region.
+    static let recordMenuBottomMargin: CGFloat = 16
+
+    /// The tallest the record switcher's menu may be: from `toolsCapsuleTop`
+    /// down to just above the bottom bar's region, so with many records it
+    /// scrolls instead of running under the shutter or off the screen.
+    var recordMenuMaxHeight: CGFloat {
+        max(0, footerRegionTop - Self.recordMenuBottomMargin - toolsCapsuleTop)
+    }
+
+    // MARK: - Swipe down to close (FR-20.11, #655)
+
+    /// How far a finger must move before a swipe to close starts, so a tap
+    /// on a top- or bottom-bar button stays a tap.
+    static let dismissSwipeMinimumDistance: CGFloat = 24
+
+    /// How far down a released swipe must have moved to close the camera.
+    static let dismissSwipeDistance: CGFloat = 120
+
+    /// How far down a quick flick must be heading to close the camera even
+    /// though it moved less than `dismissSwipeDistance`.
+    static let dismissSwipePredictedDistance: CGFloat = 240
+
+    /// Whether a released swipe closes the camera: mostly downward, and
+    /// either far enough or flicked hard enough.
+    static func isDismissSwipe(translation: CGSize, predictedEndTranslation: CGSize) -> Bool {
+        guard translation.height > abs(translation.width) else { return false }
+        return translation.height >= dismissSwipeDistance
+            || predictedEndTranslation.height >= dismissSwipePredictedDistance
     }
 
     // MARK: - Chrome-over-photo (issue #121)

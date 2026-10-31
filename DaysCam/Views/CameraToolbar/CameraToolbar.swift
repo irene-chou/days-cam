@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// The camera's top bar (PRD 2.0 FR-20.1–FR-20.3): `xmark` alone on the
-/// left, the 「第 N 天」 HUD centered, the tools toggle on the right (flash,
-/// timer and grid live in `CameraToolsCapsule`). Flip sits beside the
-/// shutter (`CameraScreen`, human decision 2026-10-31). No ratio, tone or
-/// profile menu any more (#621).
+/// The camera's top bar (PRD 2.0 FR-20.7, D9): an empty 44pt slot on the
+/// left (the overlay-preview switch of #656 goes there), the record
+/// switcher centered (FR-20.8), and on the right the tools toggle (inner)
+/// and the flip button (outermost), two matching round keys. Flash, timer
+/// and grid live in `CameraToolsCapsule`, which opens under the toggle.
 ///
 /// All state and actions come from `model` (`CameraScreenModel`); this view
 /// only lays it out and never touches `CaptureSettingsStore`/`CameraService`
@@ -17,78 +17,73 @@ struct CameraToolbar: View {
     /// faint shadow. Defaults to `false`.
     var isOnPhoto: Bool = false
 
-    /// Back to the photo wall (FR-20.1).
-    var onClose: () -> Void
-
     /// Both side groups get `.frame(maxWidth: .infinity, alignment:)` rather
-    /// than a `Spacer` on each side of the HUD, so the two boxes stay the
-    /// same width and the HUD stays on the true horizontal midline however
-    /// many buttons sit on either side (D-1).
+    /// than a `Spacer` on each side of the switcher, so the two boxes stay
+    /// the same width and the switcher stays on the true horizontal midline
+    /// however many buttons sit on either side (D-1).
     var body: some View {
         HStack(spacing: 0) {
-            closeButton
+            leftSlot
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            dayHUD
+            RecordSwitcherCapsule(model: model, isOnPhoto: isOnPhoto)
 
-            toolsToggleButton
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(spacing: Self.roundKeySpacing) {
+                toolsToggleButton
+                flipButton
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, CameraScreenLayoutMetrics.toolbarHorizontalInset)
     }
 
-    // MARK: - Left: close (FR-20.1)
+    // MARK: - Left: reserved (#656)
 
-    private var closeButton: some View {
-        Button(action: onClose) {
-            Image(systemName: "xmark")
-                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
-                .rotatedChrome(model.viewfinderRotation)
-        }
-        .accessibilityLabel("回到照片牆")
-        .accessibilityIdentifier("cameraCloseButton")
+    /// Holds the place of the overlay-preview switch (FR-20.9, #656).
+    private var leftSlot: some View {
+        Color.clear
+            .frame(width: Self.buttonSize, height: Self.buttonSize)
+            .accessibilityHidden(true)
     }
 
-    // MARK: - Right: tools toggle (issue #135)
+    // MARK: - Right: tools toggle and flip
 
-    /// Opens/closes `CameraToolsCapsule`. A faint `CameraTheme.fill` disc
-    /// behind the icon marks the expanded state.
+    /// Opens/closes `CameraToolsCapsule`; the chevron points the way it
+    /// will move.
     private var toolsToggleButton: some View {
         Button {
             model.toggleCameraTools()
         } label: {
             Image(systemName: model.isCameraToolsExpanded ? "chevron.up.circle" : "chevron.down.circle")
-                .toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
-                .background(
-                    Circle()
-                        .fill(CameraTheme.fill)
-                        .opacity(model.isCameraToolsExpanded ? 1 : 0)
-                )
+                .roundKey(isOnPhoto: isOnPhoto)
                 .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel("相機設定")
         .accessibilityValue(model.isCameraToolsExpanded ? "已展開" : "已收起")
     }
 
-    // MARK: - Center: day HUD (FR-20.2)
-
-    /// Plain text, the day this photo will be (`CameraScreenModel.dayHUDText`).
-    /// Not a button; it does not turn with the phone, like the profile chip
-    /// it replaces.
-    private var dayHUD: some View {
-        Text(model.dayHUDText)
-            .font(CameraTheme.toolFont(.subheadline).monospacedDigit())
-            .lineLimit(1)
-            .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-            .legibleOverPhoto(isOnPhoto)
-            .padding(.horizontal, 6)
-            .accessibilityIdentifier("cameraDayHUD")
+    /// Switches between the back and front cameras.
+    private var flipButton: some View {
+        Button(action: model.switchCamera) {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .roundKey(isOnPhoto: isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .disabled(model.isCaptureUnsupported)
+        .opacity(model.isCaptureUnsupported ? 0.35 : 1)
+        .accessibilityLabel("翻轉鏡頭")
     }
 
     // MARK: - Size
 
     /// Tap target of every toolbar button (issue #137; was 38).
     static let buttonSize: CGFloat = 44
+
+    /// Diameter of the round keys' `CameraTheme.fill` disc (D9 `.round`).
+    static let roundKeyDiameter: CGFloat = 40
+
+    /// Gap between the two round keys on the right (D9).
+    static let roundKeySpacing = CameraScreenLayoutMetrics.toolbarRoundKeySpacing
 }
 
 /// The horizontal pill that floats below the toolbar's toggle, right-aligned
@@ -181,6 +176,17 @@ private extension View {
     func toolbarIcon(isActive: Bool, isOnPhoto: Bool, width: CGFloat = CameraToolbar.buttonSize) -> some View {
         modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto, width: width))
     }
+
+    /// A top-bar round key (D9 `.round`): the icon on a faint
+    /// `CameraTheme.fill` disc inside the 44pt tap target.
+    func roundKey(isOnPhoto: Bool) -> some View {
+        toolbarIcon(isActive: false, isOnPhoto: isOnPhoto)
+            .background(
+                Circle()
+                    .fill(CameraTheme.fill)
+                    .frame(width: CameraToolbar.roundKeyDiameter, height: CameraToolbar.roundKeyDiameter)
+            )
+    }
 }
 
 /// A faint shadow (black 30%, radius 3) so light, on-photo chrome
@@ -206,7 +212,7 @@ extension View {
     return ZStack {
         CameraTheme.background.ignoresSafeArea()
         VStack {
-            CameraToolbar(model: model, onClose: {})
+            CameraToolbar(model: model)
             Spacer()
         }
     }
