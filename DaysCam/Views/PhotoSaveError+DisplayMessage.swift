@@ -12,9 +12,20 @@ extension PhotoSaveError {
         case .permissionDenied:
             // `.restricted` is folded into this same case by `PhotoSaver`
             // (PRD §2.3, PR #33) — one message covers both.
-            return "無法存入相簿，請到「設定 → DaysCam → 照片」開啟「加入照片」權限。這張照片尚未儲存。"
+            return "新照片沒有存起來。請到「設定」›「DaysCam」›「照片」允許取用後再試一次。"
         case let .saveFailed(description):
             return "儲存失敗：\(description)。請確認裝置儲存空間後再試一次。"
+        }
+    }
+
+    /// Camera wording (FR-20.4): the permission failure asks for another shot;
+    /// the shared `displayMessage` is for export and other callers.
+    var cameraDisplayMessage: String {
+        switch self {
+        case .permissionDenied:
+            return "這張照片沒有存起來。請到「設定」›「DaysCam」›「照片」允許取用後再拍一次。"
+        case .saveFailed:
+            return displayMessage
         }
     }
 

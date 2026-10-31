@@ -1,4 +1,5 @@
 import Photos
+import UIKit
 import XCTest
 @testable import DaysCam
 
@@ -135,7 +136,6 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertTrue(model.canDelete)
         model.requestDeletion(of: second.id)
         XCTAssertEqual(model.deletionCandidate?.id, second.id)
-        XCTAssertTrue(RecordListModel.deletionMessage.contains("相簿與照片不會被刪除"))
         model.confirmDeletion()
         XCTAssertEqual(store.profiles.count, 1)
     }
@@ -195,15 +195,60 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(library.authorizationStatus(), .authorized)
     }
 
-    func testAlbumRowNeedsPermissionWhenDeniedOrLimited() throws {
+    /// #649-5: the album row's four states.
+    func testAlbumRowStatesFollowPhotoAccess() throws {
         let store = makeStore()
         let record = try XCTUnwrap(store.profiles.first)
-        for status in [PHAuthorizationStatus.denied, .restricted, .limited] {
+        let undecided = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .notDetermined))
+        XCTAssertEqual(undecided.albumRowState(for: record), .notAsked(title: "建立時會在「照片」App 建立「\(record.name)」"))
+        let limited = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .limited))
+        XCTAssertEqual(limited.albumRowState(for: record), .needsSettings(title: "只允許部分照片時無法選相簿"))
+        for status in [PHAuthorizationStatus.denied, .restricted] {
             let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: status))
-            XCTAssertEqual(model.albumRowState(for: record), .needsPermission, "\(status)")
+            XCTAssertEqual(model.albumRowState(for: record), .needsSettings(title: "需要「照片」權限"), "\(status)")
         }
         let open = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .authorized))
         XCTAssertEqual(open.albumRowState(for: record), .available(title: "建立新相簿「\(record.name)」"))
+        let bound = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "a1", title: "寶寶", assetIDs: [])])
+        var withAlbum = record
+        withAlbum.albumIdentifier = "a1"
+        XCTAssertEqual(makeModel(store: store, library: bound).albumRowState(for: withAlbum), .available(title: "寶寶"))
+    }
+
+    /// #649-5: the settings rows open the injected URL.
+    func testOpenAppSettingsUsesTheInjectedOpener() {
+        var opened: [URL] = []
+        let model = RecordListModel(store: makeStore(), library: FakeRecordAlbumLibrary(),
+                                    openSettings: { opened.append($0) })
+        model.openAppSettings()
+        XCTAssertEqual(opened.map(\.absoluteString), [UIApplication.openSettingsURLString])
+    }
+
+    /// #649-3: footer text by access state.
+    func testFooterTextByAuthorization() {
+        let same = "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現"
+        for status in [PHAuthorizationStatus.authorized, .notDetermined] {
+            XCTAssertEqual(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: status)).footerText, same)
+        }
+        XCTAssertEqual(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: .limited)).footerText,
+                       "目前沒有開放完整權限，紀錄不會和原生相簿同步")
+        for status in [PHAuthorizationStatus.denied, .restricted] {
+            XCTAssertNil(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: status)).footerText)
+        }
+    }
+
+    /// #649-6: the delete confirmation names the bound album.
+    func testDeletionMessageNamesTheBoundAlbum() throws {
+        let store = makeStore()
+        var record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "a1", title: "寶寶", assetIDs: [])])
+        let model = makeModel(store: store, library: library)
+        record.albumIdentifier = "a1"
+        XCTAssertEqual(model.deletionMessage(for: record), "「照片」App 裡的「寶寶」相簿和照片都會保留。")
+        record.albumIdentifier = nil
+        XCTAssertEqual(model.deletionMessage(for: record), "照片會保留在「照片」App。")
+        record.albumIdentifier = "gone"
+        XCTAssertEqual(model.deletionMessage(for: record), "照片會保留在「照片」App。")
     }
 
     // MARK: New record

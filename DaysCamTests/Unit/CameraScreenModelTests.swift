@@ -1458,7 +1458,7 @@ final class CameraScreenModelTests: XCTestCase {
         model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
 
         waitUntil { model.captureError != nil && model.inFlightSaveCount == 0 }
-        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
+        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.cameraDisplayMessage)
         XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
     }
 
@@ -1853,6 +1853,63 @@ final class CameraScreenModelTests: XCTestCase {
 
         XCTAssertEqual(reported.count, 1, "the failure reaches the 紀錄 list")
         XCTAssertEqual(coordinator.inFlightCount, 0)
+    }
+
+    /// 639-1: the shutter fires, the camera closes before the photo comes
+    /// back, and `stop()` answers the capture with `.notRunning`: the 紀錄
+    /// list is told the photo was not taken, nothing counts as saved.
+    func test_639_1_closingRightAfterTheShutterReportsThePhotoNotTaken() throws {
+        let saves = SaveRecorder()
+        let captures = CaptureRecorder()
+        var reported: [(CaptureAlertError, Int)] = []
+        var made: (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore)? =
+            try makeModel(save: saves.save, captureImage: captures.capture,
+                          reportFailureAfterClose: { reported.append(($0, $1)) })
+        let coordinator = try XCTUnwrap(made?.0.saveCoordinator)
+
+        made?.0.beginCapture()
+        XCTAssertEqual(captures.completions.count, 1, "the shutter fired")
+        made?.0.onDisappear()
+        made = nil // the camera's view dropped the model
+
+        captures.completions[0](.failure(.notRunning))
+
+        XCTAssertEqual(reported.count, 1, "the lost photo reaches the 紀錄 list")
+        XCTAssertEqual(reported.first?.0.message, CameraScreenModel.captureFailureMessage(.notRunning))
+        XCTAssertEqual(reported.first?.1, 1)
+        XCTAssertTrue(saves.calls.isEmpty, "nothing is saved or reported as saved")
+        XCTAssertEqual(coordinator.inFlightCount, 0)
+    }
+
+    /// 639-1, the other outcome: the photo comes back after the camera
+    /// closed; it is saved and nothing is reported as failed.
+    func test_639_1_closingRightAfterTheShutterStillSavesAPhotoThatArrives() throws {
+        let saves = SaveRecorder()
+        let captures = CaptureRecorder()
+        var reported: [(CaptureAlertError, Int)] = []
+        let (model, _, _, _) = try makeModel(save: saves.save, captureImage: captures.capture,
+                                             reportFailureAfterClose: { reported.append(($0, $1)) })
+
+        model.beginCapture()
+        model.onDisappear()
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.success(outcome()))
+
+        XCTAssertTrue(reported.isEmpty)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+    }
+
+    /// A capture-level failure while the camera is open raises the alert
+    /// instead of leaving a flash with no photo (#639).
+    func testCaptureFailureWhileOpenRaisesTheAlert() throws {
+        let (model, captures, _) = try makePipelineModel()
+
+        model.beginCapture()
+        captures.completions[0](.failure(.noImageData))
+
+        XCTAssertEqual(model.captureError?.message, CameraScreenModel.captureFailureMessage(.noImageData))
+        XCTAssertFalse(model.isShutterBusy)
     }
 
     /// Closing the camera does not cancel a save in progress.

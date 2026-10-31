@@ -22,8 +22,8 @@ targets:
         CFBundleLocalizations:
           - zh-Hant
         NSCameraUsageDescription: DaysCam 需要使用相機來拍照，並把天數印在照片上。
-        NSPhotoLibraryAddUsageDescription: DaysCam 需要權限才能把拍好的照片存進你的相簿。
-        NSPhotoLibraryUsageDescription: DaysCam 需要讀取相簿來顯示每張照片是第幾天，並把你挑的照片整理進紀錄的相簿。照片本身不會被修改。
+        NSPhotoLibraryAddUsageDescription: DaysCam 需要權限，才能把拍的照片和匯出的新照片存進「照片」App。
+        NSPhotoLibraryUsageDescription: 每個紀錄會在「照片」App 建一本同名相簿，DaysCam 讀取裡面的照片來標出第幾天。照片本身不會被修改。
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         # 上架用：只用 HTTPS 下載字型，屬於出口管制豁免，免每次上傳都回答加密問卷（docs/RELEASE.md）。
         ITSAppUsesNonExemptEncryption: false

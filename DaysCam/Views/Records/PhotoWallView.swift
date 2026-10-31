@@ -259,10 +259,23 @@ struct PhotoWallView: View {
             Button {
                 if model.beginAddingPhotos() { showsPicker = true }
             } label: {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 22))
+                    .foregroundColor(CameraTheme.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("加入照片")
+            .accessibilityIdentifier("addPhotosButton")
+            Spacer()
+            Button {
+                camera = CameraSession(model: makeCameraModel(model.profileID))
+            } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "photo.on.rectangle.angled")
+                    Image(systemName: "camera")
                         .font(.system(size: 17, weight: .semibold))
-                    Text("加入照片")
+                    Text("拍照")
                         .font(.system(size: 14, weight: .heavy))
                 }
                 .foregroundColor(CameraTheme.inkOnAccent)
@@ -272,19 +285,6 @@ struct PhotoWallView: View {
                 .background(Capsule().fill(CameraTheme.accent))
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("addPhotosButton")
-            Spacer()
-            Button {
-                camera = CameraSession(model: makeCameraModel(model.profileID))
-            } label: {
-                Image(systemName: "camera")
-                    .font(.system(size: 22))
-                    .foregroundColor(CameraTheme.ink)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("拍一張")
             .accessibilityIdentifier("wallCameraButton")
         }
         .padding(.horizontal, 20)

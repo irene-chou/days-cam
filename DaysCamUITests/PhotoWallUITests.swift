@@ -59,7 +59,8 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "photoCell").element(boundBy: 4).waitForExistence(timeout: 5))
         XCTAssertEqual(dayLabels(), ["第 6 天", "第 7 天", "第 8 天", "第 9 天", "第 10 天"], "1")
         XCTAssertTrue(element("addPhotosButton").exists)
-        XCTAssertTrue(element("wallCameraButton").exists)
+        XCTAssertEqual(app.buttons["addPhotosButton"].label, "加入照片", "1")
+        XCTAssertTrue(app.buttons["wallCameraButton"].label.contains("拍照"), "1")
         shot("photo-wall")
     }
 
