@@ -23,7 +23,8 @@ final class PhotoAccessUITests: XCTestCase {
 
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles,
-                                "-UITestRecordPhotos", "\(photos)", "-UITestPhotoAccess", access]
+                                "-UITestRecordPhotos", "\(photos)", "-UITestPhotoAccess", access,
+                                "-limitedNoticeDismissed", "NO"]
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
         app.launch()
     }
@@ -50,12 +51,39 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "limited")
         let banner = element("limitedAccessBanner")
         XCTAssertTrue(banner.waitForExistence(timeout: 10), "1")
-        XCTAssertEqual(banner.label, "限制取用中，不會與「照片」App 的相簿同步", "1")
+        XCTAssertTrue(app.buttons["limitedAccessBannerSettings"].label.replacingOccurrences(of: "\u{2060}", with: "") == "目前沒有開放完整權限，照片不會和原生相簿同步。前往設定 ›", "1")
+        XCTAssertTrue(app.buttons["關閉提示"].exists, "1 xmark")
+        XCTAssertGreaterThanOrEqual(app.buttons["關閉提示"].frame.height, 44, "1 44pt")
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
         XCTAssertTrue(element("addPhotosButton").exists)
         XCTAssertTrue(banner.frame.maxY <= element("photoWall").frame.minY + 1, "1 the notice is on top")
         XCTAssertTrue(app.frame.contains(banner.frame), "6 in frame")
         shot("limited-banner")
+    }
+
+    /// 2: the xmark hides the notice.
+    func testDismissingTheNoticeHidesIt() {
+        launchWall(access: "limited")
+        XCTAssertTrue(element("limitedAccessBanner").waitForExistence(timeout: 10))
+        app.buttons["關閉提示"].tap()
+        XCTAssertFalse(element("limitedAccessBanner").waitForExistence(timeout: 1), "2")
+        XCTAssertTrue(element("photoWall").exists)
+    }
+
+    /// 3: the ⋯ menu has the settings item only under limited access.
+    func testMoreMenuHasAllowAllPhotosOnlyWhenLimited() {
+        launchWall(access: "limited")
+        XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
+        element("wallMoreButton").tap()
+        XCTAssertTrue(app.buttons["設定照片權限"].waitForExistence(timeout: 5), "3")
+        XCTAssertTrue(app.buttons["編輯紀錄"].exists)
+        shot("limited-more-menu")
+        app.terminate()
+        launchWall(access: "authorized")
+        XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
+        element("wallMoreButton").tap()
+        XCTAssertTrue(app.buttons["編輯紀錄"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["設定照片權限"].exists, "3")
     }
 
     /// 3, 6: denied access replaces the wall with the permission page.

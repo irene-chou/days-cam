@@ -58,6 +58,13 @@ final class PhotoWallModel: ObservableObject {
     private let calendar: Calendar
     private let todayText: (CameraProfile) -> String
     private let presentLimitedPicker: () async -> [String]
+    private let openSettings: (URL) -> Void
+    private let defaults: UserDefaults
+    /// App-wide flag behind the dismissed notice; cleared once the status is
+    /// seen to be anything but limited, so a later return to limited shows it
+    /// again (#642).
+    static let noticeDismissedKey = "limitedNoticeDismissed"
+    @Published private(set) var noticeDismissed: Bool
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
 
@@ -68,18 +75,25 @@ final class PhotoWallModel: ObservableObject {
     /// - Parameter presentLimitedPicker: Opens the system "select more photos"
     ///   sheet and returns the ids the user newly selected there; injected so
     ///   tests can stand in for the sheet.
+    /// - Parameter openSettings: Opens the app's Settings page from the
+    ///   limited access notice; injected so tests can capture the URL.
     init(profileID: UUID,
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
          todayText: @escaping (CameraProfile) -> String,
-         presentLimitedPicker: (() async -> [String])? = nil) {
+         presentLimitedPicker: (() async -> [String])? = nil,
+         openSettings: ((URL) -> Void)? = nil,
+         defaults: UserDefaults = .standard) {
         self.profileID = profileID
         self.store = store
         self.library = library
         self.calendar = calendar
         self.todayText = todayText
         self.presentLimitedPicker = presentLimitedPicker ?? { await LimitedLibraryPicker.present() }
+        self.openSettings = openSettings ?? { UIApplication.shared.open($0) }
+        self.defaults = defaults
+        self.noticeDismissed = defaults.bool(forKey: Self.noticeDismissedKey)
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
@@ -116,6 +130,23 @@ final class PhotoWallModel: ObservableObject {
     /// `fallbackAssetIDs` (§7.3).
     var isLimited: Bool { status == .limited }
 
+    /// Whether the notice shows: limited and not dismissed since it last
+    /// became limited.
+    var showsLimitedNotice: Bool { isLimited && !noticeDismissed }
+
+    /// Hides the notice until the status leaves limited and comes back.
+    func dismissLimitedNotice() {
+        defaults.set(true, forKey: Self.noticeDismissedKey)
+        noticeDismissed = true
+    }
+
+    /// Opens the app's Settings page so the user can switch to full access
+    /// (#642); the wall re-reads when the app returns to the foreground.
+    func openLimitedAccessSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openSettings(url)
+    }
+
     var content: Content {
         switch status {
         case .authorized, .limited: return photoIDs.isEmpty ? .empty : .photos
@@ -136,6 +167,10 @@ final class PhotoWallModel: ObservableObject {
     /// Re-reads the photos and recomputes every mark.
     func reload() {
         status = library.authorizationStatus()
+        if status != .limited, noticeDismissed {
+            defaults.set(false, forKey: Self.noticeDismissedKey)
+            noticeDismissed = false
+        }
         guard let profile, RecordReadMode(status: status) != .none else {
             photoIDs = []
             sections = []

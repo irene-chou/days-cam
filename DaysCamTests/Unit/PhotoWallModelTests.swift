@@ -199,6 +199,67 @@ final class PhotoWallModelTests: XCTestCase {
         XCTAssertFalse(full.isLimited)
     }
 
+    private func freshDefaults() -> UserDefaults {
+        let name = "limited-notice-\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: name) ?? .standard
+        suite.removePersistentDomain(forName: name)
+        return suite
+    }
+
+    /// #642: dismissing persists across walls; leaving limited and coming back
+    /// shows the notice again.
+    func testDismissedNoticeStaysHiddenUntilLimitedIsLeftAndReentered() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let defaults = freshDefaults()
+        let library = fiveJanuaryPhotos()
+        library.status = .limited
+        func wall() -> PhotoWallModel {
+            PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                           todayText: { _ in "" }, defaults: defaults)
+        }
+        let first = wall()
+        XCTAssertTrue(first.showsLimitedNotice)
+        first.dismissLimitedNotice()
+        XCTAssertFalse(first.showsLimitedNotice)
+        XCTAssertFalse(wall().showsLimitedNotice, "reopened wall")
+        library.status = .authorized
+        let second = wall()
+        second.reload()
+        XCTAssertFalse(second.showsLimitedNotice)
+        library.status = .limited
+        second.reload()
+        XCTAssertTrue(second.showsLimitedNotice, "limited again")
+        XCTAssertTrue(wall().showsLimitedNotice)
+    }
+
+    /// #642-2: the notice opens the Settings URL once.
+    func testLimitedNoticeOpensSettingsOnce() throws {
+        let (store, profile) = try makeStore()
+        var opened: [URL] = []
+        let model = PhotoWallModel(profileID: profile.id, store: store,
+                                   library: FakeRecordAlbumLibrary(status: .limited), calendar: calendar,
+                                   todayText: { _ in "" }, openSettings: { opened.append($0) },
+                                   defaults: freshDefaults())
+        model.openLimitedAccessSettings()
+        XCTAssertEqual(opened.map(\.absoluteString), [UIApplication.openSettingsURLString])
+    }
+
+    /// #642-3: limited becomes authorized, then reload drops the notice and
+    /// reads the album.
+    func testReloadAfterUpgradingToFullAccessDropsTheNotice() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        library.status = .limited
+        library.visibleIDs = []
+        let model = makeModel(store: store, profile: profile, library: library)
+        XCTAssertTrue(model.isLimited)
+        library.status = .authorized
+        library.visibleIDs = nil
+        model.reload()
+        XCTAssertFalse(model.isLimited)
+        XCTAssertEqual(model.content, .photos)
+    }
+
     /// #622-2: under limited access 「加入照片」 opens the system picker, shows
     /// no `PHPicker` and writes nothing to the library's albums.
     func testLimitedAddOpensTheSystemPickerAndWritesNoAlbum() throws {
