@@ -92,7 +92,7 @@ final class PhotoAccessUITests: XCTestCase {
         XCTAssertTrue(element("photoAccessDenied").waitForExistence(timeout: 10), "3")
         XCTAssertTrue(element("photoAccessSettingsButton").exists, "3")
         XCTAssertTrue(app.buttons["前往設定"].exists, "3")
-        XCTAssertTrue(app.staticTexts["DaysCam 需要讀取相簿，才能顯示每張照片是第幾天"].exists, "3")
+        XCTAssertTrue(app.staticTexts["到「設定」允許 DaysCam 取用照片，才能看到這個紀錄的照片和天數。"].exists, "3")
         XCTAssertFalse(element("photoWall").exists, "3 the wall is gone")
         XCTAssertFalse(element("limitedAccessBanner").exists)
         XCTAssertTrue(app.frame.contains(element("photoAccessSettingsButton").frame), "6 in frame")

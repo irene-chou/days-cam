@@ -812,7 +812,7 @@ extension CameraScreenModel {
             case let .failure(error):
                 CaptureTiming.discard(id: timingID)
                 self.markFlightFailed(id: flightID)
-                self.reportPhotoFailure(message: error.displayMessage,
+                self.reportPhotoFailure(message: error.cameraDisplayMessage,
                                         showsSettingsAction: error.showsSettingsAction)
             }
             self.saveCoordinator.photoDidFinish()

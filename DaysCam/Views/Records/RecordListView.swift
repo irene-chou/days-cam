@@ -21,12 +21,15 @@ struct RecordListView: View {
         NavigationStack(path: $model.path) {
             VStack(spacing: 0) {
                 list
-                Text("每個紀錄對應「照片」App 裡的一個相簿")
-                    .font(.system(size: 12.5))
-                    .foregroundColor(CameraTheme.inkTertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                if let footer = model.footerText {
+                    Text(footer)
+                        .font(.system(size: 12.5))
+                        .foregroundColor(CameraTheme.inkTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .accessibilityIdentifier("recordListFooter")
+                }
             }
             .background(CameraTheme.background.ignoresSafeArea())
             .navigationTitle("紀錄")
@@ -54,7 +57,7 @@ struct RecordListView: View {
         }
         .tint(CameraTheme.active)
         .preferredColorScheme(.light)
-        .confirmationDialog("刪除這個紀錄？\(RecordListModel.deletionMessage)",
+        .confirmationDialog(model.deletionCandidate.map { "刪除這個紀錄？\(model.deletionMessage(for: $0))" } ?? "刪除這個紀錄？",
                             isPresented: deletionBinding,
                             titleVisibility: .visible,
                             presenting: model.deletionCandidate) { candidate in

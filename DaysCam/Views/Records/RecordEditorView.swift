@@ -72,11 +72,17 @@ private struct RecordEditorContent: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("albumRow")
-            case .needsPermission:
-                albumRowLabel(title: "需要相簿權限", showsChevron: false)
+            case let .notAsked(title):
+                albumRowLabel(title: title, showsChevron: false)
                     .foregroundColor(CameraTheme.inkTertiary)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("albumRow")
+            case let .needsSettings(title):
+                Button { model.openAppSettings() } label: {
+                    albumRowLabel(title: title, showsChevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("albumRow")
             }
         }
         .background(
