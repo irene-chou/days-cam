@@ -57,7 +57,7 @@ struct RecordListView: View {
         }
         .tint(CameraTheme.active)
         .preferredColorScheme(.light)
-        .confirmationDialog(model.deletionCandidate.map { "刪除這個紀錄？\(model.deletionMessage(for: $0))" } ?? "刪除這個紀錄？",
+        .confirmationDialog(model.deletionPrompt,
                             isPresented: deletionBinding,
                             titleVisibility: .visible,
                             presenting: model.deletionCandidate) { candidate in

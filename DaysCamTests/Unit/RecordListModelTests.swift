@@ -136,6 +136,7 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertTrue(model.canDelete)
         model.requestDeletion(of: second.id)
         XCTAssertEqual(model.deletionCandidate?.id, second.id)
+        XCTAssertEqual(model.deletionPrompt, "刪除這個紀錄？照片會保留在「照片」App。")
         model.confirmDeletion()
         XCTAssertEqual(store.profiles.count, 1)
     }

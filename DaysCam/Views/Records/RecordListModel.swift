@@ -54,6 +54,9 @@ final class RecordListModel: ObservableObject {
     @Published private(set) var profiles: [CameraProfile]
     /// Non-nil while the delete confirmation should show.
     @Published private(set) var deletionCandidate: CameraProfile?
+    /// Confirmation text worked out once in `requestDeletion` and kept after
+    /// the dialog closes so its title does not change while it dismisses.
+    private(set) var deletionPrompt = "刪除這個紀錄？"
     /// The latest failed action, for the view to surface.
     @Published var lastError: Error?
     /// The pages pushed onto the list's navigation stack: a record's photo
@@ -227,6 +230,7 @@ final class RecordListModel: ObservableObject {
     /// Arms the delete confirmation; a no-op with one record left.
     func requestDeletion(of id: UUID) {
         guard canDelete, let profile = profile(id: id) else { return }
+        deletionPrompt = "刪除這個紀錄？\(deletionMessage(for: profile))"
         deletionCandidate = profile
     }
 
