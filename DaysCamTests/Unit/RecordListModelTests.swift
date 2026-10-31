@@ -503,6 +503,74 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
     }
 
+    /// #661 review: "建立新相簿" in a draft's picker creates nothing until the
+    /// checkmark; backing out leaves no album.
+    func testDraftPickerCreateWaitsForTheCheckmark() async throws {
+        let store = makeStore()
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first).with(albumIdentifier: "bound"))
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "bound", title: "既有", assetIDs: [])])
+        let model = makeModel(store: store, library: library)
+
+        model.addRecord()
+        guard case let .editor(discarded)? = model.path.first else { return XCTFail("the editor is pushed") }
+        await model.albumPickerModel(for: discarded).select(albumIdentifier: "bound")
+        await model.albumPickerModel(for: discarded).select(albumIdentifier: nil)
+        XCTAssertEqual(library.createdAlbumTitles, [], "not while a draft")
+        XCTAssertNil(store.profiles.first { $0.id == discarded }?.albumIdentifier, "marked to be created")
+        model.path = []
+        XCTAssertEqual(library.albums.count, 1, "backing out leaves no album")
+
+        model.addRecord()
+        guard case let .editor(kept)? = model.path.first else { return XCTFail("the editor is pushed") }
+        await model.albumPickerModel(for: kept).select(albumIdentifier: nil)
+        XCTAssertEqual(library.createdAlbumTitles, [])
+        model.confirmNewRecord()
+        await model.albumCreation?.value
+        XCTAssertEqual(library.createdAlbumTitles.count, 1, "created by the checkmark")
+        XCTAssertEqual(store.profiles.first { $0.id == kept }?.albumIdentifier, library.albums.last?.id)
+    }
+
+    /// #661 review: picking another album while "建立新相簿" is still being
+    /// created keeps the newer pick.
+    func testNewerPickWhileTheAlbumIsBeingCreatedWins() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [
+            .init(id: "a1", title: "一", assetIDs: []), .init(id: "a2", title: "二", assetIDs: [])
+        ])
+        try store.updateAndWait(record.with(albumIdentifier: "a1"))
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { await latch.hold() }
+        let picker = makeModel(store: store, library: library).albumPickerModel(for: record.id)
+
+        let creating = Task { await picker.select(albumIdentifier: nil) }
+        try await latch.waitUntilHolding()
+        await picker.select(albumIdentifier: "a2")
+        latch.release()
+        await creating.value
+        XCTAssertEqual(library.createdAlbumTitles.count, 1)
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, "a2", "the newer pick wins")
+        XCTAssertNil(picker.lastError)
+    }
+
+    /// #661 review: an album whose write-back failed is bound by the next
+    /// attempt instead of a second album being made.
+    func testFailedWriteBackReusesTheCreatedAlbum() async throws {
+        let store = makeStore()
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        let model = makeModel(store: store, library: library)
+        try setDirectoryWritable(false)
+        await model.backfillAlbumsIfNeeded(reportsFailure: true)
+        try setDirectoryWritable(true)
+        XCTAssertNotNil(model.lastError, "the failed write is reported")
+        XCTAssertNil(store.profiles.first?.albumIdentifier)
+        XCTAssertEqual(library.albums.count, 1)
+
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles.count, 1, "no second album")
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+    }
+
     /// 10: launch and returning to the foreground never ask, even undecided.
     func testLaunchAndForegroundNeverRequestAccess() async throws {
         for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {

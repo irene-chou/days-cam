@@ -93,6 +93,9 @@ final class RecordListModel: ObservableObject {
     /// Records with an album creation queued or running: a second trigger
     /// skips them (FR-21.6).
     private var albumCreationsInFlight: Set<UUID> = []
+    /// Albums created for a record whose write-back then failed: the next
+    /// attempt binds the same album instead of making another (#661 review).
+    private var unboundCreatedAlbums: [UUID: String] = [:]
 
     /// Creates a model over `store`.
     ///
@@ -413,7 +416,7 @@ final class RecordListModel: ObservableObject {
         guard library.authorizationStatus() == .authorized, id != draftID,
               store.profiles.first(where: { $0.id == id })?.albumIdentifier == nil else { return }
         do {
-            try await createAndBindAlbum(for: id, replacingBound: false)
+            try await createAndBindAlbum(for: id)
         } catch {
             if reportsFailure { lastError = error }
         }
@@ -424,20 +427,36 @@ final class RecordListModel: ObservableObject {
     ///
     /// Runs in `saveCoordinator`'s queue, so a camera save or "加入照片" for
     /// the record waits for it and uses the album it stored, and it waits
-    /// for them. Unless `replacingBound`, it creates nothing once the record
-    /// has an album (bound by a write before it in the queue). Returns
+    /// for them. The binding at the time of the request must still be there
+    /// when the queue reaches it and when the album is made: an album bound
+    /// meanwhile (a write before it in the queue, or a newer pick in the
+    /// album picker) wins, and nothing is created or overwritten. Returns
     /// without creating when `id` is already queued here.
-    private func createAndBindAlbum(for id: UUID, replacingBound: Bool) async throws {
-        guard albumCreationsInFlight.insert(id).inserted else { return }
+    private func createAndBindAlbum(for id: UUID) async throws {
+        guard let requested = store.profiles.first(where: { $0.id == id }),
+              albumCreationsInFlight.insert(id).inserted else { return }
         defer { albumCreationsInFlight.remove(id) }
+        let bindingAtRequest = requested.albumIdentifier
         try await saveCoordinator.serialized {
             guard library.authorizationStatus() == .authorized,
                   let current = store.profiles.first(where: { $0.id == id }),
-                  replacingBound || current.albumIdentifier == nil else { return }
-            let albumID = try await library.createAlbum(title: current.name)
-            guard var latest = store.profiles.first(where: { $0.id == id }) else { return }
+                  current.albumIdentifier == bindingAtRequest else { return }
+            let albumID: String
+            if let leftOver = unboundCreatedAlbums[id], library.userAlbums().contains(where: { $0.id == leftOver }) {
+                albumID = leftOver
+            } else {
+                albumID = try await library.createAlbum(title: current.name)
+            }
+            unboundCreatedAlbums[id] = nil
+            guard var latest = store.profiles.first(where: { $0.id == id }),
+                  latest.albumIdentifier == bindingAtRequest else { return }
             latest.albumIdentifier = albumID
-            try store.updateAndWait(latest)
+            do {
+                try store.updateAndWait(latest)
+            } catch {
+                unboundCreatedAlbums[id] = albumID
+                throw error
+            }
         }
     }
 
@@ -493,7 +512,8 @@ final class RecordListModel: ObservableObject {
     /// The picker's model for `id`.
     func albumPickerModel(for id: UUID) -> AlbumPickerModel {
         AlbumPickerModel(profileID: id, store: store, library: library,
-                         createAlbum: { try await self.createAndBindAlbum(for: id, replacingBound: true) })
+                         isDraft: { self.isDraft(id) },
+                         createAlbum: { try await self.createAndBindAlbum(for: id) })
     }
 }
 
@@ -526,16 +546,21 @@ final class AlbumPickerModel: ObservableObject {
 
     private let store: ProfileStore
     private let library: any RecordAlbumLibrary
+    private let isDraft: () -> Bool
     private let createAlbum: () async throws -> Void
     private var subscription: AnyCancellable?
 
+    /// - Parameter isDraft: whether the record is a new one not yet created
+    ///   by the checkmark; its album waits for the checkmark (FR-21.6).
     /// - Parameter createAlbum: creates an album for the record and binds
     ///   it (the "建立新相簿" row under full access).
     init(profileID: UUID, store: ProfileStore, library: any RecordAlbumLibrary,
+         isDraft: @escaping () -> Bool = { false },
          createAlbum: @escaping () async throws -> Void) {
         self.profileID = profileID
         self.store = store
         self.library = library
+        self.isDraft = isDraft
         self.createAlbum = createAlbum
         self.status = library.authorizationStatus()
         // Selection and "used by" follow the store.
@@ -572,11 +597,14 @@ final class AlbumPickerModel: ObservableObject {
     }
 
     /// Binds the record to `albumIdentifier`. `nil` is "建立新相簿": under
-    /// full access a new album is created and bound right away (FR-21.4);
-    /// otherwise the record is left to create one later. The album bound
-    /// before is not deleted and `fallbackAssetIDs` is left alone (FR-21.5).
+    /// full access a new album is created and bound right away (FR-21.4),
+    /// except for a draft, which only clears the binding so the checkmark
+    /// creates it (FR-21.6); otherwise the record is left to create one
+    /// later. A pick made while that album is still being created wins over
+    /// it. The album bound before is not deleted and `fallbackAssetIDs` is
+    /// left alone (FR-21.5).
     func select(albumIdentifier: String?) async {
-        if albumIdentifier == nil, library.authorizationStatus() == .authorized {
+        if albumIdentifier == nil, library.authorizationStatus() == .authorized, !isDraft() {
             do {
                 try await createAlbum()
                 albums = library.userAlbums()
