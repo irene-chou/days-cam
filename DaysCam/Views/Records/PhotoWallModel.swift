@@ -48,10 +48,37 @@ final class PhotoWallModel: ObservableObject {
     @Published private(set) var profile: CameraProfile?
     @Published private(set) var sections: [Section] = []
     @Published private(set) var status: PHAuthorizationStatus
-    /// Set when adding photos failed; the view surfaces it and clears it.
+    /// Set when adding, removing or deleting failed; the view surfaces it
+    /// and clears it.
     @Published var errorMessage: String?
+    /// The title of the alert for `errorMessage`.
+    private(set) var errorTitle = PhotoWallModel.addFailedTitle
     /// The asset ids on the wall, oldest first.
     private(set) var photoIDs: [String] = []
+    /// Photos without a `creationDate`: they can be removed or deleted but
+    /// not exported (FR-17.12, FR-22.6).
+    private var undatedIDs: Set<String> = []
+
+    /// Selection mode is on (FR-17.11).
+    @Published private(set) var isSelecting = false
+    /// The ticked photos (FR-17.12).
+    @Published private(set) var selectedIDs: Set<String> = []
+    /// The "已從紀錄移除 N 張" / "已刪除 N 張" toast while it shows.
+    @Published private(set) var toastState: ToastState?
+    /// A slide selection in progress: where it started and what was ticked
+    /// before it.
+    private var drag: (anchor: Int, original: Set<String>)?
+
+    static let addFailedTitle = "無法加入照片"
+    static let removeFailedTitle = "無法從紀錄移除"
+    static let deleteFailedTitle = "無法刪除照片"
+    /// How long the toast stays.
+    static let toastDuration: TimeInterval = 1.6
+
+    /// Speaks `message` to VoiceOver. Replaceable so tests can observe it.
+    var announce: (String) -> Void = { message in
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
 
     private let store: ProfileStore
     private let library: any RecordAlbumLibrary
@@ -60,6 +87,7 @@ final class PhotoWallModel: ObservableObject {
     private let presentLimitedPicker: () async -> [String]
     private let openSettings: (URL) -> Void
     private let defaults: UserDefaults
+    private let scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
     /// App-wide flag behind the dismissed notice; cleared once the status is
     /// seen to be anything but limited, so a later return to limited shows it
     /// again (#642).
@@ -84,7 +112,10 @@ final class PhotoWallModel: ObservableObject {
          todayText: @escaping (CameraProfile) -> String,
          presentLimitedPicker: (() async -> [String])? = nil,
          openSettings: ((URL) -> Void)? = nil,
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard,
+         scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, action in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
+         }) {
         self.profileID = profileID
         self.store = store
         self.library = library
@@ -93,6 +124,7 @@ final class PhotoWallModel: ObservableObject {
         self.presentLimitedPicker = presentLimitedPicker ?? { await LimitedLibraryPicker.present() }
         self.openSettings = openSettings ?? { UIApplication.shared.open($0) }
         self.defaults = defaults
+        self.scheduleAfter = scheduleAfter
         self.noticeDismissed = defaults.bool(forKey: Self.noticeDismissedKey)
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
@@ -173,13 +205,178 @@ final class PhotoWallModel: ObservableObject {
         }
         guard let profile, RecordReadMode(status: status) != .none else {
             photoIDs = []
+            undatedIDs = []
             sections = []
+            pruneSelection()
             return
         }
         let photos = library.photos(albumIdentifier: profile.albumIdentifier,
                                     fallbackIDs: profile.fallbackAssetIDs)
         photoIDs = photos.map(\.id)
+        undatedIDs = Set(photos.filter { $0.creationDate == nil }.map(\.id))
         sections = Self.sections(for: photos, profile: profile, calendar: calendar)
+        pruneSelection()
+    }
+
+    /// Drops ticks on photos no longer on the wall (FR-17.8), and leaves
+    /// selection mode once the wall has nothing to select.
+    private func pruneSelection() {
+        let shown = Set(photoIDs)
+        if !selectedIDs.isSubset(of: shown) { selectedIDs.formIntersection(shown) }
+        if isSelecting, content != .photos { endSelecting() }
+    }
+
+    // MARK: - Selection (FR-17.11–17.13)
+
+    /// 「選取」 is usable: there is at least one photo.
+    var canSelect: Bool { content == .photos }
+
+    /// "已選 N 張", or "選取照片" with nothing ticked.
+    var selectionTitle: String {
+        selectedIDs.isEmpty ? "選取照片" : "已選 \(selectedIDs.count) 張"
+    }
+
+    /// Every photo on the wall is ticked: the leading button reads 取消全選.
+    var isAllSelected: Bool { !photoIDs.isEmpty && selectedIDs.count == photoIDs.count }
+
+    /// 匯出 is usable: at least one ticked photo has a date (FR-17.13).
+    var canExportSelection: Bool { selectedIDs.contains { !undatedIDs.contains($0) } }
+
+    /// The ticked photos in wall order.
+    var orderedSelection: [String] { photoIDs.filter(selectedIDs.contains) }
+
+    func beginSelecting() {
+        guard canSelect else { return }
+        selectedIDs = []
+        isSelecting = true
+    }
+
+    /// 取消: leaves selection mode and clears the ticks.
+    func endSelecting() {
+        isSelecting = false
+        selectedIDs = []
+        drag = nil
+    }
+
+    func toggle(_ id: String) {
+        guard isSelecting, photoIDs.contains(id) else { return }
+        if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+    }
+
+    func selectAll() { selectedIDs = Set(photoIDs) }
+
+    func deselectAll() { selectedIDs = [] }
+
+    /// A finger went down on the photo at `index` (wall order) to slide.
+    func beginDrag(at index: Int) {
+        guard isSelecting, photoIDs.indices.contains(index) else { return }
+        drag = (index, selectedIDs)
+        dragSelection(to: index)
+    }
+
+    /// The finger is over the photo at `index`.
+    func dragSelection(to index: Int) {
+        guard let drag, photoIDs.indices.contains(index) else { return }
+        selectedIDs = Self.slideSelection(anchor: drag.anchor, current: index,
+                                          original: drag.original, ids: photoIDs)
+    }
+
+    func endDrag() { drag = nil }
+
+    /// The ticks after sliding from `anchor` to `current` over `ids` (wall
+    /// order), starting from `original` (FR-17.12). The whole range between
+    /// them is ticked, or unticked when the anchor was already ticked; photos
+    /// outside it keep their state from `original`, so sliding back shrinks
+    /// the range and restores what it leaves.
+    static func slideSelection(anchor: Int, current: Int, original: Set<String>, ids: [String]) -> Set<String> {
+        guard ids.indices.contains(anchor), ids.indices.contains(current) else { return original }
+        let ticking = !original.contains(ids[anchor])
+        var result = original
+        for id in ids[min(anchor, current)...max(anchor, current)] {
+            if ticking { result.insert(id) } else { result.remove(id) }
+        }
+        return result
+    }
+
+    /// 匯出 in the selection bar. The batch export itself comes with #650.
+    func beginBatchExport() {}
+
+    // MARK: - Removing and deleting the selection (FR-17.14, FR-17.15)
+
+    /// 從「<紀錄名>」移除, no further confirmation. With full access and an
+    /// album, the ticked photos leave the album in one change; any listed in
+    /// `fallbackAssetIDs` leave it in one profile write. Limited access only
+    /// touches `fallbackAssetIDs`. The photos stay in 「照片」. On failure the
+    /// selection stays and an error shows; on success a toast, and selection
+    /// mode ends.
+    func removeSelected() async {
+        guard let profile, !selectedIDs.isEmpty else { return }
+        let ids = orderedSelection
+        let removing = Set(ids)
+        do {
+            if let albumID = profile.albumIdentifier, library.authorizationStatus() == .authorized {
+                try await library.removeAssets(ids, fromAlbum: albumID)
+            }
+            if var latest = store.profiles.first(where: { $0.id == profileID }),
+               latest.fallbackAssetIDs.contains(where: removing.contains) {
+                latest.fallbackAssetIDs.removeAll(where: removing.contains)
+                try store.updateAndWait(latest)
+            }
+        } catch let error as RecordAlbumError {
+            report(Self.removalMessage(for: error), title: Self.removeFailedTitle)
+            return
+        } catch let error as ProfileStoreError {
+            report(error.displayMessage, title: Self.removeFailedTitle)
+            return
+        } catch {
+            report("無法從紀錄移除，請再試一次。", title: Self.removeFailedTitle)
+            return
+        }
+        finish(ids, done: "已從紀錄移除", stillShown: { "有 \($0) 張照片無法從紀錄移除。" },
+               title: Self.removeFailedTitle)
+    }
+
+    /// 刪除 N 張照片: one system confirmation for all of them. A cancel
+    /// changes nothing and keeps the selection.
+    func deleteSelected() async {
+        let ids = orderedSelection
+        guard !ids.isEmpty, await library.deleteAssets(ids) else { return }
+        finish(ids, done: "已刪除", stillShown: { "有 \($0) 張照片無法刪除。" }, title: Self.deleteFailedTitle)
+    }
+
+    /// Re-reads the wall; reports the photos of `ids` still on it as a
+    /// failure (ticks kept), else toasts "<done> N 張" and ends selection.
+    private func finish(_ ids: [String], done: String, stillShown: (Int) -> String, title: String) {
+        reload()
+        let left = ids.filter(photoIDs.contains)
+        guard left.isEmpty else {
+            selectedIDs = Set(left)
+            report(stillShown(left.count), title: title)
+            return
+        }
+        endSelecting()
+        let message = "\(done) \(ids.count) 張"
+        announce(message)
+        let toast = ToastState(message: message)
+        toastState = toast
+        scheduleAfter(Self.toastDuration) { [weak self] in
+            guard self?.toastState?.id == toast.id else { return }
+            self?.toastState = nil
+        }
+    }
+
+    private func report(_ message: String, title: String) {
+        errorTitle = title
+        errorMessage = message
+    }
+
+    /// The text of the removal failure alert for `error` (FR-17.15).
+    static func removalMessage(for error: RecordAlbumError) -> String {
+        switch error {
+        case .permissionDenied: return "需要「照片」權限才能從紀錄移除。"
+        case .notFound: return "找不到選取的照片，它們可能已被刪除。"
+        case let .failed(reason): return reason.isEmpty ? "無法從紀錄移除，請再試一次。" : reason
+        }
     }
 
     // MARK: - Following the library
@@ -227,9 +424,9 @@ final class PhotoWallModel: ObservableObject {
             try store.updateAndWait(latest)
             reload()
         } catch let error as ProfileStoreError {
-            errorMessage = error.displayMessage
+            report(error.displayMessage, title: Self.addFailedTitle)
         } catch {
-            errorMessage = "無法加入照片，請再試一次。"
+            report("無法加入照片，請再試一次。", title: Self.addFailedTitle)
         }
     }
 
@@ -259,11 +456,11 @@ final class PhotoWallModel: ObservableObject {
             }
             reload()
         } catch let error as RecordAlbumError {
-            errorMessage = Self.message(for: error)
+            report(Self.message(for: error), title: Self.addFailedTitle)
         } catch let error as ProfileStoreError {
-            errorMessage = error.displayMessage
+            report(error.displayMessage, title: Self.addFailedTitle)
         } catch {
-            errorMessage = "無法加入照片，請再試一次。"
+            report("無法加入照片，請再試一次。", title: Self.addFailedTitle)
         }
     }
 
