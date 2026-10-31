@@ -84,7 +84,7 @@ final class ExportPreviewBakeParityAcceptanceTests: XCTestCase {
         return try pixels(try XCTUnwrap(renderer.uiImage))
     }
 
-    /// The export's bake (`ExportModel.export`): full-size original, no crop,
+    /// The export's bake (`PhotoExportPipeline.export`): full-size original, no crop,
     /// standard tone.
     private func baked(placement: OverlayPlacement, style: OverlayStyle) throws -> Pixels {
         let image = try XCTUnwrap(OverlayRenderer().bake(image: gray(originalSize), text: text, style: style,

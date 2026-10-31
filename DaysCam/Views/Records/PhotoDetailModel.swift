@@ -24,6 +24,28 @@ final class PhotoDetailModel: ObservableObject {
     @Published var errorMessage: String?
     /// Nothing is left to show next: the view goes back to the wall.
     @Published private(set) var shouldDismiss = false
+    /// From pressing 匯出 until the result is known (FR-22.2).
+    @Published private(set) var isExporting = false
+    /// The original's download progress, 0...1, while exporting.
+    @Published private(set) var exportProgress: Double = 0
+    /// A failure to alert on (0.1 §7.3); `nil` once dismissed.
+    @Published private(set) var exportError: CaptureAlertError?
+    /// The "已匯出" toast while it shows.
+    @Published private(set) var toastState: ToastState?
+    /// The first-export comparison sheet is up (FR-22.3).
+    @Published var showsExportIntro = false
+    /// The pointer bubble was dismissed (or the viewer left) in this session.
+    @Published private(set) var coachDismissed = false
+
+    /// What VoiceOver hears, and the toast shows, after a successful export.
+    static let exportedMessage = "已匯出"
+    /// How long the toast stays.
+    static let toastDuration: TimeInterval = 1.6
+
+    /// Speaks `message` to VoiceOver. Replaceable so tests can observe it.
+    var announce: (String) -> Void = { message in
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
 
     let profileID: UUID
     private let store: ProfileStore
@@ -32,6 +54,9 @@ final class PhotoDetailModel: ObservableObject {
     private let renderer: TemplateRenderer
     private let bake: Bake
     private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
+    private let pipeline: PhotoExportPipeline
+    private let tips: FirstRunTips
+    private let scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
 
@@ -45,7 +70,15 @@ final class PhotoDetailModel: ObservableObject {
              OverlayRenderer().bake(image: image, text: text, style: style, placement: placement,
                                     font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
          },
-         resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) {
+         resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
+         pipeline: PhotoExportPipeline? = nil,
+         tips: FirstRunTips = .shared,
+         scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, action in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
+         }) {
+        self.pipeline = pipeline ?? PhotoExportPipeline(library: library, calendar: calendar, renderer: renderer)
+        self.tips = tips
+        self.scheduleAfter = scheduleAfter
         self.profileID = profileID
         self.selectedID = photoID
         self.store = store
@@ -132,6 +165,12 @@ final class PhotoDetailModel: ObservableObject {
         profile != nil && photo.creationDate != nil
     }
 
+    /// Whether 匯出 can be pressed for the photo on screen: one export at a
+    /// time (FR-22.2), and only with a date.
+    var canStartExport: Bool {
+        !isExporting && (currentPhoto.map(canExport) ?? false)
+    }
+
     /// The name of the record, for the remove action's title.
     var recordName: String { profile?.name ?? "" }
 
@@ -161,6 +200,94 @@ final class PhotoDetailModel: ObservableObject {
         guard profile.showFilmDate else { return nil }
         let components = DayCountCalculator(calendar: calendar, now: { creationDate }).currentDateComponents()
         return FilmDateStamp(text: FilmDateStamp.text(for: components), corner: profile.filmDateCorner)
+    }
+
+    // MARK: - Export (FR-22.2, FR-22.3)
+
+    /// The 匯出 button: the first time, the comparison sheet opens instead
+    /// (FR-22.3); afterwards the photo on screen is exported at once.
+    func requestExport() async {
+        guard canStartExport else { return }
+        guard tips.exportIntroSeen else {
+            showsExportIntro = true
+            return
+        }
+        await runExport()
+    }
+
+    /// 匯出 on the comparison sheet: counts as seen, then exports.
+    func confirmExportIntro() async {
+        tips.markExportIntroSeen()
+        showsExportIntro = false
+        await runExport()
+    }
+
+    /// 先調整文字樣式 on the comparison sheet: counts as seen; the view opens
+    /// the style page.
+    func skipExportIntroForStyle() {
+        tips.markExportIntroSeen()
+        showsExportIntro = false
+    }
+
+    /// Dismisses the failure alert.
+    func dismissExportError() {
+        exportError = nil
+    }
+
+    private func runExport() async {
+        guard canStartExport, let profile, let photo = currentPhoto else { return }
+        isExporting = true
+        exportProgress = 0
+        let result = await pipeline.export(photo: photo, profile: profile, resolveFont: resolveFont) { [weak self] value in
+            Task { @MainActor in self?.exportProgress = value }
+        }
+        isExporting = false
+        switch result {
+        case .success:
+            exportProgress = 1
+            announce(Self.exportedMessage)
+            let toast = ToastState(message: Self.exportedMessage)
+            toastState = toast
+            scheduleAfter(Self.toastDuration) { [weak self] in
+                guard self?.toastState?.id == toast.id else { return }
+                self?.toastState = nil
+            }
+        case let .failure(error):
+            exportError = CaptureAlertError(message: error.message, showsSettingsAction: error.showsSettingsAction)
+        }
+    }
+
+    // MARK: - Pointer bubble (FR-18.8)
+
+    /// Whether the first-visit bubble shows: not seen yet, and the photo on
+    /// screen has overlay text to point at.
+    var showsCoach: Bool {
+        guard !tips.viewerCoachSeen, !coachDismissed, let photo = currentPhoto else { return false }
+        return overlayText(for: photo)?.isEmpty == false
+    }
+
+    /// 知道了: never shows again.
+    func dismissCoach() {
+        tips.markViewerCoachSeen()
+        coachDismissed = true
+    }
+
+    /// Where the overlay's block sits when `photo`'s image is drawn at
+    /// `imageSize`, laid out the way the bake does (FR-18.8); `nil` without text.
+    func overlayFrame(for photo: RecordPhoto, imageSize: CGSize) -> CGRect? {
+        guard let profile, let text = overlayText(for: photo), !text.isEmpty,
+              imageSize.width > 0, imageSize.height > 0 else { return nil }
+        let font = resolveFont(profile.style)
+        let fontSize = OverlayRenderer.fittedFontSize(for: text, style: profile.style, frameSize: imageSize, font: font)
+        guard let block = OverlayRenderer().renderText(text, style: profile.style, fontSize: fontSize,
+                                                       displayScale: 1, font: font)?.blockSize else { return nil }
+        let origin = OverlayMetrics.origin(forBlockSize: block, in: imageSize, placement: profile.position)
+        return CGRect(origin: origin, size: block)
+    }
+
+    /// The screen-sized image of `photo` as it is, for the comparison sheet.
+    func plainImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
+        await library.displayImage(id: photo.id, targetSize: targetSize)
     }
 
     // MARK: - Removing and deleting (FR-18.6)
@@ -224,7 +351,7 @@ final class PhotoDetailModel: ObservableObject {
     /// The text of the failure alert for `error`.
     static func message(for error: RecordAlbumError) -> String {
         switch error {
-        case .permissionDenied: return "需要相簿權限才能從紀錄移除。"
+        case .permissionDenied: return "需要「照片」權限才能從紀錄移除。"
         case .notFound: return "找不到這張照片，它可能已被刪除。"
         case let .failed(reason): return reason.isEmpty ? "無法從紀錄移除，請再試一次。" : reason
         }

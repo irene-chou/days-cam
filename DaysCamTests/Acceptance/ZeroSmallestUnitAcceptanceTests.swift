@@ -45,12 +45,29 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
                       displayUnits: units)
     }
 
-    /// The export page of one photo taken at `now` (#621: the camera no
-    /// longer bakes, so preview vs. baked text is checked where the bake now
-    /// happens, PRD 2.0 §6.3).
+    /// The 文字樣式 page (preview text) and the export pipeline (baked text)
+    /// of one photo taken at `now` (#621: the camera no longer bakes, so
+    /// preview vs. baked text is checked where the bake now happens, PRD 2.0
+    /// §6.3; #647 moved the export from the page to `PhotoExportPipeline`).
+    @MainActor
+    private struct ExportRun {
+        let model: ExportModel
+        let pipeline: PhotoExportPipeline
+        let photo: RecordPhoto
+        let store: ProfileStore
+        let profileID: UUID
+
+        var overlayText: String? { model.overlayText }
+
+        func export() async {
+            guard let profile = store.profiles.first(where: { $0.id == profileID }) else { return }
+            _ = await pipeline.export(photo: photo, profile: profile, resolveFont: { _ in .pingFang })
+        }
+    }
+
     private func makeExport(now: Date, profile: CameraProfile, recorder: Recorder,
                             bakeOutput: @escaping @Sendable (UIImage, String, OverlayStyle, OverlayPlacement) -> UIImage?)
-        throws -> (ExportModel, ProfileStore) {
+        throws -> (ExportRun, ProfileStore) {
         let store = ProfileStore(directory: directory, calendar: DateFixture.taipei, now: { now }, defaults: defaults, scheduler: ProfileStore.immediateScheduler)
         _ = try store.add(profile)
         store.select(id: profile.id)
@@ -63,14 +80,16 @@ final class ZeroSmallestUnitAcceptanceTests: XCTestCase {
             library: library,
             editor: nil,
             calendar: DateFixture.taipei,
+            resolveFont: { _ in .pingFang })
+        let pipeline = PhotoExportPipeline(
+            library: library,
+            calendar: DateFixture.taipei,
             bake: { image, text, style, placement, _, _, _, _ in
                 recorder.add(BakeCall(text: text, style: style, placement: placement))
                 return bakeOutput(image, text, style, placement)
             },
-            save: { _, completion in completion(.success("asset")) },
-            resolveFont: { _ in .pingFang },
-            scheduleAfter: { _, _ in })
-        return (model, store)
+            save: { _, completion in completion(.success("asset")) })
+        return (ExportRun(model: model, pipeline: pipeline, photo: photo, store: store, profileID: profile.id), store)
     }
 
     // MARK: - 93.13

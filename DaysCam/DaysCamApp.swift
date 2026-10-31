@@ -85,7 +85,7 @@ struct DaysCamApp: App {
     /// Where an exported photo is saved: 「最近項目」 only (PRD 2.0 FR-19.9).
     /// Debug UI tests with the in-memory library (`-UITestRecordPhotos`)
     /// pretend the save worked, so no system permission alert comes up (#620).
-    private static var exportSave: ExportModel.Save {
+    private static var exportSave: PhotoExportPipeline.Save {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestRecordPhotos") {
             return { _, completion in

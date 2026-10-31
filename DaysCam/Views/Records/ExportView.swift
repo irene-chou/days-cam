@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The export page of one photo (PRD 2.0 FR-19, D-7 screen 4).
+/// The 文字樣式 page of one photo (PRD 2.0 FR-19, D8 ④): the page that used
+/// to be the export page, now only styling; nothing is exported here.
 ///
-/// Top bar `xmark`｜匯出 + 第 N 天｜`checkmark`; a preview about 52% of the
+/// Top bar `xmark`｜文字樣式 + 紀錄名｜`checkmark` (both just go back); a preview about 52% of the
 /// width at the photo's own aspect ratio, with the record's overlay drawn by
 /// the same `OverlayTextView`／`FilmDateStampView` the bake matches; the
 /// overlay panel (樣式｜內容) below it, always open; one line at the bottom.
@@ -55,35 +56,16 @@ struct ExportView: View {
                                  bottomSafeAreaInset: 0,
                                  showsCollapseButton: false)
                     .frame(height: contentHeight + panelChrome)
-                    // Nothing changes while exporting (FR-19.7).
-                    .disabled(!model.isEditable)
                 note
             }
         }
         .background(CameraTheme.background.ignoresSafeArea())
-        .overlay(alignment: .bottom) { toastOverlay }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("exportView")
         .preferredColorScheme(.light)
         .task(id: displayScale) {
             let side = UIScreen.main.bounds.width * Self.previewWidthRatio * displayScale * 2
             previewImage = await model.previewImage(targetSize: CGSize(width: side, height: side))
-        }
-        .onChange(of: model.shouldDismiss) { _, shouldDismiss in
-            if shouldDismiss { dismiss() }
-        }
-        .alert("無法匯出", isPresented: errorBinding, presenting: model.exportError) { error in
-            if error.showsSettingsAction {
-                Button("前往設定") {
-                    model.dismissError()
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                }
-            }
-            Button("好", role: .cancel) { model.dismissError() }
-        } message: { error in
-            Text(error.message)
         }
     }
 
@@ -120,16 +102,14 @@ struct ExportView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!model.canCancel)
-            .opacity(model.canCancel ? 1 : 0.35)
             .accessibilityLabel("取消")
             .accessibilityIdentifier("exportCancelButton")
             Spacer()
             VStack(spacing: 1) {
-                Text("匯出")
+                Text("文字樣式")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(CameraTheme.ink)
-                Text(model.dayTitle)
+                Text(model.subtitle)
                     .font(.system(size: 11.5).monospacedDigit())
                     .foregroundColor(CameraTheme.inkTertiary)
             }
@@ -143,29 +123,19 @@ struct ExportView: View {
         .frame(height: Self.headerHeight)
     }
 
-    /// The checkmark; a spinner with the download progress while exporting
-    /// (FR-19.7).
+    /// The checkmark: done, back to the viewer. Nothing is exported.
     private var confirmButton: some View {
         Button {
-            Task { await model.export() }
+            dismiss()
         } label: {
-            ZStack {
-                if model.isExporting {
-                    ProgressView(value: model.progress)
-                        .progressViewStyle(.circular)
-                        .tint(CameraTheme.active)
-                } else {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(model.canExport ? CameraTheme.active : CameraTheme.inkTertiary)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            Image(systemName: "checkmark")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(CameraTheme.active)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!model.canExport)
-        .accessibilityLabel(model.isExporting ? "匯出中" : "完成")
+        .accessibilityLabel("完成")
         .accessibilityIdentifier("exportConfirmButton")
     }
 
@@ -207,10 +177,10 @@ struct ExportView: View {
         .accessibilityIdentifier("exportPreview")
     }
 
-    // MARK: - Bottom (FR-19.8, FR-19.6)
+    // MARK: - Bottom (FR-19.8)
 
     private var note: some View {
-        Text("存成新照片到「最近項目」，原圖不動")
+        Text("改動直接存到這個紀錄，回檢視頁再匯出")
             .font(.system(size: 11.5))
             .foregroundColor(CameraTheme.inkTertiary)
             .multilineTextAlignment(.center)
@@ -220,20 +190,5 @@ struct ExportView: View {
             .frame(maxWidth: .infinity)
             .frame(height: Self.noteHeight)
             .accessibilityIdentifier("exportNote")
-    }
-
-    @ViewBuilder
-    private var toastOverlay: some View {
-        if let toastState = model.toastState {
-            ToastView(state: toastState)
-                .padding(.bottom, 90)
-                .transition(.opacity)
-                .animation(.easeInOut, value: toastState.id)
-                .accessibilityIdentifier("exportToast")
-        }
-    }
-
-    private var errorBinding: Binding<Bool> {
-        Binding(get: { model.exportError != nil }, set: { if !$0 { model.dismissError() } })
     }
 }
