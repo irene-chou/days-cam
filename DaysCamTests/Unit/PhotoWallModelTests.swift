@@ -33,6 +33,7 @@ private final class ChangingLibrary: RecordAlbumLibrary {
         try await base.removeAsset(id, fromAlbum: albumIdentifier)
     }
     func deleteAsset(_ id: String) async -> Bool { await base.deleteAsset(id) }
+    func createAlbum(title: String) async throws -> String { try await base.createAlbum(title: title) }
     func changes() -> AsyncStream<Void> { stream }
     func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { await base.thumbnail(id: id, targetSize: targetSize) }
     func displayImage(id: String, targetSize: CGSize) async -> UIImage? { await base.displayImage(id: id, targetSize: targetSize) }
@@ -185,7 +186,7 @@ final class PhotoWallModelTests: XCTestCase {
             XCTAssertEqual(model.content, .needsPermission, "\(status)")
         }
         let undecided = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: .notDetermined))
-        XCTAssertEqual(undecided.content, .waiting)
+        XCTAssertEqual(undecided.content, .permissionIntro)
     }
 
     /// #622-1: limited access still shows the wall (or its empty state), flagged
@@ -361,14 +362,68 @@ final class PhotoWallModelTests: XCTestCase {
         XCTAssertEqual(model.content, .needsPermission)
     }
 
-    func testPrepareAsksOnceWhenUndecided() async throws {
+    /// #651-11: undecided, entering shows the intro without asking; going
+    /// back and coming again shows it again; "繼續" asks exactly once.
+    func testUndecidedShowsTheIntroAndOnlyContinueAsks() async throws {
         let (store, profile) = try makeStore(albumIdentifier: "album")
         let library = fiveJanuaryPhotos()
         library.status = .notDetermined
-        let model = makeModel(store: store, profile: profile, library: library)
-        await model.prepare()
-        XCTAssertEqual(library.status, .authorized)
-        XCTAssertEqual(model.content, .photos)
+        let first = makeModel(store: store, profile: profile, library: library)
+        await first.prepare()
+        XCTAssertEqual(first.content, .permissionIntro)
+        XCTAssertEqual(library.accessRequestCount, 0)
+
+        let again = makeModel(store: store, profile: profile, library: library)
+        await again.prepare()
+        XCTAssertEqual(again.content, .permissionIntro, "11 still the intro after going back")
+        XCTAssertEqual(library.accessRequestCount, 0)
+
+        async let tap: Void = again.continueFromIntro()
+        async let doubleTap: Void = again.continueFromIntro()
+        _ = await (tap, doubleTap)
+        XCTAssertEqual(library.accessRequestCount, 1, "11 asked once")
+        XCTAssertEqual(again.content, .photos)
+    }
+
+    /// #651-13: what "繼續" leads to, by the answer. Full access backfills
+    /// before the wall reloads.
+    func testContinueFromIntroFollowsTheAnswer() async throws {
+        let (store, profile) = try makeStore()
+        var log: [String] = []
+        let full = FakeRecordAlbumLibrary(status: .notDetermined)
+        let fullModel = PhotoWallModel(profileID: profile.id, store: store, library: full, calendar: calendar,
+                                       todayText: { _ in "" },
+                                       backfillAlbums: { log.append("backfill \(full.status == .authorized)") })
+        await fullModel.continueFromIntro()
+        XCTAssertEqual(log, ["backfill true"])
+        XCTAssertEqual(fullModel.content, .empty)
+        XCTAssertFalse(fullModel.isLimited)
+
+        let limited = FakeRecordAlbumLibrary(status: .notDetermined)
+        limited.grants = .limited
+        let limitedModel = PhotoWallModel(profileID: profile.id, store: store, library: limited, calendar: calendar,
+                                          todayText: { _ in "" }, backfillAlbums: { log.append("limited") },
+                                          defaults: defaults)
+        await limitedModel.continueFromIntro()
+        XCTAssertEqual(limitedModel.content, .empty)
+        XCTAssertTrue(limitedModel.showsLimitedNotice)
+
+        let denied = FakeRecordAlbumLibrary(status: .notDetermined)
+        denied.grants = .denied
+        let deniedModel = PhotoWallModel(profileID: profile.id, store: store, library: denied, calendar: calendar,
+                                         todayText: { _ in "" }, backfillAlbums: { log.append("denied") })
+        await deniedModel.continueFromIntro()
+        XCTAssertEqual(deniedModel.content, .needsPermission)
+        XCTAssertEqual(log, ["backfill true"], "only full access backfills")
+    }
+
+    /// #651-15: the empty state's line by access.
+    func testEmptyMessageFollowsAccess() throws {
+        let (store, profile) = try makeStore()
+        XCTAssertEqual(makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary()).emptyMessage,
+                       "用相機拍一張，或在「照片」App 把照片加入「小寶」相簿，會自動出現在這裡")
+        XCTAssertEqual(makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: .limited)).emptyMessage,
+                       "用相機拍一張，或按左下角加入照片")
     }
 
     // MARK: Adding (8, 9)

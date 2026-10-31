@@ -13,7 +13,7 @@ struct AlbumPickerView: View {
         List {
             ForEach(model.options) { option in
                 Button {
-                    model.select(albumIdentifier: option.id)
+                    Task { await model.select(albumIdentifier: option.id) }
                 } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -57,6 +57,8 @@ struct AlbumPickerView: View {
         } message: {
             if let error = model.lastError as? ProfileStoreError {
                 Text(error.displayMessage)
+            } else if model.lastError is RecordAlbumError {
+                Text(RecordListModel.albumCreationFailedMessage)
             }
         }
     }

@@ -142,22 +142,42 @@ final class RecordListModelTests: XCTestCase {
 
     // MARK: Album picker (7, 8)
 
-    func testPickingAnAlbumBindsItAndKeepsFallbackIDs() throws {
+    /// Also #651-14: "建立新相簿" under full access creates and binds an
+    /// album right away; the album bound before stays (FR-21.5).
+    func testPickingAnAlbumBindsItAndKeepsFallbackIDs() async throws {
         let store = makeStore()
         var record = try addRecord("小寶", to: store)
         record.fallbackAssetIDs = ["keep-1", "keep-2"]
         try store.update(record)
         let library = FakeRecordAlbumLibrary(status: .authorized,
                                              albums: [.init(id: "album-1", title: "寶寶", assetIDs: [])])
-        let picker = AlbumPickerModel(profileID: record.id, store: store, library: library)
+        let picker = makeModel(store: store, library: library).albumPickerModel(for: record.id)
 
-        picker.select(albumIdentifier: "album-1")
+        await picker.select(albumIdentifier: "album-1")
         XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, "album-1")
         XCTAssertEqual(store.profiles.first { $0.id == record.id }?.fallbackAssetIDs, ["keep-1", "keep-2"])
 
-        picker.select(albumIdentifier: nil)
-        XCTAssertNil(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+        await picker.select(albumIdentifier: nil)
+        XCTAssertEqual(library.createdAlbumTitles, ["小寶"], "14")
+        let created = try XCTUnwrap(library.albums.last)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, created.id, "14 bound")
         XCTAssertEqual(store.profiles.first { $0.id == record.id }?.fallbackAssetIDs, ["keep-1", "keep-2"])
+        XCTAssertTrue(library.albums.contains { $0.id == "album-1" }, "the old album is not deleted")
+        XCTAssertTrue(picker.options.first { $0.id == created.id }?.isSelected == true)
+        XCTAssertEqual(library.accessRequestCount, 0)
+    }
+
+    /// #651-7: a failed "建立新相簿" keeps the binding and reports it.
+    func testPickerCreateFailureKeepsTheBindingAndReports() async throws {
+        let store = makeStore()
+        let record = try addRecord("小寶", to: store, albumIdentifier: "album-1")
+        let library = FakeRecordAlbumLibrary(status: .authorized,
+                                             albums: [.init(id: "album-1", title: "寶寶", assetIDs: [])])
+        library.createAlbumFailure = .failed("boom")
+        let picker = makeModel(store: store, library: library).albumPickerModel(for: record.id)
+        await picker.select(albumIdentifier: nil)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, "album-1")
+        XCTAssertEqual(picker.lastError as? RecordAlbumError, .failed("boom"))
     }
 
     func testAlbumBoundElsewhereIsLabelledButSelectable() async throws {
@@ -166,7 +186,7 @@ final class RecordListModelTests: XCTestCase {
         let mine = try addRecord("乙", to: store)
         let library = FakeRecordAlbumLibrary(status: .authorized,
                                              albums: [.init(id: "album-1", title: "共用", assetIDs: [])])
-        let picker = AlbumPickerModel(profileID: mine.id, store: store, library: library)
+        let picker = makeModel(store: store, library: library).albumPickerModel(for: mine.id)
         await picker.load()
 
         let options = picker.options
@@ -177,22 +197,26 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(shared.usedBy, "甲")
         XCTAssertEqual(shared.detail, "0 張 · 已被「甲」使用")
 
-        picker.select(albumIdentifier: "album-1")
+        await picker.select(albumIdentifier: "album-1")
         XCTAssertEqual(store.profiles.first { $0.id == mine.id }?.albumIdentifier, "album-1")
         XCTAssertTrue(picker.options.first { $0.id == "album-1" }?.isSelected == true)
     }
 
-    func testPickerRequestsAccessOnlyWhenUndetermined() async throws {
+    /// #651-14: neither the list nor the picker asks; only the wall's intro
+    /// does (§7.1).
+    func testPickerNeverRequestsAccess() async throws {
         let store = makeStore()
         let record = try XCTUnwrap(store.profiles.first)
         let library = FakeRecordAlbumLibrary(status: .notDetermined)
         let model = makeModel(store: store, library: library)
-        XCTAssertEqual(library.authorizationStatus(), .notDetermined, "the list never asks")
         _ = model.rows
 
         let picker = model.albumPickerModel(for: record.id)
         await picker.load()
-        XCTAssertEqual(library.authorizationStatus(), .authorized)
+        await picker.select(albumIdentifier: nil)
+        XCTAssertEqual(library.accessRequestCount, 0)
+        XCTAssertEqual(library.authorizationStatus(), .notDetermined)
+        XCTAssertEqual(library.createdAlbumTitles, [])
     }
 
     /// #649-5: the album row's four states.
@@ -268,6 +292,186 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(model.confirmNewRecord(), id)
         XCTAssertEqual(model.path, [.wall(id)], "the checkmark opens the new record's wall")
         XCTAssertEqual(store.profiles.count, before + 1)
+    }
+
+    // MARK: Album on create and backfill (#651)
+
+    /// Adds a draft, names it and confirms it, waiting for its album.
+    private func confirmDraft(named name: String, in model: RecordListModel, store: ProfileStore,
+                              albumIdentifier: String? = nil) async throws -> UUID {
+        model.addRecord()
+        guard case let .editor(id)? = model.path.first,
+              var draft = store.profiles.first(where: { $0.id == id }) else {
+            XCTFail("the editor is pushed")
+            throw CancellationError()
+        }
+        draft.name = name
+        draft.albumIdentifier = albumIdentifier
+        try store.updateAndWait(draft)
+        XCTAssertEqual(model.confirmNewRecord(), id)
+        await model.albumCreation?.value
+        return id
+    }
+
+    /// 1: full access, the checkmark creates one album titled by the record
+    /// and stores it.
+    func testConfirmingANewRecordCreatesItsAlbum() async throws {
+        let store = makeStore()
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        let model = makeModel(store: store, library: library)
+        let id = try await confirmDraft(named: "小芽", in: model, store: store)
+        XCTAssertEqual(library.createdAlbumTitles, ["小芽"])
+        let album = try XCTUnwrap(library.albums.first)
+        XCTAssertEqual(album.title, "小芽")
+        XCTAssertEqual(store.profiles.first { $0.id == id }?.albumIdentifier, album.id)
+        XCTAssertNil(model.lastError)
+    }
+
+    /// 2: backing out of the draft creates nothing; neither does a backfill
+    /// while the draft is up.
+    func testDiscardedDraftCreatesNoAlbum() async throws {
+        let store = makeStore()
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first).with(albumIdentifier: "bound"))
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        let model = makeModel(store: store, library: library)
+        model.addRecord()
+        await model.backfillAlbumsIfNeeded()
+        model.path = []
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles, [])
+        XCTAssertTrue(library.albums.isEmpty)
+    }
+
+    /// 3: an existing album picked while adding is kept, nothing is created.
+    func testNewRecordWithAPickedAlbumCreatesNone() async throws {
+        let store = makeStore()
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "mine", title: "舊相簿", assetIDs: [])])
+        let model = makeModel(store: store, library: library)
+        let id = try await confirmDraft(named: "小芽", in: model, store: store, albumIdentifier: "mine")
+        XCTAssertEqual(library.createdAlbumTitles, [])
+        XCTAssertEqual(store.profiles.first { $0.id == id }?.albumIdentifier, "mine")
+    }
+
+    /// 4: without full access nothing is created and nothing is asked.
+    func testNewRecordWithoutFullAccessCreatesNoAlbum() async throws {
+        for status in [PHAuthorizationStatus.limited, .notDetermined, .denied] {
+            let store = makeStore()
+            let library = FakeRecordAlbumLibrary(status: status)
+            let model = makeModel(store: store, library: library)
+            let id = try await confirmDraft(named: "小芽", in: model, store: store)
+            XCTAssertEqual(library.createdAlbumTitles, [], "\(status)")
+            XCTAssertNil(store.profiles.first { $0.id == id }?.albumIdentifier, "\(status)")
+            XCTAssertEqual(library.accessRequestCount, 0, "\(status)")
+            try store.delete(id: id)
+        }
+    }
+
+    /// 5: two unbound records and one bound: only two albums, each stored;
+    /// a second run creates none; two runs at once still create two.
+    func testBackfillCreatesOneAlbumPerUnboundRecordOnce() async throws {
+        let store = makeStore()
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first).with(albumIdentifier: "bound"))
+        let first = try addRecord("甲", to: store)
+        let second = try addRecord("乙", to: store)
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "bound", title: "既有", assetIDs: [])])
+        let model = makeModel(store: store, library: library)
+
+        async let one: Void = model.backfillAlbumsIfNeeded()
+        async let two: Void = model.backfillAlbumsIfNeeded()
+        _ = await (one, two)
+        XCTAssertEqual(library.createdAlbumTitles.sorted(), ["乙", "甲"], "5 at once")
+        let firstAlbum = store.profiles.first { $0.id == first.id }?.albumIdentifier
+        let secondAlbum = store.profiles.first { $0.id == second.id }?.albumIdentifier
+        XCTAssertEqual(library.albums.first { $0.id == firstAlbum }?.title, "甲")
+        XCTAssertEqual(library.albums.first { $0.id == secondAlbum }?.title, "乙")
+        XCTAssertEqual(store.profiles.filter { $0.albumIdentifier == "bound" }.count, 1)
+
+        await model.backfillAlbumsIfNeeded()
+        model.sceneDidBecomeActive()
+        await Task.yield()
+        XCTAssertEqual(library.createdAlbumTitles.count, 2, "5 again")
+    }
+
+    /// 6: an album id that no longer resolves is not recreated.
+    func testBackfillSkipsAMissingBoundAlbum() async throws {
+        let store = makeStore()
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first).with(albumIdentifier: "deleted-by-user"))
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        await makeModel(store: store, library: library).backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles, [])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, "deleted-by-user")
+    }
+
+    /// 7: a failed create still creates the record, keeps `nil`, reports
+    /// the failure, and is retried by the next trigger.
+    func testFailedAlbumCreationKeepsTheRecordAndRetries() async throws {
+        let store = makeStore()
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first).with(albumIdentifier: "bound"))
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "bound", title: "既有", assetIDs: [])])
+        library.createAlbumFailure = .failed("boom")
+        let model = makeModel(store: store, library: library)
+        let id = try await confirmDraft(named: "小芽", in: model, store: store)
+        XCTAssertNotNil(store.profiles.first { $0.id == id }, "the record is kept")
+        XCTAssertNil(store.profiles.first { $0.id == id }?.albumIdentifier)
+        XCTAssertEqual(model.lastError as? RecordAlbumError, .failed("boom"), "not reported as created")
+        XCTAssertEqual(library.albums.count, 1)
+
+        library.createAlbumFailure = nil
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles, ["小芽", "小芽"])
+        XCTAssertNotNil(store.profiles.first { $0.id == id }?.albumIdentifier)
+    }
+
+    /// 8: a rename and a style change landing while the album is created
+    /// both survive the write-back.
+    func testAlbumWriteBackKeepsConcurrentEdits() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        library.onCreateAlbum = {
+            guard var latest = store.profiles.first(where: { $0.id == record.id }) else { return }
+            latest.name = "改過"
+            latest.style.showsShadow = !latest.style.showsShadow
+            try? store.updateAndWait(latest)
+        }
+        await makeModel(store: store, library: library).backfillAlbumsIfNeeded()
+        let saved = try XCTUnwrap(store.profiles.first { $0.id == record.id })
+        XCTAssertEqual(saved.name, "改過")
+        XCTAssertEqual(saved.style.showsShadow, !record.style.showsShadow)
+        XCTAssertEqual(saved.albumIdentifier, library.albums.first?.id)
+        XCTAssertNotNil(saved.albumIdentifier)
+    }
+
+    /// 9: renaming a record touches no album.
+    func testRenamingARecordLeavesItsAlbumAlone() async throws {
+        let store = makeStore()
+        var record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "a1", title: "舊名", assetIDs: [])])
+        record.albumIdentifier = "a1"
+        try store.updateAndWait(record)
+        let model = makeModel(store: store, library: library)
+        record.name = "新名"
+        try store.updateAndWait(record)
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.albums, [.init(id: "a1", title: "舊名", assetIDs: [])])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, "a1")
+        XCTAssertEqual(library.createdAlbumTitles, [])
+    }
+
+    /// 10: launch and returning to the foreground never ask, even undecided.
+    func testLaunchAndForegroundNeverRequestAccess() async throws {
+        for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {
+            let store = makeStore()
+            let library = FakeRecordAlbumLibrary(status: status)
+            let model = makeModel(store: store, library: library)
+            model.startObservingLibrary()
+            model.sceneDidBecomeActive()
+            await model.backfillAlbumsIfNeeded()
+            _ = model.rows
+            _ = model.footerText
+            XCTAssertEqual(library.accessRequestCount, 0, "\(status)")
+            XCTAssertEqual(library.createdAlbumTitles.isEmpty, status != .authorized, "\(status)")
+        }
     }
 
     // MARK: Data recovery alert (15.1, moved from the camera in #621)
@@ -387,5 +591,13 @@ final class RecordListModelTests: XCTestCase {
                                        styleCenter: center)
 
         XCTAssertEqual(export.profileID, record.id)
+    }
+}
+
+private extension CameraProfile {
+    func with(albumIdentifier: String?) -> CameraProfile {
+        var copy = self
+        copy.albumIdentifier = albumIdentifier
+        return copy
     }
 }

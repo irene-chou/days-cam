@@ -97,6 +97,10 @@ protocol RecordAlbumLibrary {
     /// when `albumIdentifier` is `nil` or unknown (a same-titled album is not
     /// reused). Returns the album's identifier for the caller to store.
     func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String
+    /// Creates an empty album titled `title` (a same-titled album is not
+    /// reused) and returns its identifier for the caller to store. Throws
+    /// `permissionDenied` without full access (FR-21.6).
+    func createAlbum(title: String) async throws -> String
     /// Removes the asset from the album only; the photo stays in the library.
     func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws
     /// Deletes the asset through the system confirmation. `false` when the
@@ -119,6 +123,11 @@ protocol RecordAlbumLibrary {
 
 extension RecordAlbumLibrary {
     func startCaching(ids: [String], targetSize: CGSize) {}
+
+    /// Test doubles that never create albums fail like a refused change.
+    func createAlbum(title: String) async throws -> String {
+        throw RecordAlbumError.failed("無法建立相簿")
+    }
 }
 
 /// Bridges `PHPhotoLibraryChangeObserver` (background queue) to an `AsyncStream`.
@@ -271,6 +280,17 @@ final class SystemRecordAlbumLibrary: RecordAlbumLibrary {
             }
         }
         if let existing { return existing.localIdentifier }
+        guard let identifier = created.value else { throw RecordAlbumError.failed("未取得相簿識別碼") }
+        return identifier
+    }
+
+    func createAlbum(title: String) async throws -> String {
+        guard authorizationStatus() == .authorized else { throw RecordAlbumError.permissionDenied }
+        let created = CreatedAlbumID()
+        try await Self.perform {
+            let creation = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: title)
+            created.value = creation.placeholderForCreatedAssetCollection.localIdentifier
+        }
         guard let identifier = created.value else { throw RecordAlbumError.failed("未取得相簿識別碼") }
         return identifier
     }
