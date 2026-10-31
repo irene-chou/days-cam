@@ -69,6 +69,8 @@ struct RecordListView: View {
         } message: {
             if let error = model.lastError as? ProfileStoreError {
                 Text(error.displayMessage)
+            } else if model.lastError is RecordAlbumError {
+                Text(RecordListModel.albumCreationFailedMessage)
             }
         }
         // A photo that failed to save after its camera closed (#621).
@@ -88,15 +90,18 @@ struct RecordListView: View {
         }
         .onAppear {
             model.startObservingLibrary()
-            model.reloadLibrary()
+            model.sceneDidBecomeActive()
             openFirstRecordIfRequested()
         }
         // PRD 0.3 FR-5.15: settle the fonts on the device at launch, the last
         // opened record's first, so the export page has them.
         .task { await styleCenter.prepareFontsAtLaunch() }
         // FR-16.11: downloads do not continue in the background.
+        // Back from Settings with full access, records made before it get
+        // their albums (FR-21.6).
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { styleCenter.sceneDidEnterBackground() }
+            if phase == .active { model.sceneDidBecomeActive() }
         }
     }
 

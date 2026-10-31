@@ -34,4 +34,32 @@ final class CaptureSaveCoordinatorTests: XCTestCase {
         finishers[1]()
         XCTAssertEqual(started, [0, 1, 2])
     }
+
+    /// #651: `serialized` work waits for the save before it, and the save
+    /// after it waits for it, even when it throws.
+    func testSerializedJoinsTheSameQueue() async {
+        let coordinator = CaptureSaveCoordinator()
+        var log: [String] = []
+        var finishFirst: (() -> Void)?
+        coordinator.enqueueSave { finished in
+            log.append("save 1")
+            finishFirst = finished
+        }
+        let work = Task {
+            try await coordinator.serialized {
+                log.append("work")
+                throw RecordAlbumError.failed("boom")
+            }
+        }
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(log, ["save 1"], "waits for the save before it")
+        coordinator.enqueueSave { finished in
+            log.append("save 2")
+            finished()
+        }
+        finishFirst?()
+        _ = await work.result
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(log, ["save 1", "work", "save 2"])
+    }
 }

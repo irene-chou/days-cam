@@ -49,6 +49,8 @@ final class RecordListModel: ObservableObject {
     static let deletionMessageWithoutAlbum = "照片會保留在「照片」App。"
     /// Shown when the library cannot report a count.
     static let unknownCountText = "—"
+    /// Shown when an album could not be created in the Photos app (FR-21.6).
+    static let albumCreationFailedMessage = "無法在「照片」App 建立相簿，之後會再試一次。"
 
     /// Every record, in store order; `rows` sorts them.
     @Published private(set) var profiles: [CameraProfile]
@@ -73,6 +75,10 @@ final class RecordListModel: ObservableObject {
 
     let store: ProfileStore
     let library: any RecordAlbumLibrary
+    /// The app's one queue of writes that may create an album; shared with
+    /// every camera so album creation, "加入照片" and camera saves never make
+    /// a second album for a record (#651).
+    let saveCoordinator: CaptureSaveCoordinator
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -84,6 +90,12 @@ final class RecordListModel: ObservableObject {
     private var draftID: UUID?
     private var subscriptions = Set<AnyCancellable>()
     private var changesTask: Task<Void, Never>?
+    /// Records with an album creation queued or running: a second trigger
+    /// skips them (FR-21.6).
+    private var albumCreationsInFlight: Set<UUID> = []
+    /// Albums created for a record whose write-back then failed: the next
+    /// attempt binds the same album instead of making another (#661 review).
+    private var unboundCreatedAlbums: [UUID: String] = [:]
 
     /// Creates a model over `store`.
     ///
@@ -94,8 +106,11 @@ final class RecordListModel: ObservableObject {
     ///   `PhotoSaver.saveToRecentsOnly`.
     /// - Parameter openSettings: opens the app's Settings page from the
     ///   editor's 相簿 row; injected so tests can capture the URL.
+    /// - Parameter saveCoordinator: the queue album creation joins; pass the
+    ///   cameras' one.
     init(store: ProfileStore,
          library: any RecordAlbumLibrary,
+         saveCoordinator: CaptureSaveCoordinator? = nil,
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator? = nil,
          renderer: TemplateRenderer = TemplateRenderer(),
@@ -109,6 +124,7 @@ final class RecordListModel: ObservableObject {
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
+        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
@@ -182,6 +198,14 @@ final class RecordListModel: ObservableObject {
     /// Re-reads counts, e.g. when the list appears again.
     func reloadLibrary() {
         libraryRevision += 1
+    }
+
+    /// Launch, the list appearing and the app returning to the foreground
+    /// (e.g. from Settings): re-reads counts and backfills albums if access
+    /// is full. Only reads the status, never asks (§7.1).
+    func sceneDidBecomeActive() {
+        reloadLibrary()
+        Task { await backfillAlbumsIfNeeded() }
     }
 
     // MARK: - Rows
@@ -267,7 +291,9 @@ final class RecordListModel: ObservableObject {
     /// The wall's model for `id`.
     func photoWallModel(for id: UUID) -> PhotoWallModel {
         PhotoWallModel(profileID: id, store: store, library: library, calendar: calendar,
-                       todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" })
+                       saveCoordinator: saveCoordinator,
+                       todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" },
+                       backfillAlbums: { [weak self] in await self?.backfillAlbumsIfNeeded(reportsFailure: true) })
     }
 
     /// The viewer's model, opened on `photoID` of record `id` (#619).
@@ -334,14 +360,21 @@ final class RecordListModel: ObservableObject {
     }
 
     /// The checkmark: keeps the new record and opens its photo wall in place
-    /// of the editor (FR-21.2).
+    /// of the editor (FR-21.2). With full access and no album picked, the
+    /// record's album is created now (FR-21.6); `albumCreation` finishes
+    /// when that is done. A failure leaves `albumIdentifier` `nil` for the
+    /// next backfill and sets `lastError`.
     @discardableResult
     func confirmNewRecord() -> UUID? {
         guard let id = draftID else { return nil }
         draftID = nil
         path = [.wall(id)]
+        albumCreation = Task { await createAlbumIfUnbound(for: id, reportsFailure: true) }
         return id
     }
+
+    /// The album creation started by the last `confirmNewRecord()`, for tests.
+    private(set) var albumCreation: Task<Void, Never>?
 
     private func discardDraft() {
         guard let id = draftID else { return }
@@ -361,6 +394,71 @@ final class RecordListModel: ObservableObject {
     }
 
     // MARK: - Album
+
+    /// Creates an album for every record whose `albumIdentifier` is `nil`
+    /// (made before access was granted, or migrated) and stores it (FR-21.6).
+    ///
+    /// Full access only; never asks. An album id that no longer resolves is
+    /// not `nil` and is left alone. The unconfirmed draft is skipped. Safe to
+    /// call from several triggers at once: a record already being created
+    /// is skipped. A failed record stays `nil` and is retried next time.
+    func backfillAlbumsIfNeeded(reportsFailure: Bool = false) async {
+        guard library.authorizationStatus() == .authorized else { return }
+        let ids = store.profiles.filter { $0.albumIdentifier == nil }.map(\.id)
+        for id in ids {
+            await createAlbumIfUnbound(for: id, reportsFailure: reportsFailure)
+        }
+    }
+
+    /// Creates and binds `id`'s album unless it is a draft, already bound,
+    /// already being created, or access is not full.
+    private func createAlbumIfUnbound(for id: UUID, reportsFailure: Bool) async {
+        guard library.authorizationStatus() == .authorized, id != draftID,
+              store.profiles.first(where: { $0.id == id })?.albumIdentifier == nil else { return }
+        do {
+            try await createAndBindAlbum(for: id)
+        } catch {
+            if reportsFailure { lastError = error }
+        }
+    }
+
+    /// Creates an album titled by `id`'s current name and binds it, reading
+    /// the store's latest profile so no other field is overwritten.
+    ///
+    /// Runs in `saveCoordinator`'s queue, so a camera save or "加入照片" for
+    /// the record waits for it and uses the album it stored, and it waits
+    /// for them. The binding at the time of the request must still be there
+    /// when the queue reaches it and when the album is made: an album bound
+    /// meanwhile (a write before it in the queue, or a newer pick in the
+    /// album picker) wins, and nothing is created or overwritten. Returns
+    /// without creating when `id` is already queued here.
+    private func createAndBindAlbum(for id: UUID) async throws {
+        guard let requested = store.profiles.first(where: { $0.id == id }),
+              albumCreationsInFlight.insert(id).inserted else { return }
+        defer { albumCreationsInFlight.remove(id) }
+        let bindingAtRequest = requested.albumIdentifier
+        try await saveCoordinator.serialized {
+            guard library.authorizationStatus() == .authorized,
+                  let current = store.profiles.first(where: { $0.id == id }),
+                  current.albumIdentifier == bindingAtRequest else { return }
+            let albumID: String
+            if let leftOver = unboundCreatedAlbums[id], library.userAlbums().contains(where: { $0.id == leftOver }) {
+                albumID = leftOver
+            } else {
+                albumID = try await library.createAlbum(title: current.name)
+            }
+            unboundCreatedAlbums[id] = nil
+            guard var latest = store.profiles.first(where: { $0.id == id }),
+                  latest.albumIdentifier == bindingAtRequest else { return }
+            latest.albumIdentifier = albumID
+            do {
+                try store.updateAndWait(latest)
+            } catch {
+                unboundCreatedAlbums[id] = albumID
+                throw error
+            }
+        }
+    }
 
     /// Text of the "建立新相簿" row and option for `name` (FR-21.4).
     static func createAlbumTitle(forRecordNamed name: String) -> String {
@@ -413,7 +511,9 @@ final class RecordListModel: ObservableObject {
 
     /// The picker's model for `id`.
     func albumPickerModel(for id: UUID) -> AlbumPickerModel {
-        AlbumPickerModel(profileID: id, store: store, library: library)
+        AlbumPickerModel(profileID: id, store: store, library: library,
+                         isDraft: { self.isDraft(id) },
+                         createAlbum: { try await self.createAndBindAlbum(for: id) })
     }
 }
 
@@ -446,25 +546,31 @@ final class AlbumPickerModel: ObservableObject {
 
     private let store: ProfileStore
     private let library: any RecordAlbumLibrary
+    private let isDraft: () -> Bool
+    private let createAlbum: () async throws -> Void
     private var subscription: AnyCancellable?
 
-    init(profileID: UUID, store: ProfileStore, library: any RecordAlbumLibrary) {
+    /// - Parameter isDraft: whether the record is a new one not yet created
+    ///   by the checkmark; its album waits for the checkmark (FR-21.6).
+    /// - Parameter createAlbum: creates an album for the record and binds
+    ///   it (the "建立新相簿" row under full access).
+    init(profileID: UUID, store: ProfileStore, library: any RecordAlbumLibrary,
+         isDraft: @escaping () -> Bool = { false },
+         createAlbum: @escaping () async throws -> Void) {
         self.profileID = profileID
         self.store = store
         self.library = library
+        self.isDraft = isDraft
+        self.createAlbum = createAlbum
         self.status = library.authorizationStatus()
         // Selection and "used by" follow the store.
         subscription = store.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
     }
 
-    /// Requests access when undecided, then lists the albums. Only called on
-    /// opening the picker, never from the list (PRD §7.1).
+    /// Lists the albums. Never asks for access: that only happens on the
+    /// photo wall's permission intro (§7.1, FR-21.4).
     func load() async {
-        if library.authorizationStatus() == .notDetermined {
-            status = await library.requestReadWriteAccess()
-        } else {
-            status = library.authorizationStatus()
-        }
+        status = library.authorizationStatus()
         albums = library.userAlbums()
     }
 
@@ -490,9 +596,23 @@ final class AlbumPickerModel: ObservableObject {
         return result
     }
 
-    /// Binds the record to `albumIdentifier`, or to a to-be-created album with
-    /// `nil`. `fallbackAssetIDs` is left alone (FR-21.5).
-    func select(albumIdentifier: String?) {
+    /// Binds the record to `albumIdentifier`. `nil` is "建立新相簿": under
+    /// full access a new album is created and bound right away (FR-21.4),
+    /// except for a draft, which only clears the binding so the checkmark
+    /// creates it (FR-21.6); otherwise the record is left to create one
+    /// later. A pick made while that album is still being created wins over
+    /// it. The album bound before is not deleted and `fallbackAssetIDs` is
+    /// left alone (FR-21.5).
+    func select(albumIdentifier: String?) async {
+        if albumIdentifier == nil, library.authorizationStatus() == .authorized, !isDraft() {
+            do {
+                try await createAlbum()
+                albums = library.userAlbums()
+            } catch {
+                lastError = error
+            }
+            return
+        }
         guard var latest = profile, latest.albumIdentifier != albumIdentifier else { return }
         latest.albumIdentifier = albumIdentifier
         do {

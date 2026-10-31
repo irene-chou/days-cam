@@ -40,7 +40,9 @@ struct PhotoWallView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titleView }
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            if model.content != .permissionIntro {
+                ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            }
         }
         .tint(CameraTheme.active)
         .task { await model.prepare() }
@@ -138,7 +140,10 @@ struct PhotoWallView: View {
         case .photos: wall
         case .empty: emptyState
         case .needsPermission: PhotoAccessView()
-        case .waiting: Color.clear
+        case .permissionIntro:
+            PhotoPermissionIntroView(isRequesting: model.isRequestingAccess) {
+                Task { await model.continueFromIntro() }
+            }
         }
     }
 
@@ -234,7 +239,7 @@ struct PhotoWallView: View {
             Text("還沒有照片")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(CameraTheme.ink)
-            Text("從相簿加入，或用相機拍一張")
+            Text(model.emptyMessage)
                 .font(.system(size: 13))
                 .foregroundColor(CameraTheme.inkSecondary)
         }

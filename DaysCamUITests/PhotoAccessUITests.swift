@@ -1,6 +1,7 @@
 import XCTest
 
-/// #622: limited and denied photo access (acceptance 1, 3, 4, 6). With
+/// #622: limited and denied photo access (acceptance 1, 3, 4, 6), and #651:
+/// the permission intro and the empty state by access (11, 12, 15). With
 /// `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′ screenshots
 /// are also written there for the PR.
 final class PhotoAccessUITests: XCTestCase {
@@ -113,5 +114,45 @@ final class PhotoAccessUITests: XCTestCase {
         nameField.typeText("新")
         XCTAssertNotEqual(nameField.value as? String, before, "4")
         XCTAssertTrue(element("startDatePicker").exists, "4 the start date is editable")
+    }
+
+    /// #651-11, 12, 15: undecided, the record opens on the intro without
+    /// asking; back and in again shows it again; "繼續" asks and, granted
+    /// full access, lands on the empty wall with the full-access line.
+    func testUndecidedShowsTheIntroUntilContinue() {
+        launchWall(access: "notDetermined", photos: 0)
+        let intro = element("photoPermissionIntro")
+        XCTAssertTrue(intro.waitForExistence(timeout: 10), "11")
+        XCTAssertTrue(app.staticTexts["讓紀錄和「照片」App 同步"].exists, "12 title")
+        XCTAssertTrue(app.staticTexts["每個紀錄會在「照片」App 建一本同名相簿。在那裡加入的照片會自動出現在這裡，並標出第幾天。照片本身不會被修改。"].exists, "12 body")
+        XCTAssertTrue(app.staticTexts["接下來的系統詢問請選「允許完整存取」。只允許部分照片時，紀錄不會同步相簿。"].exists, "12 note")
+        let continueButton = element("permissionIntroContinue")
+        XCTAssertTrue(continueButton.exists, "12")
+        XCTAssertEqual(continueButton.label, "繼續", "12")
+        XCTAssertTrue(element("wallTitle").exists, "12 top bar like the wall")
+        XCTAssertFalse(element("wallMoreButton").exists)
+        XCTAssertFalse(element("addPhotosButton").exists)
+        XCTAssertTrue(app.frame.contains(continueButton.frame), "in frame")
+        shot("651_16_permission-intro")
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5))
+        element("recordRow").tap()
+        XCTAssertTrue(intro.waitForExistence(timeout: 5), "11 the intro again")
+
+        continueButton.tap()
+        XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 5), "13")
+        XCTAssertFalse(intro.exists)
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的紀錄」相簿，會自動出現在這裡"].exists, "15 full")
+        XCTAssertTrue(element("addPhotosButton").exists)
+        shot("651_16_empty-full")
+    }
+
+    /// #651-15: the empty state under limited access.
+    func testLimitedEmptyStateSaysToAddFromTheCorner() {
+        launchWall(access: "limited", photos: 0)
+        XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或按左下角加入照片"].exists, "15 limited")
+        shot("651_16_empty-limited")
     }
 }
