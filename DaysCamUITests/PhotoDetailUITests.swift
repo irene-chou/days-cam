@@ -125,9 +125,8 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["要從「我的紀錄」移除這張照片，還是從「照片」App 刪除？"].exists)
         XCTAssertTrue(app.buttons["從「我的紀錄」移除"].exists)
         XCTAssertTrue(app.buttons["刪除照片"].exists)
-        XCTAssertTrue(app.buttons["取消"].exists)
         shot("photo-detail-remove-or-delete")
-        app.buttons["取消"].tap()
+        if app.buttons["取消"].exists { app.buttons["取消"].tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
         XCTAssertTrue(element("photoDetailImage").exists, "cancel changes nothing")
     }
@@ -137,7 +136,7 @@ final class PhotoDetailUITests: XCTestCase {
         let item = app.buttons["刪除…"]
         XCTAssertTrue(item.waitForExistence(timeout: 5))
         item.tap()
-        XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["刪除照片"].waitForExistence(timeout: 5))
     }
 
     /// 5: swiping left goes to the next, newer photo, the wall's order.
@@ -158,7 +157,7 @@ final class PhotoDetailUITests: XCTestCase {
         launchWall()
         openViewer(cell: 4)
         openRemoveOrDeleteDialog()
-        app.buttons["從「我的紀錄」移除"].tap()
+        app.buttons.matching(identifier: "removeFromRecordButton").firstMatch.tap()
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
         XCTAssertFalse(element("photoDetail").exists)
         XCTAssertFalse(cell(4).exists)

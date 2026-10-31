@@ -38,6 +38,13 @@ struct PhotoDetailView: View {
             // No swiping to another photo while one is being exported (FR-22.2).
             .scrollDisabled(model.isExporting)
             actionBar
+                // Anchored here, not to the toolbar's ⋯, so it comes up as the
+                // bottom action sheet.
+                .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
+                                      title: RemoveOrDeleteDialog.title(recordName: model.recordName),
+                                      recordName: model.recordName,
+                                      onRemove: { Task { await model.removeFromRecord() } },
+                                      onDelete: { Task { await model.deletePhoto() } })
         }
         .background(CameraTheme.background.ignoresSafeArea())
         .overlay(alignment: .bottom) { toastOverlay }
@@ -68,11 +75,6 @@ struct PhotoDetailView: View {
         }) {
             ExportIntroSheet(model: model) { opensStyleAfterIntro = true }
         }
-        .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
-                              title: RemoveOrDeleteDialog.title(recordName: model.recordName),
-                              recordName: model.recordName,
-                              onRemove: { Task { await model.removeFromRecord() } },
-                              onDelete: { Task { await model.deletePhoto() } })
         .alert("無法匯出", isPresented: exportErrorBinding, presenting: model.exportError) { error in
             if error.showsSettingsAction {
                 Button("前往設定") {
