@@ -105,6 +105,7 @@ struct DaysCamApp: App {
     private static func makeProfileStore() -> ProfileStore {
         let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
+        applyUITestSecondRecord(to: profileStore)
         applyUITestFilmDate(to: profileStore)
         return profileStore
     }
@@ -112,7 +113,8 @@ struct DaysCamApp: App {
     /// Builds the camera for record `id` over the one `CameraService`.
     ///
     /// Opening the camera makes the record the last opened one (PRD 2.0
-    /// §4.2). The corner button starts on the record's newest photo. A save
+    /// §4.2). The corner button shows the newest photo of whichever record
+    /// the camera's switcher has selected (#655). A save
     /// that fails after the camera closed, and a failed write of the record,
     /// are shown by the 紀錄 list, which outlives every camera.
     private static func cameraModelFactory(profileStore: ProfileStore,
@@ -132,8 +134,8 @@ struct DaysCamApp: App {
                 profileID: id,
                 saveCoordinator: saveCoordinator,
                 save: save,
-                loadLatestPhoto: {
-                    guard let profile = profileStore.profiles.first(where: { $0.id == id }),
+                loadLatestPhoto: { recordID in
+                    guard let profile = profileStore.profiles.first(where: { $0.id == recordID }),
                           let newest = library.photos(albumIdentifier: profile.albumIdentifier,
                                                       fallbackIDs: profile.fallbackAssetIDs).last else { return nil }
                     return await library.thumbnail(id: newest.id, targetSize: CGSize(width: 200, height: 200))
@@ -187,6 +189,31 @@ struct DaysCamApp: App {
         return CGFloat(angle)
         #else
         return nil
+        #endif
+    }
+
+    /// UI tests pass `-UITestSecondRecord <name>` to add a second record of
+    /// that name, starting the same day as the first, when there is only
+    /// one, for the camera's record switcher (#655). `-UITestRecordCount <n>`
+    /// with it keeps adding records 「<name> 3」… until there are `n`.
+    /// Debug builds only.
+    private static func applyUITestSecondRecord(to profileStore: ProfileStore) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestSecondRecord"),
+              arguments.indices.contains(flag + 1),
+              profileStore.profiles.count == 1,
+              let first = profileStore.profiles.first else { return }
+        let name = arguments[flag + 1]
+        _ = try? profileStore.add(CameraProfile(name: name, startDate: first.startDate))
+        guard let countFlag = arguments.firstIndex(of: "-UITestRecordCount"),
+              arguments.indices.contains(countFlag + 1),
+              let count = Int(arguments[countFlag + 1]) else { return }
+        while profileStore.profiles.count < min(count, ProfileStore.profileLimit) {
+            let added = try? profileStore.add(CameraProfile(name: "\(name) \(profileStore.profiles.count + 1)",
+                                                            startDate: first.startDate))
+            if added == nil { break }
+        }
         #endif
     }
 
