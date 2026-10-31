@@ -448,7 +448,8 @@ final class CameraScreenModel: ObservableObject {
 
     /// Called when the camera goes away: stops the session (#621-9). A
     /// countdown in progress stops without a photo; a photo still saving
-    /// finishes on its own and is still recorded. A failure alert not yet
+    /// finishes on its own and is still recorded; a photo the camera had not
+    /// handed back yet is reported as not taken (#639). A failure alert not yet
     /// dismissed is handed on (`reportFailureAfterClose`), and so is any
     /// later failure.
     func onDisappear() {
@@ -683,11 +684,25 @@ extension CameraScreenModel {
                 // shutter never flickers enabled in between.
                 self.processCapturedImage(image, destination: destination)
                 self.isCapturing = false
-            case .failure:
-                // A capture-level failure: nothing reached the pipeline, the
-                // shutter simply becomes tappable again.
+            case let .failure(error):
+                // A capture-level failure: nothing reached the pipeline. The
+                // shutter becomes tappable again and the lost photo is
+                // reported, never left silent: closing the camera right after
+                // the shutter answers `.notRunning` here, and the failure then
+                // reaches the 紀錄 list (#639).
                 self.isCapturing = false
+                self.reportPhotoFailure(message: Self.captureFailureMessage(error), showsSettingsAction: false)
             }
+        }
+    }
+
+    /// What the failure alert says when the camera did not hand a photo back.
+    static func captureFailureMessage(_ error: CameraCaptureError) -> String {
+        switch error {
+        case .notRunning:
+            return "相機在拍照完成前已停止，這張照片沒有拍下。請再試一次。"
+        case .captureUnavailable, .failed, .noImageData:
+            return "拍照失敗，這張照片沒有拍下。請再試一次。"
         }
     }
 
