@@ -94,8 +94,9 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["從相簿加入，或用相機拍一張"].exists, "12")
         XCTAssertTrue(element("addPhotosButton").exists, "12")
         XCTAssertTrue(element("wallSelectButton").exists, "#648-12")
-        XCTAssertFalse(element("wallSelectButton").isEnabled, "#648-12 選取 is off")
         shot("photo-wall-empty")
+        element("wallSelectButton").tap()
+        XCTAssertFalse(element("wallCancelSelectionButton").waitForExistence(timeout: 2), "#648-12 選取 is off")
     }
 
     /// The camera keeps an exit back to the wall.
@@ -204,7 +205,7 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(cell(4).exists, "8 cancel changes nothing")
 
         element("wallDeleteButton").tap()
-        let remove = app.buttons["從「我的紀錄」移除"]
+        let remove = app.buttons.matching(identifier: "removeFromRecordButton").firstMatch
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         remove.tap()
         let toast = element("wallToast")
@@ -216,11 +217,14 @@ final class PhotoWallUITests: XCTestCase {
     }
 
     private func dismissDialog() {
-        if app.buttons["取消"].firstMatch.exists, app.sheets.firstMatch.exists {
-            app.sheets.firstMatch.buttons["取消"].tap()
+        let cancel = app.sheets.firstMatch.buttons["取消"]
+        if cancel.exists {
+            cancel.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+            // A popover-style dialog has no 取消; a tap outside dismisses it.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
         }
+        XCTAssertFalse(app.buttons["從「我的紀錄」移除"].waitForExistence(timeout: 1))
         XCTAssertTrue(element("wallCancelSelectionButton").waitForExistence(timeout: 5))
     }
 
