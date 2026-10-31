@@ -139,10 +139,14 @@ struct PhotoWallView: View {
         .accessibilityIdentifier("wallTitle")
     }
 
+    // 選取, 全選 and 取消 use the default text color, not the theme's
+    // (2026-11-01 ruling, #662).
+
     /// 選取, left of ⋯; off for an empty record (FR-17.9, FR-17.10).
     private var selectButton: some View {
         Button("選取") { model.beginSelecting() }
             .font(.system(size: 14, weight: .semibold))
+            .tint(.primary)
             .disabled(!model.canSelect)
             .accessibilityIdentifier("wallSelectButton")
     }
@@ -152,6 +156,7 @@ struct PhotoWallView: View {
             if model.isAllSelected { model.deselectAll() } else { model.selectAll() }
         }
         .font(.system(size: 14, weight: .semibold))
+        .tint(.primary)
         .accessibilityIdentifier("wallSelectAllButton")
     }
 
@@ -174,6 +179,7 @@ struct PhotoWallView: View {
     private var cancelSelectionButton: some View {
         Button("取消") { model.endSelecting() }
             .font(.system(size: 14, weight: .semibold))
+            .tint(.primary)
             .accessibilityIdentifier("wallCancelSelectionButton")
     }
 
