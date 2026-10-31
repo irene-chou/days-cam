@@ -2,7 +2,9 @@ import Combine
 import Foundation
 
 /// The camera saves of the whole app (#621, #636 review): how many photos
-/// are being prepared or saved, and the one-at-a-time save queue.
+/// are being prepared or saved, and the one-at-a-time queue of every write
+/// that may create a record's album (camera saves, "加入照片", and the album
+/// creation of #651).
 ///
 /// Built once by `DaysCamApp` and shared by every `CameraScreenModel`. A
 /// camera is a new model each time it opens, so if each kept its own count,
@@ -11,7 +13,9 @@ import Foundation
 /// cameras saving at once for a record without an album would each create
 /// one. Shared, the limit holds across cameras and a save always starts
 /// after the previous one has answered, reading the album it may have just
-/// created.
+/// created. Album creation and "加入照片" join the same queue (#651), so a
+/// photo taken or added while a record's album is still being created goes
+/// into that album instead of making a second one.
 @MainActor
 final class CaptureSaveCoordinator: ObservableObject {
     /// The most photos prepared or saved at once, across every camera; at
@@ -51,6 +55,17 @@ final class CaptureSaveCoordinator: ObservableObject {
     func enqueueSave(_ start: @escaping (_ finished: @escaping () -> Void) -> Void) {
         waitingSaves.append { [self] in start { self.saveDidFinish() } }
         startNextSaveIfIdle()
+    }
+
+    /// Runs `body` in the same queue as `enqueueSave`: it starts once every
+    /// earlier write has answered, and the next starts when it returns or
+    /// throws. Read the record's album inside `body`, not before.
+    func serialized<T>(_ body: () async throws -> T) async rethrows -> T {
+        let finished = await withCheckedContinuation { (continuation: CheckedContinuation<() -> Void, Never>) in
+            enqueueSave { finished in continuation.resume(returning: finished) }
+        }
+        defer { finished() }
+        return try await body()
     }
 
     private func startNextSaveIfIdle() {

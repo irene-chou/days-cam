@@ -41,9 +41,9 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     private(set) var createdAlbumTitles: [String] = []
     /// Non-nil makes `createAlbum` throw it.
     var createAlbumFailure: RecordAlbumError?
-    /// Runs inside `createAlbum` after its suspension point, before it
-    /// returns: lets a test change the store while an album is being made.
-    var onCreateAlbum: (() -> Void)?
+    /// Awaited inside `createAlbum` before it finishes: lets a test change
+    /// the store, or hold the creation open, while an album is being made.
+    var onCreateAlbum: (@MainActor () async -> Void)?
     private var nextID = 1
 
     init(status: PHAuthorizationStatus = .authorized, assets: [Asset] = [], albums: [Album] = []) {
@@ -122,7 +122,7 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
         createdAlbumTitles.append(title)
         // Suspends like the real change block, so overlapping callers interleave.
         await Task.yield()
-        onCreateAlbum?()
+        await onCreateAlbum?()
         if let createAlbumFailure { throw createAlbumFailure }
         guard status == .authorized else { throw RecordAlbumError.permissionDenied }
         let id = "fake-album-\(nextID)"

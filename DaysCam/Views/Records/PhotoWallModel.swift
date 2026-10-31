@@ -59,6 +59,7 @@ final class PhotoWallModel: ObservableObject {
     private let calendar: Calendar
     private let todayText: (CameraProfile) -> String
     private let backfillAlbums: () async -> Void
+    private let saveCoordinator: CaptureSaveCoordinator
     private let presentLimitedPicker: () async -> [String]
     private let openSettings: (URL) -> Void
     private let defaults: UserDefaults
@@ -74,6 +75,8 @@ final class PhotoWallModel: ObservableObject {
     ///
     /// - Parameter todayText: "今天第 N 天" for the header, supplied by the
     ///   list so both screens read the same clock and wording.
+    /// - Parameter saveCoordinator: the app's queue of writes that may
+    ///   create an album; "加入照片" joins it (#651).
     /// - Parameter backfillAlbums: creates the albums of records that have
     ///   none, run when the intro's prompt comes back with full access
     ///   (FR-21.6).
@@ -86,6 +89,7 @@ final class PhotoWallModel: ObservableObject {
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
+         saveCoordinator: CaptureSaveCoordinator? = nil,
          todayText: @escaping (CameraProfile) -> String,
          backfillAlbums: @escaping () async -> Void = {},
          presentLimitedPicker: (() async -> [String])? = nil,
@@ -97,6 +101,7 @@ final class PhotoWallModel: ObservableObject {
         self.calendar = calendar
         self.todayText = todayText
         self.backfillAlbums = backfillAlbums
+        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.presentLimitedPicker = presentLimitedPicker ?? { await LimitedLibraryPicker.present() }
         self.openSettings = openSettings ?? { UIApplication.shared.open($0) }
         self.defaults = defaults
@@ -274,16 +279,21 @@ final class PhotoWallModel: ObservableObject {
 
     /// Adds the picked assets to the record's album, creating the album when
     /// the record has none, and stores the album id if it changed (FR-17.7).
+    /// Waits in `saveCoordinator`'s queue and reads the album there, so an
+    /// album still being created is used rather than duplicated (#651).
     /// A failure sets `errorMessage` and leaves the wall as it was.
     func addPhotos(ids: [String]) async {
-        guard !ids.isEmpty, let profile else { return }
+        guard !ids.isEmpty, profile != nil else { return }
         do {
-            let albumID = try await library.addAssets(ids,
-                                                     albumIdentifier: profile.albumIdentifier,
-                                                     albumTitle: profile.name)
-            if albumID != profile.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
-                latest.albumIdentifier = albumID
-                try store.updateAndWait(latest)
+            try await saveCoordinator.serialized {
+                guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
+                let albumID = try await library.addAssets(ids,
+                                                         albumIdentifier: current.albumIdentifier,
+                                                         albumTitle: current.name)
+                if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
+                    latest.albumIdentifier = albumID
+                    try store.updateAndWait(latest)
+                }
             }
             reload()
         } catch let error as RecordAlbumError {

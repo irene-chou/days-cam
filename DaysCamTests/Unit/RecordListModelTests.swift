@@ -458,6 +458,51 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(library.createdAlbumTitles, [])
     }
 
+    /// #651 review: "加入照片" while the new record's album is still being
+    /// created waits for it and goes into that album: one album in all.
+    func testAddingPhotosWhileTheAlbumIsBeingCreatedUsesThatAlbum() async throws {
+        let store = makeStore()
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { await latch.hold() }
+        let model = makeModel(store: store, library: library)
+        model.addRecord()
+        guard case let .editor(id)? = model.path.first else { return XCTFail("the editor is pushed") }
+        model.confirmNewRecord()
+        try await latch.waitUntilHolding()
+
+        let wall = model.photoWallModel(for: id)
+        let adding = Task { await wall.addPhotos(ids: ["x"]) }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(library.albums.isEmpty, "adding waits for the creation")
+
+        latch.release()
+        await model.albumCreation?.value
+        await adding.value
+        XCTAssertEqual(library.createdAlbumTitles.count, 1)
+        XCTAssertEqual(library.albums.count, 1, "one album")
+        let album = try XCTUnwrap(library.albums.first)
+        XCTAssertEqual(album.assetIDs, ["x"], "the photo went into it")
+        XCTAssertEqual(store.profiles.first { $0.id == id }?.albumIdentifier, album.id)
+        XCTAssertNil(wall.errorMessage)
+    }
+
+    /// #651 review: a backfill queued behind "加入照片" for a record without an
+    /// album finds the album that add created and makes none.
+    func testBackfillAfterAddingPhotosCreatesNoSecondAlbum() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let model = makeModel(store: store, library: library)
+        let wall = model.photoWallModel(for: record.id)
+        async let adding: Void = wall.addPhotos(ids: ["x"])
+        async let backfill: Void = model.backfillAlbumsIfNeeded()
+        _ = await (adding, backfill)
+        XCTAssertEqual(library.albums.count, 1)
+        XCTAssertEqual(library.albums.first?.assetIDs, ["x"])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+    }
+
     /// 10: launch and returning to the foreground never ask, even undecided.
     func testLaunchAndForegroundNeverRequestAccess() async throws {
         for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {
@@ -599,5 +644,30 @@ private extension CameraProfile {
         var copy = self
         copy.albumIdentifier = albumIdentifier
         return copy
+    }
+}
+
+/// Holds a fake album creation open until the test releases it (#651).
+@MainActor
+final class AlbumCreationLatch {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    var isHolding: Bool { continuation != nil }
+
+    func hold() async {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    /// Yields until a creation is held; fails after about two seconds.
+    func waitUntilHolding() async throws {
+        for _ in 0..<200 where !isHolding {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(isHolding, "an album creation started")
     }
 }

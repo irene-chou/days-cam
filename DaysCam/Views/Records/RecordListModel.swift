@@ -75,6 +75,10 @@ final class RecordListModel: ObservableObject {
 
     let store: ProfileStore
     let library: any RecordAlbumLibrary
+    /// The app's one queue of writes that may create an album; shared with
+    /// every camera so album creation, "加入照片" and camera saves never make
+    /// a second album for a record (#651).
+    let saveCoordinator: CaptureSaveCoordinator
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -86,8 +90,8 @@ final class RecordListModel: ObservableObject {
     private var draftID: UUID?
     private var subscriptions = Set<AnyCancellable>()
     private var changesTask: Task<Void, Never>?
-    /// Records whose album is being created: a second trigger skips them,
-    /// so a record never gets two albums (FR-21.6).
+    /// Records with an album creation queued or running: a second trigger
+    /// skips them (FR-21.6).
     private var albumCreationsInFlight: Set<UUID> = []
 
     /// Creates a model over `store`.
@@ -99,8 +103,11 @@ final class RecordListModel: ObservableObject {
     ///   `PhotoSaver.saveToRecentsOnly`.
     /// - Parameter openSettings: opens the app's Settings page from the
     ///   editor's 相簿 row; injected so tests can capture the URL.
+    /// - Parameter saveCoordinator: the queue album creation joins; pass the
+    ///   cameras' one.
     init(store: ProfileStore,
          library: any RecordAlbumLibrary,
+         saveCoordinator: CaptureSaveCoordinator? = nil,
          calendar: Calendar = .autoupdatingCurrent,
          calculator: DayCountCalculator? = nil,
          renderer: TemplateRenderer = TemplateRenderer(),
@@ -114,6 +121,7 @@ final class RecordListModel: ObservableObject {
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
+        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
@@ -280,6 +288,7 @@ final class RecordListModel: ObservableObject {
     /// The wall's model for `id`.
     func photoWallModel(for id: UUID) -> PhotoWallModel {
         PhotoWallModel(profileID: id, store: store, library: library, calendar: calendar,
+                       saveCoordinator: saveCoordinator,
                        todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" },
                        backfillAlbums: { [weak self] in await self?.backfillAlbumsIfNeeded(reportsFailure: true) })
     }
@@ -411,18 +420,25 @@ final class RecordListModel: ObservableObject {
     }
 
     /// Creates an album titled by `id`'s current name and binds it, reading
-    /// the store's latest profile so no other field is overwritten. Unless
-    /// `replacingBound`, an album bound meanwhile by another path wins.
-    /// Returns without creating when `id` is already being created.
+    /// the store's latest profile so no other field is overwritten.
+    ///
+    /// Runs in `saveCoordinator`'s queue, so a camera save or "加入照片" for
+    /// the record waits for it and uses the album it stored, and it waits
+    /// for them. Unless `replacingBound`, it creates nothing once the record
+    /// has an album (bound by a write before it in the queue). Returns
+    /// without creating when `id` is already queued here.
     private func createAndBindAlbum(for id: UUID, replacingBound: Bool) async throws {
-        guard let name = store.profiles.first(where: { $0.id == id })?.name,
-              albumCreationsInFlight.insert(id).inserted else { return }
+        guard albumCreationsInFlight.insert(id).inserted else { return }
         defer { albumCreationsInFlight.remove(id) }
-        let albumID = try await library.createAlbum(title: name)
-        guard var latest = store.profiles.first(where: { $0.id == id }),
-              replacingBound || latest.albumIdentifier == nil else { return }
-        latest.albumIdentifier = albumID
-        try store.updateAndWait(latest)
+        try await saveCoordinator.serialized {
+            guard library.authorizationStatus() == .authorized,
+                  let current = store.profiles.first(where: { $0.id == id }),
+                  replacingBound || current.albumIdentifier == nil else { return }
+            let albumID = try await library.createAlbum(title: current.name)
+            guard var latest = store.profiles.first(where: { $0.id == id }) else { return }
+            latest.albumIdentifier = albumID
+            try store.updateAndWait(latest)
+        }
     }
 
     /// Text of the "建立新相簿" row and option for `name` (FR-21.4).
