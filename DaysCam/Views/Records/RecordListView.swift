@@ -45,8 +45,12 @@ struct RecordListView: View {
             .navigationDestination(for: RecordRoute.self) { route in
                 switch route {
                 case let .wall(id):
+                    // Keyed by record: back from the camera on another record
+                    // swaps the wall in place (#655), which must build that
+                    // record's own model rather than keep the old one.
                     PhotoWallView(profileID: id, listModel: model, styleCenter: styleCenter,
                                   makeCameraModel: makeCameraModel)
+                        .id(id)
                 case let .editor(id):
                     RecordEditorView(model: model, profileID: id)
                 }

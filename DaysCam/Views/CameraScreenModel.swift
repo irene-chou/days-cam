@@ -2,16 +2,17 @@ import Combine
 import Foundation
 import UIKit
 
-/// Drives the camera of one record (PRD 2.0 FR-20): camera lifecycle,
-/// permission/status interpretation, the 「第 N 天」 HUD, the tools capsule,
-/// the shutter's capture state machine and saving the clean original into
-/// the record's album. `CameraScreen` only lays out whatever this model
+/// Drives the camera (PRD 2.0 FR-20): camera lifecycle, permission/status
+/// interpretation, the record switcher (FR-20.8), the tools capsule, the
+/// shutter's capture state machine and saving the clean original into the
+/// selected record's album. `CameraScreen` only lays out whatever this model
 /// currently says, so UI-level acceptance criteria are tested here rather
 /// than in the view.
 ///
-/// Built each time the camera opens, for the record whose photo wall opened
-/// it (#621). The photo is never cropped, toned or baked: the overlay is
-/// added only by the export page (§6.3).
+/// Built each time the camera opens, starting on the record whose photo
+/// wall opened it (#621); the switcher changes where later photos go
+/// (#655). The photo is never cropped, toned or baked: the overlay is added
+/// only by the export page (§6.3).
 @MainActor
 final class CameraScreenModel: ObservableObject {
     /// Saves one photo for a record: into its album (full access, creating
@@ -41,8 +42,12 @@ final class CameraScreenModel: ObservableObject {
     /// ratio and tone fields stay in the file unread (PRD 2.0 §4.2).
     let captureSettingsStore: CaptureSettingsStore
     private let profileStore: ProfileStore
-    /// The record this camera saves into: the one whose photo wall opened it.
-    let profileID: UUID
+    /// The record whose photo wall opened this camera.
+    let openedProfileID: UUID
+    /// The record the next photo goes into (FR-20.8): `openedProfileID`
+    /// until the switcher picks another. A photo already taken keeps the
+    /// record it was taken for (`CaptureDestination`).
+    @Published private(set) var selectedProfileID: UUID
     private let calendar: Calendar
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
@@ -50,8 +55,13 @@ final class CameraScreenModel: ObservableObject {
     /// advance the countdown one tick at a time.
     private let countdownTicker: CountdownTicker
 
-    /// The record as the store has it now; `nil` once it was deleted.
+    /// The selected record as the store has it now; `nil` once it was
+    /// deleted.
     @Published private(set) var profile: CameraProfile?
+
+    /// Whether the record switcher's menu is showing (FR-20.8). Never
+    /// persisted.
+    @Published private(set) var isRecordMenuOpen = false
 
     /// Whether the flash／timer／grid capsule below the toolbar is showing
     /// (issue #135). Never persisted.
@@ -156,10 +166,12 @@ final class CameraScreenModel: ObservableObject {
     /// Tells the camera which flash mode the next photo will use (TASK-130).
     private let prepareCapture: (FlashMode) -> Void
 
-    /// Reads the record's newest photo for the thumbnail button; `nil` when
+    /// Reads a record's newest photo for the thumbnail button; `nil` when
     /// it has none or access is missing.
-    private let loadLatestPhoto: @MainActor () async -> UIImage?
-    private var didLoadLatestThumbnail = false
+    private let loadLatestPhoto: @MainActor (UUID) async -> UIImage?
+    /// The record whose newest photo was last read, so each record is read
+    /// once per selection.
+    private var latestThumbnailRecordID: UUID?
 
     /// Where a failure goes once the camera has closed, so a photo that did
     /// not save is never left unreported (0.2 FR-5.5): the alert the user has
@@ -174,11 +186,12 @@ final class CameraScreenModel: ObservableObject {
     private(set) var isClosed = false
 
     /// Bumped whenever the calendar day changes or the app returns to the
-    /// foreground (TASK-14), so the HUD re-reads the clock (PRD 0.1 §6.4).
-    /// Nothing reads this value; its only job is to be `@Published`.
+    /// foreground (TASK-14), so the switcher's day counts re-read the clock
+    /// (PRD 0.1 §6.4). Nothing reads this value; its only job is to be
+    /// `@Published`.
     @Published private(set) var refreshTick = 0
 
-    /// The pending toast (only "已取消" now), if any.
+    /// The pending toast ("已取消", "改存到「…」"), if any.
     @Published private(set) var toastState: ToastState?
 
     /// How `showToast` schedules the toast's own auto-dismiss. Injected so
@@ -187,8 +200,8 @@ final class CameraScreenModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, so the HUD
-    ///   follows the device's current time zone (PRD 0.1 §6.3).
+    /// - Parameter calendar: Defaults to `.autoupdatingCurrent`, so the day
+    ///   counts follow the device's current time zone (PRD 0.1 §6.3).
     init(cameraService: CameraService,
          profileStore: ProfileStore,
          profileID: UUID,
@@ -204,7 +217,7 @@ final class CameraScreenModel: ObservableObject {
          },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
-         loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
+         loadLatestPhoto: @escaping @MainActor (UUID) async -> UIImage? = { _ in nil },
          reportFailureAfterClose: @escaping @MainActor (CaptureAlertError, Int) -> Void = { _, _ in },
          reportRecordWriteFailure: @escaping @MainActor (Error) -> Void = { _ in },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
@@ -258,7 +271,8 @@ final class CameraScreenModel: ObservableObject {
                                              })
         self.captureSettingsStore = captureSettingsStore
         self.profileStore = profileStore
-        self.profileID = profileID
+        self.openedProfileID = profileID
+        self.selectedProfileID = profileID
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
@@ -292,7 +306,7 @@ final class CameraScreenModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] profiles in
                 guard let self else { return }
-                self.profile = profiles.first { $0.id == self.profileID }
+                self.profile = profiles.first { $0.id == self.selectedProfileID }
             }
             .store(in: &cancellables)
     }
@@ -376,7 +390,7 @@ final class CameraScreenModel: ObservableObject {
     private func bindToFocusModel() {
         focusModel.canAcceptGesture = { [weak self] in
             guard let self else { return false }
-            guard !isCameraToolsExpanded, !zoomExpansion.isExpanded else { return false }
+            guard !isCameraToolsExpanded, !zoomExpansion.isExpanded, !isRecordMenuOpen else { return false }
             #if DEBUG
             if fakeFocusBackend != nil { return true }
             #endif
@@ -419,9 +433,9 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Re-reads the clock for the HUD when the calendar day rolls over while
-    /// the camera is up, and when the app returns to the foreground (PRD 0.1
-    /// §6.4, TASK-14).
+    /// Re-reads the clock for the day counts when the calendar day rolls
+    /// over while the camera is up, and when the app returns to the
+    /// foreground (PRD 0.1 §6.4, TASK-14).
     private func bindToClockNotifications() {
         let center = NotificationCenter.default
         center.publisher(for: .NSCalendarDayChanged)
@@ -434,7 +448,7 @@ final class CameraScreenModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Forces the HUD to re-render against the current moment.
+    /// Forces the day counts to re-render against the current moment.
     func refreshOverlay() {
         refreshTick += 1
     }
@@ -466,6 +480,7 @@ final class CameraScreenModel: ObservableObject {
 
     func switchCamera() {
         collapseCameraTools()
+        closeRecordMenu()
         cameraService.switchCamera()
     }
 
@@ -515,22 +530,67 @@ final class CameraScreenModel: ObservableObject {
     }
 }
 
-// MARK: - Day HUD (FR-20.2)
+// MARK: - Record switcher (FR-20.8, #655)
 
 extension CameraScreenModel {
-    /// 「第 N 天」 for the record as of right now (FR-20.2): the elapsed days
-    /// alone, by the record's counting rule, whatever units, wording or other
-    /// parts the record prints; 「還有 N 天」 while the start date is still
-    /// ahead. Read afresh on every access; `refreshTick` redraws it.
-    var dayHUDText: String {
-        guard var elapsedOnly = profile else { return "" }
-        elapsedOnly.showDayCount = true
-        elapsedOnly.showDate = false
-        elapsedOnly.showName = false
-        elapsedOnly.displayUnits = [.day]
-        elapsedOnly.dayCountFormat = .ordinal
-        return renderer.render(profile: elapsedOnly, capturedAt: calculator.now(),
-                               calendar: calendar, moment: .today)
+    /// One row of the switcher's menu.
+    struct RecordChoice: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+        /// Today's count, as the 紀錄 list words it (「今天第 N 天」).
+        let dayText: String
+        let isSelected: Bool
+    }
+
+    /// Every record, in the 紀錄 list's order (newest-modified first), with
+    /// today's count read afresh; `refreshTick` redraws it.
+    var recordChoices: [RecordChoice] {
+        profileStore.profiles
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { record in
+                RecordChoice(id: record.id, name: record.name,
+                             dayText: RecordListModel.dayCountText(for: record, renderer: renderer,
+                                                                   calculator: calculator),
+                             isSelected: record.id == selectedProfileID)
+            }
+    }
+
+    /// The switcher's label: the selected record's name.
+    var selectedRecordName: String {
+        profile?.name ?? ""
+    }
+
+    /// Opens or closes the menu; opening closes the tools capsule first
+    /// (0.2 FR-7.11).
+    func toggleRecordMenu() {
+        if isRecordMenuOpen {
+            closeRecordMenu()
+        } else {
+            collapseCameraTools()
+            zoomExpansion.collapse()
+            isRecordMenuOpen = true
+        }
+    }
+
+    /// Closes the menu; a no-op when it is already closed.
+    func closeRecordMenu() {
+        if isRecordMenuOpen {
+            isRecordMenuOpen = false
+        }
+    }
+
+    /// Makes `id` the record later photos go into and says so. A photo
+    /// already taken keeps its own record. Picking the selected record, or
+    /// one that no longer exists, only closes the menu.
+    func selectRecord(_ id: UUID) {
+        closeRecordMenu()
+        guard id != selectedProfileID,
+              let record = profileStore.profiles.first(where: { $0.id == id }) else { return }
+        selectedProfileID = id
+        profile = record
+        latestThumbnailImage = nil
+        showToast(message: "改存到「\(record.name)」")
+        Task { await loadLatestThumbnail() }
     }
 }
 
@@ -573,8 +633,10 @@ extension CameraScreenModel {
         captureSettingsStore.toggleGrid()
     }
 
-    /// Opens or closes the tools capsule (issue #135).
+    /// Opens or closes the tools capsule (issue #135); opening closes the
+    /// record menu.
     func toggleCameraTools() {
+        closeRecordMenu()
         isCameraToolsExpanded.toggle()
     }
 
@@ -585,12 +647,14 @@ extension CameraScreenModel {
         }
     }
 
-    /// A tap on the viewfinder closes the zoom and tools capsules; a tap
-    /// that closes something does not also focus (73.6, #541).
+    /// A tap on the viewfinder closes the zoom and tools capsules and the
+    /// record menu; a tap that closes something does not also focus (73.6,
+    /// #541).
     func handleViewfinderTap() {
-        let closesSomething = isCameraToolsExpanded || zoomExpansion.isExpanded
+        let closesSomething = isCameraToolsExpanded || zoomExpansion.isExpanded || isRecordMenuOpen
         zoomExpansion.collapse()
         collapseCameraTools()
+        closeRecordMenu()
         if closesSomething { focusModel.ignoreTouchConsumedByTap() }
     }
 }
@@ -615,6 +679,7 @@ extension CameraScreenModel {
     /// `isShutterDisabled` (the FR-5.5 debounce) or once the record is gone.
     func capturePhoto() {
         collapseCameraTools()
+        closeRecordMenu()
         guard countdownRemaining == nil else {
             cancelCountdown()
             return
@@ -659,9 +724,9 @@ extension CameraScreenModel {
         showToast(message: "已取消")
     }
 
-    /// Actually fires the shutter. The destination is the record as it is at
-    /// this instant. The shutter time is used by nothing but the HUD
-    /// (FR-20.6), so no moment travels with the photo.
+    /// Actually fires the shutter. The destination is the selected record as
+    /// it is at this instant: switching records afterwards does not move
+    /// this photo (FR-20.8). No moment travels with the photo (FR-20.6).
     private func performCapture() {
         guard let profile else { return }
         isCapturing = true
@@ -746,7 +811,8 @@ extension CameraScreenModel {
             // The flight starts as soon as the photo is ready, in parallel
             // with the library write (issue #148).
             DispatchQueue.main.async {
-                self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail))
+                self.captureFlights.append(CaptureFlight(id: flightID, image: flightImage, thumbnail: thumbnail,
+                                                         profileID: destination.profileID))
                 self.saveCoordinator.enqueueSave { finished in
                     self.startSave(upright, destination: destination, flightID: flightID,
                                    timingID: timingID, finished: finished)
@@ -890,14 +956,16 @@ extension CameraScreenModel {
 // MARK: - Latest photo (FR-20.5)
 
 extension CameraScreenModel {
-    /// Fills the corner button with the record's newest photo, once per
-    /// camera. A photo taken here before the read finishes wins.
+    /// Fills the corner button with the selected record's newest photo,
+    /// once per selection. A photo taken here before the read finishes, or a
+    /// switch to another record, wins.
     func loadLatestThumbnail() async {
-        guard !didLoadLatestThumbnail else { return }
-        didLoadLatestThumbnail = true
+        let recordID = selectedProfileID
+        guard latestThumbnailRecordID != recordID else { return }
+        latestThumbnailRecordID = recordID
         let landings = thumbnailLandingCount
-        let image = await loadLatestPhoto()
-        guard landings == thumbnailLandingCount, let image else { return }
+        let image = await loadLatestPhoto(recordID)
+        guard landings == thumbnailLandingCount, recordID == selectedProfileID, let image else { return }
         latestThumbnailImage = image
     }
 }
@@ -1076,13 +1144,16 @@ struct CaptureFlight: Identifiable {
     let image: UIImage
     /// 88px copy that becomes `latestThumbnailImage` once the flight lands.
     let thumbnail: UIImage
+    /// The record the photo was taken for; `nil` when unknown.
+    let profileID: UUID?
     fileprivate(set) var status: Status = .saving
     fileprivate(set) var hasLanded = false
 
-    init(id: UUID = UUID(), image: UIImage, thumbnail: UIImage) {
+    init(id: UUID = UUID(), image: UIImage, thumbnail: UIImage, profileID: UUID? = nil) {
         self.id = id
         self.image = image
         self.thumbnail = thumbnail
+        self.profileID = profileID
     }
 }
 
@@ -1113,12 +1184,15 @@ extension CameraScreenModel {
     }
 
     /// Saved and landed: the new photo becomes the thumbnail and the flight
-    /// is done.
+    /// is done. A photo taken for a record the switcher has since left does
+    /// not replace the thumbnail of the one now selected (#655).
     private func commitFlightIfFinished(at index: Int) {
         let flight = captureFlights[index]
         guard flight.status == .saved, flight.hasLanded else { return }
-        latestThumbnailImage = flight.thumbnail
-        thumbnailLandingCount += 1
+        if flight.profileID == nil || flight.profileID == selectedProfileID {
+            latestThumbnailImage = flight.thumbnail
+            thumbnailLandingCount += 1
+        }
         captureFlights.remove(at: index)
     }
 }

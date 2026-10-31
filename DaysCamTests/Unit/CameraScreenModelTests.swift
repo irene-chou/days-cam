@@ -6,8 +6,9 @@ import XCTest
 
 /// Covers `CameraScreenModel` (PRD 2.0 FR-20, #621): how it turns
 /// `CameraService`'s published state into what the viewfinder should show,
-/// the 「第 N 天」 HUD, the shutter's capture state machine and how the clean
-/// original is saved into the record's album and written back to the record.
+/// the record switcher (#655), the shutter's capture state machine and how
+/// the clean original is saved into the record's album and written back to
+/// the record.
 ///
 /// Like `CameraServiceTests`, every test stubs `CameraAuthorizing` and
 /// `CaptureDeviceProviding` so nothing here touches real hardware or a real
@@ -217,7 +218,7 @@ final class CameraScreenModelTests: XCTestCase {
                            },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
-                           loadLatestPhoto: @escaping @MainActor () async -> UIImage? = { nil },
+                           loadLatestPhoto: @escaping @MainActor (UUID) async -> UIImage? = { _ in nil },
                            reportFailureAfterClose: @escaping @MainActor (CaptureAlertError, Int) -> Void = { _, _ in },
                            reportRecordWriteFailure: @escaping @MainActor (Error) -> Void = { _ in },
                            saveTimeout: TimeInterval = 30) throws
@@ -452,65 +453,129 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(provider.requestedFacings, [.front])
     }
 
-    // MARK: - Day HUD (FR-20.2)
+    // MARK: - Record switcher (FR-20.8, #655)
 
-    /// 2026-01-01 start, today 2026-01-10: 「第 10 天」.
-    func testDayHUDShowsTheElapsedDay() throws {
+    /// 655-3: the menu lists every record with today's count, newest-modified
+    /// first, the camera's own record checked.
+    func test_655_3_menuListsEveryRecordWithTodaysCountAndChecksTheSelectedOne() throws {
         let clock = MutableClock(try fixedNow())
         let store = makeProfileStore(clock: clock)
-        let record = try addRecord(to: store)
-        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
-        XCTAssertEqual(model.dayHUDText, "第 10 天")
+        let seeded = try XCTUnwrap(store.profiles.first)
+        clock.current = clock.current.addingTimeInterval(60)
+        let first = try addRecord(to: store, name: "小寶")
+        clock.current = clock.current.addingTimeInterval(60)
+        let second = try addRecord(to: store, name: "新家", start: DateFixture.components(2026, 2, 10))
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: first)
+
+        let choices = model.recordChoices
+        XCTAssertEqual(choices.map(\.id), [second.id, first.id, seeded.id], "newest-modified first, like the list")
+        XCTAssertEqual(choices.first { $0.id == first.id }?.dayText, "今天第 10 天")
+        XCTAssertEqual(choices.first { $0.id == second.id }?.dayText, "還有 31 天", "a start date ahead counts down")
+        XCTAssertEqual(choices.filter(\.isSelected).map(\.id), [first.id], "655-3 the camera's record is checked")
+        XCTAssertEqual(model.selectedRecordName, "小寶")
     }
 
-    /// The HUD reads the clock on every access, it is not cached.
-    func testDayHUDFollowsTheClock() throws {
+    /// 655-3: picking another record renames the switcher, moves the check
+    /// and says where photos now go.
+    func test_655_3_pickingAnotherRecordUpdatesTheSwitcherAndShowsTheToast() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let first = try addRecord(to: store, name: "小寶")
+        let second = try addRecord(to: store, name: "新家")
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: first)
+
+        model.toggleRecordMenu()
+        XCTAssertTrue(model.isRecordMenuOpen)
+        model.selectRecord(second.id)
+
+        XCTAssertFalse(model.isRecordMenuOpen, "picking closes the menu")
+        XCTAssertEqual(model.selectedProfileID, second.id)
+        XCTAssertEqual(model.openedProfileID, first.id, "where the camera came from is kept")
+        XCTAssertEqual(model.selectedRecordName, "新家")
+        XCTAssertEqual(model.recordChoices.filter(\.isSelected).map(\.id), [second.id])
+        XCTAssertEqual(model.toastState?.message, "改存到「新家」")
+    }
+
+    /// Picking the record already selected only closes the menu.
+    func testPickingTheSelectedRecordOnlyClosesTheMenu() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let first = try addRecord(to: store, name: "小寶")
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: first)
+
+        model.toggleRecordMenu()
+        model.selectRecord(first.id)
+
+        XCTAssertFalse(model.isRecordMenuOpen)
+        XCTAssertEqual(model.selectedProfileID, first.id)
+        XCTAssertNil(model.toastState)
+    }
+
+    /// 655-12: opening the menu closes the tools capsule first, and opening
+    /// the capsule closes the menu.
+    func test_655_12_menuAndToolsCapsuleCloseEachOther() throws {
+        let (model, _, _, _) = try makeModel()
+        model.toggleCameraTools()
+        XCTAssertTrue(model.isCameraToolsExpanded)
+
+        model.toggleRecordMenu()
+        XCTAssertTrue(model.isRecordMenuOpen)
+        XCTAssertFalse(model.isCameraToolsExpanded, "655-12 the capsule closes first")
+
+        model.toggleCameraTools()
+        XCTAssertTrue(model.isCameraToolsExpanded)
+        XCTAssertFalse(model.isRecordMenuOpen)
+    }
+
+    /// A tap on the viewfinder closes the menu and does not also focus.
+    func testViewfinderTapClosesTheMenu() throws {
+        let (model, _, _, _) = try makeModel()
+        model.toggleRecordMenu()
+        model.handleViewfinderTap()
+        XCTAssertFalse(model.isRecordMenuOpen)
+    }
+
+    /// The day counts read the clock on every access.
+    func testRecordChoicesFollowTheClock() throws {
         let clock = MutableClock(try fixedNow())
         let store = makeProfileStore(clock: clock)
         let record = try addRecord(to: store)
         let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
-        XCTAssertEqual(model.dayHUDText, "第 10 天")
+        XCTAssertEqual(model.recordChoices.first { $0.id == record.id }?.dayText, "今天第 10 天")
 
         clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 8))
-        XCTAssertEqual(model.dayHUDText, "第 11 天")
+        XCTAssertEqual(model.recordChoices.first { $0.id == record.id }?.dayText, "今天第 11 天")
     }
 
-    /// A start date still ahead reads 「還有 N 天」.
-    func testDayHUDCountsDownToAFutureStartDate() throws {
-        let clock = MutableClock(try XCTUnwrap(DateFixture.date(2025, 12, 1, hour: 8)))
-        let store = makeProfileStore(clock: clock)
-        let record = try addRecord(to: store)
-        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
-        XCTAssertEqual(model.dayHUDText, "還有 31 天")
-    }
-
-    /// Whatever units, format or parts the record prints, the HUD is the
-    /// elapsed days alone.
-    func testDayHUDIgnoresTheRecordsUnitsFormatAndParts() throws {
+    /// The corner button shows the newest photo of the record now selected.
+    func testSwitchingRecordsLoadsThatRecordsNewestPhoto() async throws {
         let clock = MutableClock(try fixedNow())
         let store = makeProfileStore(clock: clock)
+        let first = try addRecord(to: store, name: "小寶")
+        let second = try addRecord(to: store, name: "新家")
+        let firstPhoto = solidImage(.red)
+        let secondPhoto = solidImage(.blue)
+        var reads: [UUID] = []
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: first,
+                                             loadLatestPhoto: { id in
+                                                 reads.append(id)
+                                                 return id == second.id ? secondPhoto : firstPhoto
+                                             })
+        await model.loadLatestThumbnail()
+        XCTAssertTrue(model.latestThumbnailImage === firstPhoto)
 
-        var unitsAndFormat = CameraProfile(name: "年月日", startDate: DateFixture.components(2026, 1, 1))
-        unitsAndFormat.displayUnits = [.year, .month, .day]
-        unitsAndFormat.dayCountFormat = .dDay
-        let first = try store.add(unitsAndFormat)
+        model.selectRecord(second.id)
+        XCTAssertNil(model.latestThumbnailImage, "the old record's photo goes at once")
+        await model.loadLatestThumbnail()
 
-        var dateOnly = CameraProfile(name: "只有日期", startDate: DateFixture.components(2026, 1, 1))
-        dateOnly.showDayCount = false
-        dateOnly.showDate = true
-        dateOnly.showName = true
-        let second = try store.add(dateOnly)
-
-        for record in [first, second] {
-            let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record)
-            XCTAssertEqual(model.dayHUDText, "第 10 天", record.name)
-        }
+        XCTAssertTrue(model.latestThumbnailImage === secondPhoto)
+        XCTAssertEqual(reads, [first.id, second.id])
     }
 
     // MARK: - Cross-midnight / foreground refresh (TASK-14)
 
     func testRefreshOverlayPublishesAChange() throws {
-        // The HUD's re-render trigger, independent of the notification
+        // The day counts' re-render trigger, independent of the notification
         // plumbing below.
         let (model, _, _, _) = try makeModel()
         var fired = false
@@ -837,6 +902,256 @@ final class CameraScreenModelTests: XCTestCase {
         }
 
         XCTAssertEqual(try storedRecord(record.id, in: store).fallbackAssetIDs, ["L1"])
+    }
+
+    // MARK: - 655 switching records changes where later photos go
+
+    /// 655-4: after switching to B, the shutter saves into B's album titled
+    /// with B's name; A is left alone.
+    func test_655_4_photoTakenAfterSwitchingSavesIntoTheNewRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶", albumIdentifier: "album-A")
+        let recordB = try addRecord(to: store, name: "新家", albumIdentifier: "album-B")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        model.selectRecord(recordB.id)
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls[0].albumIdentifier, "album-B", "655-4")
+        XCTAssertEqual(saves.calls[0].albumTitle, "新家", "655-4")
+        saves.calls[0].completion(.success(outcome("B1", album: "album-B")))
+
+        let storedA = try storedRecord(recordA.id, in: store)
+        XCTAssertEqual(storedA.albumIdentifier, "album-A", "655-4 A unchanged")
+        XCTAssertTrue(storedA.fallbackAssetIDs.isEmpty, "655-4 A unchanged")
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// 655-5: a photo whose shutter fired for A still goes to A when B is
+    /// picked before the camera hands it back, and A learns the album its
+    /// save created; the next photo goes to B.
+    func test_655_5_switchBeforeTheCaptureReturnsKeepsThePhotoInTheOldRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家", albumIdentifier: "album-B")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        model.beginCapture()
+        model.selectRecord(recordB.id)
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertNil(saves.calls[0].albumIdentifier, "655-5 A's (missing) album")
+        XCTAssertEqual(saves.calls[0].albumTitle, "小寶", "655-5")
+        saves.calls[0].completion(.success(outcome("A1", album: "album-A")))
+        XCTAssertEqual(try storedRecord(recordA.id, in: store).albumIdentifier, "album-A", "655-5 written back to A")
+        XCTAssertEqual(try storedRecord(recordB.id, in: store).albumIdentifier, "album-B", "655-5 B untouched")
+
+        takePhoto(model, captures, at: 1)
+        waitUntil { saves.calls.count == 2 }
+        XCTAssertEqual(saves.calls[1].albumIdentifier, "album-B", "655-5 the next photo goes to B")
+        XCTAssertEqual(saves.calls[1].albumTitle, "新家")
+        saves.calls[1].completion(.success(outcome("B1", album: "album-B")))
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// 655-5: the same while the photo is already waiting for its save:
+    /// switching to B moves nothing, including a limited-access asset id,
+    /// which joins A's `fallbackAssetIDs`.
+    func test_655_5_switchWhileSavingWritesTheFallbackIDBackToTheOldRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶", albumIdentifier: "album-A")
+        let recordB = try addRecord(to: store, name: "新家", albumIdentifier: "album-B")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 }
+        model.selectRecord(recordB.id)
+        XCTAssertEqual(saves.calls[0].albumIdentifier, "album-A")
+        saves.calls[0].completion(.success(outcome("A1", album: nil)))
+
+        XCTAssertEqual(try storedRecord(recordA.id, in: store).fallbackAssetIDs, ["A1"], "655-5")
+        XCTAssertTrue(try storedRecord(recordB.id, in: store).fallbackAssetIDs.isEmpty, "655-5 not B")
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// 655-6: limited access after switching to B: the asset id joins B's
+    /// `fallbackAssetIDs`, never A's, and no album is bound.
+    func test_655_6_limitedAccessAfterSwitchingWritesTheNewRecordsFallbackIDs() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶", fallbackAssetIDs: ["a-old"])
+        let recordB = try addRecord(to: store, name: "新家", fallbackAssetIDs: ["b-old"])
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        model.selectRecord(recordB.id)
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.success(outcome("L1", album: nil)))
+
+        let storedA = try storedRecord(recordA.id, in: store)
+        let storedB = try storedRecord(recordB.id, in: store)
+        XCTAssertEqual(storedB.fallbackAssetIDs, ["b-old", "L1"], "655-6")
+        XCTAssertEqual(storedA.fallbackAssetIDs, ["a-old"], "655-6 not A")
+        XCTAssertNil(storedB.albumIdentifier)
+        XCTAssertNil(storedA.albumIdentifier)
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// 655-7: two records without albums, photos taken while switching back
+    /// and forth: saves still run one at a time, each record gets one album,
+    /// and a later photo of A goes into the album A's first photo created.
+    func test_655_7_switchingWhileShootingCreatesOneAlbumPerRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        takePhoto(model, captures, at: 0)
+        model.selectRecord(recordB.id)
+        takePhoto(model, captures, at: 1)
+        model.selectRecord(recordA.id)
+        waitUntil { model.captureFlights.count == 2 && saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls.count, 1, "655-7 one save at a time")
+        XCTAssertNil(saves.calls[0].albumIdentifier)
+        XCTAssertEqual(saves.calls[0].albumTitle, "小寶")
+        saves.calls[0].completion(.success(outcome("A1", album: "album-A")))
+
+        waitUntil { saves.calls.count == 2 }
+        XCTAssertNil(saves.calls[1].albumIdentifier, "B has no album yet")
+        XCTAssertEqual(saves.calls[1].albumTitle, "新家")
+        saves.calls[1].completion(.success(outcome("B1", album: "album-B")))
+        waitUntil { model.inFlightSaveCount == 0 }
+
+        takePhoto(model, captures, at: 2)
+        waitUntil { saves.calls.count == 3 }
+        XCTAssertEqual(saves.calls[2].albumIdentifier, "album-A", "655-7 no second album for A")
+        XCTAssertEqual(saves.calls[2].albumTitle, "小寶")
+        saves.calls[2].completion(.success(outcome("A2", album: "album-A")))
+
+        XCTAssertEqual(saves.calls.filter { $0.albumIdentifier == nil }.count, 2, "655-7 one album per record")
+        XCTAssertEqual(try storedRecord(recordA.id, in: store).albumIdentifier, "album-A")
+        XCTAssertEqual(try storedRecord(recordB.id, in: store).albumIdentifier, "album-B")
+        XCTAssertTrue(try storedRecord(recordA.id, in: store).fallbackAssetIDs.isEmpty)
+        XCTAssertTrue(try storedRecord(recordB.id, in: store).fallbackAssetIDs.isEmpty)
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// 655-10: leaving the camera while a photo of A saves, after switching
+    /// to B: the save still completes and is written back to A.
+    func test_655_10_closingAfterSwitchingWhileSavingStillRecordsTheOldRecord() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        var lateFailures: [(CaptureAlertError, Int)] = []
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture,
+                                             reportFailureAfterClose: { lateFailures.append(($0, $1)) })
+
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 }
+        model.selectRecord(recordB.id)
+        model.onDisappear()
+        XCTAssertEqual(model.inFlightSaveCount, 1, "655-10 the save keeps going")
+        saves.calls[0].completion(.success(outcome("A1", album: "album-A")))
+
+        XCTAssertEqual(try storedRecord(recordA.id, in: store).albumIdentifier, "album-A", "655-10")
+        XCTAssertNil(try storedRecord(recordB.id, in: store).albumIdentifier)
+        XCTAssertTrue(lateFailures.isEmpty)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+    }
+
+    /// 655-10: the same save failing after the camera closed reaches the app
+    /// as a failure; nothing is announced as saved and no record changes.
+    func test_655_10_failureAfterClosingIsReportedNotSaved() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        var lateFailures: [(CaptureAlertError, Int)] = []
+        var announcements: [String] = []
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture,
+                                             reportFailureAfterClose: { lateFailures.append(($0, $1)) })
+        model.announce = { announcements.append($0) }
+
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 }
+        model.selectRecord(recordB.id)
+        model.onDisappear()
+        saves.calls[0].completion(.failure(.saveFailed("磁碟空間不足")))
+
+        XCTAssertEqual(lateFailures.count, 1, "655-10 reported")
+        XCTAssertEqual(lateFailures.first?.1, 1)
+        XCTAssertTrue(announcements.isEmpty, "655-10 never announced as saved")
+        XCTAssertNil(try storedRecord(recordA.id, in: store).albumIdentifier)
+        XCTAssertNil(try storedRecord(recordB.id, in: store).albumIdentifier)
+        XCTAssertEqual(model.inFlightSaveCount, 0)
+    }
+
+    /// 655-11: whichever record is selected, the save receives the very
+    /// image the camera returned — nothing is drawn on it.
+    func test_655_11_switchedRecordStillSavesTheUntouchedOriginal() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家")
+        let photo = try makePhoto(pixelSize: CGSize(width: 300, height: 400))
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save,
+                                             captureImage: { _, completion in completion(.success(photo)) })
+
+        model.selectRecord(recordB.id)
+        model.beginCapture()
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertTrue(saves.calls[0].image === photo, "655-11 the original object, not a redraw")
+        saves.calls[0].completion(.success(outcome("B1", album: "album-B")))
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// A photo of A landing after the switch does not replace B's thumbnail.
+    func testPhotoOfTheOldRecordDoesNotReplaceTheNewRecordsThumbnail() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶")
+        let recordB = try addRecord(to: store, name: "新家")
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             save: saves.save, captureImage: captures.capture)
+
+        takePhoto(model, captures, at: 0)
+        waitUntil { saves.calls.count == 1 && model.captureFlights.count == 1 }
+        model.selectRecord(recordB.id)
+        saves.calls[0].completion(.success(outcome("A1", album: "album-A")))
+        model.flightDidLand(id: try XCTUnwrap(model.captureFlights.first?.id))
+
+        XCTAssertNil(model.latestThumbnailImage)
+        XCTAssertTrue(model.captureFlights.isEmpty, "the flight is still done with")
     }
 
     // MARK: - Flights, thumbnail and announcements
@@ -1547,7 +1862,7 @@ final class CameraScreenModelTests: XCTestCase {
 
     func testLoadLatestThumbnailShowsTheLoadedPhoto() async throws {
         let loaded = solidImage(.red)
-        let (model, _, _, _) = try makeModel(loadLatestPhoto: { loaded })
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { _ in loaded })
 
         await model.loadLatestThumbnail()
 
@@ -1555,7 +1870,7 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     func testLoadLatestThumbnailKeepsNilWhenTheRecordHasNoPhoto() async throws {
-        let (model, _, _, _) = try makeModel(loadLatestPhoto: { nil })
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { _ in nil })
 
         await model.loadLatestThumbnail()
 
@@ -1565,7 +1880,7 @@ final class CameraScreenModelTests: XCTestCase {
     /// The read happens once per camera, however often the view asks.
     func testLoadLatestThumbnailReadsOnlyOnce() async throws {
         var readCount = 0
-        let (model, _, _, _) = try makeModel(loadLatestPhoto: {
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { _ in
             readCount += 1
             return UIImage()
         })
@@ -1579,7 +1894,7 @@ final class CameraScreenModelTests: XCTestCase {
     /// A photo that lands while the read is still running wins over it.
     func testPhotoLandingDuringTheLatestPhotoReadIsNotOverwritten() throws {
         let loader = GatedPhotoLoader(image: solidImage(.red))
-        let (model, _, _, _) = try makeModel(loadLatestPhoto: { await loader.load() })
+        let (model, _, _, _) = try makeModel(loadLatestPhoto: { _ in await loader.load() })
         let finished = expectation(description: "latest photo read finished")
         Task {
             await model.loadLatestThumbnail()
@@ -1677,9 +1992,10 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.toastState?.message, "已取消")
     }
 
-    func testCountdownThatEndsAfterMidnightStillCapturesOnceAndTheHUDFollowsTheClock() throws {
+    func testCountdownThatEndsAfterMidnightStillCapturesOnceAndTheDayCountFollowsTheClock() throws {
         // 19.10: the countdown starts at 23:59:59 and ends the next day. The
-        // photo carries no moment (FR-20.6); only the HUD reads the clock.
+        // photo carries no moment (FR-20.6); only the day counts read the
+        // clock.
         let clock = MutableClock(try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 23, minute: 59, second: 59)))
         let store = makeProfileStore(clock: clock)
         let record = try addRecord(to: store)
@@ -1694,7 +2010,7 @@ final class CameraScreenModelTests: XCTestCase {
                                                  captureCallCount += 1
                                                  completion(.success(UIImage()))
                                              })
-        XCTAssertEqual(model.dayHUDText, "第 10 天")
+        XCTAssertEqual(model.recordChoices.first { $0.id == record.id }?.dayText, "今天第 10 天")
 
         model.beginCapture()
         clock.current = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 0, minute: 0, second: 2))
@@ -1703,7 +2019,7 @@ final class CameraScreenModelTests: XCTestCase {
         ticker.tick()
 
         XCTAssertEqual(captureCallCount, 1)
-        XCTAssertEqual(model.dayHUDText, "第 11 天")
+        XCTAssertEqual(model.recordChoices.first { $0.id == record.id }?.dayText, "今天第 11 天")
     }
 
     // MARK: - SaveSlot

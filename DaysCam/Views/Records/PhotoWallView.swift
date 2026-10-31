@@ -15,6 +15,8 @@ struct PhotoWallView: View {
     /// The open camera, built when it opens and dropped when it closes
     /// (#621).
     @State private var camera: CameraSession?
+    /// The record the camera's switcher had selected when it closed.
+    @State private var cameraReturnRecordID: UUID?
     @State private var showsPicker = false
 
     static let columnSpacing: CGFloat = 2
@@ -61,10 +63,15 @@ struct PhotoWallView: View {
             }
             .ignoresSafeArea()
         }
-        // The wall re-reads the record when the camera closes: new photos
-        // and a newly bound album (FR-20.4).
-        .fullScreenCover(item: $camera, onDismiss: { model.reload() }) { session in
-            CameraScreen(model: session.model) { camera = nil }
+        // Closing the camera returns to the record its switcher has
+        // selected (FR-20.11): another record's wall replaces this one;
+        // otherwise this wall re-reads the record for new photos and a newly
+        // bound album (FR-20.4).
+        .fullScreenCover(item: $camera, onDismiss: cameraDidClose) { session in
+            CameraScreen(model: session.model) {
+                cameraReturnRecordID = session.model.selectedProfileID
+                camera = nil
+            }
         }
         .navigationDestination(item: $viewerPhotoID) { photoID in
             PhotoDetailView(model: listModel.photoDetailModel(
@@ -283,6 +290,14 @@ struct PhotoWallView: View {
         .padding(.horizontal, 20)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+
+    private func cameraDidClose() {
+        let selected = cameraReturnRecordID ?? model.profileID
+        cameraReturnRecordID = nil
+        if !listModel.cameraDidClose(openedFrom: model.profileID, selected: selected) {
+            model.reload()
+        }
     }
 
     /// Debug UI tests: `-UITestOpenExport` opens the newest photo once per

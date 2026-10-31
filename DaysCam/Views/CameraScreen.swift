@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// The camera of one record (PRD 2.0 FR-20), full screen over its photo wall.
+/// The camera (PRD 2.0 FR-20, D9), full screen over the photo wall that
+/// opened it.
 ///
-/// Composes the viewfinder, the 「第 N 天」 HUD, the permission guidance
-/// screen, the camera toolbar, the shutter, the newest-photo button and the
-/// failure alert. No overlay is drawn: the photo is saved as taken and the
-/// overlay is added only on export (§6.3). All state and decisions live in
+/// Composes the viewfinder, the permission guidance screen, the top bar
+/// with the record switcher and its menu, the shutter, the newest-photo
+/// button (「返回圖庫」) and the failure alert. No overlay is drawn yet (the
+/// preview is #656): the photo is saved as taken and the overlay is added
+/// only on export (§6.3). All state and decisions live in
 /// `CameraScreenModel`; this view only lays it out.
 ///
 /// Fixed light theme (PRD 0.2 FR-14.1): every color here comes from
@@ -14,8 +16,9 @@ import SwiftUI
 /// appearance itself (see its own doc comment).
 struct CameraScreen: View {
     @ObservedObject var model: CameraScreenModel
-    /// Back to the photo wall (FR-20.1): the `xmark` and the newest-photo
-    /// button both call it.
+    /// Back to the photo wall (FR-20.1, FR-20.11): the newest-photo button
+    /// and a swipe down both call it. The caller reads
+    /// `model.selectedProfileID` to know which record's wall to show.
     var onClose: () -> Void
 
     /// The viewfinder always shows the sensor's own 3:4 picture: nothing is
@@ -36,6 +39,9 @@ struct CameraScreen: View {
     /// True while a finger is down on the viewfinder; SwiftUI resets it when a
     /// gesture is cancelled too, which `onEnded` does not report (issue #303).
     @GestureState private var isViewfinderTouched = false
+
+    /// How far a swipe down to close has pulled the screen (FR-20.11).
+    @GestureState private var dismissDragOffset: CGFloat = 0
 
     var body: some View {
         content
@@ -95,21 +101,48 @@ struct CameraScreen: View {
 
                 toolsCapsule(metrics: metrics)
 
+                recordMenu(metrics: metrics)
+
                 captureFlights(metrics: metrics)
             }
             .ignoresSafeArea()
+            .offset(y: dismissDragOffset)
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
+            .animation(CameraTheme.spring, value: model.isRecordMenuOpen)
         }
     }
 
-    /// The bottom-most layer: a tap on blank space closes the capsules.
-    /// Hidden from VoiceOver.
+    /// The bottom-most layer: a tap on blank space closes the capsules and
+    /// the record menu; a swipe down from it closes the camera. Hidden from
+    /// VoiceOver.
     private func tapOutsideLayer(metrics: CameraScreenLayoutMetrics) -> some View {
         Color.clear
             .frame(width: metrics.screenSize.width, height: metrics.screenSize.height)
             .contentShape(Rectangle())
             .onTapGesture { model.handleViewfinderTap() }
+            .simultaneousGesture(dismissDrag)
             .accessibilityHidden(true)
+    }
+
+    // MARK: - Swipe down to close (FR-20.11)
+
+    /// A swipe down that starts outside the viewfinder (the top bar, the
+    /// bottom bar or blank space) closes the camera like the newest-photo
+    /// button. The viewfinder has none, so its tap, exposure drag and pinch
+    /// never close anything. Measured globally: the screen follows the
+    /// finger down while it moves.
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: CameraScreenLayoutMetrics.dismissSwipeMinimumDistance,
+                    coordinateSpace: .global)
+            .updating($dismissDragOffset) { value, offset, _ in
+                offset = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                if CameraScreenLayoutMetrics.isDismissSwipe(translation: value.translation,
+                                                            predictedEndTranslation: value.predictedEndTranslation) {
+                    onClose()
+                }
+            }
     }
 
     // MARK: - Viewfinder box
@@ -136,15 +169,18 @@ struct CameraScreen: View {
     // MARK: - Header
 
     /// The toolbar, vertically centered within the header region below the
-    /// status bar; the HUD sits in its middle (FR-20.2).
+    /// status bar; the record switcher sits in its middle (FR-20.7). A swipe
+    /// down from here closes the camera.
     private func headerBar(metrics: CameraScreenLayoutMetrics) -> some View {
         let isOnPhoto = metrics.isViewfinderBehindHeader(ratio: Self.viewfinderRatio, isPanelOpen: false)
         return VStack(spacing: 0) {
             Spacer().frame(height: metrics.topInset)
-            CameraToolbar(model: model, isOnPhoto: isOnPhoto, onClose: onClose)
+            CameraToolbar(model: model, isOnPhoto: isOnPhoto)
                 .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(width: metrics.screenSize.width, height: metrics.headerBottom, alignment: .top)
+        .contentShape(Rectangle())
+        .simultaneousGesture(dismissDrag)
     }
 
     // MARK: - Shutter flash (issue #148)
@@ -180,17 +216,33 @@ struct CameraScreen: View {
 
     // MARK: - Tools capsule (issue #135)
 
-    /// Floats above the viewfinder, right-aligned with the toolbar's own
-    /// inset and 4pt below the toggle button, which sits at the top right
-    /// (human decision 2026-10-31).
+    /// Floats above the viewfinder, right-aligned with the toggle button
+    /// (inside the flip button at the top right) and 4pt below it (FR-20.7,
+    /// D9).
     @ViewBuilder
     private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isCameraToolsExpanded {
             let inset = CameraScreenLayoutMetrics.toolbarHorizontalInset
+            let trailing = CameraScreenLayoutMetrics.toolsCapsuleTrailingInset
             CameraToolsCapsule(model: model)
-                .frame(width: metrics.screenSize.width - 2 * inset, alignment: .trailing)
+                .frame(width: metrics.screenSize.width - inset - trailing, alignment: .trailing)
                 .offset(x: inset, y: metrics.toolsCapsuleTop)
                 .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - Record menu (FR-20.8)
+
+    /// The record switcher's menu, centered under it, 4pt below the top
+    /// bar's buttons (D9).
+    @ViewBuilder
+    private func recordMenu(metrics: CameraScreenLayoutMetrics) -> some View {
+        if model.isRecordMenuOpen {
+            let width = RecordSwitcherMenu.width(forScreenWidth: metrics.screenSize.width)
+            RecordSwitcherMenu(model: model)
+                .frame(width: width)
+                .offset(x: (metrics.screenSize.width - width) / 2, y: metrics.toolsCapsuleTop)
+                .transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))
         }
     }
 
@@ -198,13 +250,16 @@ struct CameraScreen: View {
 
     /// The bottom bar, anchored to the bottom of the region between
     /// `metrics.footerRegionTop` and `metrics.footerBase` (issue #101 rule
-    /// ③). Always a transparent background (issue #121).
+    /// ③). Always a transparent background (issue #121). A swipe down from
+    /// here closes the camera.
     private func footer(metrics: CameraScreenLayoutMetrics) -> some View {
         let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: Self.viewfinderRatio, isPanelOpen: false)
         return bottomBar(metrics: metrics, isOnPhoto: isOnPhoto)
             .frame(width: metrics.screenSize.width,
                    height: metrics.footerBase - metrics.footerRegionTop,
                    alignment: .bottom)
+            .contentShape(Rectangle())
+            .simultaneousGesture(dismissDrag)
             .offset(x: 0, y: metrics.footerRegionTop)
     }
 
@@ -315,14 +370,15 @@ struct CameraScreen: View {
         }
     }
 
-    // MARK: - Bottom bar (FR-20.5)
+    // MARK: - Bottom bar (FR-20.5, FR-20.11)
 
-    /// Newest photo at the left, the shutter in the middle, flip at the right
-    /// (human decision 2026-10-31). No text labels, no background — every
-    /// button is just an icon (PRD 0.2 FR-14.2).
+    /// Newest photo with 「返回圖庫」 under it at the left, the shutter in the
+    /// middle, nothing at the right (FR-20.7, D9). No background (PRD 0.2
+    /// FR-14.2).
     ///
-    /// The side buttons' centers sit `footerSideButtonCenterInset` from the
-    /// screen edges; the row sits 16pt above the bottom of the footer region.
+    /// The thumbnail's center sits `footerSideButtonCenterInset` from the
+    /// left edge, level with the shutter's; the row sits 16pt above the
+    /// bottom of the footer region.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
         return ZStack {
@@ -330,7 +386,6 @@ struct CameraScreen: View {
             HStack {
                 thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
-                flipButton(isOnPhoto: isOnPhoto)
             }
             .padding(.horizontal, sideInset)
         }
@@ -343,9 +398,10 @@ struct CameraScreen: View {
     /// Icon point size of the placeholder (issue #239).
     private static let footerIconSize: CGFloat = 24
 
-    /// Left key: the record's newest photo, or a placeholder icon before it
-    /// has one. Tapping it goes back to the photo wall (FR-20.5).
-    /// `isOnPhoto` only ever affects the placeholder icon (issue #121).
+    /// Left key: the selected record's newest photo, or a placeholder icon
+    /// before it has one, with 「返回圖庫」 under it. Tapping either goes back
+    /// to the photo wall (FR-20.11). The label hangs below the 44pt tile so
+    /// the tile stays level with the shutter, where flights land.
     private func thumbnailButton(isOnPhoto: Bool) -> some View {
         Button(action: onClose) {
             Group {
@@ -368,26 +424,22 @@ struct CameraScreen: View {
             // animated if/else left the old icon fading out behind the photo.
             .onAppear { shownThumbnail = model.latestThumbnailImage }
             .onChange(of: model.latestThumbnailImage) { _, image in showThumbnail(image) }
+            .overlay(alignment: .bottom) {
+                Text("返回圖庫")
+                    .font(CameraTheme.toolFont(.caption2))
+                    .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.inkSecondary)
+                    .legibleOverPhoto(isOnPhoto)
+                    .fixedSize()
+                    .alignmentGuide(.bottom) { $0[.top] - Self.backLabelGap }
+            }
         }
         .modifier(ThumbnailLandingEffect(landingCount: model.thumbnailLandingCount))
-        .accessibilityLabel("最新照片，回到照片牆")
+        .accessibilityLabel("返回圖庫")
         .accessibilityIdentifier("cameraLatestThumbnail")
     }
 
-    /// Right key: switches between the back and front cameras.
-    private func flipButton(isOnPhoto: Bool) -> some View {
-        Button(action: model.switchCamera) {
-            Image(systemName: "arrow.triangle.2.circlepath.camera")
-                .font(.system(size: Self.footerIconSize, weight: .medium))
-                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
-                .legibleOverPhoto(isOnPhoto)
-                .rotatedChrome(model.viewfinderRotation)
-        }
-        .disabled(model.isCaptureUnsupported)
-        .opacity(model.isCaptureUnsupported ? 0.35 : 1)
-        .accessibilityLabel("翻轉鏡頭")
-    }
+    /// Gap between the thumbnail and 「返回圖庫」 under it (D9).
+    private static let backLabelGap: CGFloat = 4
 
     private func showThumbnail(_ image: UIImage?) {
         if reduceMotion {
@@ -425,7 +477,8 @@ struct CameraScreen: View {
                 set: { isPresented in if !isPresented { model.dismissCaptureError() } })
     }
 
-    /// "已取消" toast (0.2 FR-7.6), above the bottom bar.
+    /// "已取消" (0.2 FR-7.6) and "改存到「…」" (FR-20.8) toasts, above the
+    /// bottom bar.
     @ViewBuilder
     private var toastOverlay: some View {
         if let toastState = model.toastState {

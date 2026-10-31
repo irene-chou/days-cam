@@ -198,6 +198,13 @@ final class RecordListModel: ObservableObject {
     /// Today's elapsed amount in the record's own units and wording; a start
     /// date still ahead reads as the countdown without "今天" (FR-16.3).
     func dayCountText(for profile: CameraProfile) -> String {
+        Self.dayCountText(for: profile, renderer: renderer, calculator: calculator)
+    }
+
+    /// The same line for any screen that lists records, such as the
+    /// camera's record switcher (FR-20.8).
+    static func dayCountText(for profile: CameraProfile, renderer: TemplateRenderer,
+                             calculator: DayCountCalculator) -> String {
         var elapsedOnly = profile
         elapsedOnly.showDayCount = true
         elapsedOnly.showDate = false
@@ -248,6 +255,19 @@ final class RecordListModel: ObservableObject {
     /// Opens `id`'s photo wall (FR-17).
     func openWall(id: UUID) {
         path = [.wall(id)]
+    }
+
+    /// The camera opened from `openedID`'s wall has closed with `selectedID`
+    /// picked in its record switcher (FR-20.11). A different record becomes
+    /// the selected one and its photo wall replaces the old one, so back
+    /// leads to the list. Returns whether the wall changed; when it did not,
+    /// the caller re-reads its own wall.
+    @discardableResult
+    func cameraDidClose(openedFrom openedID: UUID, selected selectedID: UUID) -> Bool {
+        guard selectedID != openedID, profile(id: selectedID) != nil else { return false }
+        store.select(id: selectedID)
+        path = [.wall(selectedID)]
+        return true
     }
 
     /// Opens `id`'s editor on top of its photo wall (FR-17.9).
