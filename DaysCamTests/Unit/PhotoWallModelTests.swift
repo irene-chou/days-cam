@@ -276,7 +276,7 @@ final class PhotoWallModelTests: XCTestCase {
         let (store, profile) = try makeStore()
         var presented = 0
         let model = PhotoWallModel(profileID: profile.id, store: store, library: FakeRecordAlbumLibrary(),
-                                   calendar: calendar, todayText: { _ in "" }, presentLimitedPicker: { presented += 1 })
+                                   calendar: calendar, todayText: { _ in "" }, presentLimitedPicker: { presented += 1; return [] })
         XCTAssertTrue(model.beginAddingPhotos())
         XCTAssertEqual(presented, 0)
     }
