@@ -1091,7 +1091,7 @@ final class CameraScreenModelTests: XCTestCase {
         model.processCapturedImage(UIImage(), destination: destination(of: try XCTUnwrap(model.profile)))
 
         waitUntil { model.captureError != nil && model.inFlightSaveCount == 0 }
-        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.displayMessage)
+        XCTAssertEqual(model.captureError?.message, PhotoSaveError.permissionDenied.cameraDisplayMessage)
         XCTAssertTrue(model.captureError?.showsSettingsAction ?? false)
     }
 

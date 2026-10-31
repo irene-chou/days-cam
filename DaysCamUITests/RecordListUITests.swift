@@ -60,7 +60,7 @@ final class RecordListUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.label.contains("今天第 10 天 · —"), "2 \(row.label)")
         XCTAssertTrue(app.buttons["新增紀錄"].exists)
-        XCTAssertTrue(app.staticTexts["每個紀錄對應「照片」App 裡的一個相簿"].exists)
+        XCTAssertFalse(app.staticTexts["recordListFooter"].exists, "3 denied shows no footer")
         shot("record-list")
     }
 
@@ -70,6 +70,8 @@ final class RecordListUITests: XCTestCase {
         let row = element("recordRow")
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         XCTAssertTrue(row.label.contains("今天第 10 天 · 5 張"), "3 \(row.label)")
+        XCTAssertEqual(element("recordListFooter").label, "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現", "3")
+        shot("record-list-full")
     }
 
     /// 5: one record cannot be deleted; with two the dialog says so.
@@ -91,8 +93,8 @@ final class RecordListUITests: XCTestCase {
         let first = app.descendants(matching: .any).matching(identifier: "recordRow").element(boundBy: 0)
         first.swipeLeft()
         app.buttons["刪除"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '相簿與照片不會被刪除'")).firstMatch
-            .waitForExistence(timeout: 3), "5 the dialog names what is kept")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '都會保留' OR label CONTAINS '照片會保留在'")).firstMatch
+            .waitForExistence(timeout: 3), "6 the dialog names what is kept")
     }
 
     /// 6: add a record named 小寶, tick it, land on its photo wall.
@@ -123,10 +125,8 @@ final class RecordListUITests: XCTestCase {
         app.buttons["編輯"].tap()
         let albumRow = element("albumRow")
         XCTAssertTrue(albumRow.waitForExistence(timeout: 5))
-        XCTAssertTrue(albumRow.label.contains("需要相簿權限"), "9 \(albumRow.label)")
+        XCTAssertTrue(albumRow.label.contains("需要「照片」權限"), "5 \(albumRow.label)")
         XCTAssertFalse(element("albumPicker").exists)
-        albumRow.tap()
-        XCTAssertFalse(element("albumPicker").exists, "9 cannot open the picker")
         shot("record-editor-denied")
     }
 

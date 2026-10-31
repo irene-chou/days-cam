@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import Photos
+import UIKit
 
 /// A page pushed on the 紀錄 list's navigation stack.
 enum RecordRoute: Hashable {
@@ -35,14 +36,17 @@ final class RecordListModel: ObservableObject {
     enum AlbumRowState: Equatable {
         /// Tappable; `title` is the bound album or the "建立新相簿" text.
         case available(title: String)
-        /// Access is denied, restricted or limited (FR-21.4).
-        case needsPermission
+        /// Not asked yet: shows the "建立時會在「照片」App 建立" text, not
+        /// tappable, and never triggers the permission prompt (FR-21.4).
+        case notAsked(title: String)
+        /// Limited, denied or restricted: tapping opens Settings (FR-21.4).
+        case needsSettings(title: String)
     }
 
     /// Placeholder shown while a new record's name is still empty.
     static let newRecordPlaceholder = "新紀錄"
-    /// Shown in the delete confirmation (FR-16.5).
-    static let deletionMessage = "相簿與照片不會被刪除。"
+    /// Delete confirmation when no bound album can be looked up (FR-16.5).
+    static let deletionMessageWithoutAlbum = "照片會保留在「照片」App。"
     /// Shown when the library cannot report a count.
     static let unknownCountText = "—"
 
@@ -73,6 +77,7 @@ final class RecordListModel: ObservableObject {
     private let calculator: DayCountCalculator
     private let renderer: TemplateRenderer
     private let makeRulesModel: (CameraProfile) -> RulesTabModel
+    private let openSettings: (URL) -> Void
     /// Saves an exported photo to 「最近項目」 only (FR-22.1).
     private let exportSave: PhotoExportPipeline.Save
     /// The record created by "新增紀錄" that the checkmark has not confirmed.
@@ -87,6 +92,8 @@ final class RecordListModel: ObservableObject {
     ///   never overwrites a field another writer just changed (#70).
     /// - Parameter exportSave: saves an exported photo; defaults to
     ///   `PhotoSaver.saveToRecentsOnly`.
+    /// - Parameter openSettings: opens the app's Settings page from the
+    ///   editor's 相簿 row; injected so tests can capture the URL.
     init(store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
@@ -95,8 +102,10 @@ final class RecordListModel: ObservableObject {
          makeRulesModel: ((CameraProfile) -> RulesTabModel)? = nil,
          exportSave: @escaping PhotoExportPipeline.Save = { image, completion in
              PhotoSaver().saveToRecentsOnly(image, completion: completion)
-         }) {
+         },
+         openSettings: ((URL) -> Void)? = nil) {
         self.exportSave = exportSave
+        self.openSettings = openSettings ?? { UIApplication.shared.open($0) }
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
@@ -362,11 +371,43 @@ final class RecordListModel: ObservableObject {
     func albumRowState(for profile: CameraProfile) -> AlbumRowState {
         _ = libraryRevision
         switch library.authorizationStatus() {
-        case .denied, .restricted, .limited:
-            return .needsPermission
+        case .notDetermined:
+            return .notAsked(title: "建立時會在「照片」App 建立「\(profile.name)」")
+        case .limited:
+            return .needsSettings(title: "只允許部分照片時無法選相簿")
+        case .denied, .restricted:
+            return .needsSettings(title: "需要「照片」權限")
         default:
             let bound = library.userAlbums().first { $0.id == profile.albumIdentifier }
             return .available(title: bound?.title ?? Self.createAlbumTitle(forRecordNamed: profile.name))
+        }
+    }
+
+    /// Opens the app's Settings page (the editor's 相簿 row, FR-21.4).
+    func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openSettings(url)
+    }
+
+    /// Delete confirmation text for `profile` (FR-16.5).
+    func deletionMessage(for profile: CameraProfile) -> String {
+        if let bound = library.userAlbums().first(where: { $0.id == profile.albumIdentifier }) {
+            return "「照片」App 裡的「\(bound.title)」相簿和照片都會保留。"
+        }
+        return Self.deletionMessageWithoutAlbum
+    }
+
+    /// One line under the list, by photo access (FR-16.6); `nil` when denied
+    /// or restricted.
+    var footerText: String? {
+        _ = libraryRevision
+        switch library.authorizationStatus() {
+        case .authorized, .notDetermined:
+            return "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現"
+        case .limited:
+            return "目前沒有開放完整權限，紀錄不會和原生相簿同步"
+        default:
+            return nil
         }
     }
 

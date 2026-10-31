@@ -270,7 +270,7 @@ final class PhotoWallModel: ObservableObject {
     /// The text of the failure alert for `error`.
     static func message(for error: RecordAlbumError) -> String {
         switch error {
-        case .permissionDenied: return "需要相簿權限才能加入照片。"
+        case .permissionDenied: return "需要「照片」權限才能加入照片。"
         case .notFound: return "找不到選取的照片，它們可能已被刪除。"
         case let .failed(reason): return reason.isEmpty ? "無法加入照片，請再試一次。" : reason
         }
