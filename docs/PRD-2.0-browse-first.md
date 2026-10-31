@@ -153,7 +153,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 
 | # | 規則 |
 |---|---|
-| FR-17.1 | 頂列：左 `chevron.left`、中標題（紀錄名稱 15pt；第二行「YYYY/M/D 起 · 今天第 N 天」11.5pt `inkTertiary`）、右 `ellipsis` |
+| FR-17.1 | 頂列：左 `chevron.left`、中標題（紀錄名稱 15pt；第二行「YYYY/M/D 起」11.5pt `inkTertiary`；2026-10-31 人類裁定拿掉「· 今天第 N 天」，太擠）、右 `ellipsis` |
 | FR-17.2 | 照片來源：`albumIdentifier` 的相簿內所有**靜態照片**（`.image`，含 Live Photo 的靜態部分）∪ `fallbackAssetIDs` 仍存在者，去重 |
 | FR-17.3 | 排序與分段**對齊「照片」App**：依 `creationDate` 由舊到新，依月份分段（小標「YYYY 年 M 月」）；打開時捲到最底（最新）；三欄、2pt 間距、正方形 aspect-fill |
 | FR-17.4 | 每格左下角即時標記：「第 N 天」（11pt、semibold、白字、陰影，與 D-7 相同）。天數依 §6.1 算、尊重紀錄的 `countingRule`（`dayZero` 時當天印「第 0 天」）。起算日之前的照片標「前 N 天」（`inkOnPhoto` 改為 `#FFD9A8`），規則見 §6.2 |

@@ -101,12 +101,12 @@ final class PhotoWallModel: ObservableObject {
     /// The record's name.
     var title: String { profile?.name ?? "" }
 
-    /// "YYYY/M/D 起 · 今天第 N 天" (FR-17.1).
+    /// "YYYY/M/D 起" (FR-17.1).
     var subtitle: String {
         guard let profile else { return "" }
         let start = profile.startDate
         let date = "\(start.year ?? 0)/\(start.month ?? 0)/\(start.day ?? 0)"
-        return "\(date) 起 · \(todayText(profile))"
+        return "\(date) 起"
     }
 
     // MARK: - State
