@@ -284,10 +284,18 @@ final class RecordListModel: ObservableObject {
         path.append(.editor(id))
     }
 
-    /// The wall's model for `id`.
-    func photoWallModel(for id: UUID) -> PhotoWallModel {
+    /// The wall's model for `id`; `resolveFont` is the batch export's font path.
+    func photoWallModel(for id: UUID,
+                        resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoWallModel {
         PhotoWallModel(profileID: id, store: store, library: library, calendar: calendar,
-                       todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" })
+                       todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" },
+                       makeBatchExport: { [store, library, calendar, renderer, exportSave] photos in
+                           let pipeline = PhotoExportPipeline(library: library, calendar: calendar,
+                                                              renderer: renderer, save: exportSave)
+                           return BatchExportModel(photos: photos, profileID: id, store: store, library: library,
+                                                   calendar: calendar, renderer: renderer, resolveFont: resolveFont,
+                                                   export: BatchExportModel.pipelineExport(pipeline, resolveFont: resolveFont))
+                       })
     }
 
     /// The viewer's model, opened on `photoID` of record `id` (#619).

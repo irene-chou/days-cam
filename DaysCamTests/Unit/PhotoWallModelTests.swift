@@ -29,10 +29,10 @@ private final class ChangingLibrary: RecordAlbumLibrary {
     func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String {
         try await base.addAssets(ids, albumIdentifier: albumIdentifier, albumTitle: albumTitle)
     }
-    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {
-        try await base.removeAsset(id, fromAlbum: albumIdentifier)
+    func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws {
+        try await base.removeAssets(ids, fromAlbum: albumIdentifier)
     }
-    func deleteAsset(_ id: String) async -> Bool { await base.deleteAsset(id) }
+    func deleteAssets(_ ids: [String]) async -> Bool { await base.deleteAssets(ids) }
     func changes() -> AsyncStream<Void> { stream }
     func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { await base.thumbnail(id: id, targetSize: targetSize) }
     func displayImage(id: String, targetSize: CGSize) async -> UIImage? { await base.displayImage(id: id, targetSize: targetSize) }
@@ -432,5 +432,240 @@ final class PhotoWallModelTests: XCTestCase {
 
         XCTAssertEqual(model.photoIDs, ["p7", "p8", "p9", "p10"])
         model.stopObservingLibrary()
+    }
+}
+
+/// #648: selection mode, slide selection and removing or deleting the
+/// selection (acceptance 3, 4, 6–10).
+extension PhotoWallModelTests {
+    private func selectingModel(_ library: FakeRecordAlbumLibrary, store: ProfileStore,
+                                profile: CameraProfile) -> PhotoWallModel {
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                                   todayText: { _ in "" }, defaults: freshDefaults(),
+                                   scheduleAfter: { _, _ in })
+        model.announce = { _ in }
+        model.beginSelecting()
+        return model
+    }
+
+    /// 3: 全選 ticks every photo, 取消全選 clears, 取消 leaves and clears.
+    func testSelectAllDeselectAllAndCancel() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let model = selectingModel(fiveJanuaryPhotos(), store: store, profile: profile)
+        XCTAssertTrue(model.isSelecting)
+        XCTAssertEqual(model.selectionTitle, "選取照片")
+        XCTAssertFalse(model.isAllSelected)
+
+        model.selectAll()
+        XCTAssertEqual(model.selectedIDs, ["p6", "p7", "p8", "p9", "p10"])
+        XCTAssertTrue(model.isAllSelected)
+        XCTAssertEqual(model.selectionTitle, "已選 5 張")
+        model.deselectAll()
+        XCTAssertTrue(model.selectedIDs.isEmpty)
+
+        model.toggle("p7")
+        model.toggle("p9")
+        XCTAssertEqual(model.selectionTitle, "已選 2 張")
+        model.toggle("p7")
+        XCTAssertEqual(model.selectedIDs, ["p9"])
+        model.endSelecting()
+        XCTAssertFalse(model.isSelecting)
+        XCTAssertTrue(model.selectedIDs.isEmpty)
+    }
+
+    /// 12 (model side): an empty record cannot enter selection.
+    func testEmptyRecordCannotSelect() throws {
+        let (store, profile) = try makeStore()
+        let model = makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary())
+        XCTAssertFalse(model.canSelect)
+        model.beginSelecting()
+        XCTAssertFalse(model.isSelecting)
+    }
+
+    /// 4: from an unticked anchor the range ticks; from a ticked one it
+    /// unticks; shrinking restores what the range leaves.
+    func testSlideSelectionTicksUnticksAndRestores() {
+        let ids = ["a", "b", "c", "d", "e", "f"]
+        let original: Set<String> = ["e"]
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 1, current: 3, original: original, ids: ids),
+                       ["b", "c", "d", "e"])
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 1, current: 5, original: original, ids: ids),
+                       ["b", "c", "d", "e", "f"])
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 1, current: 2, original: original, ids: ids),
+                       ["b", "c", "e"], "shrinking restores d and f")
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 3, current: 0, original: original, ids: ids),
+                       ["a", "b", "c", "d", "e"], "backwards")
+
+        let ticked: Set<String> = ["b", "c", "d", "f"]
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 2, current: 4, original: ticked, ids: ids),
+                       ["b", "f"], "a ticked anchor unticks the range")
+        XCTAssertEqual(PhotoWallModel.slideSelection(anchor: 2, current: 2, original: ticked, ids: ids),
+                       ["b", "d", "f"])
+    }
+
+    /// 4: the model's drag runs the same rule from the ticks it started with.
+    func testDragUsesTheTicksFromWhenItBegan() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let model = selectingModel(fiveJanuaryPhotos(), store: store, profile: profile)
+        model.toggle("p10")
+        model.beginDrag(at: 1)
+        XCTAssertEqual(model.selectedIDs, ["p7", "p10"])
+        model.dragSelection(to: 4)
+        XCTAssertEqual(model.selectedIDs, ["p7", "p8", "p9", "p10"])
+        model.dragSelection(to: 2)
+        XCTAssertEqual(model.selectedIDs, ["p7", "p8", "p10"])
+        model.endDrag()
+        model.dragSelection(to: 0)
+        XCTAssertEqual(model.selectedIDs, ["p7", "p8", "p10"], "no drag, no change")
+    }
+
+    /// 6: only undated photos ticked → 匯出 off; any dated one → on.
+    func testExportNeedsADatedPhoto() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let assets = [FakeRecordAlbumLibrary.Asset(id: "u1"), FakeRecordAlbumLibrary.Asset(id: "u2"), asset("d", 1, 5)]
+        let library = FakeRecordAlbumLibrary(assets: assets,
+                                             albums: [.init(id: "album", title: "小寶", assetIDs: assets.map(\.id))])
+        let model = selectingModel(library, store: store, profile: profile)
+        XCTAssertFalse(model.canExportSelection, "nothing ticked")
+        model.toggle("u1")
+        model.toggle("u2")
+        XCTAssertFalse(model.canExportSelection)
+        XCTAssertFalse(model.selectedIDs.isEmpty, "刪除 stays usable")
+        model.toggle("d")
+        XCTAssertTrue(model.canExportSelection)
+    }
+
+    /// 7: the dialog's title and delete button for one and for several.
+    func testDialogWordingForOneAndSeveral() {
+        XCTAssertEqual(RemoveOrDeleteDialog.title(recordName: "小寶", count: 2),
+                       "要從「小寶」移除這 2 張照片，還是從「照片」App 刪除？")
+        XCTAssertEqual(RemoveOrDeleteDialog.title(recordName: "小寶", count: 1),
+                       "要從「小寶」移除這張照片，還是從「照片」App 刪除？")
+        XCTAssertEqual(RemoveOrDeleteDialog.deleteTitle(count: 2), "刪除 2 張照片")
+        XCTAssertEqual(RemoveOrDeleteDialog.deleteTitle(count: 1), "刪除照片")
+    }
+
+    /// 8: removing two takes them out of the album in one call and out of
+    /// `fallbackAssetIDs`, leaves the rest of the profile, toasts and ends
+    /// selection; the photos stay in the library.
+    func testRemoveSelectedTakesThemOutInOneCall() async throws {
+        let (store, created) = try makeStore(albumIdentifier: "album")
+        var profile = created
+        let library = fiveJanuaryPhotos()
+        library.addAsset(asset("f1", 1, 4))
+        profile.fallbackAssetIDs = ["f1", "keep"]
+        try store.updateAndWait(profile)
+        let model = selectingModel(library, store: store, profile: profile)
+        var announced: [String] = []
+        model.announce = { announced.append($0) }
+        model.toggle("f1")
+        model.toggle("p8")
+
+        await model.removeSelected()
+
+        XCTAssertEqual(library.removeCalls, [["f1", "p8"]])
+        let saved = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        XCTAssertEqual(saved.fallbackAssetIDs, ["keep"])
+        XCTAssertEqual(saved.albumIdentifier, "album")
+        XCTAssertEqual(saved.name, profile.name)
+        XCTAssertEqual(saved.style, profile.style)
+        XCTAssertEqual(model.photoIDs, ["p6", "p7", "p9", "p10"])
+        XCTAssertEqual(library.assets.count, 6, "still in 照片")
+        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
+        XCTAssertEqual(announced, ["已從紀錄移除 2 張"])
+        XCTAssertFalse(model.isSelecting)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// 8: under limited access only `fallbackAssetIDs` changes; the album is
+    /// not touched.
+    func testRemoveSelectedUnderLimitedOnlyTouchesFallbackIDs() async throws {
+        let (store, created) = try makeStore(albumIdentifier: "album")
+        var profile = created
+        let library = fiveJanuaryPhotos()
+        library.status = .limited
+        profile.fallbackAssetIDs = ["p6", "p7", "p8"]
+        try store.updateAndWait(profile)
+        let model = selectingModel(library, store: store, profile: profile)
+        XCTAssertEqual(model.photoIDs, ["p6", "p7", "p8"])
+        model.toggle("p6")
+        model.toggle("p8")
+
+        await model.removeSelected()
+
+        XCTAssertTrue(library.removeCalls.isEmpty)
+        XCTAssertEqual(library.albums.first?.assetIDs.count, 5)
+        XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.fallbackAssetIDs, ["p7"])
+        XCTAssertEqual(model.photoIDs, ["p7"])
+        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
+    }
+
+    /// 9: a permission failure shows the new wording, keeps the selection
+    /// and toasts nothing.
+    func testRemoveFailureKeepsTheSelection() async throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        library.failure = .permissionDenied
+        let model = selectingModel(library, store: store, profile: profile)
+        model.toggle("p6")
+        model.toggle("p7")
+
+        await model.removeSelected()
+
+        XCTAssertEqual(model.errorMessage, "需要「照片」權限才能從紀錄移除。")
+        XCTAssertEqual(model.errorTitle, PhotoWallModel.removeFailedTitle)
+        XCTAssertEqual(model.selectedIDs, ["p6", "p7"])
+        XCTAssertTrue(model.isSelecting)
+        XCTAssertNil(model.toastState)
+        XCTAssertEqual(model.photoIDs.count, 5)
+    }
+
+    /// 10: delete passes all ids at once; a cancel changes nothing.
+    func testDeleteCancelledChangesNothing() async throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        library.confirmsDeletion = false
+        let model = selectingModel(library, store: store, profile: profile)
+        model.toggle("p9")
+        model.toggle("p6")
+        model.toggle("p7")
+
+        await model.deleteSelected()
+
+        XCTAssertEqual(library.deleteCalls, [["p6", "p7", "p9"]])
+        XCTAssertEqual(model.photoIDs.count, 5)
+        XCTAssertEqual(model.selectedIDs, ["p6", "p7", "p9"])
+        XCTAssertTrue(model.isSelecting)
+        XCTAssertNil(model.toastState)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// 10: a confirmed delete toasts "已刪除 N 張" and ends selection.
+    func testDeleteConfirmedToastsAndEndsSelection() async throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        let model = selectingModel(library, store: store, profile: profile)
+        model.toggle("p6")
+        model.toggle("p10")
+
+        await model.deleteSelected()
+
+        XCTAssertEqual(library.deleteCalls, [["p6", "p10"]])
+        XCTAssertEqual(model.photoIDs, ["p7", "p8", "p9"])
+        XCTAssertEqual(model.toastState?.message, "已刪除 2 張")
+        XCTAssertFalse(model.isSelecting)
+        XCTAssertTrue(model.selectedIDs.isEmpty)
+    }
+
+    /// FR-17.8: a ticked photo deleted elsewhere drops out of the selection.
+    func testReloadDropsTicksOnPhotosNoLongerShown() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = fiveJanuaryPhotos()
+        let model = selectingModel(library, store: store, profile: profile)
+        model.toggle("p6")
+        model.toggle("p7")
+        library.removeFromLibrary("p6")
+        model.reload()
+        XCTAssertEqual(model.selectedIDs, ["p7"])
     }
 }

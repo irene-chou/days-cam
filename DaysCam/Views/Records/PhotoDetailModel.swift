@@ -181,11 +181,20 @@ final class PhotoDetailModel: ObservableObject {
     /// photo has no date or baking fails; `nil` when the image cannot load.
     func pageImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
         guard let source = await library.displayImage(id: photo.id, targetSize: targetSize) else { return nil }
-        guard let profile, let date = photo.creationDate, let text = overlayText(for: photo) else { return source }
+        guard let profile else { return source }
         // Resolved here on the main actor; the background bake never reads the library.
-        let font = resolveFont(profile.style)
-        let filmDate = Self.filmDateStamp(for: profile, creationDate: date, calendar: calendar)
-        let bake = self.bake
+        return await Self.markedImage(source, photo: photo, profile: profile, calendar: calendar,
+                                      renderer: renderer, font: resolveFont(profile.style), bake: bake)
+    }
+
+    /// `source` with `profile`'s overlay for `photo`'s own moment baked in,
+    /// the way the viewer and the batch preview show it; `source` itself
+    /// when the photo has no date or baking fails.
+    static func markedImage(_ source: UIImage, photo: RecordPhoto, profile: CameraProfile, calendar: Calendar,
+                            renderer: TemplateRenderer, font: ResolvedOverlayFont, bake: @escaping Bake) async -> UIImage {
+        guard let date = photo.creationDate else { return source }
+        let text = renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        let filmDate = filmDateStamp(for: profile, creationDate: date, calendar: calendar)
         let style = profile.style
         let placement = profile.position
         let baked = await Task.detached(priority: .userInitiated) {
