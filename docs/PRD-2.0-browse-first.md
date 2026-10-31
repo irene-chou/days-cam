@@ -109,7 +109,7 @@
 | 欄位 | 變更 | 型別 | 說明 |
 |---|---|---|---|
 | `albumIdentifier` | **新增** | `String?` | 綁定相簿的 `PHAssetCollection.localIdentifier`，可以是 DaysCam 建的，也可以是使用者在紀錄編輯頁挑的**既有**相簿（FR-21.4，人類 2026-10-28 決定支援）。`nil` 表示還沒綁（新紀錄沒挑、或遷移來的舊設定檔）；第一次加入照片、或相機第一次存檔時才建一本同名相簿並寫入 |
-| `fallbackAssetIDs` | **新增** | `[String]` | **限制取用**模式下紀錄自己記的照片 ID（§7.3）；完整權限時照樣可以有值（遷移來的舊照片 §4.3），顯示時與相簿內容**聯集、去重** |
+| `fallbackAssetIDs` | **新增** | `[String]` | 紀錄自己記的照片 ID。**限制取用**模式下這就是紀錄的全部照片（只顯示其中仍在限制集合內者，§7.3；2026-10-31 人類裁定）；完整權限時照樣可以有值（遷移來的舊照片 §4.3），顯示時與相簿內容**聯集、去重** |
 | `exportFormat` | **新增** | `ExportFormat` | `overlay`／`polaroid`，預設 `overlay`，第一期恆為 `overlay`；缺欄位或未知字串退回預設 |
 | `position`、`style`、`showDayCount`…等疊字欄位 | 語意改變 | 不變 | 從「拍照時烘焙的樣式」變成「這個紀錄的**匯出樣式**與**即時標記樣式**」。匯出頁改的就是這些欄位，改完即存，下一次匯出沿用 |
 
@@ -252,7 +252,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 |---|---|
 | 7.1 | 第一次點進任何紀錄（照片牆）時請求 `.readWrite`。說明文字（`project.yml` 的 `NSPhotoLibraryUsageDescription`）改為「DaysCam 需要讀取相簿來顯示每張照片是第幾天，並把你挑的照片整理進紀錄的相簿。照片本身不會被修改。」 |
 | 7.2 | `.authorized`：全部功能 |
-| 7.3 | `.limited`（限制取用）：看不到相簿也不能改相簿，而且 `PHPicker` 選出的照片若不在限制集合裡，之後也讀不到（不可依賴 picker）。這時紀錄的照片＝**App 被允許看到的所有照片 ∪ `fallbackAssetIDs`**；「加入照片」改開 `presentLimitedLibraryPicker`（使用者在那裡勾的照片就是紀錄的照片）；相機存檔走 `.addOnly` 路徑並把 ID 寫進 `fallbackAssetIDs`（App 自己建的照片在限制取用下可讀，0.2 A-7）。多個紀錄在限制取用下會看到同一批照片，接受。照片牆頂端常駐一行「限制取用中，不會與「照片」App 的相簿同步」。`albumIdentifier` 不建不用 |
+| 7.3 | `.limited`（限制取用）：看不到相簿也不能改相簿，而且 `PHPicker` 選出的照片若不在限制集合裡，之後也讀不到（不可依賴 picker）。這時紀錄的照片＝**該紀錄 `fallbackAssetIDs` 中仍在限制集合內的照片**（2026-10-31 人類裁定，#640；原「App 可見的全部照片 ∪ `fallbackAssetIDs`」讓每個紀錄看到同一批照片，實機回報令人疑惑）。App 可見但沒有紀錄記下的照片不出現在任何紀錄；使用者從限制集合取消勾選的照片讀不到、自然不顯示，`fallbackAssetIDs` 不清除。「加入照片」改開 `presentLimitedLibraryPicker(from:completionHandler:)`，把回傳的**新勾選** ID 去重後附加到**當下這個紀錄**的 `fallbackAssetIDs`（系統只回傳這次新勾選的；原本就在限制集合內的照片不會回傳，因此不會被加入，已知限制）；相機存檔走 `.addOnly` 路徑並把 ID 寫進當下紀錄的 `fallbackAssetIDs`（App 自己建的照片在限制取用下可讀，0.2 A-7）。遷移來的舊照片只在 §4.3 指定的紀錄。照片牆頂端常駐一行「限制取用中，不會與「照片」App 的相簿同步」。`albumIdentifier` 不建不用 |
 | 7.4 | `.denied`／`.restricted`：照片牆換成權限頁（沿用 0.2 FR-15.8 的版面，文案改為 2.0 的理由）＋「前往設定」；紀錄列表仍可進、可編輯（相簿列例外，FR-21.4） |
 | 7.5 | 匯出存檔不另外請求權限（已有 `.readWrite` 或 `.limited` 都允許新增） |
 | 7.6 | 0.2 FR-5.3′「存檔只請求 addOnly」在 2.0 不再適用（因為進紀錄就要讀相簿）；AGENTS.md 的對應 review 規則要同步改 |
@@ -318,7 +318,7 @@ DaysCam 自建的相簿名稱＝紀錄名稱；已有同名相簿時**仍另建*
 - 相簿裡的影片不顯示；Live Photo 當靜態照片
 - 紀錄改名不改相簿名；相簿被刪就重建；同名相簿仍另建；兩個紀錄可綁同一本
 - 匯出不加進相簿
-- 限制取用模式：紀錄＝App 可見的全部照片，不同步相簿（builder check 指出 `PHPicker` 在限制取用下選的照片之後讀不到，故不走 picker）
+- 限制取用模式：紀錄＝自己 `fallbackAssetIDs` 中仍可見的照片，不同步相簿；「加入照片」用 `presentLimitedLibraryPicker` 並把新勾選的 ID 附加到當下紀錄（2026-10-31 人類裁定，#640；builder check 指出 `PHPicker` 在限制取用下選的照片之後讀不到，故不走 picker）
 - 照片早於起始日印「前 N 天」，「今天」維持「還有 N 天」（§6.2）
 - 遷移不過濾 ID，顯示時才過濾（M-2）
 

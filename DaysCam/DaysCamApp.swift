@@ -62,6 +62,15 @@ struct DaysCamApp: App {
                     _ = try? profileStore.update(profile)
                 }
             }
+            // Limited access shows only a record's fallback ids (#640): the
+            // generated photos belong to the last used record, as after the
+            // legacy migration.
+            if fake.status == .limited,
+               let lastUsed = profileStore.lastUsedProfileID,
+               var profile = profileStore.profiles.first(where: { $0.id == lastUsed }) {
+                profile.fallbackAssetIDs = PhotoWallModel.appendingNew(fake.assets.map(\.id), to: profile.fallbackAssetIDs)
+                _ = try? profileStore.update(profile)
+            }
             return library
         }
         // Entering a record asks for photo access; an empty in-memory library

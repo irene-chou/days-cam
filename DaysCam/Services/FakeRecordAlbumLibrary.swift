@@ -75,8 +75,8 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
             albumReadCount += 1
             let ids = albums.first { $0.id == albumIdentifier }?.assetIDs ?? []
             primary = ids.compactMap(visibleImage)
-        case .allVisible:
-            primary = assets.compactMap { visibleImage($0.id) }
+        case .fallbackOnly:
+            primary = []
         }
         return RecordAlbumLogic.merge(primary, fallbackIDs.compactMap(visibleImage))
     }

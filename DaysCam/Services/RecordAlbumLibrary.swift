@@ -31,16 +31,17 @@ enum RecordAlbumError: Error, Equatable {
 enum RecordReadMode: Equatable {
     /// Full access: the record's album plus its fallback ids.
     case album
-    /// Limited access: everything the app can see plus fallback ids; albums
-    /// are not read.
-    case allVisible
+    /// Limited access: only the record's fallback ids that the app can still
+    /// see; albums are not read, and other visible photos are not the
+    /// record's (2026-10-31 ruling, #640).
+    case fallbackOnly
     /// No read access.
     case none
 
     init(status: PHAuthorizationStatus) {
         switch status {
         case .authorized: self = .album
-        case .limited: self = .allVisible
+        case .limited: self = .fallbackOnly
         default: self = .none
         }
     }
@@ -81,9 +82,10 @@ protocol RecordAlbumLibrary {
     /// Requests `.readWrite` access if undecided and returns the status.
     func requestReadWriteAccess() async -> PHAuthorizationStatus
 
-    /// Still photos in the album (full access) or all visible photos
-    /// (limited), united with the `fallbackIDs` that still exist, oldest
-    /// first. Empty without read access. An unknown album is treated as none.
+    /// Still photos in the album united with the `fallbackIDs` that still
+    /// exist (full access), or only the `fallbackIDs` still visible (limited),
+    /// oldest first. Empty without read access. An unknown album is treated
+    /// as none.
     func photos(albumIdentifier: String?, fallbackIDs: [String]) -> [RecordPhoto]
     /// `photos(...).count`, or `nil` without read access.
     func photoCount(albumIdentifier: String?, fallbackIDs: [String]) -> Int?
@@ -198,8 +200,10 @@ final class SystemRecordAlbumLibrary: RecordAlbumLibrary {
             } else {
                 primary = []
             }
-        case .allVisible:
-            primary = Self.photos(from: PHAsset.fetchAssets(with: Self.imageOptions))
+        case .fallbackOnly:
+            // A fetch by id under limited access only returns assets still in
+            // the user's selection, so deselected ids simply drop out.
+            primary = []
         }
         return RecordAlbumLogic.merge(primary, fallbackImages(fallbackIDs))
     }

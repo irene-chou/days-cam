@@ -78,14 +78,39 @@ final class RecordAlbumLibraryTests: XCTestCase {
         }
     }
 
-    func test_limited_returnsAllVisibleImages_withoutReadingAlbums() {
+    /// #640-1: under limited access a record shows only its own fallback ids;
+    /// a visible photo no record lists shows nowhere, and albums are not read.
+    func test_limited_eachRecordShowsOnlyItsFallback_withoutReadingAlbums() {
         let library = FakeRecordAlbumLibrary(
             status: .limited,
-            assets: [asset("a", day: 1), asset("b", day: 2), asset("v", day: 3, video: true), asset("hidden", day: 4)],
-            albums: [.init(id: "alb", title: "x", assetIDs: ["a"])])
-        library.visibleIDs = ["a", "b", "v"]
-        XCTAssertEqual(ids(library.photos(albumIdentifier: "alb", fallbackIDs: ["hidden"])), ["a", "b"])
+            assets: [asset("A", day: 1), asset("B", day: 2), asset("C", day: 3), asset("v", day: 4, video: true)],
+            albums: [.init(id: "alb", title: "x", assetIDs: ["A", "B", "C"])])
+        library.visibleIDs = ["A", "B", "C", "v"]
+        XCTAssertEqual(ids(library.photos(albumIdentifier: "alb", fallbackIDs: ["A"])), ["A"], "640-1 record 1")
+        XCTAssertEqual(ids(library.photos(albumIdentifier: nil, fallbackIDs: ["B", "v"])), ["B"], "640-1 record 2")
+        XCTAssertEqual(library.photoCount(albumIdentifier: nil, fallbackIDs: []), 0, "640-1 C is no record's")
         XCTAssertEqual(library.albumReadCount, 0)
+    }
+
+    /// #640-2: a fallback id the user took out of the limited selection, or
+    /// deleted, is skipped and not counted.
+    func test_limited_fallbackOutsideTheSelection_isSkippedAndNotCounted() {
+        let library = FakeRecordAlbumLibrary(status: .limited, assets: [asset("A", day: 1), asset("hidden", day: 2)])
+        library.visibleIDs = ["A"]
+        let fallback = ["hidden", "A", "deleted"]
+        XCTAssertEqual(ids(library.photos(albumIdentifier: nil, fallbackIDs: fallback)), ["A"], "640-2")
+        XCTAssertEqual(library.photoCount(albumIdentifier: nil, fallbackIDs: fallback), 1, "640-2")
+        XCTAssertEqual(library.photoCount(albumIdentifier: nil, fallbackIDs: ["hidden"]), 0, "640-2")
+    }
+
+    /// #640-5: full access still unites the album with the fallback ids.
+    func test_full_stillUnitesAlbumAndFallback() {
+        let library = FakeRecordAlbumLibrary(
+            assets: [asset("A", day: 1), asset("B", day: 2), asset("C", day: 3)],
+            albums: [.init(id: "alb", title: "x", assetIDs: ["A"])])
+        XCTAssertEqual(ids(library.photos(albumIdentifier: "alb", fallbackIDs: ["B"])), ["A", "B"], "640-5")
+        XCTAssertEqual(RecordReadMode(status: .authorized), .album)
+        XCTAssertEqual(RecordReadMode(status: .limited), .fallbackOnly)
     }
 
     func test_denied_isEmptyAndCountIsNil() {
