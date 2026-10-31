@@ -61,8 +61,8 @@ final class ExportLibrary: RecordAlbumLibrary {
         addAssetsCount += 1
         return "album"
     }
-    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {}
-    func deleteAsset(_ id: String) async -> Bool { false }
+    func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws {}
+    func deleteAssets(_ ids: [String]) async -> Bool { false }
     func changes() -> AsyncStream<Void> { AsyncStream { _ in } }
     func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { nil }
     func displayImage(id: String, targetSize: CGSize) async -> UIImage? { Self.image(width: 30, height: 40) }

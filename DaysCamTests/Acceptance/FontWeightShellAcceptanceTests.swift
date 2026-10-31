@@ -66,8 +66,8 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
         func photoCount(albumIdentifier: String?, fallbackIDs: [String]) -> Int? { 0 }
         func userAlbums() -> [AlbumSummary] { [] }
         func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String { "album" }
-        func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {}
-        func deleteAsset(_ id: String) async -> Bool { false }
+        func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws {}
+        func deleteAssets(_ ids: [String]) async -> Bool { false }
         func changes() -> AsyncStream<Void> { AsyncStream { _ in } }
         func thumbnail(id: String, targetSize: CGSize) async -> UIImage? { nil }
         func displayImage(id: String, targetSize: CGSize) async -> UIImage? { nil }
