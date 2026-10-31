@@ -55,9 +55,13 @@ final class PhotoWallModel: ObservableObject {
     private(set) var errorTitle = PhotoWallModel.addFailedTitle
     /// The asset ids on the wall, oldest first.
     private(set) var photoIDs: [String] = []
+    /// The photos on the wall, oldest first.
+    private var photos: [RecordPhoto] = []
     /// Photos without a `creationDate`: they can be removed or deleted but
     /// not exported (FR-17.12, FR-22.6).
     private var undatedIDs: Set<String> = []
+    /// The batch export sheet while it is up (FR-22.4).
+    @Published private(set) var batchExport: BatchExportModel?
 
     /// Selection mode is on (FR-17.11).
     @Published private(set) var isSelecting = false
@@ -88,6 +92,7 @@ final class PhotoWallModel: ObservableObject {
     private let openSettings: (URL) -> Void
     private let defaults: UserDefaults
     private let scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
+    private let makeBatchExport: (([RecordPhoto]) -> BatchExportModel)?
     /// App-wide flag behind the dismissed notice; cleared once the status is
     /// seen to be anything but limited, so a later return to limited shows it
     /// again (#642).
@@ -105,6 +110,8 @@ final class PhotoWallModel: ObservableObject {
     ///   tests can stand in for the sheet.
     /// - Parameter openSettings: Opens the app's Settings page from the
     ///   limited access notice; injected so tests can capture the URL.
+    /// - Parameter makeBatchExport: Builds the batch export sheet's model for
+    ///   the ticked photos (wall order); `nil` leaves 匯出 doing nothing.
     init(profileID: UUID,
          store: ProfileStore,
          library: any RecordAlbumLibrary,
@@ -115,7 +122,9 @@ final class PhotoWallModel: ObservableObject {
          defaults: UserDefaults = .standard,
          scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, action in
              DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
-         }) {
+         },
+         makeBatchExport: (([RecordPhoto]) -> BatchExportModel)? = nil) {
+        self.makeBatchExport = makeBatchExport
         self.profileID = profileID
         self.store = store
         self.library = library
@@ -204,14 +213,15 @@ final class PhotoWallModel: ObservableObject {
             noticeDismissed = false
         }
         guard let profile, RecordReadMode(status: status) != .none else {
+            photos = []
             photoIDs = []
             undatedIDs = []
             sections = []
             pruneSelection()
             return
         }
-        let photos = library.photos(albumIdentifier: profile.albumIdentifier,
-                                    fallbackIDs: profile.fallbackAssetIDs)
+        photos = library.photos(albumIdentifier: profile.albumIdentifier,
+                                fallbackIDs: profile.fallbackAssetIDs)
         photoIDs = photos.map(\.id)
         undatedIDs = Set(photos.filter { $0.creationDate == nil }.map(\.id))
         sections = Self.sections(for: photos, profile: profile, calendar: calendar)
@@ -298,8 +308,35 @@ final class PhotoWallModel: ObservableObject {
         return result
     }
 
-    /// 匯出 in the selection bar. The batch export itself comes with #650.
-    func beginBatchExport() {}
+    // MARK: - Batch export (FR-22.4–22.9)
+
+    /// 匯出 in the selection bar: opens the preview sheet over the ticked
+    /// photos in wall order, 日期不明 ones included so the sheet can say how
+    /// many it skips.
+    func beginBatchExport() {
+        guard isSelecting, canExportSelection, batchExport == nil, let makeBatchExport else { return }
+        let model = makeBatchExport(photos.filter { selectedIDs.contains($0.id) })
+        model.onFinish = { [weak self] outcome in self?.finishBatchExport(outcome) }
+        batchExport = model
+    }
+
+    /// The sheet ended: 取消 keeps the selection; all saved or stopped
+    /// toasts the real count and ends selection; 好 after failures keeps
+    /// selecting with only the failed photos ticked.
+    func finishBatchExport(_ outcome: BatchExportModel.Outcome) {
+        batchExport = nil
+        switch outcome {
+        case .cancelled:
+            break
+        case let .allSaved(count), let .stopped(count):
+            endSelecting()
+            showToast("已匯出 \(count) 張")
+        case let .keptFailures(failedIDs):
+            guard canSelect else { return }
+            isSelecting = true
+            selectedIDs = Set(failedIDs).intersection(photoIDs)
+        }
+    }
 
     // MARK: - Removing and deleting the selection (FR-17.14, FR-17.15)
 
@@ -355,7 +392,11 @@ final class PhotoWallModel: ObservableObject {
             return
         }
         endSelecting()
-        let message = "\(done) \(ids.count) 張"
+        showToast("\(done) \(ids.count) 張")
+    }
+
+    /// Shows `message` as the toast and speaks it to VoiceOver.
+    private func showToast(_ message: String) {
         announce(message)
         let toast = ToastState(message: message)
         toastState = toast

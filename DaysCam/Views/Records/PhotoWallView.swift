@@ -31,7 +31,9 @@ struct PhotoWallView: View {
          listModel: RecordListModel,
          styleCenter: StyleEditingCenter,
          makeCameraModel: @escaping @MainActor (UUID) -> CameraScreenModel) {
-        _model = StateObject(wrappedValue: listModel.photoWallModel(for: profileID))
+        _model = StateObject(wrappedValue: listModel.photoWallModel(for: profileID, resolveFont: { [styleCenter] style in
+            OverlayMetrics.resolvedFont(for: style, availability: styleCenter.fontLibrary)
+        }))
         self.listModel = listModel
         self.styleCenter = styleCenter
         self.makeCameraModel = makeCameraModel
@@ -99,6 +101,11 @@ struct PhotoWallView: View {
                 makeExportModel: { [listModel, styleCenter, profileID = model.profileID] photo in
                     listModel.exportModel(for: profileID, photo: photo, styleCenter: styleCenter)
                 })
+        }
+        .sheet(item: batchExportBinding) { batch in
+            BatchExportSheet(model: batch) { [listModel, styleCenter, profileID = model.profileID] photo in
+                listModel.exportModel(for: profileID, photo: photo, styleCenter: styleCenter)
+            }
         }
         .onChange(of: model.photoIDs) { _, _ in openNewestIfRequested() }
         .alert(model.errorTitle, isPresented: errorBinding) {
@@ -488,6 +495,11 @@ struct PhotoWallView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) { viewerPhotoID = newest }
         #endif
+    }
+
+    /// Swiping the preview away is 取消; the other phases cannot be swiped.
+    private var batchExportBinding: Binding<BatchExportModel?> {
+        Binding(get: { model.batchExport }, set: { if $0 == nil { model.batchExport?.cancel() } })
     }
 
     private var errorBinding: Binding<Bool> {
