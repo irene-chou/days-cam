@@ -13,10 +13,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
 
     private func launch(extraArguments: [String] = []) {
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString] + extraArguments
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(extraArguments: extraArguments), "the export page is up")
         let content = contentTab
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
@@ -34,7 +31,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// The viewfinder text: draggable while the panel is open on 內容 (#568).
+    /// The text on the export preview (draggable, #568).
     private var overlayText: XCUIElement {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
@@ -69,9 +66,9 @@ final class DayCountFormatPanelUITests: XCTestCase {
     /// option on iPhone SE is taller than the panel's visible part, so
     /// `revealInPanel` (whole element on screen) cannot succeed.
     private func revealTop(_ cell: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        let tabBottom = app.buttons["panelCollapseButton"].frame.maxY
-        for _ in 0..<10 where !(cell.exists && cell.frame.minY >= tabBottom && cell.frame.minY <= app.frame.height - 60) {
-            let up = !cell.exists || cell.frame.minY > app.frame.height - 60
+        let tabBottom = app.panelSegmentBottom
+        for _ in 0..<10 where !(cell.exists && cell.frame.minY >= tabBottom && cell.frame.minY <= app.frame.height - app.panelBottomBand) {
+            let up = !cell.exists || cell.frame.minY > app.frame.height - app.panelBottomBand
             let start = app.coordinate(withNormalizedOffset: .zero)
                 .withOffset(CGVector(dx: app.frame.width * 0.08, dy: up ? (tabBottom + app.frame.height) / 2 : tabBottom + 30))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: up ? -60 : 60)),
@@ -109,7 +106,7 @@ final class DayCountFormatPanelUITests: XCTestCase {
         XCTAssertFalse(note.exists, "583.4 no note with day only")
         shot("PR_583.2_expanded_dayOnly")
 
-        // 583.3: a tap writes back, the viewfinder follows, the list stays open.
+        // 583.3: a tap writes back, the preview follows, the list stays open.
         option("dDay").tap()
         XCTAssertTrue(option("dDay").isSelected, "583.3")
         XCTAssertEqual(row.label, "寫法，D-Day")

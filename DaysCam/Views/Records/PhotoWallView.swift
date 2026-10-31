@@ -8,10 +8,13 @@ import SwiftUI
 struct PhotoWallView: View {
     @StateObject private var model: PhotoWallModel
     @ObservedObject var listModel: RecordListModel
-    @ObservedObject var cameraModel: CameraScreenModel
+    let styleCenter: StyleEditingCenter
+    let makeCameraModel: @MainActor (UUID) -> CameraScreenModel
     @State private var viewerPhotoID: String?
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showsCamera = false
+    /// The open camera, built when it opens and dropped when it closes
+    /// (#621).
+    @State private var camera: CameraSession?
     @State private var showsPicker = false
 
     static let columnSpacing: CGFloat = 2
@@ -19,10 +22,12 @@ struct PhotoWallView: View {
 
     init(profileID: UUID,
          listModel: RecordListModel,
-         cameraModel: CameraScreenModel) {
+         styleCenter: StyleEditingCenter,
+         makeCameraModel: @escaping @MainActor (UUID) -> CameraScreenModel) {
         _model = StateObject(wrappedValue: listModel.photoWallModel(for: profileID))
         self.listModel = listModel
-        self.cameraModel = cameraModel
+        self.styleCenter = styleCenter
+        self.makeCameraModel = makeCameraModel
     }
 
     var body: some View {
@@ -56,17 +61,19 @@ struct PhotoWallView: View {
             }
             .ignoresSafeArea()
         }
-        .fullScreenCover(isPresented: $showsCamera) {
-            CameraScreen(model: cameraModel) { showsCamera = false }
+        // The wall re-reads the record when the camera closes: new photos
+        // and a newly bound album (FR-20.4).
+        .fullScreenCover(item: $camera, onDismiss: { model.reload() }) { session in
+            CameraScreen(model: session.model) { camera = nil }
         }
         .navigationDestination(item: $viewerPhotoID) { photoID in
             PhotoDetailView(model: listModel.photoDetailModel(
                 for: model.profileID, startingAt: photoID,
-                resolveFont: { [cameraModel] style in
-                    OverlayMetrics.resolvedFont(for: style, availability: cameraModel.fontLibrary)
+                resolveFont: { [styleCenter] style in
+                    OverlayMetrics.resolvedFont(for: style, availability: styleCenter.fontLibrary)
                 }),
-                makeExportModel: { [listModel, cameraModel, profileID = model.profileID] photo in
-                    listModel.exportModel(for: profileID, photo: photo, cameraModel: cameraModel)
+                makeExportModel: { [listModel, styleCenter, profileID = model.profileID] photo in
+                    listModel.exportModel(for: profileID, photo: photo, styleCenter: styleCenter)
                 })
         }
         .onChange(of: model.photoIDs) { _, _ in openNewestIfRequested() }
@@ -229,8 +236,7 @@ struct PhotoWallView: View {
             .accessibilityIdentifier("addPhotosButton")
             Spacer()
             Button {
-                cameraModel.selectProfile(id: model.profileID)
-                showsCamera = true
+                camera = CameraSession(model: makeCameraModel(model.profileID))
             } label: {
                 Image(systemName: "camera")
                     .font(.system(size: 22))
@@ -261,6 +267,12 @@ struct PhotoWallView: View {
     private var errorBinding: Binding<Bool> {
         Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })
     }
+}
+
+/// One opening of the camera: its model lives exactly as long as the cover.
+private struct CameraSession: Identifiable {
+    let id = UUID()
+    let model: CameraScreenModel
 }
 
 /// One square of the wall: the photo's thumbnail, aspect-filled, with its day

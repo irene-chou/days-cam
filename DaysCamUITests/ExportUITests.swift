@@ -157,4 +157,49 @@ final class ExportUITests: XCTestCase {
         element("exportCancelButton").tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
     }
+    // MARK: - Panel scrolling (116.5, 116.8 from the camera's panel, #621)
+
+    /// 116.5: dragging down on the font list scrolls it and leaves the page
+    /// and the panel as they were.
+    func testSwipeDownOnTheFontListKeepsThePanel() {
+        launch()
+        app.buttons["樣式"].tap()
+        app.buttons["字型"].tap()
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        list.swipeUp()
+        list.swipeDown()
+        list.swipeDown()
+        XCTAssertTrue(element("exportView").exists, "116.5 still on the export page")
+        XCTAssertTrue(app.buttons["樣式"].exists, "116.5 the panel is still there")
+    }
+
+    /// 116.8: scrolled all the way down, the font list's last row ends above
+    /// the note under the panel and can be tapped.
+    func testFontListLastRowScrollsAboveTheNote() {
+        launch()
+        app.buttons["樣式"].tap()
+        app.buttons["字型"].tap()
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        let rows = list.buttons.allElementsBoundByIndex
+        XCTAssertFalse(rows.isEmpty, "116.8 the font list has rows")
+        guard let last = rows.last else { return }
+        let note = app.staticTexts["存成新照片到「最近項目」，原圖不動"]
+        XCTAssertTrue(note.exists)
+        let bottom = note.frame.minY
+        let top = app.buttons["樣式"].frame.maxY + 70
+        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        for _ in 0..<10 {
+            let from = origin.withOffset(CGVector(dx: app.frame.midX, dy: bottom - 20))
+            from.press(forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: 0, dy: top - (bottom - 20))),
+                       withVelocity: .fast, thenHoldForDuration: 0.2)
+        }
+        Thread.sleep(forTimeInterval: 0.8)
+        XCTAssertLessThanOrEqual(last.frame.maxY, bottom + 1,
+                                 "116.8 the last row ends above the note — last \(last.frame) note \(bottom)")
+        last.tap()
+        XCTAssertTrue(element("exportView").exists, "116.8 the last row can be operated without leaving the page")
+        XCTAssertTrue(app.buttons["樣式"].exists)
+    }
 }

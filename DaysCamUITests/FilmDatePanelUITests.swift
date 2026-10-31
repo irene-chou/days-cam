@@ -10,10 +10,7 @@ final class FilmDatePanelUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
@@ -138,8 +135,7 @@ final class FilmDatePanelUITests: XCTestCase {
         app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.waitForExportPage(), "the export page is up")
         app.buttons["內容"].tap()
         XCTAssertTrue(filmSwitch.waitForExistence(timeout: 5))
         showFilmDateBlock()

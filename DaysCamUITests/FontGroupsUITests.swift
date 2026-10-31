@@ -10,11 +10,7 @@ final class FontGroupsUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
-        if !app.buttons["樣式"].exists { app.buttons["疊字設定"].tap() }
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         app.buttons["字型"].tap()
@@ -40,8 +36,8 @@ final class FontGroupsUITests: XCTestCase {
     /// Drags the list until `element` is `target` points below the list top.
     private func scroll(_ element: XCUIElement, listTop: CGFloat) {
         XCTAssertTrue(element.waitForExistence(timeout: 5))
-        let height = app.windows.firstMatch.frame.height
-        let bottom = height - (height > 800 ? 50 : 20)
+        // Start drags above the export page's note and home indicator.
+        let bottom = app.windows.firstMatch.frame.height - app.panelBottomBand - 10
         let origin = app.coordinate(withNormalizedOffset: .zero)
         for _ in 0..<40 {
             let delta = element.frame.minY - listTop

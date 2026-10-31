@@ -1,11 +1,10 @@
 import XCTest
 
-/// Screenshots for TASK-100's B′ comparison (100.6, #409): the closed
-/// footer (疊字設定鈕) and the style tab's sub-tab row (字級 icon). Attached to
-/// the result; with `DAYSCAM_UI_SHOT_DIR` in the test runner's environment
-/// they are also written there as PNGs. The same test runs against the
-/// pre-#398 build, the current main and the fix, so the three can be set
-/// side by side. Also checks the VoiceOver labels are unchanged (100.5).
+/// Screenshot for TASK-100's B′ comparison (100.6, #409): the style tab's
+/// sub-tab row (字級 icon), now on the export page. Attached to the result;
+/// with `DAYSCAM_UI_SHOT_DIR` in the test runner's environment it is also
+/// written there as a PNG. Also checks the VoiceOver labels are unchanged
+/// (100.5). The closed footer (疊字設定鈕) left the camera in #621.
 final class LatinSymbolUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -13,9 +12,7 @@ final class LatinSymbolUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
     }
 
     private func attach(_ name: String) {
@@ -31,11 +28,7 @@ final class LatinSymbolUITests: XCTestCase {
         }
     }
 
-    func testFooterAndStyleSubTabIcons() {
-        let panelButton = app.buttons["疊字設定"]
-        XCTAssertTrue(panelButton.waitForExistence(timeout: 10), "100.5 the label is still 疊字設定")
-        attach("100.1_footer-closed")
-        panelButton.tap()
+    func testStyleSubTabIcons() {
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         XCTAssertTrue(app.buttons["字級"].waitForExistence(timeout: 5), "100.5 the sub-tab label is still 字級")

@@ -1,28 +1,6 @@
 import Photos
 import UIKit
 
-extension AlbumSettingsStore {
-    /// The store the gallery uses. Debug builds launched with
-    /// `-UITestPhotoAccess full|limited|denied|withdrawn` get a fake
-    /// library (and throwaway defaults) so UI tests can see every permission
-    /// outcome without the system prompt (#329). Release builds always use
-    /// the real library.
-    static func forGallery() -> AlbumSettingsStore {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if let index = arguments.firstIndex(of: "-UITestPhotoAccess"), arguments.indices.contains(index + 1),
-           let library = UITestPhotoLibrary(mode: arguments[index + 1]),
-           let defaults = UserDefaults(suiteName: "UITestPhotoAccess") {
-            defaults.removePersistentDomain(forName: "UITestPhotoAccess")
-            // `withdrawn`: the switch was on, but access has since gone.
-            defaults.set(library.startsOn, forKey: "savesToDaysCamAlbum")
-            return AlbumSettingsStore(defaults: defaults, library: library)
-        }
-        #endif
-        return AlbumSettingsStore()
-    }
-}
-
 #if DEBUG
 /// A photo library that is undecided until asked, then answers with `mode`.
 /// Never saves anything.

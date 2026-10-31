@@ -7,11 +7,15 @@ import SwiftUI
 /// photo wall (#618); the camera opens from the wall.
 struct RecordListView: View {
     @ObservedObject var model: RecordListModel
-    @ObservedObject var cameraModel: CameraScreenModel
+    /// The font path and style editors the export page edits through.
+    let styleCenter: StyleEditingCenter
+    /// Builds the camera for a record each time it opens (#621).
+    let makeCameraModel: @MainActor (UUID) -> CameraScreenModel
     /// Debug UI tests: enter the first record at launch, skipping the list.
     var opensFirstRecordAtLaunch = false
 
     @State private var didOpenAtLaunch = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -41,7 +45,8 @@ struct RecordListView: View {
             .navigationDestination(for: RecordRoute.self) { route in
                 switch route {
                 case let .wall(id):
-                    PhotoWallView(profileID: id, listModel: model, cameraModel: cameraModel)
+                    PhotoWallView(profileID: id, listModel: model, styleCenter: styleCenter,
+                                  makeCameraModel: makeCameraModel)
                 case let .editor(id):
                     RecordEditorView(model: model, profileID: id)
                 }
@@ -63,10 +68,32 @@ struct RecordListView: View {
                 Text(error.displayMessage)
             }
         }
+        // A photo that failed to save after its camera closed (#621).
+        .alert("無法完成拍照", isPresented: captureFailureBinding, presenting: model.captureFailure) { error in
+            if error.showsSettingsAction {
+                Button("前往設定") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("好", role: .cancel) { model.dismissCaptureFailure() }
+        } message: { error in
+            Text(error.message)
+        }
+        .alert("設定檔讀取失敗，已重設。", isPresented: corruptionAlertBinding) {
+            Button("好") { model.dismissCorruptionRecoveredAlert() }
+        }
         .onAppear {
             model.startObservingLibrary()
             model.reloadLibrary()
             openFirstRecordIfRequested()
+        }
+        // PRD 0.3 FR-5.15: settle the fonts on the device at launch, the last
+        // opened record's first, so the export page has them.
+        .task { await styleCenter.prepareFontsAtLaunch() }
+        // FR-16.11: downloads do not continue in the background.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { styleCenter.sceneDidEnterBackground() }
         }
     }
 
@@ -140,6 +167,16 @@ struct RecordListView: View {
 
     private var deletionBinding: Binding<Bool> {
         Binding(get: { model.deletionCandidate != nil }, set: { if !$0 { model.cancelDeletion() } })
+    }
+
+    private var captureFailureBinding: Binding<Bool> {
+        Binding(get: { model.captureFailure != nil },
+                set: { if !$0 { model.dismissCaptureFailure() } })
+    }
+
+    private var corruptionAlertBinding: Binding<Bool> {
+        Binding(get: { model.showsCorruptionRecoveredAlert },
+                set: { if !$0 { model.dismissCorruptionRecoveredAlert() } })
     }
 
     private var errorBinding: Binding<Bool> {

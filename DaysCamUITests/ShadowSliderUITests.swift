@@ -9,11 +9,7 @@ final class ShadowSliderUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        XCTAssertTrue(app.buttons["疊字設定"].waitForExistence(timeout: 10))
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         app.buttons["樣式"].tap()
         app.buttons["陰影"].tap()
     }

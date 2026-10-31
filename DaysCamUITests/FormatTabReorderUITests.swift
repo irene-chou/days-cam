@@ -22,16 +22,12 @@ final class FormatTabReorderUITests: XCTestCase {
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         seeding.launchEnvironment["DAYSCAM_FAKE_TODAY"] = startDay
         seeding.launch()
-        seeding.openCamera()
-        XCTAssertTrue(seeding.buttons["疊字設定"].waitForExistence(timeout: 10))
+        XCTAssertTrue(seeding.openCamera())
         seeding.terminate()
 
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-10-12"
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(profiles: profiles), "the export page is up")
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
@@ -82,7 +78,7 @@ final class FormatTabReorderUITests: XCTestCase {
     /// 4.7-inch screen has none, 92.12); a row clipped by the panel is not
     /// in the tree at all.
     private func isOnScreen(_ element: XCUIElement) -> Bool {
-        let bottomBand: CGFloat = app.frame.height >= 812 ? 50 : 8
+        let bottomBand = app.panelBottomBand
         return element.exists && element.frame.minY >= tabBottom && element.frame.maxY <= app.frame.height - bottomBand
     }
 

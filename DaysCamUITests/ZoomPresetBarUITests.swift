@@ -9,7 +9,7 @@ final class ZoomPresetBarUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestZoomPresets", "-captureAspectRatio", "threeByFour"]
+        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestZoomPresets"]
         app.launch()
         app.openCamera()
     }
@@ -60,16 +60,6 @@ final class ZoomPresetBarUITests: XCTestCase {
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: two)
         waitForExpectations(timeout: 2)
-    }
-
-    /// 72.5: opening the panel hides the control.
-    func testHiddenWhilePanelIsOpen() {
-        XCTAssertTrue(roundButton.waitForExistence(timeout: 10))
-        app.buttons["疊字設定"].tap()
-        let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: roundButton)
-        waitForExpectations(timeout: 5)
-        XCTAssertFalse(app.buttons["zoomPreset-焦段 2 倍"].exists)
     }
 
     /// 72.6: the accessibility audit finds nothing on the control's states.

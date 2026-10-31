@@ -7,10 +7,7 @@ final class StyleSubTabLabelUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         let styleTab = app.buttons["樣式"]
         XCTAssertTrue(styleTab.waitForExistence(timeout: 5))
         styleTab.tap()

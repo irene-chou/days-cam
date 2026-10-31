@@ -1,7 +1,7 @@
 import XCTest
 
 /// #567: the 文字內容 card's 位置 row opens the nine-point grid in place and
-/// writes the position the viewfinder shows. With `DAYSCAM_UI_SHOT_DIR` in
+/// writes the position the export preview shows. With `DAYSCAM_UI_SHOT_DIR` in
 /// the test runner's environment the B′ screenshots are also written there.
 final class ContentPositionRowUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -10,10 +10,7 @@ final class ContentPositionRowUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", UUID().uuidString]
-        app.launch()
-        app.openCamera()
-        app.buttons["疊字設定"].tap()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
@@ -91,9 +88,10 @@ final class ContentPositionRowUITests: XCTestCase {
     }
 
     /// #568-3: a point picked on the 內容 tab's row moves the text on the
-    /// viewfinder.
-    func testPickingAPointMovesTheTextOnTheViewfinder() {
-        let text = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '第 '")).firstMatch
+    /// preview.
+    func testPickingAPointMovesTheTextOnThePreview() {
+        let text = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
         XCTAssertTrue(text.waitForExistence(timeout: 5))
         let before = text.frame
         scrollTo(row)

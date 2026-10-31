@@ -2,27 +2,32 @@ import SwiftUI
 
 @main
 struct DaysCamApp: App {
-    /// One `CameraService` and one `ProfileStore` for the app's lifetime.
-    /// `CameraScreen` calls `onAppear`/`onDisappear` on its model, which
-    /// start/stop the camera session as the 紀錄 list presents and dismisses
-    /// it. Neither service is ever rebuilt, so a switched camera, a granted
-    /// permission or a profile change survives opening and closing the camera.
-    @StateObject private var cameraScreenModel: CameraScreenModel
     @StateObject private var recordListModel: RecordListModel
+    /// Fonts and the export page's style editors, for the app's lifetime: a
+    /// font still downloading for a record lands whatever screen is up.
+    private let styleCenter: StyleEditingCenter
+    /// Builds the camera of a record each time it opens from the photo wall
+    /// (#621). One `CameraService` serves every camera, so a switched lens
+    /// or a granted permission survives closing and reopening it; the
+    /// camera's own model stops the session when it closes.
+    private let makeCameraModel: @MainActor (UUID) -> CameraScreenModel
 
     init() {
         let profileStore = Self.makeProfileStore()
-        _cameraScreenModel = StateObject(wrappedValue: Self.makeCameraScreenModel(profileStore: profileStore))
-        _recordListModel = StateObject(wrappedValue: RecordListModel(
-            store: profileStore,
-            library: Self.makeRecordAlbumLibrary(for: profileStore),
-            exportSave: Self.exportSave))
+        let library = Self.makeRecordAlbumLibrary(for: profileStore)
+        styleCenter = StyleEditingCenter(profileStore: profileStore,
+                                         fontLibrary: Self.uiTestFontLibrary ?? FontLibrary())
+        let recordListModel = RecordListModel(store: profileStore, library: library, exportSave: Self.exportSave)
+        makeCameraModel = Self.cameraModelFactory(profileStore: profileStore, library: library,
+                                                  listModel: recordListModel)
+        _recordListModel = StateObject(wrappedValue: recordListModel)
     }
 
     var body: some Scene {
         WindowGroup {
             RecordListView(model: recordListModel,
-                           cameraModel: cameraScreenModel,
+                           styleCenter: styleCenter,
+                           makeCameraModel: makeCameraModel,
                            opensFirstRecordAtLaunch: Self.opensFirstRecordAtLaunch)
         }
     }
@@ -95,12 +100,71 @@ struct DaysCamApp: App {
         return profileStore
     }
 
-    /// Builds the camera screen's model over `profileStore`.
-    private static func makeCameraScreenModel(profileStore: ProfileStore) -> CameraScreenModel {
-        CameraScreenModel(cameraService: CameraService(),
-                          profileStore: profileStore,
-                          fontLibrary: uiTestFontLibrary ?? FontLibrary(),
-                          captureRotationAngleOverride: uiTestCaptureRotationAngle)
+    /// Builds the camera for record `id` over the one `CameraService`.
+    ///
+    /// Opening the camera makes the record the last opened one (PRD 2.0
+    /// §4.2). The corner button starts on the record's newest photo. A save
+    /// that fails after the camera closed, and a failed write of the record,
+    /// are shown by the 紀錄 list, which outlives every camera.
+    private static func cameraModelFactory(profileStore: ProfileStore,
+                                           library: any RecordAlbumLibrary,
+                                           listModel: RecordListModel) -> @MainActor (UUID) -> CameraScreenModel {
+        let cameraService = CameraService()
+        // One count and one save queue for every camera opened, so closing
+        // and reopening cannot pass the in-flight limit or create a second
+        // album for a record (#636 review).
+        let saveCoordinator = CaptureSaveCoordinator()
+        let save = cameraSave(library: library)
+        return { id in
+            profileStore.select(id: id)
+            return CameraScreenModel(
+                cameraService: cameraService,
+                profileStore: profileStore,
+                profileID: id,
+                saveCoordinator: saveCoordinator,
+                save: save,
+                loadLatestPhoto: {
+                    guard let profile = profileStore.profiles.first(where: { $0.id == id }),
+                          let newest = library.photos(albumIdentifier: profile.albumIdentifier,
+                                                      fallbackIDs: profile.fallbackAssetIDs).last else { return nil }
+                    return await library.thumbnail(id: newest.id, targetSize: CGSize(width: 200, height: 200))
+                },
+                reportFailureAfterClose: { [weak listModel] error, count in
+                    listModel?.reportCaptureFailure(error, count: count)
+                },
+                reportRecordWriteFailure: { [weak listModel] error in listModel?.lastError = error },
+                captureRotationAngleOverride: uiTestCaptureRotationAngle)
+        }
+    }
+
+    /// Where a camera photo is saved: the record's album (PRD 2.0 FR-20.4).
+    /// Debug UI tests with the in-memory library (`-UITestRecordPhotos`)
+    /// add it to that library instead, dated `DAYSCAM_FAKE_TODAY`, so the
+    /// wall shows it without touching the real one (#621).
+    private static func cameraSave(library: any RecordAlbumLibrary) -> CameraScreenModel.Save {
+        #if DEBUG
+        if let fake = library as? FakeRecordAlbumLibrary,
+           ProcessInfo.processInfo.arguments.contains("-UITestRecordPhotos") {
+            var count = 0
+            return { _, albumIdentifier, albumTitle, completion in
+                count += 1
+                let id = "uitest-capture-\(count)"
+                fake.addAsset(FakeRecordAlbumLibrary.Asset(id: id, creationDate: DayCountCalculator().now()))
+                Task { @MainActor in
+                    if fake.status == .authorized,
+                       let album = try? await fake.addAssets([id], albumIdentifier: albumIdentifier, albumTitle: albumTitle) {
+                        completion(.success(RecordSaveOutcome(assetID: id, albumID: album)))
+                    } else {
+                        completion(.success(RecordSaveOutcome(assetID: id, albumID: nil)))
+                    }
+                }
+            }
+        }
+        #endif
+        return { image, albumIdentifier, albumTitle, completion in
+            PhotoSaver().saveToRecordAlbum(image, albumIdentifier: albumIdentifier,
+                                           albumTitle: albumTitle, completion: completion)
+        }
     }
 
     /// UI tests pass `-UITestCaptureRotationAngle <0|90|180|270>` to pretend

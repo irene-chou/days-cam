@@ -19,7 +19,7 @@ import SwiftUI
 /// that "分段控制本身有底色，是『非必要不加框』的例外" — an iOS segmented
 /// control's own gray track, matching PRD FR-8.4's own wording.
 struct OverlayPanelView<Host: OverlayPanelHosting>: View {
-    /// The camera (until #621) or the export page (#620).
+    /// The export page (#620); the camera hosted it until #621.
     @ObservedObject var model: Host
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -315,8 +315,8 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
 
     // MARK: - Second layer: tab bodies
 
-    /// Every tab's model is built by `CameraScreenModel` once a profile is
-    /// selected (TASK-22/23/24, #65) — the brief `nil` window before that
+    /// Every tab's model is built by `ProfileStyleEditor` once a profile is
+    /// there (TASK-22/23/24, #65) — the brief `nil` window before that
     /// (PRD FR-1.8 guarantees it never happens once the app has actually
     /// launched) falls back to the same plain placeholder this file used
     /// before TASK-23/24 landed.
@@ -408,23 +408,35 @@ struct PositionSaveErrorHost: View {
     }
 }
 
+/// A stand-in host for the previews: the selected profile's tab models,
+/// built the way the export page builds them.
+@MainActor
+private final class PreviewPanelHost: OverlayPanelHosting {
+    let panelModel = OverlayPanelModel()
+    private let editor: ProfileStyleEditor?
+    var styleTabModel: StyleTabModel? { editor?.styleTabModel }
+    var formatTabModel: FormatTabModel? { editor?.formatTabModel }
+    var positionTabModel: PositionTabModel? { editor?.positionTabModel }
+
+    init(tab: OverlayPanelModel.Tab = .style) {
+        let store = ProfileStore()
+        store.load()
+        let center = StyleEditingCenter(profileStore: store)
+        editor = store.selectedProfileID.flatMap { center.makeStyleEditor(for: $0) }
+        panelModel.selectedTab = tab
+    }
+}
+
 #Preview("樣式（StyleTabView 已接上）") {
-    let store = ProfileStore()
-    store.load()
-    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    return ZStack {
+    ZStack {
         CameraTheme.background.ignoresSafeArea()
-        OverlayPanelView(model: model)
+        OverlayPanelView(model: PreviewPanelHost())
     }
 }
 
 #Preview("內容分頁") {
-    let store = ProfileStore()
-    store.load()
-    let model = CameraScreenModel(cameraService: CameraService(), profileStore: store)
-    model.panelModel.selectedTab = .content
-    return ZStack {
+    ZStack {
         CameraTheme.background.ignoresSafeArea()
-        OverlayPanelView(model: model)
+        OverlayPanelView(model: PreviewPanelHost(tab: .content))
     }
 }
