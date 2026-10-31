@@ -117,17 +117,27 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertFalse(element("viewerCoach").waitForExistence(timeout: 2), "9 never again")
     }
 
-    /// 12: the ⋯ menu names the record and says the photo stays in 「照片」.
-    func testMoreMenuWording() {
+    /// 12: ⋯ has one item, 刪除…, which asks remove-or-delete with the record's name.
+    func testMoreMenuOpensTheRemoveOrDeleteDialog() {
         launchWall()
         openViewer(cell: 4)
+        openRemoveOrDeleteDialog()
+        XCTAssertTrue(app.staticTexts["要從「我的紀錄」移除這張照片，還是從「照片」App 刪除？"].exists)
+        XCTAssertTrue(app.buttons["從「我的紀錄」移除"].exists)
+        XCTAssertTrue(app.buttons["刪除照片"].exists)
+        XCTAssertTrue(app.buttons["取消"].exists)
+        shot("photo-detail-remove-or-delete")
+        app.buttons["取消"].tap()
+        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("photoDetailImage").exists, "cancel changes nothing")
+    }
+
+    private func openRemoveOrDeleteDialog() {
         element("photoDetailMoreButton").tap()
-        let remove = app.buttons["removeFromRecordButton"]
-        XCTAssertTrue(remove.waitForExistence(timeout: 5))
-        XCTAssertTrue(remove.label.contains("從「"), remove.label)
-        XCTAssertTrue(remove.label.contains("」移除"), remove.label)
-        // The subtitle is the menu item's second line, checked in the B′ shot.
-        shot("photo-detail-menu")
+        let item = app.buttons["刪除…"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.tap()
+        XCTAssertTrue(app.buttons["取消"].waitForExistence(timeout: 5))
     }
 
     /// 5: swiping left goes to the next, newer photo, the wall's order.
@@ -147,10 +157,8 @@ final class PhotoDetailUITests: XCTestCase {
     func testRemovingTheLastPhotoReturnsToTheWall() {
         launchWall()
         openViewer(cell: 4)
-        element("photoDetailMoreButton").tap()
-        XCTAssertTrue(app.buttons["removeFromRecordButton"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["deletePhotoButton"].exists)
-        app.buttons["removeFromRecordButton"].tap()
+        openRemoveOrDeleteDialog()
+        app.buttons["從「我的紀錄」移除"].tap()
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 5))
         XCTAssertFalse(element("photoDetail").exists)
         XCTAssertFalse(cell(4).exists)

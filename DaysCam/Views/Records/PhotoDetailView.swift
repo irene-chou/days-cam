@@ -16,6 +16,8 @@ struct PhotoDetailView: View {
     /// 先調整文字樣式 was chosen on the comparison sheet; the page opens once
     /// the sheet is gone.
     @State private var opensStyleAfterIntro = false
+    /// The remove-or-delete dialog is up.
+    @State private var showsRemoveOrDelete = false
     /// Builds the 文字樣式 page's model for a photo of this record.
     private let makeExportModel: (RecordPhoto) -> ExportModel
 
@@ -66,6 +68,11 @@ struct PhotoDetailView: View {
         }) {
             ExportIntroSheet(model: model) { opensStyleAfterIntro = true }
         }
+        .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
+                              title: RemoveOrDeleteDialog.title(recordName: model.recordName),
+                              recordName: model.recordName,
+                              onRemove: { Task { await model.removeFromRecord() } },
+                              onDelete: { Task { await model.deletePhoto() } })
         .alert("無法匯出", isPresented: exportErrorBinding, presenting: model.exportError) { error in
             if error.showsSettingsAction {
                 Button("前往設定") {
@@ -110,24 +117,16 @@ struct PhotoDetailView: View {
         .accessibilityIdentifier("photoDetailTitle")
     }
 
-    /// 從紀錄移除 and 刪除照片 (FR-18.6).
+    /// 刪除… (FR-18.6): one item, which asks whether to remove the photo
+    /// from the record or delete it from 「照片」.
     private var moreMenu: some View {
         Menu {
-            Button {
-                Task { await model.removeFromRecord() }
-            } label: {
-                // A second Text in a menu item is its subtitle.
-                Text("從「\(model.recordName)」移除")
-                Text("照片仍留在「照片」App")
-                Image(systemName: "minus.circle")
-            }
-            .accessibilityIdentifier("removeFromRecordButton")
             Button(role: .destructive) {
-                Task { await model.deletePhoto() }
+                showsRemoveOrDelete = true
             } label: {
-                Label("刪除照片", systemImage: "trash")
+                Label("刪除…", systemImage: "trash")
             }
-            .accessibilityIdentifier("deletePhotoButton")
+            .accessibilityIdentifier("deleteMenuButton")
         } label: {
             Image(systemName: "ellipsis")
         }
