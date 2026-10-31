@@ -234,12 +234,12 @@ struct CameraScreen: View {
     // MARK: - Record menu (FR-20.8)
 
     /// The record switcher's menu, centered under it, 4pt below the top
-    /// bar's buttons (D9).
+    /// bar's buttons (D9); never taller than the room above the bottom bar.
     @ViewBuilder
     private func recordMenu(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isRecordMenuOpen {
             let width = RecordSwitcherMenu.width(forScreenWidth: metrics.screenSize.width)
-            RecordSwitcherMenu(model: model)
+            RecordSwitcherMenu(model: model, maxHeight: metrics.recordMenuMaxHeight)
                 .frame(width: width)
                 .offset(x: (metrics.screenSize.width - width) / 2, y: metrics.toolsCapsuleTop)
                 .transition(.scale(scale: 0.95, anchor: .top).combined(with: .opacity))

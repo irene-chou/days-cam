@@ -194,7 +194,9 @@ struct DaysCamApp: App {
 
     /// UI tests pass `-UITestSecondRecord <name>` to add a second record of
     /// that name, starting the same day as the first, when there is only
-    /// one, for the camera's record switcher (#655). Debug builds only.
+    /// one, for the camera's record switcher (#655). `-UITestRecordCount <n>`
+    /// with it keeps adding records 「<name> 3」… until there are `n`.
+    /// Debug builds only.
     private static func applyUITestSecondRecord(to profileStore: ProfileStore) {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -202,7 +204,16 @@ struct DaysCamApp: App {
               arguments.indices.contains(flag + 1),
               profileStore.profiles.count == 1,
               let first = profileStore.profiles.first else { return }
-        _ = try? profileStore.add(CameraProfile(name: arguments[flag + 1], startDate: first.startDate))
+        let name = arguments[flag + 1]
+        _ = try? profileStore.add(CameraProfile(name: name, startDate: first.startDate))
+        guard let countFlag = arguments.firstIndex(of: "-UITestRecordCount"),
+              arguments.indices.contains(countFlag + 1),
+              let count = Int(arguments[countFlag + 1]) else { return }
+        while profileStore.profiles.count < min(count, ProfileStore.profileLimit) {
+            let added = try? profileStore.add(CameraProfile(name: "\(name) \(profileStore.profiles.count + 1)",
+                                                            startDate: first.startDate))
+            if added == nil { break }
+        }
         #endif
     }
 

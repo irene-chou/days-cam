@@ -323,6 +323,19 @@ struct CameraScreenLayoutMetrics {
         return ViewfinderPlacement(layoutSize: layoutSize, scale: scale, center: CGPoint(x: box.midX, y: box.midY))
     }
 
+    // MARK: - Record menu (FR-20.8, #655)
+
+    /// Space kept between the record menu's bottom and the bottom bar's
+    /// region.
+    static let recordMenuBottomMargin: CGFloat = 16
+
+    /// The tallest the record switcher's menu may be: from `toolsCapsuleTop`
+    /// down to just above the bottom bar's region, so with many records it
+    /// scrolls instead of running under the shutter or off the screen.
+    var recordMenuMaxHeight: CGFloat {
+        max(0, footerRegionTop - Self.recordMenuBottomMargin - toolsCapsuleTop)
+    }
+
     // MARK: - Swipe down to close (FR-20.11, #655)
 
     /// How far a finger must move before a swipe to close starts, so a tap

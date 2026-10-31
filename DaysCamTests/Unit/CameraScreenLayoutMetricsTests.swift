@@ -438,6 +438,18 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(CameraScreenLayoutMetrics.toolsCapsuleTrailingInset, 12 + 44 + 8)
     }
 
+    /// #659 review: the record menu stops 16pt above the bottom bar's
+    /// region, so 20 records scroll inside it instead of running off screen.
+    func testRecordMenuMaxHeightEndsAboveTheBottomBar() {
+        for metrics in [makeMetrics(width: 393, height: 852, top: 59, bottom: 34),
+                        makeMetrics(width: 375, height: 667, top: 20, bottom: 0)] {
+            XCTAssertEqual(metrics.toolsCapsuleTop + metrics.recordMenuMaxHeight,
+                           metrics.footerRegionTop - 16, accuracy: 0.05)
+            XCTAssertGreaterThan(metrics.recordMenuMaxHeight, 44 * 4, "room for several rows")
+            XCTAssertLessThan(metrics.recordMenuMaxHeight, 44 * 20, "20 rows must scroll")
+        }
+    }
+
     // MARK: - Swipe down to close (#655-9)
 
     /// 655-9: a long enough swipe down, or a hard flick down, closes; a

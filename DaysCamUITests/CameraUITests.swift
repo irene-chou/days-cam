@@ -192,6 +192,7 @@ final class CameraUITests: XCTestCase {
         XCTAssertTrue(element("cameraRecordMenu").waitForExistence(timeout: 5), "655-3 the menu opens")
         XCTAssertFalse(app.buttons["閃光燈"].exists, "655-12 the capsule closed first")
         XCTAssertEqual(menuRows.count, 2, "655-3 every record")
+        XCTAssertLessThan(element("cameraRecordMenu").frame.height, 44 * 3, "two rows: the card hugs them")
         for row in menuRows.allElementsBoundByIndex {
             XCTAssertTrue(row.label.hasSuffix("今天第 10 天"), "655-3 \(row.label)")
         }
@@ -207,6 +208,42 @@ final class CameraUITests: XCTestCase {
         XCTAssertTrue(toast.waitForExistence(timeout: 2), "655-3 toast")
         XCTAssertEqual(switcher.value as? String, name, "655-3 the switcher reads the new record")
         XCTAssertFalse(element("cameraRecordMenu").exists, "the menu closed")
+    }
+
+    /// #659 review: with 20 records the menu stays on screen above the
+    /// shutter and scrolls; the record at the far end can be picked.
+    func test_655_3_menuWithTwentyRecordsScrolls() {
+        launchCamera(extra: ["-UITestSecondRecord", "新家", "-UITestRecordCount", "20"])
+        XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+        switcher.tap()
+        let menu = element("cameraRecordMenu")
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        let shutter = app.buttons["快門"]
+        XCTAssertLessThan(menu.frame.maxY, shutter.frame.minY, "the menu ends above the bottom bar")
+        XCTAssertTrue(app.frame.contains(menu.frame), "the menu is on screen")
+        let checked = menuRows.allElementsBoundByIndex.first(where: \.isSelected)
+        XCTAssertTrue(checked?.isHittable ?? false, "the selected record is visible")
+        shot("record-menu-twenty")
+
+        let rows = menuRows.allElementsBoundByIndex
+        XCTAssertEqual(rows.count, 20)
+        let target = rows.first(where: \.isSelected) == rows.first ? rows.last : rows.first
+        guard let target else { return XCTFail("no row") }
+        for _ in 0..<6 where !target.isHittable {
+            menu.swipe(direction: target == rows.last ? .up : .down)
+        }
+        XCTAssertTrue(target.isHittable, "the far end scrolls into view")
+        let name = String(target.label.split(separator: "，").first ?? "")
+        target.tap()
+        XCTAssertEqual(switcher.value as? String, name)
+
+        // Reopened, the menu opens on the record now checked.
+        switcher.tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        sleep(1)
+        let reopened = menuRows.allElementsBoundByIndex.first(where: \.isSelected)
+        XCTAssertTrue(reopened?.label.hasPrefix(name) ?? false)
+        XCTAssertTrue(reopened?.isHittable ?? false, "scrolled to the selected record")
     }
 
     /// 655-8: without switching, 「返回圖庫」 goes back to the same wall.
@@ -272,5 +309,13 @@ final class CameraUITests: XCTestCase {
         assertOnScreen(thumbnail, "返回圖庫")
         sleep(1)
         shot("camera-landscape")
+    }
+}
+
+private extension XCUIElement {
+    enum SwipeDirection { case up, down }
+
+    func swipe(direction: SwipeDirection) {
+        direction == .up ? swipeUp() : swipeDown()
     }
 }

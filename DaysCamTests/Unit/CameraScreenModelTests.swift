@@ -1133,6 +1133,58 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.inFlightSaveCount == 0 }
     }
 
+    /// #659 Lead decision: a timer countdown fixes the record when the
+    /// shutter is pressed; the switcher is disabled until the photo is
+    /// taken, so the photo goes to that record.
+    func testCountdownFixesTheRecordAndDisablesTheSwitcherUntilTheShot() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let recordA = try addRecord(to: store, name: "小寶", albumIdentifier: "album-A")
+        let recordB = try addRecord(to: store, name: "新家", albumIdentifier: "album-B")
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // .off -> .threeSeconds
+        let ticker = FakeCountdownTicker()
+        let captures = CaptureRecorder()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: recordA,
+                                             captureSettingsStore: settings, countdownTicker: ticker,
+                                             save: saves.save, captureImage: captures.capture)
+
+        model.beginCapture()
+        XCTAssertTrue(model.isRecordSwitcherDisabled)
+        model.toggleRecordMenu()
+        XCTAssertFalse(model.isRecordMenuOpen, "the menu cannot open during the countdown")
+        model.selectRecord(recordB.id)
+        XCTAssertEqual(model.selectedProfileID, recordA.id, "no switch during the countdown")
+
+        ticker.tick()
+        ticker.tick()
+        ticker.tick()
+        XCTAssertFalse(model.isRecordSwitcherDisabled, "enabled again once the photo is taken")
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls[0].albumIdentifier, "album-A")
+        XCTAssertEqual(saves.calls[0].albumTitle, "小寶")
+        saves.calls[0].completion(.success(outcome("A1", album: "album-A")))
+        waitUntil { model.inFlightSaveCount == 0 }
+    }
+
+    /// #659 Lead decision: cancelling the countdown re-enables the switcher.
+    func testCancellingTheCountdownReenablesTheSwitcher() throws {
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer()
+        let ticker = FakeCountdownTicker()
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings, countdownTicker: ticker)
+
+        model.beginCapture()
+        XCTAssertTrue(model.isRecordSwitcherDisabled)
+        model.capturePhoto() // cancels
+        XCTAssertNil(model.countdownRemaining)
+        XCTAssertFalse(model.isRecordSwitcherDisabled)
+        model.toggleRecordMenu()
+        XCTAssertTrue(model.isRecordMenuOpen)
+    }
+
     /// A photo of A landing after the switch does not replace B's thumbnail.
     func testPhotoOfTheOldRecordDoesNotReplaceTheNewRecordsThumbnail() throws {
         let clock = MutableClock(try fixedNow())

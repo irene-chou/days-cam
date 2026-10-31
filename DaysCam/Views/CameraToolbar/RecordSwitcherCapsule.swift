@@ -3,7 +3,8 @@ import SwiftUI
 /// The camera's record switcher (PRD 2.0 FR-20.8, #655): the selected
 /// record's name and a `chevron.down`, centered in the top bar. It keeps
 /// the 1.x profile chip's look (0.2 FR-7.11, FR-14.2): no background, no
-/// border, no subtitle. Tapping it opens `RecordSwitcherMenu`.
+/// border, no subtitle. Tapping it opens `RecordSwitcherMenu`; disabled
+/// during a timer countdown.
 struct RecordSwitcherCapsule: View {
     @ObservedObject var model: CameraScreenModel
 
@@ -24,6 +25,8 @@ struct RecordSwitcherCapsule: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 7)
         }
+        .disabled(model.isRecordSwitcherDisabled)
+        .opacity(model.isRecordSwitcherDisabled ? 0.4 : 1)
         .accessibilityLabel("切換紀錄")
         .accessibilityValue(model.selectedRecordName)
         .accessibilityIdentifier("cameraRecordSwitcher")
@@ -33,8 +36,15 @@ struct RecordSwitcherCapsule: View {
 /// The switcher's menu (D9): a white card under the capsule listing every
 /// record with today's count, the selected one checked. Picking a row
 /// changes where later photos go (`CameraScreenModel.selectRecord`).
+///
+/// Up to 20 records may not fit: the card is never taller than `maxHeight`
+/// and scrolls vertically past that, opening on the selected record.
 struct RecordSwitcherMenu: View {
     @ObservedObject var model: CameraScreenModel
+
+    /// The tallest the card may be: the room below the top bar
+    /// (`CameraScreenLayoutMetrics.recordMenuMaxHeight`).
+    var maxHeight: CGFloat = .infinity
 
     /// Width of the card (D9: 60% of the screen), capped so long names
     /// still leave room for the count on a wide phone.
@@ -42,18 +52,27 @@ struct RecordSwitcherMenu: View {
         min(screenWidth * 0.6, 280)
     }
 
+    /// The rows' own height, measured, so the card hugs them when they fit.
+    @State private var contentHeight: CGFloat = 0
+
     var body: some View {
         let choices = model.recordChoices
-        VStack(spacing: 0) {
-            ForEach(Array(choices.enumerated()), id: \.element.id) { index, choice in
-                row(choice)
-                if index < choices.count - 1 {
-                    Rectangle()
-                        .fill(CameraTheme.fill)
-                        .frame(height: 1)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                rows(choices)
+                    .onGeometryChange(for: CGFloat.self, of: \.size.height) { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            // Measured after the first layout, so the selected record is
+            // scrolled to once the card has its height.
+            .onChange(of: contentHeight) { _, _ in
+                if let selected = choices.first(where: \.isSelected) {
+                    proxy.scrollTo(selected.id, anchor: .center)
                 }
             }
         }
+        .frame(height: min(contentHeight, maxHeight))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.white)
@@ -61,6 +80,20 @@ struct RecordSwitcherMenu: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("cameraRecordMenu")
+    }
+
+    private func rows(_ choices: [CameraScreenModel.RecordChoice]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(choices.enumerated()), id: \.element.id) { index, choice in
+                row(choice)
+                    .id(choice.id)
+                if index < choices.count - 1 {
+                    Rectangle()
+                        .fill(CameraTheme.fill)
+                        .frame(height: 1)
+                }
+            }
+        }
     }
 
     private func row(_ choice: CameraScreenModel.RecordChoice) -> some View {

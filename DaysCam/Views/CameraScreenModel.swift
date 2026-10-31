@@ -130,6 +130,9 @@ final class CameraScreenModel: ObservableObject {
     /// The remaining whole seconds of an in-progress timer countdown (PRD 0.2
     /// FR-7.6); `nil` when no countdown is running.
     @Published private(set) var countdownRemaining: Int?
+    /// Where the photo of the running countdown goes, fixed when the
+    /// shutter was pressed.
+    private var countdownDestination: CaptureDestination?
 
     /// The record's newest photo for the 44pt corner button (FR-20.5): read
     /// from the library when the camera opens (`loadLatestThumbnail()`),
@@ -560,9 +563,16 @@ extension CameraScreenModel {
         profile?.name ?? ""
     }
 
+    /// Whether the switcher is disabled: during a timer countdown, whose
+    /// photo already has its record (Lead decision on #659).
+    var isRecordSwitcherDisabled: Bool {
+        countdownRemaining != nil
+    }
+
     /// Opens or closes the menu; opening closes the tools capsule first
-    /// (0.2 FR-7.11).
+    /// (0.2 FR-7.11). Does nothing while the switcher is disabled.
     func toggleRecordMenu() {
+        guard !isRecordSwitcherDisabled else { return }
         if isRecordMenuOpen {
             closeRecordMenu()
         } else {
@@ -584,7 +594,7 @@ extension CameraScreenModel {
     /// one that no longer exists, only closes the menu.
     func selectRecord(_ id: UUID) {
         closeRecordMenu()
-        guard id != selectedProfileID,
+        guard !isRecordSwitcherDisabled, id != selectedProfileID,
               let record = profileStore.profiles.first(where: { $0.id == id }) else { return }
         selectedProfileID = id
         profile = record
@@ -689,14 +699,19 @@ extension CameraScreenModel {
     }
 
     /// Starts a capture: immediately without a timer, otherwise once the
-    /// countdown reaches zero (PRD 0.2 FR-7.6). Not `private` so tests can
-    /// drive it without a running session.
+    /// countdown reaches zero (PRD 0.2 FR-7.6). The record the photo goes to
+    /// is fixed here, when the shutter is pressed, even with a timer (Lead
+    /// decision on #659). Not `private` so tests can drive it without a
+    /// running session.
     func beginCapture() {
+        guard let profile else { return }
+        let destination = CaptureDestination(profileID: profile.id, albumTitle: profile.name)
         let seconds = captureSettingsStore.timerSeconds.rawValue
         guard seconds > 0 else {
-            performCapture()
+            performCapture(for: destination)
             return
         }
+        countdownDestination = destination
         countdownRemaining = seconds
         countdownTicker.start { [weak self] in
             self?.tickCountdown()
@@ -711,7 +726,9 @@ extension CameraScreenModel {
         guard next > 0 else {
             countdownTicker.stop()
             countdownRemaining = nil
-            performCapture()
+            let destination = countdownDestination
+            countdownDestination = nil
+            if let destination { performCapture(for: destination) }
             return
         }
         countdownRemaining = next
@@ -721,17 +738,18 @@ extension CameraScreenModel {
     private func cancelCountdown() {
         countdownTicker.stop()
         countdownRemaining = nil
+        countdownDestination = nil
         showToast(message: "已取消")
     }
 
-    /// Actually fires the shutter. The destination is the selected record as
-    /// it is at this instant: switching records afterwards does not move
-    /// this photo (FR-20.8). No moment travels with the photo (FR-20.6).
-    private func performCapture() {
-        guard let profile else { return }
+    /// Actually fires the shutter for `destination`, the record chosen when
+    /// the shutter was pressed: switching records afterwards does not move
+    /// this photo (FR-20.8). Nothing fires for a record deleted during the
+    /// countdown. No moment travels with the photo (FR-20.6).
+    private func performCapture(for destination: CaptureDestination) {
+        guard profileStore.profiles.contains(where: { $0.id == destination.profileID }) else { return }
         isCapturing = true
         captureTriggerCount += 1
-        let destination = CaptureDestination(profileID: profile.id, albumTitle: profile.name)
         let flashMode = captureSettingsStore.flashMode
         let capture: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void =
             Self.usesUITestCapture ? Self.uiTestCaptureImage : captureImage
