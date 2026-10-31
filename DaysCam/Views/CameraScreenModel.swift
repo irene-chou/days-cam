@@ -671,8 +671,12 @@ extension CameraScreenModel {
         let capture: (FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void =
             Self.usesUITestCapture ? Self.uiTestCaptureImage : captureImage
 
-        capture(flashMode) { [weak self] result in
-            guard let self else { return }
+        // Held strongly until the photo comes back: the camera may close
+        // (and its view drop this model) between the shutter and the
+        // callback, and a photo that was taken must still be saved, or its
+        // failure reported (#636 review). The callback runs exactly once, so
+        // nothing is kept beyond it.
+        capture(flashMode) { result in
             switch result {
             case let .success(image):
                 // Counted as in flight before the capture span ends, so the

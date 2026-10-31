@@ -1440,6 +1440,54 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-1")
     }
 
+    /// #636 review: the camera closes (the model is released) between the
+    /// shutter and the photo coming back; the photo is still saved and
+    /// written back to the record.
+    func testPhotoArrivingAfterTheModelIsReleasedIsStillSaved() throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store)
+        let saves = SaveRecorder()
+        let captures = CaptureRecorder()
+        var made: (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore)? =
+            try makeModel(clock: clock, profileStore: store, record: record, save: saves.save,
+                          captureImage: captures.capture)
+
+        made?.0.beginCapture()
+        XCTAssertEqual(captures.completions.count, 1, "the shutter fired")
+        made?.0.onDisappear()
+        made = nil // the camera closed before the photo came back
+
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls.count, 1, "the photo still reaches the save")
+        saves.calls[0].completion(.success(outcome("A", album: "album-1")))
+
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "album-1")
+    }
+
+    /// #636 review: same, and the save fails: the failure reaches the app.
+    func testPhotoArrivingAfterTheModelIsReleasedReportsItsSaveFailure() throws {
+        let saves = SaveRecorder()
+        let captures = CaptureRecorder()
+        var reported: [(CaptureAlertError, Int)] = []
+        var made: (CameraScreenModel, CameraService, EmptyDeviceProvider, ProfileStore)? =
+            try makeModel(save: saves.save, captureImage: captures.capture,
+                          reportFailureAfterClose: { reported.append(($0, $1)) })
+        let coordinator = try XCTUnwrap(made?.0.saveCoordinator)
+
+        made?.0.beginCapture()
+        made?.0.onDisappear()
+        made = nil
+
+        captures.completions[0](.success(UIImage()))
+        waitUntil { saves.calls.count == 1 }
+        saves.calls[0].completion(.failure(.saveFailed("磁碟空間不足")))
+
+        XCTAssertEqual(reported.count, 1, "the failure reaches the 紀錄 list")
+        XCTAssertEqual(coordinator.inFlightCount, 0)
+    }
+
     /// Closing the camera does not cancel a save in progress.
     func testOnDisappearKeepsASaveInProgress() throws {
         let saves = SaveRecorder()
