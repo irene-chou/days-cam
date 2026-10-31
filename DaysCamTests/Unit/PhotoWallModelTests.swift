@@ -200,18 +200,75 @@ final class PhotoWallModelTests: XCTestCase {
     }
 
     /// #622-2: under limited access 「加入照片」 opens the system picker, shows
-    /// no `PHPicker` and writes nothing to the library or the record.
-    func testLimitedAddOpensTheSystemPickerAndWritesNothing() throws {
+    /// no `PHPicker` and writes nothing to the library's albums.
+    func testLimitedAddOpensTheSystemPickerAndWritesNoAlbum() throws {
         let (store, profile) = try makeStore()
         let library = FakeRecordAlbumLibrary(status: .limited, assets: [asset("x", 1, 3)])
-        var presented = 0
+        let presented = expectation(description: "system picker")
         let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
-                                   todayText: { _ in "" }, presentLimitedPicker: { presented += 1 })
+                                   todayText: { _ in "" }, presentLimitedPicker: { presented.fulfill(); return [] })
 
         XCTAssertFalse(model.beginAddingPhotos(), "no PHPicker")
-        XCTAssertEqual(presented, 1)
+        wait(for: [presented], timeout: 2)
         XCTAssertTrue(library.albums.isEmpty, "addAssets not called")
         XCTAssertNil(store.profiles.first { $0.id == profile.id }?.albumIdentifier)
+    }
+
+    /// #640-4: photos newly selected in the system picker join this record's
+    /// fallback ids only, once each, and show on its wall but not another's.
+    func testLimitedPickerAppendsToThisRecordOnlyWithoutRepeats() async throws {
+        let (store, first) = try makeStore()
+        let second = try store.add(CameraProfile(name: "二寶", startDate: DateFixture.components(2026, 1, 1)))
+        var withB = second
+        withB.fallbackAssetIDs = ["B"]
+        try store.updateAndWait(withB)
+        let library = FakeRecordAlbumLibrary(status: .limited, assets: [asset("A", 1, 2), asset("B", 1, 3), asset("D", 1, 4)])
+        library.visibleIDs = ["A", "B"]
+        var picks: [[String]] = [["D"], ["D", "B", "D"]]
+        let wall = PhotoWallModel(profileID: second.id, store: store, library: library, calendar: calendar,
+                                  todayText: { _ in "" }, presentLimitedPicker: {
+                                      library.visibleIDs?.formUnion(picks.first ?? [])
+                                      return picks.isEmpty ? [] : picks.removeFirst()
+                                  })
+        let otherWall = makeModel(store: store, profile: first, library: library)
+
+        await wall.addFromLimitedPicker()
+        XCTAssertEqual(store.profiles.first { $0.id == second.id }?.fallbackAssetIDs, ["B", "D"], "640-4")
+        XCTAssertEqual(wall.photoIDs, ["B", "D"], "640-4")
+        XCTAssertEqual(store.profiles.first { $0.id == first.id }?.fallbackAssetIDs, [], "640-4 record 1 untouched")
+        XCTAssertEqual(otherWall.photoIDs, [], "640-4 record 1 does not show D")
+
+        await wall.addFromLimitedPicker()
+        XCTAssertEqual(store.profiles.first { $0.id == second.id }?.fallbackAssetIDs, ["B", "D"], "640-4 no repeats")
+    }
+
+    /// #640-4: the dedup keeps the existing order and the picked order.
+    func testAppendingNewKeepsOrderAndSkipsRepeats() {
+        XCTAssertEqual(PhotoWallModel.appendingNew(["c", "a", "d", "c"], to: ["a", "b"]), ["a", "b", "c", "d"])
+        XCTAssertEqual(PhotoWallModel.appendingNew([], to: ["a"]), ["a"])
+    }
+
+    /// #640-3: a photo taken in record 1 under limited access (no album)
+    /// shows on record 1's wall only.
+    func testLimitedCaptureShowsOnlyOnItsOwnRecord() throws {
+        let (store, first) = try makeStore()
+        let second = try store.add(CameraProfile(name: "二寶", startDate: DateFixture.components(2026, 1, 1)))
+        let library = FakeRecordAlbumLibrary(status: .limited, assets: [asset("old", 1, 2)])
+        library.visibleIDs = ["old"]
+        let firstWall = makeModel(store: store, profile: first, library: library)
+        let secondWall = makeModel(store: store, profile: second, library: library)
+        let before = (firstWall.photoIDs.count, secondWall.photoIDs.count)
+
+        library.addAsset(asset("new", 1, 10))
+        library.visibleIDs?.insert("new")
+        CameraScreenModel.record(RecordSaveOutcome(assetID: "new", albumID: nil),
+                                 savedFor: .init(profileID: first.id, albumTitle: first.name),
+                                 albumAtSave: nil, in: store, reportWriteFailure: { XCTFail("\($0)") })
+        firstWall.reload()
+        secondWall.reload()
+        XCTAssertEqual(firstWall.photoIDs.count, before.0 + 1, "640-3")
+        XCTAssertEqual(secondWall.photoIDs.count, before.1, "640-3")
+        XCTAssertEqual(firstWall.photoIDs, ["new"])
     }
 
     /// #622-2: under full access the caller still shows its own picker.

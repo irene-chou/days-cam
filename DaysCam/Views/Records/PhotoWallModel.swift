@@ -57,7 +57,7 @@ final class PhotoWallModel: ObservableObject {
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
     private let todayText: (CameraProfile) -> String
-    private let presentLimitedPicker: () -> Void
+    private let presentLimitedPicker: () async -> [String]
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
 
@@ -66,19 +66,20 @@ final class PhotoWallModel: ObservableObject {
     /// - Parameter todayText: "今天第 N 天" for the header, supplied by the
     ///   list so both screens read the same clock and wording.
     /// - Parameter presentLimitedPicker: Opens the system "select more photos"
-    ///   sheet; injected so tests can count the calls.
+    ///   sheet and returns the ids the user newly selected there; injected so
+    ///   tests can stand in for the sheet.
     init(profileID: UUID,
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
          todayText: @escaping (CameraProfile) -> String,
-         presentLimitedPicker: (() -> Void)? = nil) {
+         presentLimitedPicker: (() async -> [String])? = nil) {
         self.profileID = profileID
         self.store = store
         self.library = library
         self.calendar = calendar
         self.todayText = todayText
-        self.presentLimitedPicker = presentLimitedPicker ?? { LimitedLibraryPicker.present() }
+        self.presentLimitedPicker = presentLimitedPicker ?? { await LimitedLibraryPicker.present() }
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
@@ -111,7 +112,8 @@ final class PhotoWallModel: ObservableObject {
     // MARK: - State
 
     /// Limited access: the wall shows the "not synced with Photos" notice and
-    /// "加入照片" opens the system picker (§7.3).
+    /// "加入照片" opens the system picker; the wall lists only this record's
+    /// `fallbackAssetIDs` (§7.3).
     var isLimited: Bool { status == .limited }
 
     var content: Content {
@@ -167,14 +169,44 @@ final class PhotoWallModel: ObservableObject {
     // MARK: - Adding photos
 
     /// The 「加入照片」 tap. Under limited access it opens the system "select
-    /// more photos" sheet itself and returns `false`: the photos the user
-    /// ticks there are the record's photos, so no `PHPicker` and no album
-    /// write follow (§7.3). Otherwise returns `true` for the caller to show
-    /// its own picker.
+    /// more photos" sheet itself (`addFromLimitedPicker`) and returns
+    /// `false`: no `PHPicker` and no album write follow (§7.3). Otherwise
+    /// returns `true` for the caller to show its own picker.
     func beginAddingPhotos() -> Bool {
         guard isLimited else { return true }
-        presentLimitedPicker()
+        Task { await addFromLimitedPicker() }
         return false
+    }
+
+    /// Limited access: opens the system sheet and appends the photos newly
+    /// selected there to this record's `fallbackAssetIDs`, skipping ids it
+    /// already has (§7.3, #640). Other records are untouched. A failed write
+    /// sets `errorMessage`.
+    func addFromLimitedPicker() async {
+        let picked = await presentLimitedPicker()
+        guard !picked.isEmpty, var latest = store.profiles.first(where: { $0.id == profileID }) else { return }
+        let merged = Self.appendingNew(picked, to: latest.fallbackAssetIDs)
+        guard merged != latest.fallbackAssetIDs else { return }
+        latest.fallbackAssetIDs = merged
+        do {
+            try store.updateAndWait(latest)
+            reload()
+        } catch let error as ProfileStoreError {
+            errorMessage = error.displayMessage
+        } catch {
+            errorMessage = "無法加入照片，請再試一次。"
+        }
+    }
+
+    /// `existing` followed by the ids of `picked` it does not have yet, in
+    /// order and without repeats.
+    static func appendingNew(_ picked: [String], to existing: [String]) -> [String] {
+        var seen = Set(existing)
+        var result = existing
+        for id in picked where seen.insert(id).inserted {
+            result.append(id)
+        }
+        return result
     }
 
     /// Adds the picked assets to the record's album, creating the album when
@@ -256,14 +288,22 @@ final class PhotoWallModel: ObservableObject {
 
 /// Opens the system limited-library picker over the topmost view controller.
 enum LimitedLibraryPicker {
+    /// Presents the picker and returns, once it is dismissed, the local
+    /// identifiers the user newly selected (photos already in the selection
+    /// are not reported, per `PHPhotoLibrary+PhotosUISupport.h`). Empty when
+    /// there is nothing to present over.
     @MainActor
-    static func present() {
+    static func present() async -> [String] {
         let scene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive }
         var top = scene?.keyWindow?.rootViewController
         while let presented = top?.presentedViewController { top = presented }
-        guard let top else { return }
-        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
+        guard let top else { return [] }
+        return await withCheckedContinuation { continuation in
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top) { identifiers in
+                continuation.resume(returning: identifiers)
+            }
+        }
     }
 }

@@ -75,6 +75,29 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(model.rows.first { $0.name == "小寶" }?.subtitle, "今天第 10 天 · 5 張")
     }
 
+    /// #640-6: under limited access each row counts only its record's visible
+    /// fallback ids, the same photos its wall shows.
+    func testLimitedSubtitleCountMatchesTheWall() throws {
+        let store = makeStore()
+        var first = try addRecord("甲", to: store)
+        var second = try addRecord("乙", to: store)
+        first.fallbackAssetIDs = ["p1", "p2", "gone"]
+        second.fallbackAssetIDs = ["p3"]
+        try store.updateAndWait(first)
+        try store.updateAndWait(second)
+        let library = FakeRecordAlbumLibrary(status: .limited, assets: photos(4))
+        library.visibleIDs = ["p1", "p2", "p3", "p4"]
+        let model = makeModel(store: store, library: library)
+        for record in [first, second] {
+            let wall = PhotoWallModel(profileID: record.id, store: store, library: library,
+                                      calendar: DateFixture.taipei, todayText: { _ in "" })
+            XCTAssertEqual(model.rows.first { $0.id == record.id }?.subtitle,
+                           "今天第 10 天 · \(wall.photoIDs.count) 張", "640-6 \(record.name)")
+        }
+        XCTAssertEqual(model.rows.first { $0.id == first.id }?.subtitle, "今天第 10 天 · 2 張")
+        XCTAssertEqual(model.rows.first { $0.id == second.id }?.subtitle, "今天第 10 天 · 1 張")
+    }
+
     /// FR-16.3: a start date still ahead reads as the countdown.
     func testFutureStartDateReadsAsCountdown() throws {
         let store = makeStore()
