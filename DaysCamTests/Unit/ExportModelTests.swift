@@ -4,7 +4,7 @@ import XCTest
 @testable import DaysCam
 
 /// What a stand-in `bake` was called with.
-private final class ExportBakeRecorder: @unchecked Sendable {
+final class ExportBakeRecorder: @unchecked Sendable {
     struct Call {
         let text: String
         let cropRect: CGRect?
@@ -31,7 +31,7 @@ private final class ExportBakeRecorder: @unchecked Sendable {
 /// A record library that counts what the export asks of it. `fullImage` can
 /// be held until the test releases it, or made to throw.
 @MainActor
-private final class ExportLibrary: RecordAlbumLibrary {
+final class ExportLibrary: RecordAlbumLibrary {
     var photosInAlbum: [RecordPhoto]
     var fullImageError: Error?
     var holdsFullImage = false
@@ -89,7 +89,7 @@ private final class ExportLibrary: RecordAlbumLibrary {
 }
 
 /// A photo library that records which save path was used (FR-19.9).
-private final class RecentsOnlyStubLibrary: PhotoLibraryAccessing {
+final class RecentsOnlyStubLibrary: PhotoLibraryAccessing {
     var writes = 0
     var albumWrites = 0
     var writeSucceeds = true
@@ -117,8 +117,8 @@ private final class RecentsOnlyStubLibrary: PhotoLibraryAccessing {
     }
 }
 
-/// #620 acceptance 1–7 and 10: the export page's bake, save, failures,
-/// single export, success, write-back and the viewer's disabled button.
+/// #647 acceptance 11: the 文字樣式 page's header, write-back, drag and
+/// preview (the export itself is `PhotoExportPipelineTests`).
 @MainActor
 final class ExportModelTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -166,276 +166,16 @@ final class ExportModelTests: XCTestCase {
     private func makeModel(store: ProfileStore,
                            profile: CameraProfile,
                            photo: RecordPhoto,
-                           library: ExportLibrary,
-                           recorder: ExportBakeRecorder = ExportBakeRecorder(),
-                           save: @escaping ExportModel.Save = { _, completion in completion(.success("new")) },
-                           scheduled: @escaping (TimeInterval, @escaping () -> Void) -> Void = { _, action in action() }) -> ExportModel {
+                           library: ExportLibrary) -> ExportModel {
         ExportModel(profileID: profile.id, photo: photo, store: store, library: library,
                     editor: makeEditor(store: store, profile: profile),
                     calendar: calendar,
-                    bake: { recorder.bake($0, $1, $2, $3, $4, $5, $6, $7) },
-                    save: save,
-                    resolveFont: { _ in .pingFang },
-                    scheduleAfter: scheduled)
-    }
-
-    // MARK: 1. What is baked
-
-    /// 1: `bake` gets the original, the photo-moment text of `creationDate`,
-    /// no crop, the standard tone and the film date of the photo's own day.
-    func testExportBakesThePhotoMomentTextWithStandardToneAndNoCrop() async throws {
-        let (store, profile) = try makeStore(showFilmDate: true)
-        let photo = photo(day: 10)
-        let recorder = ExportBakeRecorder()
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              recorder: recorder)
-        await model.export()
-
-        let call = try XCTUnwrap(recorder.calls.first)
-        XCTAssertEqual(recorder.calls.count, 1)
-        let expected = TemplateRenderer().render(profile: profile, capturedAt: try XCTUnwrap(photo.creationDate),
-                                                 calendar: calendar, moment: .photo)
-        XCTAssertEqual(call.text, expected)
-        XCTAssertTrue(call.text.contains("第 10 天"), call.text)
-        XCTAssertNil(call.cropRect)
-        XCTAssertEqual(call.tone, .standard)
-        XCTAssertEqual(call.imageSize, CGSize(width: 300, height: 400), "the original, not the display image")
-        XCTAssertEqual(call.filmDate?.text, FilmDateStamp.text(for: DateFixture.components(2026, 1, 10)))
-    }
-
-    // MARK: 2. Where it is saved
-
-    /// 2: the save goes through `saveToRecentsOnly`: one plain write, no album
-    /// write, and nothing added to the record's album.
-    func testExportSavesToRecentsOnlyAndNeverAddsToAnAlbum() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let library = ExportLibrary(photos: [photo])
-        let photoLibrary = RecentsOnlyStubLibrary()
-        let saver = PhotoSaver(library: photoLibrary)
-        let model = makeModel(store: store, profile: profile, photo: photo, library: library,
-                              save: { image, completion in saver.saveToRecentsOnly(image, completion: completion) })
-        await model.export()
-
-        XCTAssertEqual(photoLibrary.writes, 1)
-        XCTAssertEqual(photoLibrary.albumWrites, 0)
-        XCTAssertEqual(library.addAssetsCount, 0)
-        XCTAssertNil(model.exportError)
-        XCTAssertTrue(model.shouldDismiss)
-    }
-
-    // MARK: 3, 4. Failures
-
-    /// 3: a failed save shows the error alert, never "已匯出".
-    func testSaveFailureShowsAlertAndNoSuccess() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let photoLibrary = RecentsOnlyStubLibrary()
-        photoLibrary.writeSucceeds = false
-        let saver = PhotoSaver(library: photoLibrary)
-        var announcements: [String] = []
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              save: { image, completion in saver.saveToRecentsOnly(image, completion: completion) })
-        model.announce = { announcements.append($0) }
-        await model.export()
-
-        let error = try XCTUnwrap(model.exportError)
-        XCTAssertTrue(error.message.contains("儲存失敗"), error.message)
-        XCTAssertTrue(announcements.isEmpty)
-        XCTAssertNil(model.toastState)
-        XCTAssertFalse(model.shouldDismiss)
-        XCTAssertFalse(model.isExporting)
-        XCTAssertTrue(model.canExport)
-    }
-
-    /// 3: a refused permission offers 前往設定.
-    func testPermissionDeniedOffersSettings() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              save: { _, completion in completion(.failure(.permissionDenied)) })
-        await model.export()
-
-        let error = try XCTUnwrap(model.exportError)
-        XCTAssertEqual(error.message, PhotoSaveError.permissionDenied.displayMessage)
-        XCTAssertTrue(error.showsSettingsAction)
-        XCTAssertFalse(model.shouldDismiss)
-    }
-
-    /// 4: the original failing to download (iCloud) ends in the alert, nothing
-    /// is baked or saved, and the checkmark works again.
-    func testDownloadFailureShowsAlertAndReenablesTheCheckmark() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let library = ExportLibrary(photos: [photo])
-        library.fullImageError = RecordAlbumError.failed("network")
-        let recorder = ExportBakeRecorder()
-        var saves = 0
-        let model = makeModel(store: store, profile: profile, photo: photo, library: library, recorder: recorder,
-                              save: { _, completion in saves += 1; completion(.success("x")) })
-        await model.export()
-
-        XCTAssertEqual(model.exportError?.message, ExportModel.downloadFailedMessage)
-        XCTAssertTrue(recorder.calls.isEmpty)
-        XCTAssertEqual(saves, 0)
-        XCTAssertFalse(model.isExporting)
-        XCTAssertTrue(model.canExport)
-        XCTAssertNil(model.toastState)
-
-        // Dismissed and tried again, it can succeed.
-        model.dismissError()
-        library.fullImageError = nil
-        await model.export()
-        XCTAssertNil(model.exportError)
-        XCTAssertEqual(saves, 1)
-    }
-
-    /// A failed bake is not saved and not reported as exported (0.1 §7.3).
-    func testBakeFailureShowsAlertAndSavesNothing() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let recorder = ExportBakeRecorder()
-        recorder.succeeds = false
-        var saves = 0
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              recorder: recorder,
-                              save: { _, completion in saves += 1; completion(.success("x")) })
-        await model.export()
-
-        XCTAssertEqual(model.exportError?.message, ExportModel.bakeFailedMessage)
-        XCTAssertEqual(saves, 0)
-        XCTAssertNil(model.toastState)
-        XCTAssertFalse(model.shouldDismiss)
-    }
-
-    // MARK: 5. One at a time
-
-    /// 5: pressing the checkmark again while exporting starts nothing.
-    func testSecondExportWhileExportingDoesNothing() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let library = ExportLibrary(photos: [photo])
-        library.holdsFullImage = true
-        var saves = 0
-        let model = makeModel(store: store, profile: profile, photo: photo, library: library,
-                              save: { _, completion in saves += 1; completion(.success("x")) })
-
-        let first = Task { await model.export() }
-        while library.heldCount == 0 { await Task.yield() }
-        XCTAssertTrue(model.isExporting)
-        XCTAssertFalse(model.canExport)
-
-        await model.export()
-        XCTAssertEqual(library.fullImageCount, 1)
-
-        library.release()
-        await first.value
-        XCTAssertEqual(library.fullImageCount, 1)
-        XCTAssertEqual(saves, 1)
-    }
-
-    /// While exporting, the panel and the preview's drag are locked so the
-    /// screen keeps showing what is being baked; a failure unlocks them.
-    func testEditingIsLockedWhileExporting() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let library = ExportLibrary(photos: [photo])
-        library.holdsFullImage = true
-        library.fullImageError = RecordAlbumError.failed("network")
-        let model = makeModel(store: store, profile: profile, photo: photo, library: library)
-        XCTAssertTrue(model.isEditable)
-        XCTAssertTrue(model.isOverlayDraggable)
-
-        let export = Task { await model.export() }
-        while library.heldCount == 0 { await Task.yield() }
-        XCTAssertFalse(model.isEditable)
-        XCTAssertFalse(model.isOverlayDraggable)
-        let before = store.profiles.first { $0.id == profile.id }?.position
-        model.overlayDragEnded(center: CGPoint(x: 20, y: 20), frameSize: CGSize(width: 200, height: 200))
-        XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.position, before, "drag ignored")
-
-        library.release()
-        await export.value
-        XCTAssertNotNil(model.exportError)
-        XCTAssertTrue(model.isEditable, "unlocked after a failure")
-        model.overlayDragEnded(center: CGPoint(x: 100, y: 50), frameSize: CGSize(width: 200, height: 200))
-        XCTAssertNotEqual(store.profiles.first { $0.id == profile.id }?.position, before)
-    }
-
-    /// #633 驗收 1: the xmark cannot leave the page while exporting (so no
-    /// orphan export saves a photo); a failure gives it back.
-    func testCancelIsDisabledWhileExportingAndReturnsAfterFailure() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let library = ExportLibrary(photos: [photo])
-        library.holdsFullImage = true
-        library.fullImageError = RecordAlbumError.failed("network")
-        let model = makeModel(store: store, profile: profile, photo: photo, library: library)
-        XCTAssertTrue(model.canCancel)
-
-        let export = Task { await model.export() }
-        while library.heldCount == 0 { await Task.yield() }
-        XCTAssertFalse(model.canCancel)
-
-        library.release()
-        await export.value
-        XCTAssertNotNil(model.exportError)
-        XCTAssertTrue(model.canCancel, "unlocked after a failure")
-    }
-
-    /// #633 驗收 2: the page cannot be left while exporting, so it cannot be
-    /// reopened to bypass the one-at-a-time guard; success stays locked until
-    /// the page dismisses.
-    func testCancelStaysDisabledAfterSuccessUntilDismiss() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              scheduled: { _, _ in })
-        await model.export()
-        XCTAssertFalse(model.canCancel)
-        XCTAssertFalse(model.canExport)
-    }
-
-    /// Success keeps it locked until the page closes.
-    func testEditingStaysLockedAfterSuccess() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              scheduled: { _, _ in })
-        await model.export()
-        XCTAssertFalse(model.isEditable)
-        XCTAssertFalse(model.isOverlayDraggable)
-    }
-
-    // MARK: 6. Success
-
-    /// 6: success announces "已匯出", shows the toast and goes back to the
-    /// viewer after 0.9 seconds.
-    func testSuccessAnnouncesShowsToastThenDismisses() async throws {
-        let (store, profile) = try makeStore()
-        let photo = photo()
-        var pending: (delay: TimeInterval, action: () -> Void)?
-        var announcements: [String] = []
-        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]),
-                              scheduled: { delay, action in pending = (delay, action) })
-        model.announce = { announcements.append($0) }
-        await model.export()
-
-        XCTAssertEqual(announcements, ["已匯出"])
-        XCTAssertEqual(model.toastState?.message, "已匯出")
-        XCTAssertFalse(model.shouldDismiss)
-        XCTAssertFalse(model.canExport, "no second export while the toast shows")
-        let scheduled = try XCTUnwrap(pending)
-        XCTAssertEqual(scheduled.delay, 0.9, accuracy: 0.001)
-
-        scheduled.action()
-        XCTAssertNil(model.toastState)
-        XCTAssertTrue(model.shouldDismiss)
+                    resolveFont: { _ in .pingFang })
     }
 
     // MARK: 7. Write-back
 
-    /// 7: a panel change is in the store at once, and a new export page (after
+    /// 11: a panel change is in the store at once, and a reopened page (after
     /// `xmark`) shows it; nothing is rolled back.
     func testPanelChangeIsSavedAndSurvivesReopening() async throws {
         let (store, profile) = try makeStore()
@@ -476,7 +216,6 @@ final class ExportModelTests: XCTestCase {
         let (store, profile) = try makeStore()
         let photo = photo()
         let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]))
-        XCTAssertEqual(model.dayTitle, "第 10 天")
         var changed = profile
         changed.showFilmDate = true
         try store.updateAndWait(changed)
@@ -486,22 +225,22 @@ final class ExportModelTests: XCTestCase {
         XCTAssertNotNil(model.filmDateStamp)
     }
 
-    // MARK: 10. No date, no export
+    // MARK: Header
 
-    /// 10: a photo without `creationDate` cannot be exported, from the viewer
-    /// or the page.
-    func testPhotoWithoutDateCannotBeExported() async throws {
+    /// 11: the subtitle names the record and says the style applies to all.
+    func testSubtitleNamesTheRecord() throws {
+        let (store, profile) = try makeStore()
+        let photo = photo()
+        let model = makeModel(store: store, profile: profile, photo: photo, library: ExportLibrary(photos: [photo]))
+        XCTAssertEqual(model.subtitle, "小寶 · 套用到所有照片")
+    }
+
+    /// A photo without `creationDate` draws no text on the page.
+    func testPhotoWithoutDateHasNoOverlayText() throws {
         let (store, profile) = try makeStore()
         let undated = photo(day: nil)
-        let library = ExportLibrary(photos: [undated])
-        let detail = PhotoDetailModel(profileID: profile.id, startingAt: undated.id, store: store, library: library,
-                                      calendar: calendar, resolveFont: { _ in .pingFang })
-        XCTAssertFalse(detail.canExport(undated))
-        XCTAssertTrue(detail.canExport(photo(day: 9)))
-
-        let model = makeModel(store: store, profile: profile, photo: undated, library: library)
-        XCTAssertFalse(model.canExport)
-        await model.export()
-        XCTAssertEqual(library.fullImageCount, 0)
+        let model = makeModel(store: store, profile: profile, photo: undated, library: ExportLibrary(photos: [undated]))
+        XCTAssertNil(model.overlayText)
+        XCTAssertNil(model.filmDateStamp)
     }
 }

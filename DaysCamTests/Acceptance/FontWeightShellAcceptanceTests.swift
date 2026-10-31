@@ -87,26 +87,53 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
         let profile: CameraProfile
         let now: Date
 
-        /// The export page of a photo taken at `now`, with the app's own
-        /// resolver over `library`.
+        /// The 文字樣式 page (preview font) and the export pipeline (baked
+        /// font) of a photo taken at `now`, with the app's own resolver over
+        /// `library` (#647 moved the export from the page to
+        /// `PhotoExportPipeline`).
         @MainActor
-        func makeExport(recorder: BakeRecorder, photoLibrary: HeldPhotoLibrary? = nil) -> ExportModel {
+        struct ExportRun {
+            let page: ExportModel
+            let pipeline: PhotoExportPipeline
+            let photo: RecordPhoto
+            let store: ProfileStore
+            let profileID: UUID
+            let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
+
+            var overlayFont: ResolvedOverlayFont { page.overlayFont }
+
+            func export() async {
+                guard let profile = store.profiles.first(where: { $0.id == profileID }) else { return }
+                _ = await pipeline.export(photo: photo, profile: profile, resolveFont: resolveFont)
+            }
+        }
+
+        @MainActor
+        func makeExport(recorder: BakeRecorder, photoLibrary: HeldPhotoLibrary? = nil) -> ExportRun {
             let library = self.library
             let photoLibrary = photoLibrary ?? HeldPhotoLibrary()
-            return ExportModel(
+            let photo = RecordPhoto(id: "photo", creationDate: now)
+            let resolve: @MainActor (OverlayStyle) -> ResolvedOverlayFont = {
+                OverlayMetrics.resolvedFont(for: $0, availability: library)
+            }
+            let page = ExportModel(
                 profileID: profile.id,
-                photo: RecordPhoto(id: "photo", creationDate: now),
+                photo: photo,
                 store: store,
                 library: photoLibrary,
                 editor: center.makeStyleEditor(for: profile.id),
+                calendar: DateFixture.taipei,
+                resolveFont: resolve)
+            let pipeline = PhotoExportPipeline(
+                library: photoLibrary,
                 calendar: DateFixture.taipei,
                 bake: { image, _, style, _, font, _, _, _ in
                     recorder.add(BakeRecorder.Call(font: font, style: style))
                     return image
                 },
-                save: { _, completion in completion(.success("asset")) },
-                resolveFont: { OverlayMetrics.resolvedFont(for: $0, availability: library) },
-                scheduleAfter: { _, _ in })
+                save: { _, completion in completion(.success("asset")) })
+            return ExportRun(page: page, pipeline: pipeline, photo: photo, store: store,
+                             profileID: profile.id, resolveFont: resolve)
         }
 
         /// The font and style the export's bake receives right now.
