@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The camera's top bar (PRD 2.0 FR-20.7, D9): an empty 44pt slot on the
-/// left (the overlay-preview switch of #656 goes there), the record
+/// The camera's top bar (PRD 2.0 FR-20.7, D9): the overlay-preview switch
+/// on the left (FR-20.9), the record
 /// switcher centered (FR-20.8), and on the right the tools toggle (inner)
 /// and the flip button (outermost), two matching round keys. Flash, timer
 /// and grid live in `CameraToolsCapsule`, which opens under the toggle.
@@ -37,13 +37,30 @@ struct CameraToolbar: View {
         .padding(.horizontal, CameraScreenLayoutMetrics.toolbarHorizontalInset)
     }
 
-    // MARK: - Left: reserved (#656)
+    // MARK: - Left: overlay preview (FR-20.9)
 
-    /// Holds the place of the overlay-preview switch (FR-20.9, #656).
+    /// The 疊字預覽 switch: on is the `accent` disc with the filled icon, off
+    /// the plain disc with the outline icon. A switch to VoiceOver, with the
+    /// state as its value.
     private var leftSlot: some View {
-        Color.clear
-            .frame(width: Self.buttonSize, height: Self.buttonSize)
-            .accessibilityHidden(true)
+        let isOn = model.isOverlayPreviewOn
+        return Button(action: model.toggleOverlayPreview) {
+            Image(systemName: isOn ? "text.below.photo.fill" : "text.below.photo")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundColor(isOn ? CameraTheme.inkOnAccent : (isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink))
+                .frame(width: Self.buttonSize, height: Self.buttonSize)
+                .legibleOverPhoto(isOnPhoto && !isOn)
+                .background(
+                    Circle()
+                        .fill(isOn ? CameraTheme.accent : CameraTheme.fill)
+                        .frame(width: Self.roundKeyDiameter, height: Self.roundKeyDiameter)
+                )
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .accessibilityLabel("疊字預覽")
+        .accessibilityValue(isOn ? "開" : "關")
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityIdentifier("overlayPreviewToggle")
     }
 
     // MARK: - Right: tools toggle and flip

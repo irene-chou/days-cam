@@ -32,6 +32,15 @@ final class FirstRunTipsTests: XCTestCase {
         XCTAssertTrue(FirstRunTips(defaults: defaults).viewerCoachSeen)
     }
 
+    /// #656-9: the camera's text-tap hint is its own flag and persists.
+    func testOverlayTapHintIsSeparateAndPersists() {
+        let tips = FirstRunTips(defaults: defaults)
+        XCTAssertFalse(tips.overlayTapSeen)
+        tips.markOverlayTapSeen()
+        XCTAssertTrue(FirstRunTips(defaults: defaults).overlayTapSeen)
+        XCTAssertFalse(FirstRunTips(defaults: defaults).viewerCoachSeen)
+    }
+
     /// 10: UI tests count every tip as seen unless they ask for them.
     func testSeenByDefaultForUITests() {
         let tips = FirstRunTips(defaults: defaults, seenByDefault: true)

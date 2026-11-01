@@ -197,6 +197,36 @@ final class CameraScreenModel: ObservableObject {
     /// The pending toast ("已取消", "改存到「…」"), if any.
     @Published private(set) var toastState: ToastState?
 
+    /// The short toast in the middle of the screen saying the 疊字預覽 switch
+    /// changed (FR-20.9).
+    @Published private(set) var centerToast: ToastState?
+
+    /// Whether the viewfinder draws the record's overlay (FR-20.9); app
+    /// level, persisted through `overlayPreviewSetting`.
+    @Published private(set) var isOverlayPreviewOn: Bool
+    private let overlayPreviewSetting: OverlayPreviewSetting
+
+    /// Whether 「點畫面上的字可以改樣式」 has been dealt with (FR-20.10):
+    /// the style sheet was opened once, in this or an earlier launch.
+    @Published private(set) var overlayTapSeen: Bool
+    private let tips: FirstRunTips
+
+    /// The style sheet's shell state (FR-20.10). Its tab models are the
+    /// export page's own (`styleEditor`).
+    let panelModel = OverlayPanelModel()
+
+    /// The overlay text block's frame in the viewfinder's coordinates, as
+    /// `OverlayTextView` reports it; `.null` while nothing is drawn.
+    var overlayTextFrame: CGRect = .null
+
+    /// Builds the style sheet's tab models and applies fonts (the app's
+    /// `StyleEditingCenter`); `nil` leaves the sheet empty (previews, tests).
+    private let styleCenter: StyleEditingCenter?
+    /// The tab models of the selected record, rebuilt when the switcher
+    /// picks another.
+    private(set) var styleEditor: ProfileStyleEditor?
+    private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
+
     /// How `showToast` schedules the toast's own auto-dismiss. Injected so
     /// tests don't have to wait a real 1.5 seconds.
     private let scheduleToastDismiss: (@escaping () -> Void) -> Void
@@ -227,7 +257,21 @@ final class CameraScreenModel: ObservableObject {
              DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
          },
          saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
-         captureRotationAngleOverride: CGFloat? = nil) {
+         captureRotationAngleOverride: CGFloat? = nil,
+         styleCenter: StyleEditingCenter? = nil,
+         overlayPreviewDefaults: UserDefaults = .standard,
+         tips: FirstRunTips = .shared) {
+        if overlayPreviewDefaults === UserDefaults.standard { OverlayPreviewSetting.applyUITestArguments() }
+        let overlayPreviewSetting = OverlayPreviewSetting(defaults: overlayPreviewDefaults)
+        self.overlayPreviewSetting = overlayPreviewSetting
+        self.isOverlayPreviewOn = overlayPreviewSetting.isOn
+        self.tips = tips
+        self.overlayTapSeen = tips.overlayTapSeen
+        self.styleCenter = styleCenter
+        self.resolveFont = { style in
+            guard let fontLibrary = styleCenter?.fontLibrary else { return .pingFang }
+            return OverlayMetrics.resolvedFont(for: style, availability: fontLibrary)
+        }
         self.captureRotationAngleOverride = captureRotationAngleOverride
         self.saveTimeout = saveTimeout
         self.cameraService = cameraService
@@ -293,6 +337,9 @@ final class CameraScreenModel: ObservableObject {
         self.reportRecordWriteFailure = reportRecordWriteFailure
         self.scheduleToastDismiss = scheduleToastDismiss
         self.profile = profileStore.profiles.first { $0.id == profileID }
+        self.styleEditor = styleCenter?.makeStyleEditor(for: profileID)
+        panelModel.overlayDragHandler = styleEditor?.dragAdapter
+        bindToPanelModel()
         bindToProfileStore()
         bindToSaveCoordinator()
         bindToCameraService()
@@ -301,6 +348,18 @@ final class CameraScreenModel: ObservableObject {
         bindToCaptureSettingsStore()
         bindToFlashMode()
         bindToClockNotifications()
+    }
+
+    /// `CameraScreen` and `OverlayPanelView` observe only this model, so the
+    /// sheet's open state and tab, and a font changing state (the overlay
+    /// redraws with it), are forwarded.
+    private func bindToPanelModel() {
+        panelModel.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        styleCenter?.fontLibrary.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     private func bindToProfileStore() {
@@ -393,13 +452,14 @@ final class CameraScreenModel: ObservableObject {
     private func bindToFocusModel() {
         focusModel.canAcceptGesture = { [weak self] in
             guard let self else { return false }
-            guard !isCameraToolsExpanded, !zoomExpansion.isExpanded, !isRecordMenuOpen else { return false }
+            guard !panelModel.isOpen, !isCameraToolsExpanded, !zoomExpansion.isExpanded, !isRecordMenuOpen else { return false }
             #if DEBUG
             if fakeFocusBackend != nil { return true }
             #endif
             return !isCaptureUnsupported && !needsPermissionGuidance && !isSessionNotRunning
         }
         focusModel.isPinching = { [weak self] in self?.zoomModel.isPinching ?? false }
+        focusModel.shouldIgnoreTouch = { [weak self] in self?.viewfinderTouchStartsOnOverlayText(at: $0) ?? false }
         cameraService.focusExposureStatePublisher
             .sink { [weak self] in self?.focusModel.receive($0) }
             .store(in: &cancellables)
@@ -565,9 +625,10 @@ extension CameraScreenModel {
     }
 
     /// Whether the switcher is disabled: during a timer countdown, whose
-    /// photo already has its record (Lead decision on #659).
+    /// photo already has its record (Lead decision on #659), and while the
+    /// style sheet is open, which edits the selected record.
     var isRecordSwitcherDisabled: Bool {
-        countdownRemaining != nil
+        countdownRemaining != nil || panelModel.isOpen
     }
 
     /// Opens or closes the menu; opening closes the tools capsule first
@@ -599,6 +660,8 @@ extension CameraScreenModel {
               let record = profileStore.profiles.first(where: { $0.id == id }) else { return }
         selectedProfileID = id
         profile = record
+        styleEditor = styleCenter?.makeStyleEditor(for: id)
+        panelModel.overlayDragHandler = styleEditor?.dragAdapter
         latestThumbnailImage = nil
         showToast(message: "改存到「\(record.name)」")
         Task { await loadLatestThumbnail() }
@@ -695,7 +758,7 @@ extension CameraScreenModel {
             cancelCountdown()
             return
         }
-        guard !isShutterDisabled, profile != nil else { return }
+        guard !isShutterDisabled, !panelModel.isOpen, profile != nil else { return }
         beginCapture()
     }
 
@@ -1001,6 +1064,116 @@ extension CameraScreenModel {
         guard landings == thumbnailLandingCount, recordID == selectedProfileID, let image else { return }
         latestThumbnailImage = image
     }
+}
+
+// MARK: - Overlay preview (PRD 2.0 FR-20.2, FR-20.6, FR-20.9, FR-20.10, #656)
+
+extension CameraScreenModel {
+    /// Whether the viewfinder draws the overlay now: the switch is on and
+    /// the record exists.
+    var showsOverlay: Bool {
+        isOverlayPreviewOn && profile != nil
+    }
+
+    /// The overlay text of the selected record as the photo taken right now
+    /// would be exported: the 「照片」 moment with `capturedAt` the current
+    /// time (FR-20.6). Re-rendered on every read, so it follows midnight
+    /// through `refreshTick`.
+    var overlayText: String {
+        guard let profile else { return "" }
+        return renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar, moment: .photo)
+    }
+
+    /// The film date of today, `nil` while the record has it off.
+    var filmDateStamp: FilmDateStamp? {
+        guard let profile else { return nil }
+        return PhotoDetailModel.filmDateStamp(for: profile, creationDate: calculator.now(), calendar: calendar)
+    }
+
+    /// The style the selected record draws its overlay with.
+    var overlayStyle: OverlayStyle {
+        profile?.style ?? OverlayStyle()
+    }
+
+    /// The face the viewfinder draws `overlayStyle` with, resolved now so the
+    /// preview follows the font library.
+    var overlayFont: ResolvedOverlayFont {
+        resolveFont(overlayStyle)
+    }
+
+    /// Where the selected record draws its overlay.
+    var overlayPlacement: OverlayPlacement {
+        profile?.position ?? .default
+    }
+
+    // MARK: Switch
+
+    /// Flips 疊字預覽 (FR-20.9), remembers it and says so in the middle of the
+    /// screen. Turning it off also closes the style sheet.
+    func toggleOverlayPreview() {
+        isOverlayPreviewOn.toggle()
+        overlayPreviewSetting.set(isOverlayPreviewOn)
+        if !isOverlayPreviewOn { closeStylePanel() }
+        showCenterToast(message: isOverlayPreviewOn ? "疊字預覽 開啟" : "疊字預覽 關閉")
+    }
+
+    /// Shows `message` in the middle of the screen for a moment.
+    private func showCenterToast(message: String) {
+        let state = ToastState(message: message)
+        centerToast = state
+        scheduleToastDismiss { [weak self] in
+            guard self?.centerToast?.id == state.id else { return }
+            self?.centerToast = nil
+        }
+    }
+
+    /// Whether the hint 「點畫面上的字可以改樣式」 shows: the overlay is drawn
+    /// and the sheet was never opened (FR-20.10).
+    var showsOverlayTip: Bool {
+        showsOverlay && !overlayTapSeen && !panelModel.isOpen
+    }
+
+    // MARK: Style sheet
+
+    /// 「改動存到「<紀錄名>」；拍的照片仍是原圖，匯出時才印上」 under the panel.
+    var stylePanelNote: String {
+        "改動存到「\(profile?.name ?? "")」；拍的照片仍是原圖，匯出時才印上"
+    }
+
+    /// A tap on the overlay text (FR-20.10): opens the style sheet. A tap
+    /// while it is open does nothing — the text is what it edits.
+    func handleOverlayTextTap() {
+        zoomExpansion.collapse()
+        collapseCameraTools()
+        closeRecordMenu()
+        openStylePanel()
+    }
+
+    /// Opens the style sheet; only with the overlay drawn and no countdown
+    /// running. The hint is dealt with from now on.
+    func openStylePanel() {
+        guard showsOverlay, countdownRemaining == nil, !panelModel.isOpen else { return }
+        tips.markOverlayTapSeen()
+        overlayTapSeen = true
+        panelModel.open()
+    }
+
+    /// Closes the style sheet (the checkmark).
+    func closeStylePanel() {
+        panelModel.close()
+    }
+
+    /// Whether a viewfinder touch beginning at `point` lands on the overlay
+    /// text, where it belongs to the text's own tap and drag, not to focus.
+    func viewfinderTouchStartsOnOverlayText(at point: CGPoint) -> Bool {
+        showsOverlay && !overlayTextFrame.isNull && overlayTextFrame.contains(point)
+    }
+}
+
+extension CameraScreenModel: OverlayPanelHosting {
+    var styleTabModel: StyleTabModel? { styleEditor?.styleTabModel }
+    var formatTabModel: FormatTabModel? { styleEditor?.formatTabModel }
+    var positionTabModel: PositionTabModel? { styleEditor?.positionTabModel }
 }
 
 // MARK: - Error handling & toast (TASK-15)

@@ -12,6 +12,7 @@ final class FirstRunTips {
 
     static let viewerCoachKey = "dayscam.tips.viewerCoachSeen"
     static let exportIntroKey = "dayscam.tips.exportIntroSeen"
+    static let overlayTapKey = "dayscam.tips.overlayTapSeen"
 
     private let defaults: UserDefaults
     private let seenByDefault: Bool
@@ -30,6 +31,7 @@ final class FirstRunTips {
         if showsTips {
             UserDefaults.standard.removeObject(forKey: Self.viewerCoachKey)
             UserDefaults.standard.removeObject(forKey: Self.exportIntroKey)
+            UserDefaults.standard.removeObject(forKey: Self.overlayTapKey)
         }
         return FirstRunTips(defaults: .standard, seenByDefault: isUITest && !showsTips)
         #else
@@ -42,10 +44,17 @@ final class FirstRunTips {
     /// The first-export comparison has been answered, or the batch preview seen.
     var exportIntroSeen: Bool { seen(Self.exportIntroKey) }
 
+    /// The camera's 「點畫面上的字可以改樣式」 hint has been shown and the text
+    /// tapped, i.e. the style sheet was opened once (PRD 2.0 FR-20.10).
+    var overlayTapSeen: Bool { seen(Self.overlayTapKey) }
+
     func markViewerCoachSeen() { defaults.set(true, forKey: Self.viewerCoachKey) }
 
     /// Also called by the batch preview (FR-22.3: seeing it counts).
     func markExportIntroSeen() { defaults.set(true, forKey: Self.exportIntroKey) }
+
+    /// Called when the camera's style sheet opens; the hint never returns.
+    func markOverlayTapSeen() { defaults.set(true, forKey: Self.overlayTapKey) }
 
     private func seen(_ key: String) -> Bool {
         (defaults.object(forKey: key) as? Bool) ?? seenByDefault
