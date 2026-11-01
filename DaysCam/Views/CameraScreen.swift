@@ -313,10 +313,6 @@ struct CameraScreen: View {
                 overlayLayer(layerSize: layerSize, frameSize: frameSize, rotation: rotation)
             }
 
-            if model.showsOverlayTip {
-                overlayTip(frameSize: frameSize)
-            }
-
             if let countdownRemaining = model.countdownRemaining {
                 Text("\(countdownRemaining)")
                     .font(.system(size: 96, weight: .heavy, design: .rounded))
@@ -392,6 +388,9 @@ struct CameraScreen: View {
     private func overlayLayer(layerSize: CGSize, frameSize: CGSize, rotation: ViewfinderRotation) -> some View {
         let isDraggable = model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching
         return ZStack {
+            if model.showsOverlayTip, !overlayTextLayerRect.isNull {
+                overlayHighlight(rect: overlayTextLayerRect, layerSize: layerSize)
+            }
             OverlayTextView(text: model.overlayText,
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
@@ -413,21 +412,44 @@ struct CameraScreen: View {
         .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
     }
 
-    /// 「點畫面上的字可以改樣式」 until the sheet was opened once (FR-20.10).
-    /// Never takes touches.
-    private func overlayTip(frameSize: CGSize) -> some View {
-        Text("點畫面上的字可以改樣式")
-            .font(.system(size: 13, weight: .bold))
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CameraTheme.toastBackground))
-            .frame(width: frameSize.width, height: frameSize.height, alignment: .bottomTrailing)
-            .padding(.trailing, frameSize.width * 0.04)
-            .padding(.bottom, frameSize.width * 0.33)
+    /// Space between the text and its highlight frame.
+    private static let highlightPadding: CGFloat = 6
+
+    /// The first-run hint (FR-20.10): a rounded frame around the overlay text
+    /// (accent stroke, faint accent fill) with 「點這裡的文字可以改樣式」 above
+    /// it, pointing at it. Drawn in the overlay layer, so it follows the text
+    /// when it is dragged or resized and turns with the phone. Never takes
+    /// touches.
+    private func overlayHighlight(rect: CGRect, layerSize: CGSize) -> some View {
+        let frame = rect.insetBy(dx: -Self.highlightPadding, dy: -Self.highlightPadding)
+        // The bubble hangs from the side of the frame that has more room.
+        let alignsTrailing = frame.midX > layerSize.width / 2
+        return RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(CameraTheme.accent.opacity(0.18))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(CameraTheme.accent, lineWidth: 2))
+            .frame(width: frame.width, height: frame.height)
+            .overlay(alignment: alignsTrailing ? .topTrailing : .topLeading) {
+                VStack(alignment: alignsTrailing ? .trailing : .leading, spacing: 0) {
+                    Text("點這裡的文字可以改樣式")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(CameraTheme.toastBackground))
+                        .accessibilityIdentifier("overlayTip")
+                    Triangle()
+                        .fill(CameraTheme.toastBackground)
+                        .frame(width: 12, height: 6)
+                        .padding(.horizontal, 16)
+                }
+                .alignmentGuide(.top) { $0[.bottom] + 2 }
+            }
+            .position(x: frame.midX, y: frame.midY)
             .allowsHitTesting(false)
-            .accessibilityIdentifier("overlayTip")
     }
 
     // MARK: - Style sheet (FR-20.10)
@@ -665,6 +687,18 @@ struct CameraScreen: View {
                 .padding(.bottom, 96)
                 .transition(.opacity)
                 .animation(.easeInOut, value: toastState.id)
+        }
+    }
+}
+
+/// A downward-pointing triangle, the tail of the first-run hint's bubble.
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.closeSubpath()
         }
     }
 }

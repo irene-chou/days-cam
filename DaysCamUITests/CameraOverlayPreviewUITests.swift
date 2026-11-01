@@ -121,7 +121,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         launchCamera(extra: ["-UITestShowTips"])
         assertOnScreen(overlayText, "656-6 the text is drawn")
         XCTAssertTrue(element("overlayTip").waitForExistence(timeout: 5), "656-9 the hint shows first")
-        XCTAssertEqual(element("overlayTip").label, "點畫面上的字可以改樣式")
+        XCTAssertEqual(element("overlayTip").label, "點這裡的文字可以改樣式")
         shot("2_on_tip")
 
         overlayText.tap()

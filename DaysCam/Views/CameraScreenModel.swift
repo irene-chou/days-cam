@@ -206,7 +206,7 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var isOverlayPreviewOn: Bool
     private let overlayPreviewSetting: OverlayPreviewSetting
 
-    /// Whether 「點畫面上的字可以改樣式」 has been dealt with (FR-20.10):
+    /// Whether 「點這裡的文字可以改樣式」 has been dealt with (FR-20.10):
     /// the style sheet was opened once, in this or an earlier launch.
     @Published private(set) var overlayTapSeen: Bool
     private let tips: FirstRunTips
@@ -1127,7 +1127,7 @@ extension CameraScreenModel {
         }
     }
 
-    /// Whether the hint 「點畫面上的字可以改樣式」 shows: the overlay is drawn
+    /// Whether the hint 「點這裡的文字可以改樣式」 shows: the overlay is drawn
     /// and the sheet was never opened (FR-20.10).
     var showsOverlayTip: Bool {
         showsOverlay && !overlayTapSeen && !panelModel.isOpen

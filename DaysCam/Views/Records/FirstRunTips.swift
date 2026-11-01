@@ -44,7 +44,7 @@ final class FirstRunTips {
     /// The first-export comparison has been answered, or the batch preview seen.
     var exportIntroSeen: Bool { seen(Self.exportIntroKey) }
 
-    /// The camera's 「點畫面上的字可以改樣式」 hint has been shown and the text
+    /// The camera's 「點這裡的文字可以改樣式」 hint has been shown and the text
     /// tapped, i.e. the style sheet was opened once (PRD 2.0 FR-20.10).
     var overlayTapSeen: Bool { seen(Self.overlayTapKey) }
 
