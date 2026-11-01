@@ -292,6 +292,19 @@ struct CameraScreenLayoutMetrics {
         return ViewfinderPlacement(layoutSize: closed.size, scale: scale, center: CGPoint(x: open.midX, y: open.midY))
     }
 
+    // MARK: - First-run hint (#656)
+
+    /// Room the hint's bubble and tail need above the text's frame: 12pt of
+    /// padding, one line of 13pt bold text, a 6pt tail and a 2pt gap.
+    static let overlayTipHeight: CGFloat = 40
+
+    /// Whether the hint hangs below the text's highlight frame instead of
+    /// above it: when the frame is too close to the layer's top edge for the
+    /// bubble to fit (`frameMinY` in the layer's coordinates).
+    static func overlayTipIsBelow(frameMinY: CGFloat) -> Bool {
+        frameMinY < overlayTipHeight
+    }
+
     // MARK: - Tools capsule (issue #135)
 
     /// The toolbar's left/right inset (`CameraToolbar`'s horizontal padding).

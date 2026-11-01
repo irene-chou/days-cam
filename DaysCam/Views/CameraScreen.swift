@@ -415,22 +415,42 @@ struct CameraScreen: View {
     /// Space between the text and its highlight frame.
     private static let highlightPadding: CGFloat = 6
 
+    private static func tipAlignment(isBelow: Bool, trailing: Bool) -> Alignment {
+        switch (isBelow, trailing) {
+        case (false, true): return .topTrailing
+        case (false, false): return .topLeading
+        case (true, true): return .bottomTrailing
+        case (true, false): return .bottomLeading
+        }
+    }
+
+    /// The bubble's tail, 16pt in from the side it hangs from.
+    private func tail(pointsUp: Bool) -> some View {
+        Triangle()
+            .fill(CameraTheme.toastBackground)
+            .frame(width: 12, height: 6)
+            .rotationEffect(.degrees(pointsUp ? 180 : 0))
+            .padding(.horizontal, 16)
+    }
+
     /// The first-run hint (FR-20.10): a rounded frame around the overlay text
     /// (accent stroke, faint accent fill) with 「點這裡的文字可以改樣式」 above
-    /// it, pointing at it. Drawn in the overlay layer, so it follows the text
+    /// it (below it when the text is at the top edge), pointing at it. Drawn in the overlay layer, so it follows the text
     /// when it is dragged or resized and turns with the phone. Never takes
     /// touches.
     private func overlayHighlight(rect: CGRect, layerSize: CGSize) -> some View {
         let frame = rect.insetBy(dx: -Self.highlightPadding, dy: -Self.highlightPadding)
         // The bubble hangs from the side of the frame that has more room.
         let alignsTrailing = frame.midX > layerSize.width / 2
+        let isBelow = CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: frame.minY)
         return RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(CameraTheme.accent.opacity(0.18))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(CameraTheme.accent, lineWidth: 2))
             .frame(width: frame.width, height: frame.height)
-            .overlay(alignment: alignsTrailing ? .topTrailing : .topLeading) {
+            .overlay(alignment: Self.tipAlignment(isBelow: isBelow, trailing: alignsTrailing)) {
                 VStack(alignment: alignsTrailing ? .trailing : .leading, spacing: 0) {
+                    if isBelow { tail(pointsUp: true) }
                     Text("點這裡的文字可以改樣式")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
@@ -441,12 +461,10 @@ struct CameraScreen: View {
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(CameraTheme.toastBackground))
                         .accessibilityIdentifier("overlayTip")
-                    Triangle()
-                        .fill(CameraTheme.toastBackground)
-                        .frame(width: 12, height: 6)
-                        .padding(.horizontal, 16)
+                    if !isBelow { tail(pointsUp: false) }
                 }
-                .alignmentGuide(.top) { $0[.bottom] + 2 }
+                // Hangs 2pt clear of the frame, above it or below it.
+                .alignmentGuide(isBelow ? .bottom : .top) { isBelow ? $0[.top] - 2 : $0[.bottom] + 2 }
             }
             .position(x: frame.midX, y: frame.midY)
             .allowsHitTesting(false)

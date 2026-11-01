@@ -562,3 +562,18 @@ final class CameraScreenStyleSheetMetricsTests: XCTestCase {
         XCTAssertEqual(open.center.y, m.styleSheetViewfinderFrame.midY, accuracy: 0.5)
     }
 }
+
+// MARK: - First-run hint placement (#656)
+
+final class OverlayTipPlacementTests: XCTestCase {
+    /// The hint hangs above the frame, unless the frame is too close to the
+    /// top for the bubble to fit; then it hangs below.
+    func test_656_9_tipFlipsBelowWhenThereIsNoRoomAbove() {
+        let height = CameraScreenLayoutMetrics.overlayTipHeight
+        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 400), "bottom of the picture")
+        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height), "exactly enough room")
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height - 1))
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 0), "at the top edge")
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: -10), "frame padded past the edge")
+    }
+}

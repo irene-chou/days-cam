@@ -46,7 +46,7 @@ struct CameraToolbar: View {
         let isOn = model.isOverlayPreviewOn
         return Button(action: model.toggleOverlayPreview) {
             Image(systemName: isOn ? "text.below.photo.fill" : "text.below.photo")
-                .roundKey(isOnPhoto: isOnPhoto, isHighlighted: isOn)
+                .roundKey(isOnPhoto: isOnPhoto, isHighlighted: isOn, glyphSize: Self.overlayGlyphSize)
                 .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel("疊字預覽")
@@ -87,6 +87,12 @@ struct CameraToolbar: View {
 
     /// Tap target of every toolbar button (issue #137; was 38).
     static let buttonSize: CGFloat = 44
+
+    /// Point size of the overlay switch's glyph. A visual correction, not a
+    /// metric: `text.below.photo(.fill)` is wider and heavier than the other
+    /// keys' glyphs, so at their 22pt it looked larger than the
+    /// `chevron.down.circle` (22pt wide); 18pt matches their visual width.
+    static let overlayGlyphSize: CGFloat = 18
 
     /// Diameter of the round keys' `CameraTheme.fill` disc (D9 `.round`).
     static let roundKeyDiameter: CGFloat = 40
@@ -173,10 +179,13 @@ private struct ToolbarIconModifier: ViewModifier {
     let width: CGFloat
     /// Overrides the icon's color (the overlay switch's icon on its accent disc).
     var ink: Color?
+    /// The icon's point size; 22 for every key unless a glyph needs a visual
+    /// correction.
+    var glyphSize: CGFloat = 22
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 22, weight: .medium))
+            .font(.system(size: glyphSize, weight: .medium))
             .foregroundColor(ink ?? (isActive ? CameraTheme.active : (isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)))
             .frame(width: width, height: CameraToolbar.buttonSize)
             .legibleOverPhoto(isOnPhoto)
@@ -185,8 +194,9 @@ private struct ToolbarIconModifier: ViewModifier {
 
 private extension View {
     func toolbarIcon(isActive: Bool, isOnPhoto: Bool, width: CGFloat = CameraToolbar.buttonSize,
-                     ink: Color? = nil) -> some View {
-        modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto, width: width, ink: ink))
+                     ink: Color? = nil, glyphSize: CGFloat = 22) -> some View {
+        modifier(ToolbarIconModifier(isActive: isActive, isOnPhoto: isOnPhoto, width: width, ink: ink,
+                                     glyphSize: glyphSize))
     }
 
     /// A top-bar round key (D9 `.round`): the icon on a faint
@@ -194,9 +204,9 @@ private extension View {
     ///
     /// `isHighlighted` only swaps the disc to `CameraTheme.accent` and the
     /// icon to `inkOnAccent`; size, font and weight stay the same.
-    func roundKey(isOnPhoto: Bool, isHighlighted: Bool = false) -> some View {
+    func roundKey(isOnPhoto: Bool, isHighlighted: Bool = false, glyphSize: CGFloat = 22) -> some View {
         toolbarIcon(isActive: false, isOnPhoto: isOnPhoto && !isHighlighted,
-                    ink: isHighlighted ? CameraTheme.inkOnAccent : nil)
+                    ink: isHighlighted ? CameraTheme.inkOnAccent : nil, glyphSize: glyphSize)
             .background(
                 Circle()
                     .fill(isHighlighted ? CameraTheme.accent : CameraTheme.fill)
