@@ -16,9 +16,10 @@ extension View {
                               count: Int = 1,
                               onRemove: @escaping () -> Void,
                               onDelete: @escaping () -> Void) -> some View {
-        // Hosted on a clear overlay of the same frame (so it anchors where the
-        // caller put it) with the screen's tint dropped: 從「…」移除 keeps the
-        // system's default color, not the theme's (2026-11-01 ruling, #662).
+        // Hosted on a clear overlay of the same frame, so the popover points
+        // at the view this is applied to (apply it to the button that opens
+        // it), with the screen's tint dropped: 從「…」移除 keeps the system's
+        // default color, not the theme's (2026-11-01 ruling, #662).
         overlay {
             Color.clear
                 .allowsHitTesting(false)

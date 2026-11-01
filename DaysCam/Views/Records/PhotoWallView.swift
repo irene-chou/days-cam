@@ -414,6 +414,14 @@ struct PhotoWallView: View {
             }
             .disabled(model.selectedIDs.isEmpty)
             .accessibilityIdentifier("wallDeleteButton")
+            // Anchored to 刪除 itself so the popover's arrow points at it.
+            .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
+                                  title: RemoveOrDeleteDialog.title(recordName: model.title,
+                                                                    count: model.selectedIDs.count),
+                                  recordName: model.title,
+                                  count: model.selectedIDs.count,
+                                  onRemove: { Task { await model.removeSelected() } },
+                                  onDelete: { Task { await model.deleteSelected() } })
         }
         .padding(.horizontal, 8)
         .padding(.top, 8)
@@ -421,13 +429,6 @@ struct PhotoWallView: View {
         .overlay(alignment: .top) {
             Rectangle().fill(CameraTheme.ink.opacity(0.08)).frame(height: 1)
         }
-        .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
-                              title: RemoveOrDeleteDialog.title(recordName: model.title,
-                                                                count: model.selectedIDs.count),
-                              recordName: model.title,
-                              count: model.selectedIDs.count,
-                              onRemove: { Task { await model.removeSelected() } },
-                              onDelete: { Task { await model.deleteSelected() } })
     }
 
     /// D8's #D2422C for 刪除.
@@ -578,14 +579,15 @@ private struct PhotoWallCell: View {
                 .foregroundColor(cell.isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto)
                 .shadow(color: .black.opacity(0.6), radius: 2)
                 .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
-                .padding(.leading, 6)
-                .padding(.bottom, 5)
+                .padding(.leading, 6 + inset)
+                .padding(.bottom, 5 + inset)
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("photoDayLabel")
 
             if isSelecting { checkmark }
         }
         .frame(width: side, height: side)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
         // Cancelled when the cell scrolls away, which cancels the request.
         .task(id: cell.id) {
             let pixels = side * displayScale
@@ -599,13 +601,21 @@ private struct PhotoWallCell: View {
         return isSelected ? "\(cell.dayText)，已選取" : cell.dayText
     }
 
+    /// How far a ticked photo's edges move in (its 0.9 scale): the day mark
+    /// and the tick move with them, keeping their distance from the photo's
+    /// edges; their sizes stay.
+    private var inset: CGFloat { isSelected ? side * 0.05 : 0 }
+
     /// The tick at the lower right: an empty ring, or a filled check.
     private var checkmark: some View {
         ZStack {
             if isSelected {
-                Circle().fill(Color.white)
+                // White only behind the check mark, inside the filled circle,
+                // so no white rim shows around it.
+                Circle().fill(Color.white).padding(3)
                 Image(systemName: "checkmark.circle.fill")
                     .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .foregroundColor(CameraTheme.active)
             } else {
                 Circle().fill(Color.black.opacity(0.18))
@@ -613,7 +623,7 @@ private struct PhotoWallCell: View {
             }
         }
         .frame(width: 22, height: 22)
-        .padding(5)
+        .padding(5 + inset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
