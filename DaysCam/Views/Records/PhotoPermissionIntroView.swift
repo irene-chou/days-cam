@@ -40,30 +40,32 @@ struct PhotoPermissionIntroView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: 10) {
-                    Text("讓紀錄和「照片」App 同步")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(CameraTheme.ink)
-                        .multilineTextAlignment(.center)
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.top, 4)
-                    Text("接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別：")
-                        .font(.system(size: 12.5))
-                        .foregroundColor(CameraTheme.inkSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(2)
+                VStack(spacing: 14) {
+                    VStack(spacing: 8) {
+                        Text("讓紀錄和「照片」App 同步")
+                            .font(.title3.bold())
+                            .foregroundColor(CameraTheme.ink)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別：")
+                            .font(.subheadline)
+                            .foregroundColor(CameraTheme.inkSecondary)
+                            .lineSpacing(2)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 12)
+                    .padding(.bottom, 6)
                     ForEach(Self.options) { option in
                         OptionCard(option: option)
                     }
                     Text("選了之後都能到「設定 › DaysCam › 照片」更改。照片本身不會被修改，匯出時另存新照片。")
-                        .font(.system(size: 11.5))
+                        .font(.footnote)
                         .foregroundColor(CameraTheme.inkTertiary)
                         .multilineTextAlignment(.center)
                         .lineSpacing(2)
                         .accessibilityIdentifier("permissionIntroFootnote")
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+                .padding(.bottom, 16)
             }
             .accessibilityIdentifier("permissionIntroScroll")
 
@@ -93,32 +95,35 @@ private struct OptionCard: View {
     let option: PhotoPermissionIntroView.Option
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
                 Text(option.title)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .font(.headline)
                     .foregroundColor(CameraTheme.ink)
                 if option.isRecommended {
                     Text("建議")
-                        .font(.system(size: 10.5, weight: .heavy))
+                        .font(.caption.weight(.heavy))
                         .foregroundColor(CameraTheme.inkOnAccent)
-                        .padding(.horizontal, 7)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 2)
                         .background(Capsule().fill(CameraTheme.accent))
                 }
             }
+            .padding(.bottom, 2)
             ForEach(option.points, id: \.self) { point in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("•")
                     Text(point)
+                        .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.system(size: 12))
+                .font(.subheadline)
                 .foregroundColor(CameraTheme.inkSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

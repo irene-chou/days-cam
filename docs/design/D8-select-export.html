@@ -139,11 +139,12 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 @media (max-width:400px),(max-height:940px){.phone{zoom:.86}}
 @media (max-width:350px),(max-height:820px){.phone{zoom:.74}}
 @media (max-height:720px){.phone{zoom:.64}}
-.perm{background:#fff;border-radius:12px;padding:9px 12px;font-size:12px;line-height:1.5;border:1px solid rgba(42,38,34,.08)}
+.perm{background:#fff;border-radius:12px;padding:14px 16px;font-size:15px;line-height:1.45;border:1px solid rgba(42,38,34,.08)}
 .perm.rec{border-color:var(--act);box-shadow:0 0 0 1px var(--act)}
-.perm .ph{display:flex;align-items:center;gap:6px;font-size:13.5px}
-.perm .tagr{font-size:10.5px;font-weight:800;color:#2A1A08;background:#FFC27A;border-radius:999px;padding:0 7px}
-.perm ul{margin:3px 0 0;padding-left:16px;color:var(--t2)}
+.perm .ph{display:flex;align-items:center;gap:8px;font-size:17px;margin-bottom:2px}
+.perm .tagr{font-size:12px;font-weight:800;color:#2A1A08;background:#FFC27A;border-radius:999px;padding:2px 9px}
+.perm ul{margin:6px 0 0;padding-left:18px;color:var(--t2)}
+.perm li+li{margin-top:6px}
 .toast{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);background:rgba(30,27,24,.9);color:#fff;font-size:13px;font-weight:700;padding:8px 16px;border-radius:999px;z-index:10;display:none;white-space:nowrap}
 .toast.on{display:block}
 .spin{width:16px;height:16px;border:2px solid rgba(42,26,8,.3);border-top-color:#2A1A08;border-radius:50%;animation:sp .8s linear infinite}
@@ -218,13 +219,13 @@ th{color:var(--muted);font-weight:500;font-size:12px}
         <button class="ib" aria-label="返回"><i class="ic" style="--m:var(--i-chevron-left)"></i></button>
         <div class="ttl"><b>小芽</b><small>2026/11/1 起</small></div><span></span>
       </div>
-      <div class="view" style="gap:10px;padding:0 20px;justify-content:flex-start;overflow:auto">
-        <b style="font-size:18px;text-align:center;margin-top:4px">讓紀錄和「照片」App 同步</b>
-        <span style="font-size:12.5px;color:var(--t2);line-height:1.55;text-align:center">接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別：</span>
+      <div class="view" style="gap:14px;padding:0 20px 16px;justify-content:flex-start;overflow:auto">
+        <b style="font-size:20px;text-align:center;margin-top:12px">讓紀錄和「照片」App 同步</b>
+        <span style="font-size:15px;color:var(--t2);line-height:1.55;text-align:center;margin:-6px 0 6px">接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別：</span>
         <div class="perm rec"><div class="ph"><b>允許完整取用</b><span class="tagr">建議</span></div><ul><li>每個紀錄在「照片」App 有一本同名相簿</li><li>在「照片」App 放進相簿的照片，會自動出現在紀錄並標出第幾天</li><li>拍的照片直接存進該相簿</li></ul></div>
         <div class="perm"><div class="ph"><b>限制取用</b></div><ul><li>只看得到你挑選的照片</li><li>不建相簿、不和「照片」App 同步</li><li>照片要在 DaysCam 裡用「加入照片」或拍照加入</li></ul></div>
         <div class="perm"><div class="ph"><b>不允許</b></div><ul><li>紀錄看不到任何照片</li><li>之後可隨時到「設定」開啟</li></ul></div>
-        <span style="font-size:11.5px;color:var(--t3);line-height:1.5;text-align:center">選了之後都能到「設定 › DaysCam › 照片」更改。照片本身不會被修改，匯出時另存新照片。</span>
+        <span style="font-size:13px;color:var(--t3);line-height:1.5;text-align:center">選了之後都能到「設定 › DaysCam › 照片」更改。照片本身不會被修改，匯出時另存新照片。</span>
       </div>
       <div class="bar" style="border-top:0;padding-bottom:30px"><button class="cap pri" style="background:#FFC27A;width:100%;justify-content:center;padding:12px" data-go="emptyAfterAsk">繼續</button></div>
     </section>
