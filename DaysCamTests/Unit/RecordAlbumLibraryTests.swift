@@ -78,6 +78,50 @@ final class RecordAlbumLibraryTests: XCTestCase {
         }
     }
 
+    /// #651: `createAlbum` makes an empty album even when the title is taken,
+    /// counts calls, and fails without full access or when told to.
+    func test_createAlbum_makesAnEmptyAlbumEachCall() async throws {
+        let library = FakeRecordAlbumLibrary(albums: [.init(id: "old", title: "小芽", assetIDs: ["a"])])
+        let first = try await library.createAlbum(title: "小芽")
+        let second = try await library.createAlbum(title: "小芽")
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(first, "old")
+        XCTAssertEqual(library.albums.first { $0.id == first }, .init(id: first, title: "小芽", assetIDs: []))
+        XCTAssertEqual(library.createdAlbumTitles, ["小芽", "小芽"])
+    }
+
+    func test_createAlbum_failsWithoutFullAccessOrWhenInjected() async {
+        for status in [PHAuthorizationStatus.limited, .notDetermined, .denied] {
+            let library = FakeRecordAlbumLibrary(status: status)
+            do {
+                _ = try await library.createAlbum(title: "x")
+                XCTFail("expected a throw for \(status)")
+            } catch {
+                XCTAssertEqual(error as? RecordAlbumError, .permissionDenied)
+            }
+            XCTAssertTrue(library.albums.isEmpty)
+        }
+        let library = FakeRecordAlbumLibrary()
+        library.createAlbumFailure = .failed("boom")
+        do {
+            _ = try await library.createAlbum(title: "x")
+            XCTFail("expected a throw")
+        } catch {
+            XCTAssertEqual(error as? RecordAlbumError, .failed("boom"))
+        }
+        XCTAssertTrue(library.albums.isEmpty)
+    }
+
+    /// #651: `-UITestPhotoAccess notDetermined` starts undecided and grants
+    /// full access when asked.
+    func test_forUITests_notDeterminedGrantsFullWhenAsked() async throws {
+        let library = try XCTUnwrap(FakeRecordAlbumLibrary.forUITests(
+            arguments: ["-UITestRecordPhotos", "0", "-UITestPhotoAccess", "notDetermined"], environment: [:]))
+        XCTAssertEqual(library.authorizationStatus(), .notDetermined)
+        let status = await library.requestReadWriteAccess()
+        XCTAssertEqual(status, .authorized)
+    }
+
     /// #640-1: under limited access a record shows only its own fallback ids;
     /// a visible photo no record lists shows nowhere, and albums are not read.
     func test_limited_eachRecordShowsOnlyItsFallback_withoutReadingAlbums() {

@@ -61,6 +61,9 @@ struct PhotoWallView: View {
                 ToolbarItem(placement: .topBarLeading) { selectAllButton }
                 ToolbarItem(placement: .principal) { selectionTitleView }
                 ToolbarItem(placement: .topBarTrailing) { cancelSelectionButton }
+            } else if model.content == .permissionIntro {
+                // The intro has only back and the title (§7.1).
+                ToolbarItem(placement: .principal) { titleView }
             } else {
                 ToolbarItem(placement: .principal) { titleView }
                 ToolbarItem(placement: .topBarTrailing) { selectButton }
@@ -214,7 +217,10 @@ struct PhotoWallView: View {
         case .photos: wall
         case .empty: emptyState
         case .needsPermission: PhotoAccessView()
-        case .waiting: Color.clear
+        case .permissionIntro:
+            PhotoPermissionIntroView(isRequesting: model.isRequestingAccess) {
+                Task { await model.continueFromIntro() }
+            }
         }
     }
 
@@ -380,7 +386,7 @@ struct PhotoWallView: View {
             Text("還沒有照片")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(CameraTheme.ink)
-            Text("從相簿加入，或用相機拍一張")
+            Text(model.emptyMessage)
                 .font(.system(size: 13))
                 .foregroundColor(CameraTheme.inkSecondary)
         }

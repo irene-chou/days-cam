@@ -39,6 +39,15 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     private(set) var deleteCalls: [[String]] = []
     /// How many times an album's contents were read (limited access must not).
     private(set) var albumReadCount = 0
+    /// How many times access was requested (launch and foreground must not).
+    private(set) var accessRequestCount = 0
+    /// Titles passed to `createAlbum`, in call order, failed calls included.
+    private(set) var createdAlbumTitles: [String] = []
+    /// Non-nil makes `createAlbum` throw it.
+    var createAlbumFailure: RecordAlbumError?
+    /// Awaited inside `createAlbum` before it finishes: lets a test change
+    /// the store, or hold the creation open, while an album is being made.
+    var onCreateAlbum: (@MainActor () async -> Void)?
     private var nextID = 1
 
     init(status: PHAuthorizationStatus = .authorized, assets: [Asset] = [], albums: [Album] = []) {
@@ -60,6 +69,7 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     func authorizationStatus() -> PHAuthorizationStatus { status }
 
     func requestReadWriteAccess() async -> PHAuthorizationStatus {
+        accessRequestCount += 1
         if status == .notDetermined { status = grants }
         return status
     }
@@ -109,6 +119,19 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
         let id = "fake-album-\(nextID)"
         nextID += 1
         albums.append(Album(id: id, title: albumTitle, assetIDs: ids))
+        return id
+    }
+
+    func createAlbum(title: String) async throws -> String {
+        createdAlbumTitles.append(title)
+        // Suspends like the real change block, so overlapping callers interleave.
+        await Task.yield()
+        await onCreateAlbum?()
+        if let createAlbumFailure { throw createAlbumFailure }
+        guard status == .authorized else { throw RecordAlbumError.permissionDenied }
+        let id = "fake-album-\(nextID)"
+        nextID += 1
+        albums.append(Album(id: id, title: title, assetIDs: []))
         return id
     }
 
@@ -180,7 +203,8 @@ extension FakeRecordAlbumLibrary {
     /// The library for UI tests: with `-UITestRecordPhotos <n>` it holds `n`
     /// generated photos dated one per day back from `DAYSCAM_FAKE_TODAY`
     /// (or the real today). `nil` without the argument, so the caller uses
-    /// the real library. `-UITestPhotoAccess` picks the status (default full);
+    /// the real library. `-UITestPhotoAccess` picks the status (default full;
+    /// `notDetermined` is undecided until asked, then grants full access);
     /// `-UITestMixedAspects` alternates portrait and landscape photos.
     static func forUITests(arguments: [String] = ProcessInfo.processInfo.arguments,
                            environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -195,6 +219,7 @@ extension FakeRecordAlbumLibrary {
             switch arguments[accessIndex + 1] {
             case "limited": status = .limited
             case "denied", "withdrawn": status = .denied
+            case "notDetermined": status = .notDetermined
             default: break
             }
         }

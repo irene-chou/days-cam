@@ -26,7 +26,7 @@ header{max-width:1100px;margin:0 auto 20px}
 h1{font-size:24px;margin:2px 0 6px;text-wrap:balance}
 header p{margin:0;color:var(--muted);max-width:70ch}
 .wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:auto minmax(0,1fr);gap:40px;align-items:start}
-@media (max-width:860px){.wrap{grid-template-columns:minmax(0,1fr);justify-items:center}}
+@media (max-width:860px){.wrap{grid-template-columns:minmax(0,1fr);justify-items:center}.stage{position:static}}
 .stage{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:16px}
 .seg{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:380px}
 .seg button{border:1px solid var(--line);background:var(--card);color:var(--muted);font:inherit;font-size:12.5px;padding:4px 11px;border-radius:999px;cursor:pointer}
@@ -45,7 +45,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 
 /* ---- phone ---- */
 .phone{--bg:#F7F3EE;--t1:#2A2622;--t2:rgba(42,38,34,.62);--t3:rgba(42,38,34,.38);--act:#C9772A;--red:#D2422C;
-  width:360px;max-width:100%;aspect-ratio:390/844;background:#000;border-radius:48px;padding:10px;box-shadow:0 0 0 2px #2b2f33,0 24px 60px rgba(0,0,0,.25);position:relative;overflow:hidden;color:var(--t1);
+  width:360px;aspect-ratio:390/844;background:#000;border-radius:48px;padding:10px;box-shadow:0 0 0 2px #2b2f33,0 24px 60px rgba(0,0,0,.25);position:relative;overflow:hidden;color:var(--t1);
   font-family:ui-rounded,"SF Pro Rounded","PingFang TC",sans-serif;user-select:none;-webkit-user-select:none}
 .screen{position:absolute;inset:10px;border-radius:38px;overflow:hidden;background:var(--bg);display:none;flex-direction:column}
 .screen.on{display:flex}
@@ -136,6 +136,15 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 .carnav button{border:0;background:rgba(42,38,34,.07);width:28px;height:28px;border-radius:50%;font-size:14px;line-height:1}
 .link{border:0;background:transparent;color:var(--act)!important;font-weight:700;font-size:13.5px;display:block;margin:8px auto 0}
 .demo{border:1px solid var(--line);background:var(--card);color:var(--muted);font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;cursor:pointer}
+@media (max-width:400px),(max-height:940px){.phone{zoom:.86}}
+@media (max-width:350px),(max-height:820px){.phone{zoom:.74}}
+@media (max-height:720px){.phone{zoom:.64}}
+.perm{background:#fff;border-radius:12px;padding:14px 16px;font-size:15px;line-height:1.45;border:1px solid rgba(42,38,34,.08)}
+.perm.rec{border-color:var(--act);box-shadow:0 0 0 1px var(--act)}
+.perm .ph{display:flex;align-items:center;gap:8px;font-size:17px;margin-bottom:2px}
+.perm .tagr{font-size:12px;font-weight:800;color:#2A1A08;background:#FFC27A;border-radius:999px;padding:2px 9px}
+.perm ul{margin:6px 0 0;padding-left:18px;color:var(--t2)}
+.perm li+li{margin-top:6px}
 .toast{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);background:rgba(30,27,24,.9);color:#fff;font-size:13px;font-weight:700;padding:8px 16px;border-radius:999px;z-index:10;display:none;white-space:nowrap}
 .toast.on{display:block}
 .spin{width:16px;height:16px;border:2px solid rgba(42,26,8,.3);border-top-color:#2A1A08;border-radius:50%;animation:sp .8s linear infinite}
@@ -210,11 +219,13 @@ th{color:var(--muted);font-weight:500;font-size:12px}
         <button class="ib" aria-label="返回"><i class="ic" style="--m:var(--i-chevron-left)"></i></button>
         <div class="ttl"><b>小芽</b><small>2026/11/1 起</small></div><span></span>
       </div>
-      <div class="view" style="gap:12px;text-align:center;padding:0 30px">
-        <i class="ic" style="--m:var(--i-photo-on-rectangle);width:54px;height:54px;color:var(--act)"></i>
-        <b style="font-size:19px">讓紀錄和「照片」App 同步</b>
-        <span style="font-size:13.5px;color:var(--t2);line-height:1.6">每個紀錄會在「照片」App 建一本同名相簿。<br>在那裡加入的照片會自動出現在這裡，並標出第幾天。<br>照片本身不會被修改。</span>
-        <span style="font-size:12px;color:var(--t3);line-height:1.5">接下來的系統詢問請選「允許完整存取」。<br>只允許部分照片時，紀錄不會同步相簿。</span>
+      <div class="view" style="gap:14px;padding:0 20px 16px;justify-content:flex-start;overflow:auto">
+        <b style="font-size:20px;text-align:center;margin-top:12px">讓紀錄和「照片」App 同步</b>
+        <span style="font-size:15px;color:var(--t2);line-height:1.55;text-align:center;margin:-6px 0 6px">接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別：</span>
+        <div class="perm rec"><div class="ph"><b>允許完整取用</b><span class="tagr">建議</span></div><ul><li>每個紀錄在「照片」App 有一本同名相簿</li><li>在「照片」App 放進相簿的照片，會自動出現在紀錄並標出第幾天</li><li>拍的照片直接存進該相簿</li></ul></div>
+        <div class="perm"><div class="ph"><b>限制取用</b></div><ul><li>只看得到你挑選的照片</li><li>不建相簿、不和「照片」App 同步</li><li>照片要在 DaysCam 裡用「加入照片」或拍照加入</li></ul></div>
+        <div class="perm"><div class="ph"><b>不允許</b></div><ul><li>紀錄看不到任何照片</li><li>之後可隨時到「設定」開啟</li></ul></div>
+        <span style="font-size:13px;color:var(--t3);line-height:1.5;text-align:center">選了之後都能到「設定 › DaysCam › 照片」更改。照片本身不會被修改，匯出時另存新照片。</span>
       </div>
       <div class="bar" style="border-top:0;padding-bottom:30px"><button class="cap pri" style="background:#FFC27A;width:100%;justify-content:center;padding:12px" data-go="emptyAfterAsk">繼續</button></div>
     </section>
@@ -320,9 +331,9 @@ th{color:var(--muted);font-weight:500;font-size:12px}
     <div class="tw"><table><thead><tr><th>位置</th><th>現在</th><th>改成</th></tr></thead><tbody>
       <tr><td>系統詢問說明（讀取）</td><td>DaysCam 需要讀取相簿來顯示每張照片是第幾天，並把你挑的照片整理進紀錄的相簿。照片本身不會被修改。</td><td>每個紀錄會在「照片」App 建一本同名相簿，DaysCam 讀取裡面的照片來標出第幾天。照片本身不會被修改。</td></tr>
       <tr><td>系統詢問說明（只加入）</td><td>DaysCam 需要權限才能把拍好的照片存進你的相簿。</td><td>DaysCam 需要權限，才能把拍的照片和匯出的新照片存進「照片」App。</td></tr>
-      <tr><td>紀錄列表底部</td><td>每個紀錄對應「照片」App 裡的一個相簿</td><td>完整／未詢問：每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現<br>部分照片：目前沒有開放完整權限，紀錄不會和原生相簿同步<br>未允許：不顯示（進紀錄會看到權限頁）</td></tr>
+      <tr><td>紀錄列表底部</td><td>每個紀錄對應「照片」App 裡的一個相簿</td><td>完整／未詢問：每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現<br>部分照片：只允許部分照片，紀錄不會同步相簿<br>未允許：不顯示（進紀錄會看到權限頁）</td></tr>
       <tr><td>空紀錄說明</td><td>從相簿加入，或用相機拍一張</td><td>完整：用相機拍一張，或在「照片」App 把照片加入「小芽」相簿，會自動出現在這裡<br>部分照片：用相機拍一張，或按左下角加入照片</td></tr>
-      <tr><td>照片牆頂端提示（部分照片）</td><td>限制取用中，不會與「照片」App 的相簿同步。前往設定 ›</td><td>目前沒有開放完整權限，照片不會和原生相簿同步。前往設定 ›<br>（點提示列開設定；右側 xmark 可關閉；⋯ 選單另有「設定照片權限」）</td></tr>
+      <tr><td>照片牆頂端提示（部分照片）</td><td>限制取用中，不會與「照片」App 的相簿同步。前往設定 ›</td><td>只允許部分照片，不會同步「照片」App 的相簿。前往設定 ›</td></tr>
       <tr><td>權限頁（未允許）</td><td>需要相簿權限／DaysCam 需要讀取相簿，才能顯示每張照片是第幾天</td><td>需要「照片」權限／到「設定」允許 DaysCam 取用照片，才能看到這個紀錄的照片和天數。［前往設定］</td></tr>
       <tr><td>編輯頁「相簿」列</td><td>完整：建立新相簿「小芽」<br>部分／未允許：需要相簿權限</td><td>完整：顯示目前相簿名（建紀錄時已建好）<br>未詢問：建立時會在「照片」App 建立「小芽」<br>部分照片：只允許部分照片時無法選相簿 ›（開設定）<br>未允許：需要「照片」權限 ›（開設定）</td></tr>
       <tr><td>刪除紀錄確認</td><td>相簿與照片不會被刪除。</td><td>有相簿：「照片」App 裡的「小芽」相簿和照片都會保留。<br>沒有相簿：照片會保留在「照片」App。</td></tr>
@@ -385,7 +396,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
     closeSheet();
     if(k==="wall"){selecting=false;sel.clear();render();show("wall");legend("照片牆平常的樣子：右上多一個「選取」（同「照片」App）。")}
     if(k==="select"){selecting=true;sel.clear();[7,8,10,11].forEach(i=>sel.add(i));render();show("wall");legend("選取中：點格子或拖過一排格子勾選。預選了 4 張，含 1 張日期不明，按「匯出」看略過提示。")}
-    if(k==="ask"){show("ask");legend("⑤ 第一次點進任何紀錄：先說明同步，再按「繼續」才跳系統詢問（不再一進來就直接跳）。")}
+    if(k==="ask"){show("ask");legend("⑤ 第一次點進任何紀錄：分三個系統選項說明各自在 DaysCam 的結果，按「繼續」才跳系統詢問。")}
     if(k==="empty"||k==="emptyAfterAsk"){show("empty");legend("⑥ 空紀錄：底部和有照片時一樣，相機為主。完整存取時相簿在建紀錄時已建好，所以說明可以直接叫使用者去「照片」App 加。");if(k==="emptyAfterAsk")k="empty"}
     if(k==="detail"){show("detail");if(!seenCoach){$("#coach").classList.add("on");$("#ring").classList.add("on");legend("⑥ 第一次進檢視頁：指出疊字是 App 加的、怎麼匯出、怎麼改。")}else legend("檢視頁：直接「匯出」這張；要改疊字先按「文字樣式」。")}else{$("#coach").classList.remove("on");$("#ring").classList.remove("on")}
     if(k==="style"){show("style");legend("文字樣式：拖字級滑桿看預覽變化。改動即存，打勾回檢視頁。")}
