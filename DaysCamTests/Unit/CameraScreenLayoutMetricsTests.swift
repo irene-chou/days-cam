@@ -524,3 +524,56 @@ private func assertRectsEqual(_ lhs: CGRect, _ rhs: CGRect, file: StaticString =
     XCTAssertEqual(lhs.size.width, rhs.size.width, accuracy: 0.05, file: file, line: line)
     XCTAssertEqual(lhs.size.height, rhs.size.height, accuracy: 0.05, file: file, line: line)
 }
+
+// MARK: - Style sheet (#656)
+
+final class CameraScreenStyleSheetMetricsTests: XCTestCase {
+    private func metrics(_ size: CGSize, bottom: CGFloat, top: CGFloat) -> CameraScreenLayoutMetrics {
+        CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
+    }
+
+    /// 6: about 4/10 of the screen on a large phone, and the viewfinder is
+    /// fitted between the header and the sheet without overlapping either.
+    func test_656_6_sheetIsAboutFortyPercentAndTheViewfinderYields() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20),
+                                    (CGSize(width: 440, height: 956), 34, 62)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            XCTAssertEqual(m.styleSheetVisibleHeight, m.styleSheetHeight + bottom, accuracy: 0.5)
+            XCTAssertEqual(m.styleSheetVisibleHeight / size.height, 0.4, accuracy: 0.08, "\(size)")
+            let frame = m.styleSheetViewfinderFrame
+            XCTAssertGreaterThanOrEqual(frame.minY, m.headerBottom - 0.5, "\(size) below the header")
+            XCTAssertLessThanOrEqual(frame.maxY, m.styleSheetTop + 0.5, "\(size) above the sheet")
+            XCTAssertEqual(frame.width / frame.height, 0.75, accuracy: 0.001, "\(size) stays 3:4")
+            XCTAssertEqual(m.styleSheetViewfinderArea.minY, m.headerBottom)
+        }
+    }
+
+    /// The placement keeps the closed layout size and only scales and moves.
+    func test_656_6_placementScalesAboutTheClosedLayout() {
+        let m = metrics(CGSize(width: 402, height: 874), bottom: 34, top: 62)
+        let closed = m.viewfinderPlacement(isStyleSheetOpen: false)
+        let open = m.viewfinderPlacement(isStyleSheetOpen: true)
+        XCTAssertEqual(closed.layoutSize, open.layoutSize)
+        XCTAssertEqual(closed.scale, CGSize(width: 1, height: 1))
+        XCTAssertLessThan(open.scale.width, 1)
+        XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.0001)
+        XCTAssertEqual(open.center.x, m.styleSheetViewfinderFrame.midX, accuracy: 0.5)
+        XCTAssertEqual(open.center.y, m.styleSheetViewfinderFrame.midY, accuracy: 0.5)
+    }
+}
+
+// MARK: - First-run hint placement (#656)
+
+final class OverlayTipPlacementTests: XCTestCase {
+    /// The hint hangs above the frame, unless the frame is too close to the
+    /// top for the bubble to fit; then it hangs below.
+    func test_656_9_tipFlipsBelowWhenThereIsNoRoomAbove() {
+        let height = CameraScreenLayoutMetrics.overlayTipHeight
+        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 400), "bottom of the picture")
+        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height), "exactly enough room")
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height - 1))
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 0), "at the top edge")
+        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: -10), "frame padded past the edge")
+    }
+}

@@ -19,7 +19,7 @@ struct DaysCamApp: App {
                                          fontLibrary: Self.uiTestFontLibrary ?? FontLibrary())
         let recordListModel = RecordListModel(store: profileStore, library: library, exportSave: Self.exportSave)
         makeCameraModel = Self.cameraModelFactory(profileStore: profileStore, library: library,
-                                                  listModel: recordListModel)
+                                                  listModel: recordListModel, styleCenter: styleCenter)
         _recordListModel = StateObject(wrappedValue: recordListModel)
     }
 
@@ -139,7 +139,8 @@ struct DaysCamApp: App {
     /// are shown by the 紀錄 list, which outlives every camera.
     private static func cameraModelFactory(profileStore: ProfileStore,
                                            library: any RecordAlbumLibrary,
-                                           listModel: RecordListModel) -> @MainActor (UUID) -> CameraScreenModel {
+                                           listModel: RecordListModel,
+                                           styleCenter: StyleEditingCenter) -> @MainActor (UUID) -> CameraScreenModel {
         let cameraService = CameraService()
         // One count and one save queue for every camera opened, so closing
         // and reopening cannot pass the in-flight limit or create a second
@@ -164,7 +165,8 @@ struct DaysCamApp: App {
                     listModel?.reportCaptureFailure(error, count: count)
                 },
                 reportRecordWriteFailure: { [weak listModel] error in listModel?.lastError = error },
-                captureRotationAngleOverride: uiTestCaptureRotationAngle)
+                captureRotationAngleOverride: uiTestCaptureRotationAngle,
+                styleCenter: styleCenter)
         }
     }
 

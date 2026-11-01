@@ -94,10 +94,11 @@ final class CameraUITests: XCTestCase {
         return name
     }
 
-    /// 6 (#655-1): no overlay, film date or 「第 N 天」 HUD on the viewfinder,
-    /// even with the film date on.
+    /// 6 (#655-1, #656): no 「第 N 天」 HUD ever; with 疊字預覽 off no overlay
+    /// or film date on the viewfinder either (with it on they are drawn,
+    /// `CameraOverlayPreviewUITests`).
     func test_621_6_viewfinderShowsNoOverlayOrHUD() {
-        launchCamera()
+        launchCamera(extra: ["-UITestOverlayPreviewOff"])
         XCTAssertTrue(switcher.waitForExistence(timeout: 5))
         XCTAssertFalse(element("cameraDayHUD").exists, "655-1 no HUD")
         XCTAssertFalse(element("overlayText").exists, "6 no overlay")

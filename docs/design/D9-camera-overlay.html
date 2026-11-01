@@ -84,6 +84,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 .tip{position:absolute;right:4cqw;bottom:33cqw;background:#2A2622;color:#fff;font-size:3.2cqw;font-weight:700;padding:1.6cqw 3cqw;border-radius:2.5cqw;z-index:2;white-space:nowrap}
 .tip::after{content:"";position:absolute;right:8cqw;bottom:-1.2cqw;width:2.6cqw;height:2.6cqw;background:#2A2622;transform:rotate(45deg)}
 .tip[hidden]{display:none}
+.ov.hint{outline:1.5px solid var(--accent);outline-offset:2px;background:rgba(201,119,42,.18);border-radius:2cqw}
 .modes{flex:none;display:flex;justify-content:center;gap:1cqw;padding:3.4cqw 0 1cqw}
 .modes button{border:0;background:transparent;font-size:3.6cqw;font-weight:800;letter-spacing:.06em;padding:1.4cqw 3.4cqw;border-radius:999px;color:var(--t2)}
 .modes button[aria-checked="true"]{background:rgba(201,119,42,.14);color:var(--act)}
@@ -146,7 +147,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
         <button data-rec="戒糖" data-day="第 12 天"><i class="ic ck" style="--m:var(--i-checkmark);visibility:hidden"></i>戒糖<small>第 12 天</small></button>
       </div>
       <div class="vf" id="vf">
-        <div class="tip" id="tip">點畫面上的字可以改樣式</div>
+        <div class="tip" id="tip">點這裡的文字可以改樣式</div>
         <div class="ov" id="ov"><b>第 58 天</b><small>2026.11.01</small></div>
         <div class="zoom"><span>.5</span><span class="on">1×</span><span>2</span></div>
       </div>
@@ -184,7 +185,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
     <ul>
       <li><span class="chg">刪</span>左上 <code>xmark</code>：左下縮圖就是回照片牆，下方寫「返回圖庫」；也可往下滑關閉。</li>
       <li><span class="chg">新</span>左上「疊字預覽」圓形圖示鍵（<code>text.below.photo</code>，和右上同款圓鍵）：開＝橘底實心圖示，關＝一般底空心圖示；切換時畫面中央短暫顯示「疊字預覽 開啟／關閉」。開時取景窗即時畫出紀錄的完整疊字（和匯出同一套畫法）。App 層級記住，<b>預設開</b>。VoiceOver 為 switch「疊字預覽」。</li>
-      <li><span class="chg">新</span>樣式從畫面上的字進入：點疊字開文字樣式面板。開啟時第一次提示「點畫面上的字可以改樣式」，點過字後不再出現。關閉時沒有樣式入口。</li>
+      <li><span class="chg">新</span>樣式從畫面上的字進入：點疊字開文字樣式面板。開啟時第一次提示「點這裡的文字可以改樣式」，點過字後不再出現。關閉時沒有樣式入口。</li>
       <li><span class="chg">移</span>右上：相機功能收合鍵在內側、翻轉鏡頭在最右；收合列在收合鍵下方展開。</li>
       <li><span class="chg">回</span>頂端紀錄膠囊，<b>沿用 1.x 設定檔膠囊的外觀</b>（0.2 FR-7.11、FR-14.2）：無底色無框，紀錄名稱用 <code>toolFont(.subheadline)</code>、單行，右邊 <code>chevron.down</code> 11pt semibold，間距 4pt，內距左右 6pt、上下 7pt，壓在照片上時用 <code>legibleOverPhoto</code>；不加副標。點了列出所有紀錄與各自今天第幾天，選了就改存到該紀錄、預覽改用它的樣式，提示「改存到「新家裝修」」。</li>
       <li><span class="chg">刪</span>「第 N 天」HUD。</li>
@@ -205,7 +206,7 @@ th{color:var(--muted);font-weight:500;font-size:12px}
   function apply(){
     const ov=mode==="ov";
     $("#cbx").setAttribute("aria-checked",String(ov)); $("#cbx").classList.toggle("on",ov); $("#cbxIcon").style.setProperty("--m",ov?"var(--i-text-below-photo-fill)":"var(--i-text-below-photo)");
-    $("#tip").hidden=!ov||tipSeen;
+    $("#tip").hidden=!ov||tipSeen;$("#ov").classList.toggle("hint",ov&&!tipSeen);
     $("#ov").hidden=!ov; $("#ov").classList.toggle("edit",styling);
     $("#sheet").classList.toggle("on",styling); $("#phone").classList.toggle("styling",styling);
     document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed",String(styling?b.dataset.k==="style":b.dataset.k===mode)));
