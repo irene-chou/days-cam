@@ -432,6 +432,37 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 44) / 2 + 44 + 4, accuracy: 0.05)
     }
 
+    /// 655-12: the capsule opens under the tools toggle, which sits one key
+    /// and an 8pt gap inside the flip button at the top right (D9).
+    func test_655_12_toolsCapsuleLinesUpUnderTheInnerToggle() {
+        XCTAssertEqual(CameraScreenLayoutMetrics.toolsCapsuleTrailingInset, 12 + 44 + 8)
+    }
+
+    /// #659 review: the record menu stops 16pt above the bottom bar's
+    /// region, so 20 records scroll inside it instead of running off screen.
+    func testRecordMenuMaxHeightEndsAboveTheBottomBar() {
+        for metrics in [makeMetrics(width: 393, height: 852, top: 59, bottom: 34),
+                        makeMetrics(width: 375, height: 667, top: 20, bottom: 0)] {
+            XCTAssertEqual(metrics.toolsCapsuleTop + metrics.recordMenuMaxHeight,
+                           metrics.footerRegionTop - 16, accuracy: 0.05)
+            XCTAssertGreaterThan(metrics.recordMenuMaxHeight, 44 * 4, "room for several rows")
+            XCTAssertLessThan(metrics.recordMenuMaxHeight, 44 * 20, "20 rows must scroll")
+        }
+    }
+
+    // MARK: - Swipe down to close (#655-9)
+
+    /// 655-9: a long enough swipe down, or a hard flick down, closes; a
+    /// sideways or upward one, or a short slow one, does not.
+    func test_655_9_dismissSwipeNeedsAMostlyDownwardPull() {
+        let isDismiss = CameraScreenLayoutMetrics.isDismissSwipe
+        XCTAssertTrue(isDismiss(CGSize(width: 10, height: 130), CGSize(width: 10, height: 130)))
+        XCTAssertTrue(isDismiss(CGSize(width: 0, height: 60), CGSize(width: 0, height: 300)), "a flick")
+        XCTAssertFalse(isDismiss(CGSize(width: 0, height: 60), CGSize(width: 0, height: 100)), "short and slow")
+        XCTAssertFalse(isDismiss(CGSize(width: 200, height: 150), CGSize(width: 300, height: 300)), "sideways")
+        XCTAssertFalse(isDismiss(CGSize(width: 0, height: -200), CGSize(width: 0, height: -400)), "upward")
+    }
+
     // MARK: - Viewfinder placement (issue #153)
 
     func testPlacementClosedIsUnscaledAndCenteredOnTheBox() {

@@ -471,7 +471,7 @@ final class RecordListModelTests: XCTestCase {
         model.confirmNewRecord()
         try await latch.waitUntilHolding()
 
-        let wall = model.photoWallModel(for: id)
+        let wall = model.photoWallModel(for: id, resolveFont: { _ in .pingFang })
         let adding = Task { await wall.addPhotos(ids: ["x"]) }
         for _ in 0..<20 { await Task.yield() }
         XCTAssertTrue(library.albums.isEmpty, "adding waits for the creation")
@@ -494,7 +494,7 @@ final class RecordListModelTests: XCTestCase {
         let record = try XCTUnwrap(store.profiles.first)
         let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
         let model = makeModel(store: store, library: library)
-        let wall = model.photoWallModel(for: record.id)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
         async let adding: Void = wall.addPhotos(ids: ["x"])
         async let backfill: Void = model.backfillAlbumsIfNeeded()
         _ = await (adding, backfill)
@@ -608,6 +608,49 @@ final class RecordListModelTests: XCTestCase {
 
     /// #636 review: a camera failure reported after the camera closed shows
     /// once; more before dismissal add up; dismissing clears it.
+    // MARK: Back from the camera (#655-8)
+
+    /// 655-8: the camera closed on the record it opened for: the wall stays
+    /// and re-reads itself.
+    func test_655_8_closingOnTheSameRecordKeepsTheWall() throws {
+        let store = makeStore()
+        let record = try addRecord("小寶", to: store)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .authorized))
+        model.openWall(id: record.id)
+        store.select(id: record.id)
+
+        XCTAssertFalse(model.cameraDidClose(openedFrom: record.id, selected: record.id))
+        XCTAssertEqual(model.path, [.wall(record.id)])
+        XCTAssertEqual(store.selectedProfileID, record.id)
+    }
+
+    /// 655-8: the camera closed after switching to B: B's wall replaces A's,
+    /// B becomes the selected record, and back leads to the list.
+    func test_655_8_closingOnAnotherRecordOpensItsWall() throws {
+        let store = makeStore()
+        let recordA = try addRecord("小寶", to: store)
+        let recordB = try addRecord("新家", to: store)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .authorized))
+        model.openWall(id: recordA.id)
+        store.select(id: recordA.id)
+
+        XCTAssertTrue(model.cameraDidClose(openedFrom: recordA.id, selected: recordB.id))
+        XCTAssertEqual(model.path, [.wall(recordB.id)], "655-8 only B's wall above the list")
+        XCTAssertEqual(store.selectedProfileID, recordB.id, "655-8")
+        XCTAssertEqual(store.lastUsedProfileID, recordB.id)
+    }
+
+    /// A record deleted while the camera was up leaves the wall alone.
+    func testClosingOnARecordThatNoLongerExistsKeepsTheWall() throws {
+        let store = makeStore()
+        let recordA = try addRecord("小寶", to: store)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary(status: .authorized))
+        model.openWall(id: recordA.id)
+
+        XCTAssertFalse(model.cameraDidClose(openedFrom: recordA.id, selected: UUID()))
+        XCTAssertEqual(model.path, [.wall(recordA.id)])
+    }
+
     func testCaptureFailureAfterTheCameraClosedShowsAndAddsUp() {
         let model = makeModel(store: makeStore(), library: FakeRecordAlbumLibrary())
         XCTAssertNil(model.captureFailure)

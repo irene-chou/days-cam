@@ -101,11 +101,12 @@ protocol RecordAlbumLibrary {
     /// reused) and returns its identifier for the caller to store. Throws
     /// `permissionDenied` without full access (FR-21.6).
     func createAlbum(title: String) async throws -> String
-    /// Removes the asset from the album only; the photo stays in the library.
-    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws
-    /// Deletes the asset through the system confirmation. `false` when the
-    /// user cancelled or the change failed.
-    func deleteAsset(_ id: String) async -> Bool
+    /// Removes the assets from the album only, in one change; the photos stay
+    /// in the library.
+    func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws
+    /// Deletes the assets in one change, through one system confirmation.
+    /// `false` when the user cancelled or the change failed.
+    func deleteAssets(_ ids: [String]) async -> Bool
 
     /// Yields once per photo-library change, from a background queue.
     func changes() -> AsyncStream<Void>
@@ -127,6 +128,17 @@ extension RecordAlbumLibrary {
     /// Test doubles that never create albums fail like a refused change.
     func createAlbum(title: String) async throws -> String {
         throw RecordAlbumError.failed("無法建立相簿")
+    }
+
+    /// Removes one asset from the album; the photo stays in the library.
+    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {
+        try await removeAssets([id], fromAlbum: albumIdentifier)
+    }
+
+    /// Deletes one asset through the system confirmation. `false` when the
+    /// user cancelled or the change failed.
+    func deleteAsset(_ id: String) async -> Bool {
+        await deleteAssets([id])
     }
 }
 
@@ -295,18 +307,20 @@ final class SystemRecordAlbumLibrary: RecordAlbumLibrary {
         return identifier
     }
 
-    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {
+    func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws {
+        guard !ids.isEmpty else { return }
         guard authorizationStatus() == .authorized else { throw RecordAlbumError.permissionDenied }
         guard let album = Self.album(identifier: albumIdentifier) else { throw RecordAlbumError.notFound }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
         guard assets.count > 0 else { throw RecordAlbumError.notFound }
         try await Self.perform {
             PHAssetCollectionChangeRequest(for: album)?.removeAssets(assets)
         }
     }
 
-    func deleteAsset(_ id: String) async -> Bool {
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+    func deleteAssets(_ ids: [String]) async -> Bool {
+        guard !ids.isEmpty else { return true }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
         guard assets.count > 0 else { return true }
         return await withCheckedContinuation { continuation in
             PHPhotoLibrary.shared().performChanges({

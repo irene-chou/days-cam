@@ -29,10 +29,14 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     private(set) var albums: [Album]
     /// Under `.limited`, only these assets are visible; `nil` means all.
     var visibleIDs: Set<String>?
-    /// Non-nil makes `addAssets`, `removeAsset` and `fullImage` throw it.
+    /// Non-nil makes `addAssets`, `removeAssets` and `fullImage` throw it.
     var failure: RecordAlbumError?
-    /// Result of `deleteAsset` (`false` = the user cancelled the dialog).
+    /// Result of `deleteAssets` (`false` = the user cancelled the dialog).
     var confirmsDeletion = true
+    /// The ids of each `removeAssets` call, in order.
+    private(set) var removeCalls: [[String]] = []
+    /// The ids of each `deleteAssets` call, in order.
+    private(set) var deleteCalls: [[String]] = []
     /// How many times an album's contents were read (limited access must not).
     private(set) var albumReadCount = 0
     /// How many times access was requested (launch and foreground must not).
@@ -131,15 +135,17 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
         return id
     }
 
-    func removeAsset(_ id: String, fromAlbum albumIdentifier: String) async throws {
+    func removeAssets(_ ids: [String], fromAlbum albumIdentifier: String) async throws {
+        removeCalls.append(ids)
         if let failure { throw failure }
         guard let index = albums.firstIndex(where: { $0.id == albumIdentifier }) else { throw RecordAlbumError.notFound }
-        albums[index].assetIDs.removeAll { $0 == id }
+        albums[index].assetIDs.removeAll { ids.contains($0) }
     }
 
-    func deleteAsset(_ id: String) async -> Bool {
+    func deleteAssets(_ ids: [String]) async -> Bool {
+        deleteCalls.append(ids)
         guard confirmsDeletion else { return false }
-        removeFromLibrary(id)
+        ids.forEach(removeFromLibrary)
         return true
     }
 

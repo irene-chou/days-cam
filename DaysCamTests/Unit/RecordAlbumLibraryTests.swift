@@ -174,6 +174,36 @@ final class RecordAlbumLibraryTests: XCTestCase {
         XCTAssertEqual(library.assets.map(\.id), ["a"])
     }
 
+    /// #648: one call takes several photos out of the album, all still in
+    /// the library; the single-photo form goes through the same call.
+    func test_removeAssets_removesSeveralInOneCall() async throws {
+        let library = FakeRecordAlbumLibrary(
+            assets: [asset("a", day: 1), asset("b", day: 2), asset("c", day: 3)],
+            albums: [.init(id: "alb", title: "x", assetIDs: ["a", "b", "c"])])
+        try await library.removeAssets(["a", "c"], fromAlbum: "alb")
+        XCTAssertEqual(ids(library.photos(albumIdentifier: "alb", fallbackIDs: [])), ["b"])
+        XCTAssertEqual(library.assets.map(\.id), ["a", "b", "c"])
+        try await library.removeAsset("b", fromAlbum: "alb")
+        XCTAssertEqual(library.removeCalls, [["a", "c"], ["b"]])
+    }
+
+    /// #648: one call deletes several photos; a cancelled confirmation
+    /// deletes none.
+    func test_deleteAssets_deletesSeveralOrNoneWhenCancelled() async {
+        let library = FakeRecordAlbumLibrary(
+            assets: [asset("a", day: 1), asset("b", day: 2), asset("c", day: 3)],
+            albums: [.init(id: "alb", title: "x", assetIDs: ["a", "b", "c"])])
+        library.confirmsDeletion = false
+        let cancelled = await library.deleteAssets(["a", "b"])
+        XCTAssertFalse(cancelled)
+        XCTAssertEqual(library.assets.map(\.id), ["a", "b", "c"])
+        library.confirmsDeletion = true
+        let deleted = await library.deleteAssets(["a", "b"])
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(library.assets.map(\.id), ["c"])
+        XCTAssertEqual(library.deleteCalls, [["a", "b"], ["a", "b"]])
+    }
+
     func test_userAlbums_countsOnlyPhotos() {
         let library = FakeRecordAlbumLibrary(
             assets: [asset("a"), asset("v", video: true)],

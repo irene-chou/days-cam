@@ -52,13 +52,19 @@ struct DaysCamApp: App {
     /// `-UITestRecordPhotos <n>` get an in-memory one holding an album
     /// "測試相簿" with all `n` photos; `-UITestBindAlbum` (and
     /// `-UITestOpenExport`, #620) also binds every record to it.
+    /// `-UITestUndatedPhotos <k>` takes the date off the oldest `k` (#650).
     private static func makeRecordAlbumLibrary(for profileStore: ProfileStore) -> any RecordAlbumLibrary {
         #if DEBUG
         if let fake = FakeRecordAlbumLibrary.forUITests() {
-            let album = FakeRecordAlbumLibrary.Album(id: "uitest-album", title: "測試相簿",
-                                                     assetIDs: fake.assets.map(\.id))
-            let library = FakeRecordAlbumLibrary(status: fake.status, assets: fake.assets, albums: [album])
             let arguments = ProcessInfo.processInfo.arguments
+            var assets = fake.assets
+            if let index = arguments.firstIndex(of: "-UITestUndatedPhotos"), arguments.indices.contains(index + 1),
+               let undated = Int(arguments[index + 1]) {
+                for offset in assets.indices.prefix(undated) { assets[offset].creationDate = nil }
+            }
+            let album = FakeRecordAlbumLibrary.Album(id: "uitest-album", title: "測試相簿",
+                                                     assetIDs: assets.map(\.id))
+            let library = FakeRecordAlbumLibrary(status: fake.status, assets: assets, albums: [album])
             if arguments.contains("-UITestBindAlbum") || arguments.contains("-UITestOpenExport") {
                 for var profile in profileStore.profiles {
                     profile.albumIdentifier = album.id
@@ -88,11 +94,25 @@ struct DaysCamApp: App {
     /// Where an exported photo is saved: 「最近項目」 only (PRD 2.0 FR-19.9).
     /// Debug UI tests with the in-memory library (`-UITestRecordPhotos`)
     /// pretend the save worked, so no system permission alert comes up (#620).
+    /// For the batch export (#650), `-UITestExportDelay <seconds>` slows each
+    /// save and `-UITestExportFailures <n,m>` fails the n-th and m-th saves.
     private static var exportSave: PhotoExportPipeline.Save {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-UITestRecordPhotos") {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-UITestRecordPhotos") {
+            func value(after flag: String) -> String? {
+                guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else { return nil }
+                return arguments[index + 1]
+            }
+            let delay = value(after: "-UITestExportDelay").flatMap(Double.init) ?? 0
+            let failing = Set((value(after: "-UITestExportFailures") ?? "").split(separator: ",").compactMap { Int($0) })
+            var count = 0
             return { _, completion in
-                DispatchQueue.main.async { completion(.success("uitest-export")) }
+                count += 1
+                let fails = failing.contains(count)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    completion(fails ? .failure(.saveFailed("uitest")) : .success("uitest-export"))
+                }
             }
         }
         #endif
@@ -108,6 +128,7 @@ struct DaysCamApp: App {
     private static func makeProfileStore() -> ProfileStore {
         let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
+        applyUITestSecondRecord(to: profileStore)
         applyUITestFilmDate(to: profileStore)
         return profileStore
     }
@@ -115,7 +136,8 @@ struct DaysCamApp: App {
     /// Builds the camera for record `id` over the one `CameraService`.
     ///
     /// Opening the camera makes the record the last opened one (PRD 2.0
-    /// §4.2). The corner button starts on the record's newest photo. A save
+    /// §4.2). The corner button shows the newest photo of whichever record
+    /// the camera's switcher has selected (#655). A save
     /// that fails after the camera closed, and a failed write of the record,
     /// are shown by the 紀錄 list, which outlives every camera.
     private static func cameraModelFactory(profileStore: ProfileStore,
@@ -136,8 +158,8 @@ struct DaysCamApp: App {
                 profileID: id,
                 saveCoordinator: saveCoordinator,
                 save: save,
-                loadLatestPhoto: {
-                    guard let profile = profileStore.profiles.first(where: { $0.id == id }),
+                loadLatestPhoto: { recordID in
+                    guard let profile = profileStore.profiles.first(where: { $0.id == recordID }),
                           let newest = library.photos(albumIdentifier: profile.albumIdentifier,
                                                       fallbackIDs: profile.fallbackAssetIDs).last else { return nil }
                     return await library.thumbnail(id: newest.id, targetSize: CGSize(width: 200, height: 200))
@@ -191,6 +213,31 @@ struct DaysCamApp: App {
         return CGFloat(angle)
         #else
         return nil
+        #endif
+    }
+
+    /// UI tests pass `-UITestSecondRecord <name>` to add a second record of
+    /// that name, starting the same day as the first, when there is only
+    /// one, for the camera's record switcher (#655). `-UITestRecordCount <n>`
+    /// with it keeps adding records 「<name> 3」… until there are `n`.
+    /// Debug builds only.
+    private static func applyUITestSecondRecord(to profileStore: ProfileStore) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestSecondRecord"),
+              arguments.indices.contains(flag + 1),
+              profileStore.profiles.count == 1,
+              let first = profileStore.profiles.first else { return }
+        let name = arguments[flag + 1]
+        _ = try? profileStore.add(CameraProfile(name: name, startDate: first.startDate))
+        guard let countFlag = arguments.firstIndex(of: "-UITestRecordCount"),
+              arguments.indices.contains(countFlag + 1),
+              let count = Int(arguments[countFlag + 1]) else { return }
+        while profileStore.profiles.count < min(count, ProfileStore.profileLimit) {
+            let added = try? profileStore.add(CameraProfile(name: "\(name) \(profileStore.profiles.count + 1)",
+                                                            startDate: first.startDate))
+            if added == nil { break }
+        }
         #endif
     }
 
