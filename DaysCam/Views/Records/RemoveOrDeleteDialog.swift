@@ -16,12 +16,21 @@ extension View {
                               count: Int = 1,
                               onRemove: @escaping () -> Void,
                               onDelete: @escaping () -> Void) -> some View {
-        confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
-            Button("從「\(recordName)」移除", action: onRemove)
-                .accessibilityIdentifier("removeFromRecordButton")
-            Button(RemoveOrDeleteDialog.deleteTitle(count: count), role: .destructive, action: onDelete)
-                .accessibilityIdentifier("deletePhotoButton")
-            Button("取消", role: .cancel) {}
+        // Hosted on a clear overlay of the same frame, so the popover points
+        // at the view this is applied to (apply it to the button that opens
+        // it), with the screen's tint dropped: 從「…」移除 keeps the system's
+        // default color, not the theme's (2026-11-01 ruling, #662).
+        overlay {
+            Color.clear
+                .allowsHitTesting(false)
+                .confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
+                    Button("從「\(recordName)」移除", action: onRemove)
+                        .accessibilityIdentifier("removeFromRecordButton")
+                    Button(RemoveOrDeleteDialog.deleteTitle(count: count), role: .destructive, action: onDelete)
+                        .accessibilityIdentifier("deletePhotoButton")
+                    Button("取消", role: .cancel) {}
+                }
+                .tint(nil)
         }
     }
 }
