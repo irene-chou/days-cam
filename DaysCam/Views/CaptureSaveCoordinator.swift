@@ -111,6 +111,28 @@ final class CaptureSaveCoordinator: ObservableObject {
     /// Marks the creation call for `profileID` as returned.
     func endAlbumCreation(for profileID: UUID) { creatingAlbums.remove(profileID) }
 
+    /// Photos saved to the library while a record's album creation was
+    /// pending: they join the album once it exists. In memory only; after a
+    /// restart they stay in the library and in `fallbackAssetIDs`.
+    private var awaitingAlbum: [UUID: [String]] = [:]
+
+    /// Queues `assetID` to be added to `profileID`'s album once it exists.
+    func addAwaitingAsset(_ assetID: String, for profileID: UUID) {
+        guard !(awaitingAlbum[profileID] ?? []).contains(assetID) else { return }
+        awaitingAlbum[profileID, default: []].append(assetID)
+    }
+
+    /// Removes and returns the photos waiting for `profileID`'s album.
+    func takeAwaitingAssets(for profileID: UUID) -> [String] {
+        awaitingAlbum.removeValue(forKey: profileID) ?? []
+    }
+
+    /// Puts back photos whose add to the album failed, ahead of newer ones.
+    func restoreAwaitingAssets(_ ids: [String], for profileID: UUID) {
+        guard !ids.isEmpty else { return }
+        awaitingAlbum[profileID] = ids + (awaitingAlbum[profileID] ?? []).filter { !ids.contains($0) }
+    }
+
     /// The album created for `profileID` but not stored on it yet.
     func pendingAlbum(for profileID: UUID) -> String? { pendingAlbums[profileID] }
 

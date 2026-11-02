@@ -659,6 +659,35 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["x"])
     }
 
+    /// #663 (qa): the write-back of a creation that finished after its
+    /// timeout cannot interleave with the next write for the record into a
+    /// second album: retries and adds started while it is stuck, or right as
+    /// it returns, leave one album for the record.
+    func testLateCreationWriteBackNeverMakesASecondAlbum() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { if library.createdAlbumTitles.count == 1 { await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let first = Task { await model.backfillAlbumsIfNeeded(reportsFailure: true) }
+        try await latch.waitUntilHolding()
+        await first.value
+        await model.backfillAlbumsIfNeeded(reportsFailure: true) // retry while stuck
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        let adding = Task { await wall.addPhotos(ids: ["x"]) }
+        latch.release() // returns while the add is queued or starting
+        await adding.value
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles.count, 1, "one creation call in all")
+        XCTAssertEqual(library.albums.count, 1)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, library.albums.first?.id)
+    }
+
     /// 10: launch and returning to the foreground never ask, even undecided.
     func testLaunchAndForegroundNeverRequestAccess() async throws {
         for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {

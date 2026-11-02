@@ -216,6 +216,9 @@ final class CameraScreenModelTests: XCTestCase {
                            save: @escaping CameraScreenModel.Save = { _, _, _, completion in
                                completion(.success(RecordSaveOutcome(assetID: "asset-1", albumID: nil)))
                            },
+                           saveToRecentsOnly: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { _, completion in
+                               completion(.success("recents-asset"))
+                           },
                            captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
                            scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { _ in },
                            loadLatestPhoto: @escaping @MainActor (UUID) async -> UIImage? = { _ in nil },
@@ -240,6 +243,7 @@ final class CameraScreenModelTests: XCTestCase {
                                       countdownTicker: countdownTicker,
                                       saveCoordinator: saveCoordinator,
                                       save: save,
+                                      saveToRecentsOnly: saveToRecentsOnly,
                                       captureImage: captureImage,
                                       loadLatestPhoto: loadLatestPhoto,
                                       reportFailureAfterClose: reportFailureAfterClose,
@@ -922,9 +926,10 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     /// #663-2: while an album creation that timed out may still finish, a
-    /// camera save for a record without an album fails instead of making a
-    /// second album; the next one after the creation returned goes through.
-    func test_663_2_cameraSaveFailsWhileAnAlbumCreationIsPending() async throws {
+    /// camera photo goes to the library without an album (no second album, no
+    /// loss), shows on the wall, and says so; the next one after the creation
+    /// returned goes through the normal save.
+    func test_663_2_cameraSaveWhileAnAlbumCreationIsPendingGoesToTheLibraryOnly() async throws {
         let clock = MutableClock(try fixedNow())
         let store = makeProfileStore(clock: clock)
         let record = try addRecord(to: store, name: "小寶")
@@ -935,11 +940,68 @@ final class CameraScreenModelTests: XCTestCase {
                                              saveCoordinator: coordinator, save: saves.save)
         model.processCapturedImage(UIImage(), destination: destination(of: record))
         try await poll { model.inFlightSaveCount == 0 && model.captureFlights.count == 1 }
-        XCTAssertTrue(saves.calls.isEmpty, "no save, so no second album")
+        XCTAssertTrue(saves.calls.isEmpty, "no album write, so no second album")
+        XCTAssertNil(model.captureError, "the photo is not reported as lost")
+        XCTAssertEqual(model.toastState?.message, "照片已存到「照片」App，相簿建好後會自動加進紀錄")
+        XCTAssertEqual(try storedRecord(record.id, in: store).fallbackAssetIDs, ["recents-asset"])
+        XCTAssertEqual(coordinator.takeAwaitingAssets(for: record.id), ["recents-asset"])
 
         coordinator.endAlbumCreation(for: record.id)
         model.processCapturedImage(UIImage(), destination: destination(of: record))
         try await poll { saves.calls.count == 1 }
+    }
+
+    /// #663-2: the stuck creation finally succeeds: the photo taken meanwhile
+    /// is added to that one album.
+    func test_663_2_lateCreationAddsThePhotoTakenMeanwhile() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "cam-1")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { await latch.hold() }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let list = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let backfill = Task { await list.backfillAlbumsIfNeeded(reportsFailure: true) }
+        try await latch.waitUntilHolding()
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save,
+                                             saveToRecentsOnly: { _, completion in completion(.success("cam-1")) })
+        await backfill.value // times out; the library call is still stuck
+        XCTAssertTrue(coordinator.isCreatingAlbum(for: record.id))
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { model.inFlightSaveCount == 0 && model.captureFlights.count == 1 }
+        XCTAssertTrue(saves.calls.isEmpty)
+
+        latch.release()
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(library.createdAlbumTitles.filter { $0 == "小寶" }.count, 1, "one album")
+        let bound = try XCTUnwrap(try storedRecord(record.id, in: store).albumIdentifier)
+        XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["cam-1"])
+        XCTAssertTrue(coordinator.takeAwaitingAssets(for: record.id).isEmpty)
+    }
+
+    /// #663-2: a failed creation keeps the waiting photo; the next successful
+    /// creation (FR-21.6 backfill) adds it.
+    func test_663_2_failedCreationKeepsTheWaitingPhotoForTheNextBackfill() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "cam-1")])
+        let coordinator = CaptureSaveCoordinator()
+        coordinator.addAwaitingAsset("cam-1", for: record.id)
+        let list = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        library.createAlbumFailure = .failed("boom")
+        await list.backfillAlbumsIfNeeded(reportsFailure: true)
+        XCTAssertNotNil(list.lastError)
+
+        library.createAlbumFailure = nil
+        await list.backfillAlbumsIfNeeded()
+        let bound = try XCTUnwrap(try storedRecord(record.id, in: store).albumIdentifier)
+        XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["cam-1"])
     }
 
     /// Async tests cannot block in `wait(for:)`; this sleeps in steps.

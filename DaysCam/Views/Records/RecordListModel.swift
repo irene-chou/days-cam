@@ -484,8 +484,25 @@ final class RecordListModel: ObservableObject {
                 try store.updateAndWait(latest)
             } catch {
                 saveCoordinator.setPendingAlbum(albumID, for: id)
+                await addAwaitingPhotos(to: albumID, of: id, title: current.name)
                 throw error
             }
+            await addAwaitingPhotos(to: albumID, of: id, title: current.name)
+        }
+    }
+
+    /// Adds the photos taken while this record's album creation was pending
+    /// to `albumID`. A failure keeps them for the next creation or add; photos
+    /// the library no longer has are dropped (they are in `fallbackAssetIDs`).
+    private func addAwaitingPhotos(to albumID: String, of id: UUID, title: String) async {
+        let waiting = saveCoordinator.takeAwaitingAssets(for: id)
+        guard !waiting.isEmpty else { return }
+        do {
+            _ = try await library.addAssets(waiting, albumIdentifier: albumID, albumTitle: title)
+        } catch RecordAlbumError.notFound {
+            return
+        } catch {
+            saveCoordinator.restoreAwaitingAssets(waiting, for: id)
         }
     }
 

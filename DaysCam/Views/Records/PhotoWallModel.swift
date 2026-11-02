@@ -535,7 +535,16 @@ final class PhotoWallModel: ObservableObject {
                     saveCoordinator.beginAlbumCreation(for: profileID)
                 }
                 defer { if creates { saveCoordinator.endAlbumCreation(for: profileID) } }
-                let albumID = try await library.addAssets(ids, albumIdentifier: target, albumTitle: current.name)
+                // Photos taken while an album creation was pending join now.
+                let waiting = saveCoordinator.takeAwaitingAssets(for: profileID)
+                let albumID: String
+                do {
+                    albumID = try await library.addAssets(Self.appendingNew(waiting, to: ids), albumIdentifier: target,
+                                                          albumTitle: current.name)
+                } catch {
+                    saveCoordinator.restoreAwaitingAssets(waiting, for: profileID)
+                    throw error
+                }
                 if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
                     latest.albumIdentifier = albumID
                     do {

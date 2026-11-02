@@ -161,6 +161,8 @@ final class CameraScreenModel: ObservableObject {
     /// Saves a photo for the record. Defaults to
     /// `PhotoSaver.saveToRecordAlbum`. Injectable for tests.
     private let save: Save
+    /// Saves to 「最近項目」 only, while a record's album is being created.
+    private let saveToRecentsOnly: (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void
 
     /// Fires the actual shutter. Defaults to `cameraService.capturePhoto`.
     /// Injectable so tests can drive a capture without real hardware.
@@ -248,6 +250,9 @@ final class CameraScreenModel: ObservableObject {
              PhotoSaver().saveToRecordAlbum(image, albumIdentifier: albumIdentifier,
                                             albumTitle: albumTitle, completion: completion)
          },
+         saveToRecentsOnly: @escaping (UIImage, @escaping (Result<String, PhotoSaveError>) -> Void) -> Void = { image, completion in
+             PhotoSaver().saveToRecentsOnly(image, completion: completion)
+         },
          captureImage: ((FlashMode, @escaping (Result<UIImage, CameraCaptureError>) -> Void) -> Void)? = nil,
          prepareCapture: ((FlashMode) -> Void)? = nil,
          loadLatestPhoto: @escaping @MainActor (UUID) async -> UIImage? = { _ in nil },
@@ -326,6 +331,7 @@ final class CameraScreenModel: ObservableObject {
         self.countdownTicker = countdownTicker
         self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.save = save
+        self.saveToRecentsOnly = saveToRecentsOnly
         self.captureImage = captureImage ?? { [cameraService] flashMode, completion in
             cameraService.capturePhoto(flashMode: flashMode, completion: completion)
         }
@@ -927,16 +933,9 @@ extension CameraScreenModel {
         let albumIdentifier = store.profiles.first { $0.id == destination.profileID }?.albumIdentifier
         // An album made earlier whose write-back failed still counts (#663).
         let targetAlbum = albumIdentifier ?? coordinator.pendingAlbum(for: destination.profileID)
-        if targetAlbum == nil, coordinator.isCreatingAlbum(for: destination.profileID) {
-            // An album creation timed out and may still finish: saving now
-            // would make a second one, so fail this photo instead.
-            CaptureTiming.discard(id: timingID)
-            markFlightFailed(id: flightID)
-            reportPhotoFailure(message: "相簿還在建立中，這張沒有存進相簿。請稍後再試。", showsSettingsAction: false)
-            coordinator.photoDidFinish()
-            finished()
-            return
-        }
+        // An album creation that timed out may still finish: this photo goes
+        // to the library only, and joins the album once it exists (#663).
+        let defersAlbum = targetAlbum == nil && coordinator.isCreatingAlbum(for: destination.profileID)
         let slot = SaveSlot()
         let timeout = DispatchWorkItem { [weak self] in
             guard !slot.isSettled else { return }
@@ -952,12 +951,23 @@ extension CameraScreenModel {
         }
         slot.timeout = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + saveTimeout, execute: timeout)
-        save(image, targetAlbum, destination.albumTitle) { result in
+        let write: (@escaping (Result<RecordSaveOutcome, PhotoSaveError>) -> Void) -> Void
+        if defersAlbum {
+            write = { [saveToRecentsOnly] completion in
+                saveToRecentsOnly(image) { completion($0.map { RecordSaveOutcome(assetID: $0, albumID: nil) }) }
+            }
+        } else {
+            write = { [save] completion in save(image, targetAlbum, destination.albumTitle, completion) }
+        }
+        write { result in
             // A photo that reached the library is recorded even when the
             // timeout already reported it.
             if case let .success(outcome) = result {
                 Self.record(outcome, savedFor: destination, albumAtSave: albumIdentifier, in: store,
                             coordinator: coordinator, reportWriteFailure: self.reportRecordWriteFailure)
+                if defersAlbum {
+                    coordinator.addAwaitingAsset(outcome.assetID, for: destination.profileID)
+                }
             }
             guard !slot.isSettled else { return }
             slot.settle()
@@ -967,7 +977,13 @@ extension CameraScreenModel {
                 self.markFlightSaved(id: flightID)
                 // Nothing is shown on screen for a save, so VoiceOver users
                 // hear it instead (issue #148).
-                self.announce("已儲存")
+                if defersAlbum {
+                    let notice = "照片已存到「照片」App，相簿建好後會自動加進紀錄"
+                    self.showToast(message: notice)
+                    self.announce(notice)
+                } else {
+                    self.announce("已儲存")
+                }
             case let .failure(error):
                 CaptureTiming.discard(id: timingID)
                 self.markFlightFailed(id: flightID)
