@@ -925,6 +925,8 @@ extension CameraScreenModel {
         // The album as the record has it now: an earlier photo may just have
         // created it.
         let albumIdentifier = store.profiles.first { $0.id == destination.profileID }?.albumIdentifier
+        // An album made earlier whose write-back failed still counts (#663).
+        let targetAlbum = albumIdentifier ?? coordinator.pendingAlbum(for: destination.profileID)
         let slot = SaveSlot()
         let timeout = DispatchWorkItem { [weak self] in
             guard !slot.isSettled else { return }
@@ -940,12 +942,12 @@ extension CameraScreenModel {
         }
         slot.timeout = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + saveTimeout, execute: timeout)
-        save(image, albumIdentifier, destination.albumTitle) { result in
+        save(image, targetAlbum, destination.albumTitle) { result in
             // A photo that reached the library is recorded even when the
             // timeout already reported it.
             if case let .success(outcome) = result {
                 Self.record(outcome, savedFor: destination, albumAtSave: albumIdentifier, in: store,
-                            reportWriteFailure: self.reportRecordWriteFailure)
+                            coordinator: coordinator, reportWriteFailure: self.reportRecordWriteFailure)
             }
             guard !slot.isSettled else { return }
             slot.settle()
@@ -983,10 +985,14 @@ extension CameraScreenModel {
     /// show on the wall.
     static func record(_ outcome: RecordSaveOutcome, savedFor destination: CaptureDestination,
                        albumAtSave: String?, in store: ProfileStore,
+                       coordinator: CaptureSaveCoordinator? = nil,
                        reportWriteFailure: (Error) -> Void) {
         guard var latest = store.profiles.first(where: { $0.id == destination.profileID }) else { return }
         if let albumID = outcome.albumID {
-            guard latest.albumIdentifier != albumID else { return }
+            guard latest.albumIdentifier != albumID else {
+                coordinator?.setPendingAlbum(nil, for: destination.profileID)
+                return
+            }
             if latest.albumIdentifier == albumAtSave {
                 latest.albumIdentifier = albumID
             } else {
@@ -999,7 +1005,14 @@ extension CameraScreenModel {
         }
         do {
             try store.updateAndWait(latest)
+            if latest.albumIdentifier == outcome.albumID {
+                coordinator?.setPendingAlbum(nil, for: destination.profileID)
+            }
         } catch {
+            // The album exists but is not stored: keep it for the next save.
+            if let albumID = outcome.albumID, latest.albumIdentifier == albumID {
+                coordinator?.setPendingAlbum(albumID, for: destination.profileID)
+            }
             reportWriteFailure(error)
         }
     }

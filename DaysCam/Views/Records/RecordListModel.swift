@@ -93,9 +93,6 @@ final class RecordListModel: ObservableObject {
     /// Records with an album creation queued or running: a second trigger
     /// skips them (FR-21.6).
     private var albumCreationsInFlight: Set<UUID> = []
-    /// Albums created for a record whose write-back then failed: the next
-    /// attempt binds the same album instead of making another (#661 review).
-    private var unboundCreatedAlbums: [UUID: String] = [:]
 
     /// Creates a model over `store`.
     ///
@@ -465,24 +462,24 @@ final class RecordListModel: ObservableObject {
               albumCreationsInFlight.insert(id).inserted else { return }
         defer { albumCreationsInFlight.remove(id) }
         let bindingAtRequest = requested.albumIdentifier
-        try await saveCoordinator.serialized {
+        try await saveCoordinator.serialized { [self] in
             guard library.authorizationStatus() == .authorized,
                   let current = store.profiles.first(where: { $0.id == id }),
                   current.albumIdentifier == bindingAtRequest else { return }
             let albumID: String
-            if let leftOver = unboundCreatedAlbums[id], library.userAlbums().contains(where: { $0.id == leftOver }) {
+            if let leftOver = saveCoordinator.pendingAlbum(for: id), library.userAlbums().contains(where: { $0.id == leftOver }) {
                 albumID = leftOver
             } else {
                 albumID = try await library.createAlbum(title: current.name)
             }
-            unboundCreatedAlbums[id] = nil
+            saveCoordinator.setPendingAlbum(nil, for: id)
             guard var latest = store.profiles.first(where: { $0.id == id }),
                   latest.albumIdentifier == bindingAtRequest else { return }
             latest.albumIdentifier = albumID
             do {
                 try store.updateAndWait(latest)
             } catch {
-                unboundCreatedAlbums[id] = albumID
+                saveCoordinator.setPendingAlbum(albumID, for: id)
                 throw error
             }
         }

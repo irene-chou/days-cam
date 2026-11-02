@@ -523,15 +523,21 @@ final class PhotoWallModel: ObservableObject {
     func addPhotos(ids: [String]) async {
         guard !ids.isEmpty, profile != nil else { return }
         do {
-            try await saveCoordinator.serialized {
+            try await saveCoordinator.serialized { [self] in
                 guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
-                let albumID = try await library.addAssets(ids,
-                                                         albumIdentifier: current.albumIdentifier,
-                                                         albumTitle: current.name)
+                // An album made earlier whose write-back failed is still the record's (#663).
+                let target = current.albumIdentifier ?? saveCoordinator.pendingAlbum(for: profileID)
+                let albumID = try await library.addAssets(ids, albumIdentifier: target, albumTitle: current.name)
                 if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
                     latest.albumIdentifier = albumID
-                    try store.updateAndWait(latest)
+                    do {
+                        try store.updateAndWait(latest)
+                    } catch {
+                        saveCoordinator.setPendingAlbum(albumID, for: profileID)
+                        throw error
+                    }
                 }
+                saveCoordinator.setPendingAlbum(nil, for: profileID)
             }
             reload()
         } catch let error as RecordAlbumError {

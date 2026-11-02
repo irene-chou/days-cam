@@ -902,6 +902,25 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, created)
     }
 
+    /// #663-1: a camera save for a record whose album was created but never
+    /// stored goes into that album, and storing it forgets the pending id.
+    func test_663_1_cameraSaveUsesTheAlbumWhoseWriteBackFailed() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let coordinator = CaptureSaveCoordinator()
+        coordinator.setPendingAlbum("made-earlier", for: record.id)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls.first?.albumIdentifier, "made-earlier")
+        saves.calls.first?.completion(.success(outcome("A", album: "made-earlier")))
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, "made-earlier")
+        XCTAssertNil(coordinator.pendingAlbum(for: record.id))
+    }
+
     /// Async tests cannot block in `wait(for:)`; this sleeps in steps.
     private func poll(_ condition: () -> Bool) async throws {
         for _ in 0..<200 where !condition() {

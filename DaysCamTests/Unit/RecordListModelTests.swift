@@ -571,6 +571,73 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
     }
 
+    /// #663-1: after a failed write-back, "加入照片" binds the album that was
+    /// already created instead of making a second one, and the photo is in it.
+    func testAddingPhotosAfterAFailedWriteBackReusesTheCreatedAlbum() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let model = makeModel(store: store, library: library)
+        try setDirectoryWritable(false)
+        await model.backfillAlbumsIfNeeded(reportsFailure: true)
+        try setDirectoryWritable(true)
+        XCTAssertNil(store.profiles.first?.albumIdentifier)
+        XCTAssertEqual(library.albums.count, 1)
+
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.count, 1, "one album in all")
+        XCTAssertEqual(library.albums.first?.assetIDs, ["x"])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+        XCTAssertNil(model.saveCoordinator.pendingAlbum(for: record.id), "forgotten once stored")
+    }
+
+    /// #663-1: a failed write-back of "加入照片" itself keeps the album it
+    /// made for the next add.
+    func testFailedWriteBackOfAddingPhotosKeepsTheAlbumForTheNextAdd() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "y")])
+        let model = makeModel(store: store, library: library)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        try setDirectoryWritable(false)
+        await wall.addPhotos(ids: ["x"])
+        try setDirectoryWritable(true)
+        XCTAssertNotNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.count, 1)
+
+        await wall.addPhotos(ids: ["y"])
+        XCTAssertEqual(library.albums.count, 1, "no second album")
+        XCTAssertEqual(Set(library.albums.first?.assetIDs ?? []), ["x", "y"])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+    }
+
+    /// #663-2: a creation that never answers times out and is reported as
+    /// failed; the add queued behind it then runs.
+    func testAlbumCreationThatNeverAnswersTimesOutAndFreesTheQueue() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { await latch.hold() }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let clock = clock
+        let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { clock.now })
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator,
+                                    calendar: DateFixture.taipei, calculator: calculator)
+        let backfill = Task { await model.backfillAlbumsIfNeeded(reportsFailure: true) }
+        try await latch.waitUntilHolding()
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        await backfill.value
+        XCTAssertEqual(model.lastError as? RecordAlbumError, .timedOut, "not reported as created")
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.first?.assetIDs, ["x"], "the queued add ran after the timeout")
+        XCTAssertNotNil(store.profiles.first?.albumIdentifier)
+        latch.release()
+    }
+
     /// 10: launch and returning to the foreground never ask, even undecided.
     func testLaunchAndForegroundNeverRequestAccess() async throws {
         for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {

@@ -62,4 +62,41 @@ final class CaptureSaveCoordinatorTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
         XCTAssertEqual(log, ["save 1", "work", "save 2"])
     }
+
+    /// #663-2: work that never answers times out with a failure, and the
+    /// save behind it starts.
+    func testSerializedTimesOutAndFreesTheQueue() async {
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.1)
+        var started = false
+        let hung = Task {
+            try await coordinator.serialized { () -> Int in
+                try await withCheckedThrowingContinuation { (_: CheckedContinuation<Int, Error>) in }
+            }
+        }
+        for _ in 0..<5 { await Task.yield() }
+        coordinator.enqueueSave { finished in
+            started = true
+            finished()
+        }
+        XCTAssertFalse(started)
+        let result = await hung.result
+        XCTAssertThrowsError(try result.get()) { XCTAssertEqual($0 as? RecordAlbumError, .timedOut) }
+        XCTAssertTrue(started)
+    }
+
+    func testSerializedReturnsAnswerBeforeTheTimeout() async throws {
+        let coordinator = CaptureSaveCoordinator(workTimeout: 5)
+        let value = try await coordinator.serialized { 7 }
+        XCTAssertEqual(value, 7)
+    }
+
+    func testPendingAlbumIsPerRecordAndClearable() {
+        let coordinator = CaptureSaveCoordinator()
+        let id = UUID()
+        coordinator.setPendingAlbum("a", for: id)
+        XCTAssertEqual(coordinator.pendingAlbum(for: id), "a")
+        XCTAssertNil(coordinator.pendingAlbum(for: UUID()))
+        coordinator.setPendingAlbum(nil, for: id)
+        XCTAssertNil(coordinator.pendingAlbum(for: id))
+    }
 }

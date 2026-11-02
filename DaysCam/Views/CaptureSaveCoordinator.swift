@@ -32,7 +32,12 @@ final class CaptureSaveCoordinator: ObservableObject {
     private var waitingSaves: [() -> Void] = []
     private var isSaveRunning = false
 
-    init() {}
+    /// Seconds a `serialized` body may run before the queue gives up on it.
+    private let workTimeout: TimeInterval
+
+    init(workTimeout: TimeInterval = 30) {
+        self.workTimeout = workTimeout
+    }
 
     /// Whether the limit is reached.
     var isAtLimit: Bool {
@@ -58,15 +63,44 @@ final class CaptureSaveCoordinator: ObservableObject {
     }
 
     /// Runs `body` in the same queue as `enqueueSave`: it starts once every
-    /// earlier write has answered, and the next starts when it returns or
-    /// throws. Read the record's album inside `body`, not before.
-    func serialized<T>(_ body: () async throws -> T) async rethrows -> T {
+    /// earlier write has answered, and the next starts when it returns,
+    /// throws or times out. Read the record's album inside `body`, not
+    /// before.
+    ///
+    /// If `body` has not answered after `workTimeout`, the queue moves on
+    /// and this throws `RecordAlbumError.timedOut`, so a PhotoKit call that
+    /// never calls back cannot hold every later save (#663). A late answer
+    /// is dropped.
+    func serialized<T>(_ body: @escaping () async throws -> T) async throws -> T {
         let finished = await withCheckedContinuation { (continuation: CheckedContinuation<() -> Void, Never>) in
             enqueueSave { finished in continuation.resume(returning: finished) }
         }
         defer { finished() }
-        return try await body()
+        let race = WorkRace<T>()
+        return try await withCheckedThrowingContinuation { continuation in
+            race.continuation = continuation
+            let work = Task { @MainActor in
+                do { race.settle(.success(try await body())) } catch { race.settle(.failure(error)) }
+            }
+            let timer = Task { @MainActor [workTimeout] in
+                try? await Task.sleep(nanoseconds: UInt64(workTimeout * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                if race.settle(.failure(RecordAlbumError.timedOut)) { work.cancel() }
+            }
+            race.timer = timer
+        }
     }
+
+    /// Album ids created or used by a write whose write-back to the profile
+    /// failed, by record. The next write for the record reuses the album
+    /// instead of making a second one (#663).
+    private var pendingAlbums: [UUID: String] = [:]
+
+    /// The album created for `profileID` but not stored on it yet.
+    func pendingAlbum(for profileID: UUID) -> String? { pendingAlbums[profileID] }
+
+    /// Remembers `albumID` for `profileID` until it is stored (`nil` forgets).
+    func setPendingAlbum(_ albumID: String?, for profileID: UUID) { pendingAlbums[profileID] = albumID }
 
     private func startNextSaveIfIdle() {
         guard !isSaveRunning, !waitingSaves.isEmpty else { return }
@@ -77,5 +111,23 @@ final class CaptureSaveCoordinator: ObservableObject {
     private func saveDidFinish() {
         isSaveRunning = false
         startNextSaveIfIdle()
+    }
+}
+
+/// Settles a `serialized` call once, by whichever of the work and the timer
+/// answers first. Main-actor only.
+@MainActor
+private final class WorkRace<T> {
+    var continuation: CheckedContinuation<T, Error>?
+    var timer: Task<Void, Never>?
+
+    /// Resumes the caller; `false` when it already was.
+    @discardableResult
+    func settle(_ result: Result<T, Error>) -> Bool {
+        guard let continuation else { return false }
+        self.continuation = nil
+        timer?.cancel()
+        continuation.resume(with: result)
+        return true
     }
 }
