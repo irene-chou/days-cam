@@ -921,6 +921,27 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertNil(coordinator.pendingAlbum(for: record.id))
     }
 
+    /// #663-2: while an album creation that timed out may still finish, a
+    /// camera save for a record without an album fails instead of making a
+    /// second album; the next one after the creation returned goes through.
+    func test_663_2_cameraSaveFailsWhileAnAlbumCreationIsPending() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let coordinator = CaptureSaveCoordinator()
+        coordinator.beginAlbumCreation(for: record.id)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { model.inFlightSaveCount == 0 && model.captureFlights.count == 1 }
+        XCTAssertTrue(saves.calls.isEmpty, "no save, so no second album")
+
+        coordinator.endAlbumCreation(for: record.id)
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { saves.calls.count == 1 }
+    }
+
     /// Async tests cannot block in `wait(for:)`; this sleeps in steps.
     private func poll(_ condition: () -> Bool) async throws {
         for _ in 0..<200 where !condition() {

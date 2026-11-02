@@ -927,6 +927,16 @@ extension CameraScreenModel {
         let albumIdentifier = store.profiles.first { $0.id == destination.profileID }?.albumIdentifier
         // An album made earlier whose write-back failed still counts (#663).
         let targetAlbum = albumIdentifier ?? coordinator.pendingAlbum(for: destination.profileID)
+        if targetAlbum == nil, coordinator.isCreatingAlbum(for: destination.profileID) {
+            // An album creation timed out and may still finish: saving now
+            // would make a second one, so fail this photo instead.
+            CaptureTiming.discard(id: timingID)
+            markFlightFailed(id: flightID)
+            reportPhotoFailure(message: "相簿還在建立中，這張沒有存進相簿。請稍後再試。", showsSettingsAction: false)
+            coordinator.photoDidFinish()
+            finished()
+            return
+        }
         let slot = SaveSlot()
         let timeout = DispatchWorkItem { [weak self] in
             guard !slot.isSettled else { return }

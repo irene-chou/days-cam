@@ -96,6 +96,21 @@ final class CaptureSaveCoordinator: ObservableObject {
     /// instead of making a second one (#663).
     private var pendingAlbums: [UUID: String] = [:]
 
+    /// Records whose album creation is still running inside a `serialized`
+    /// body, even after that body timed out: PhotoKit may yet make the album,
+    /// so no later write for the record may make another (#663).
+    private var creatingAlbums: Set<UUID> = []
+
+    /// Whether an album creation for `profileID` has started and not returned.
+    func isCreatingAlbum(for profileID: UUID) -> Bool { creatingAlbums.contains(profileID) }
+
+    /// Marks the start of a creation call for `profileID`; pair with
+    /// `endAlbumCreation` in a `defer` so a late return clears it.
+    func beginAlbumCreation(for profileID: UUID) { creatingAlbums.insert(profileID) }
+
+    /// Marks the creation call for `profileID` as returned.
+    func endAlbumCreation(for profileID: UUID) { creatingAlbums.remove(profileID) }
+
     /// The album created for `profileID` but not stored on it yet.
     func pendingAlbum(for profileID: UUID) -> String? { pendingAlbums[profileID] }
 

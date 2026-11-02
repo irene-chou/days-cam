@@ -614,13 +614,19 @@ final class RecordListModelTests: XCTestCase {
     }
 
     /// #663-2: a creation that never answers times out and is reported as
-    /// failed; the add queued behind it then runs.
-    func testAlbumCreationThatNeverAnswersTimesOutAndFreesTheQueue() async throws {
+    /// failed. While it may still finish, an add for the same record fails
+    /// and makes no second album; another record is not held; a late success
+    /// is bound and used by the next add.
+    func testAlbumCreationThatNeverAnswersTimesOutWithoutADuplicate() async throws {
         let store = makeStore()
         let record = try XCTUnwrap(store.profiles.first)
-        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        clock.now = clock.now.addingTimeInterval(60)
+        let other = try store.add(CameraProfile(name: "另一個", startDate: DateFixture.components(2026, 1, 1)))
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "y")])
         let latch = AlbumCreationLatch()
-        library.onCreateAlbum = { await latch.hold() }
+        library.onCreateAlbum = {
+            if library.createdAlbumTitles.count == 1 { await latch.hold() }
+        }
         let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
         let clock = clock
         let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { clock.now })
@@ -632,10 +638,25 @@ final class RecordListModelTests: XCTestCase {
         await wall.addPhotos(ids: ["x"])
         await backfill.value
         XCTAssertEqual(model.lastError as? RecordAlbumError, .timedOut, "not reported as created")
-        XCTAssertNil(wall.errorMessage)
-        XCTAssertEqual(library.albums.first?.assetIDs, ["x"], "the queued add ran after the timeout")
-        XCTAssertNotNil(store.profiles.first?.albumIdentifier)
+        XCTAssertEqual(wall.errorMessage, "相簿還在建立中，請稍後再試。", "the add fails")
+        XCTAssertTrue(library.albums.allSatisfy { $0.title != "小寶" || $0.assetIDs.isEmpty }, "no photo in a second album")
+        XCTAssertNil(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+
+        // Another record is not held back: the backfill made its album.
+        XCTAssertEqual(library.createdAlbumTitles.count, 2)
+        XCTAssertNotNil(store.profiles.first { $0.id == other.id }?.albumIdentifier)
+
+        // The stuck creation finally succeeds: its album is bound and reused.
         latch.release()
+        for _ in 0..<200 where store.profiles.first(where: { $0.id == record.id })?.albumIdentifier == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let bound = try XCTUnwrap(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+        wall.errorMessage = nil
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.createdAlbumTitles.count, 2, "no third album")
+        XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["x"])
     }
 
     /// 10: launch and returning to the foreground never ask, even undecided.

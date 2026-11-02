@@ -470,6 +470,10 @@ final class RecordListModel: ObservableObject {
             if let leftOver = saveCoordinator.pendingAlbum(for: id), library.userAlbums().contains(where: { $0.id == leftOver }) {
                 albumID = leftOver
             } else {
+                // A timed-out creation may still finish: make no second album.
+                guard !saveCoordinator.isCreatingAlbum(for: id) else { throw RecordAlbumError.albumCreationPending }
+                saveCoordinator.beginAlbumCreation(for: id)
+                defer { saveCoordinator.endAlbumCreation(for: id) }
                 albumID = try await library.createAlbum(title: current.name)
             }
             saveCoordinator.setPendingAlbum(nil, for: id)

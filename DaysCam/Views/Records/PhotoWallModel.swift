@@ -527,6 +527,14 @@ final class PhotoWallModel: ObservableObject {
                 guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
                 // An album made earlier whose write-back failed is still the record's (#663).
                 let target = current.albumIdentifier ?? saveCoordinator.pendingAlbum(for: profileID)
+                // Without an album this add creates one; a timed-out creation
+                // may still finish, so make no second (#663).
+                let creates = target == nil
+                if creates {
+                    guard !saveCoordinator.isCreatingAlbum(for: profileID) else { throw RecordAlbumError.albumCreationPending }
+                    saveCoordinator.beginAlbumCreation(for: profileID)
+                }
+                defer { if creates { saveCoordinator.endAlbumCreation(for: profileID) } }
                 let albumID = try await library.addAssets(ids, albumIdentifier: target, albumTitle: current.name)
                 if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
                     latest.albumIdentifier = albumID
