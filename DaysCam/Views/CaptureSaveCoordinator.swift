@@ -72,6 +72,16 @@ final class CaptureSaveCoordinator: ObservableObject {
     /// never calls back cannot hold every later save (#663). A late answer
     /// is dropped.
     func serialized<T>(_ body: @escaping () async throws -> T) async throws -> T {
+        try await serialized(withTicket: { _ in try await body() })
+    }
+
+    /// `serialized`, handing `body` a ticket that turns stale when the
+    /// queue gives up on it. PhotoKit calls ignore cancellation, so a stale
+    /// body may still resume later; it must not write the store or the
+    /// pending album itself, but hand a late album to `createAlbum` /
+    /// `finishIfLate`, which finish it here (#663).
+    func serialized<T>(withTicket body: @escaping (WorkTicket) async throws -> T) async throws -> T {
+        let ticket = WorkTicket()
         let finished = await withCheckedContinuation { (continuation: CheckedContinuation<() -> Void, Never>) in
             enqueueSave { finished in continuation.resume(returning: finished) }
         }
@@ -80,12 +90,15 @@ final class CaptureSaveCoordinator: ObservableObject {
         return try await withCheckedThrowingContinuation { continuation in
             race.continuation = continuation
             let work = Task { @MainActor in
-                do { race.settle(.success(try await body())) } catch { race.settle(.failure(error)) }
+                do { race.settle(.success(try await body(ticket))) } catch { race.settle(.failure(error)) }
             }
             let timer = Task { @MainActor [workTimeout] in
                 try? await Task.sleep(nanoseconds: UInt64(workTimeout * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                if race.settle(.failure(RecordAlbumError.timedOut)) { work.cancel() }
+                if race.settle(.failure(RecordAlbumError.timedOut)) {
+                    ticket.isStale = true
+                    work.cancel()
+                }
             }
             race.timer = timer
         }
@@ -103,6 +116,66 @@ final class CaptureSaveCoordinator: ObservableObject {
 
     /// Whether an album creation for `profileID` has started and not returned.
     func isCreatingAlbum(for profileID: UUID) -> Bool { creatingAlbums.contains(profileID) }
+
+    /// Hooks the record list sets: finishing an album whose creation
+    /// returned after its body timed out (bind it, keep the photos it holds
+    /// on the record, add the waiting photos), and adding the waiting photos
+    /// to a ready album. Without them a late album is only remembered.
+    var lateAlbumHandler: (@MainActor (_ profileID: UUID, _ albumID: String, _ assetIDs: [String]) async -> Void)?
+    var awaitingFlusher: (@MainActor (_ profileID: UUID) async -> Void)?
+
+    /// Runs `call`, which makes an album for `profileID` (and may put
+    /// `assetIDs` in it), with the record marked as creating from before the
+    /// call until it returns, even past a timeout. Throws
+    /// `albumCreationPending` if one is already running. If the body timed
+    /// out meanwhile, the late album is finished here and this throws
+    /// `timedOut`, so the body writes nothing.
+    func createAlbum(for profileID: UUID, ticket: WorkTicket, assetIDs: [String] = [],
+                     _ call: () async throws -> String) async throws -> String {
+        guard !creatingAlbums.contains(profileID) else { throw RecordAlbumError.albumCreationPending }
+        creatingAlbums.insert(profileID)
+        defer { creatingAlbums.remove(profileID) }
+        let albumID = try await call()
+        try await finishIfLate(ticket, profileID: profileID, albumID: albumID, assetIDs: assetIDs)
+        return albumID
+    }
+
+    /// If `ticket` is stale, finishes the album a late call returned and
+    /// throws `timedOut`; otherwise does nothing.
+    func finishIfLate(_ ticket: WorkTicket, profileID: UUID, albumID: String, assetIDs: [String]) async throws {
+        guard ticket.isStale else { return }
+        if let lateAlbumHandler {
+            await lateAlbumHandler(profileID, albumID, assetIDs)
+        } else {
+            setPendingAlbum(albumID, for: profileID)
+        }
+        throw RecordAlbumError.timedOut
+    }
+
+    /// Adds the photos waiting for `profileID`'s album to `albumID`, apart
+    /// from whatever the user picked. A failure keeps them; photos the
+    /// library no longer has are dropped (they stay in `fallbackAssetIDs`).
+    func addAwaitingAssets(to albumID: String, of profileID: UUID, title: String,
+                           using library: any RecordAlbumLibrary) async {
+        guard library.userAlbums().contains(where: { $0.id == albumID }) else { return }
+        let waiting = takeAwaitingAssets(for: profileID)
+        guard !waiting.isEmpty else { return }
+        do {
+            _ = try await library.addAssets(waiting, albumIdentifier: albumID, albumTitle: title)
+        } catch RecordAlbumError.notFound {
+            return
+        } catch {
+            restoreAwaitingAssets(waiting, for: profileID)
+        }
+    }
+
+    /// Asks the record list to add the waiting photos of `profileID` to its
+    /// album, if one is ready and no creation is running.
+    func requestAwaitingFlush(for profileID: UUID) {
+        guard !creatingAlbums.contains(profileID), !(awaitingAlbum[profileID] ?? []).isEmpty,
+              let awaitingFlusher else { return }
+        Task { await awaitingFlusher(profileID) }
+    }
 
     /// Marks the start of a creation call for `profileID`; pair with
     /// `endAlbumCreation` in a `defer` so a late return clears it.
@@ -149,6 +222,12 @@ final class CaptureSaveCoordinator: ObservableObject {
         isSaveRunning = false
         startNextSaveIfIdle()
     }
+}
+
+/// Whether the queue has given up on a `serialized` body. Main-actor only.
+@MainActor
+final class WorkTicket {
+    fileprivate(set) var isStale = false
 }
 
 /// Settles a `serialized` call once, by whichever of the work and the timer

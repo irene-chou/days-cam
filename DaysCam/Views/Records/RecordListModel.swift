@@ -121,7 +121,8 @@ final class RecordListModel: ObservableObject {
         let calculator = calculator ?? DayCountCalculator(calendar: calendar)
         self.store = store
         self.library = library
-        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
+        let coordinator = saveCoordinator ?? CaptureSaveCoordinator()
+        self.saveCoordinator = coordinator
         self.calendar = calendar
         self.calculator = calculator
         self.renderer = renderer
@@ -132,6 +133,10 @@ final class RecordListModel: ObservableObject {
         }
         self.profiles = store.profiles
         self.showsCorruptionRecoveredAlert = store.didRecoverFromCorruption
+        coordinator.lateAlbumHandler = { [weak self] id, albumID, assetIDs in
+            await self?.completeLateAlbum(profileID: id, albumID: albumID, assetIDs: assetIDs)
+        }
+        coordinator.awaitingFlusher = { [weak self] id in await self?.flushAwaitingPhotos(for: id) }
         store.$profiles
             .dropFirst()
             .sink { [weak self] in self?.profiles = $0 }
@@ -462,7 +467,7 @@ final class RecordListModel: ObservableObject {
               albumCreationsInFlight.insert(id).inserted else { return }
         defer { albumCreationsInFlight.remove(id) }
         let bindingAtRequest = requested.albumIdentifier
-        try await saveCoordinator.serialized { [self] in
+        try await saveCoordinator.serialized(withTicket: { [self] ticket in
             guard library.authorizationStatus() == .authorized,
                   let current = store.profiles.first(where: { $0.id == id }),
                   current.albumIdentifier == bindingAtRequest else { return }
@@ -470,11 +475,9 @@ final class RecordListModel: ObservableObject {
             if let leftOver = saveCoordinator.pendingAlbum(for: id), library.userAlbums().contains(where: { $0.id == leftOver }) {
                 albumID = leftOver
             } else {
-                // A timed-out creation may still finish: make no second album.
-                guard !saveCoordinator.isCreatingAlbum(for: id) else { throw RecordAlbumError.albumCreationPending }
-                saveCoordinator.beginAlbumCreation(for: id)
-                defer { saveCoordinator.endAlbumCreation(for: id) }
-                albumID = try await library.createAlbum(title: current.name)
+                albumID = try await saveCoordinator.createAlbum(for: id, ticket: ticket) {
+                    try await library.createAlbum(title: current.name)
+                }
             }
             saveCoordinator.setPendingAlbum(nil, for: id)
             guard var latest = store.profiles.first(where: { $0.id == id }),
@@ -484,25 +487,46 @@ final class RecordListModel: ObservableObject {
                 try store.updateAndWait(latest)
             } catch {
                 saveCoordinator.setPendingAlbum(albumID, for: id)
-                await addAwaitingPhotos(to: albumID, of: id, title: current.name)
+                await saveCoordinator.addAwaitingAssets(to: albumID, of: id, title: current.name, using: library)
                 throw error
             }
-            await addAwaitingPhotos(to: albumID, of: id, title: current.name)
-        }
+            await saveCoordinator.addAwaitingAssets(to: albumID, of: id, title: current.name, using: library)
+        })
     }
 
-    /// Adds the photos taken while this record's album creation was pending
-    /// to `albumID`. A failure keeps them for the next creation or add; photos
-    /// the library no longer has are dropped (they are in `fallbackAssetIDs`).
-    private func addAwaitingPhotos(to albumID: String, of id: UUID, title: String) async {
-        let waiting = saveCoordinator.takeAwaitingAssets(for: id)
-        guard !waiting.isEmpty else { return }
-        do {
-            _ = try await library.addAssets(waiting, albumIdentifier: albumID, albumTitle: title)
-        } catch RecordAlbumError.notFound {
+    /// Finishes an album whose creation returned after its body timed out
+    /// (the coordinator's late hook): binds it if the record is still
+    /// unbound; if another album was bound meanwhile, keeps the photos it
+    /// holds on the record through `fallbackAssetIDs`; then adds the waiting
+    /// photos.
+    private func completeLateAlbum(profileID id: UUID, albumID: String, assetIDs: [String]) async {
+        guard var latest = store.profiles.first(where: { $0.id == id }) else { return }
+        if latest.albumIdentifier == nil {
+            latest.albumIdentifier = albumID
+            do {
+                try store.updateAndWait(latest)
+                saveCoordinator.setPendingAlbum(nil, for: id)
+            } catch {
+                saveCoordinator.setPendingAlbum(albumID, for: id)
+            }
+        } else if latest.albumIdentifier != albumID {
+            let missing = assetIDs.filter { !latest.fallbackAssetIDs.contains($0) }
+            if !missing.isEmpty {
+                latest.fallbackAssetIDs.append(contentsOf: missing)
+                try? store.updateAndWait(latest)
+            }
             return
-        } catch {
-            saveCoordinator.restoreAwaitingAssets(waiting, for: id)
+        }
+        await saveCoordinator.addAwaitingAssets(to: albumID, of: id, title: latest.name, using: library)
+    }
+
+    /// Adds the photos waiting for `id`'s album to it, in the write queue,
+    /// when the record has one (the coordinator's flush hook).
+    private func flushAwaitingPhotos(for id: UUID) async {
+        try? await saveCoordinator.serialized { [self] in
+            guard let profile = store.profiles.first(where: { $0.id == id }),
+                  let albumID = profile.albumIdentifier ?? saveCoordinator.pendingAlbum(for: id) else { return }
+            await saveCoordinator.addAwaitingAssets(to: albumID, of: id, title: profile.name, using: library)
         }
     }
 

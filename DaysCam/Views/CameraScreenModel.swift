@@ -936,6 +936,10 @@ extension CameraScreenModel {
         // An album creation that timed out may still finish: this photo goes
         // to the library only, and joins the album once it exists (#663).
         let defersAlbum = targetAlbum == nil && coordinator.isCreatingAlbum(for: destination.profileID)
+        // A save that makes the album marks the record as creating until its
+        // callback, even after the timeout below (#663).
+        let createsAlbum = targetAlbum == nil && !defersAlbum
+        if createsAlbum { coordinator.beginAlbumCreation(for: destination.profileID) }
         let slot = SaveSlot()
         let timeout = DispatchWorkItem { [weak self] in
             guard !slot.isSettled else { return }
@@ -968,6 +972,12 @@ extension CameraScreenModel {
                 if defersAlbum {
                     coordinator.addAwaitingAsset(outcome.assetID, for: destination.profileID)
                 }
+            }
+            if createsAlbum { coordinator.endAlbumCreation(for: destination.profileID) }
+            if case .success = result {
+                // The album may be ready by now (the creation returned while
+                // this photo was saving): add the waiting photos.
+                coordinator.requestAwaitingFlush(for: destination.profileID)
             }
             guard !slot.isSettled else { return }
             slot.settle()

@@ -1004,6 +1004,56 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["cam-1"])
     }
 
+    /// #663 (Codex P2): the creation returned while the deferred photo was
+    /// still saving: its callback finds the album ready and adds the photo.
+    func test_663_2_deferredPhotoIsAddedWhenTheAlbumIsReadyAtCallback() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "cam-1")],
+                                             albums: [.init(id: "A", title: "小寶", assetIDs: [])])
+        let coordinator = CaptureSaveCoordinator()
+        let list = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        _ = list
+        coordinator.beginAlbumCreation(for: record.id)
+        let (model, _, _, _) = try makeModel(
+            clock: clock, profileStore: store, record: record, saveCoordinator: coordinator,
+            saveToRecentsOnly: { _, completion in
+                // The creation finishes and binds while this photo saves.
+                if var latest = store.profiles.first(where: { $0.id == record.id }) {
+                    latest.albumIdentifier = "A"
+                    try? store.updateAndWait(latest)
+                }
+                coordinator.endAlbumCreation(for: record.id)
+                completion(.success("cam-1"))
+            })
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { library.albums.first?.assetIDs == ["cam-1"] }
+    }
+
+    /// #663 (Codex P2): a camera save that makes the album adds the photos
+    /// that waited meanwhile once it returns.
+    func test_663_2_cameraCreationAddsTheWaitingPhotos() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        let record = try addRecord(to: store, name: "小寶")
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "cam-0"), .init(id: "cam-1")],
+                                             albums: [.init(id: "A", title: "小寶", assetIDs: [])])
+        let coordinator = CaptureSaveCoordinator()
+        let list = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        _ = list
+        coordinator.addAwaitingAsset("cam-0", for: record.id)
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { saves.calls.count == 1 }
+        XCTAssertTrue(coordinator.isCreatingAlbum(for: record.id), "marked while the save makes the album")
+        saves.calls.first?.completion(.success(outcome("cam-1", album: "A")))
+        XCTAssertFalse(coordinator.isCreatingAlbum(for: record.id))
+        try await poll { library.albums.first?.assetIDs == ["cam-0"] }
+    }
+
     /// Async tests cannot block in `wait(for:)`; this sleeps in steps.
     private func poll(_ condition: () -> Bool) async throws {
         for _ in 0..<200 where !condition() {
@@ -1915,7 +1965,9 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertEqual(model.inFlightSaveCount, 0)
     }
 
-    /// A save that times out hands the queue to the next photo.
+    /// A save that times out hands the queue to the next photo. The timed-out
+    /// save was making the record's album and may still finish, so the next
+    /// photo goes to the library only instead of making a second album (#663).
     func testTimedOutSaveLetsTheNextPhotoSave() throws {
         let (model, captures, saves) = try makePipelineModel(saveTimeout: 0.05)
 
@@ -1923,11 +1975,11 @@ final class CameraScreenModelTests: XCTestCase {
             takePhoto(model, captures, at: index)
             waitUntil { model.captureFlights.count == index + 1 }
         }
-        waitUntil { saves.calls.count == 2 }
         waitUntil { model.inFlightSaveCount == 0 }
 
-        XCTAssertEqual(model.captureFlights.map(\.status), [.failed, .failed])
-        XCTAssertEqual(model.captureError?.message, "2 張照片未儲存")
+        XCTAssertEqual(saves.calls.count, 1, "no second album write while the first may still finish")
+        XCTAssertEqual(model.captureFlights.map(\.status), [.failed, .saved])
+        XCTAssertEqual(model.captureError?.message, "照片儲存逾時，這張可能沒有存進相簿。請再試一次。")
     }
 
     // MARK: - The camera closing while saving
