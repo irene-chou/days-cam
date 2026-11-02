@@ -31,8 +31,9 @@ final class PhotoWallModel: ObservableObject {
 
     /// What the wall shows for the current permission and content.
     enum Content: Equatable {
-        /// Access is still being asked for.
-        case waiting
+        /// Access was never asked: the permission intro shows, and only its
+        /// "繼續" asks (§7.1).
+        case permissionIntro
         /// Access is denied or restricted: the wall gives way to the
         /// permission page (§7.4). The record itself stays editable.
         case needsPermission
@@ -88,6 +89,8 @@ final class PhotoWallModel: ObservableObject {
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
     private let todayText: (CameraProfile) -> String
+    private let backfillAlbums: () async -> Void
+    private let saveCoordinator: CaptureSaveCoordinator
     private let presentLimitedPicker: () async -> [String]
     private let openSettings: (URL) -> Void
     private let defaults: UserDefaults
@@ -105,6 +108,11 @@ final class PhotoWallModel: ObservableObject {
     ///
     /// - Parameter todayText: "今天第 N 天" for the header, supplied by the
     ///   list so both screens read the same clock and wording.
+    /// - Parameter saveCoordinator: the app's queue of writes that may
+    ///   create an album; "加入照片" joins it (#651).
+    /// - Parameter backfillAlbums: creates the albums of records that have
+    ///   none, run when the intro's prompt comes back with full access
+    ///   (FR-21.6).
     /// - Parameter presentLimitedPicker: Opens the system "select more photos"
     ///   sheet and returns the ids the user newly selected there; injected so
     ///   tests can stand in for the sheet.
@@ -116,7 +124,9 @@ final class PhotoWallModel: ObservableObject {
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
+         saveCoordinator: CaptureSaveCoordinator? = nil,
          todayText: @escaping (CameraProfile) -> String,
+         backfillAlbums: @escaping () async -> Void = {},
          presentLimitedPicker: (() async -> [String])? = nil,
          openSettings: ((URL) -> Void)? = nil,
          defaults: UserDefaults = .standard,
@@ -130,6 +140,8 @@ final class PhotoWallModel: ObservableObject {
         self.library = library
         self.calendar = calendar
         self.todayText = todayText
+        self.backfillAlbums = backfillAlbums
+        self.saveCoordinator = saveCoordinator ?? CaptureSaveCoordinator()
         self.presentLimitedPicker = presentLimitedPicker ?? { await LimitedLibraryPicker.present() }
         self.openSettings = openSettings ?? { UIApplication.shared.open($0) }
         self.defaults = defaults
@@ -188,20 +200,41 @@ final class PhotoWallModel: ObservableObject {
         openSettings(url)
     }
 
+    /// The line under "還沒有照片", by access (FR-17.10).
+    var emptyMessage: String {
+        isLimited ? "用相機拍一張，或按左下角加入照片"
+            : "用相機拍一張，或在「照片」App 把照片加入「\(title)」相簿，會自動出現在這裡"
+    }
+
     var content: Content {
         switch status {
         case .authorized, .limited: return photoIDs.isEmpty ? .empty : .photos
-        case .notDetermined: return .waiting
+        case .notDetermined: return .permissionIntro
         default: return .needsPermission
         }
     }
 
-    /// Asks for `.readWrite` the first time any record is opened (§7.1), then
-    /// reads the photos.
+    /// Reads the photos. Never asks: an undecided status shows the
+    /// permission intro instead (§7.1).
     func prepare() async {
-        if library.authorizationStatus() == .notDetermined {
-            status = await library.requestReadWriteAccess()
+        reload()
+    }
+
+    /// True while the intro's prompt is up, so "繼續" asks only once.
+    @Published private(set) var isRequestingAccess = false
+
+    /// The intro's "繼續": asks for `.readWrite` once, then shows the wall
+    /// (full access backfills the albums first, FR-21.6), the wall with the
+    /// limited notice, or the permission page (§7.1).
+    func continueFromIntro() async {
+        guard !isRequestingAccess, library.authorizationStatus() == .notDetermined else {
+            reload()
+            return
         }
+        isRequestingAccess = true
+        let granted = await library.requestReadWriteAccess()
+        if granted == .authorized { await backfillAlbums() }
+        isRequestingAccess = false
         reload()
     }
 
@@ -484,16 +517,21 @@ final class PhotoWallModel: ObservableObject {
 
     /// Adds the picked assets to the record's album, creating the album when
     /// the record has none, and stores the album id if it changed (FR-17.7).
+    /// Waits in `saveCoordinator`'s queue and reads the album there, so an
+    /// album still being created is used rather than duplicated (#651).
     /// A failure sets `errorMessage` and leaves the wall as it was.
     func addPhotos(ids: [String]) async {
-        guard !ids.isEmpty, let profile else { return }
+        guard !ids.isEmpty, profile != nil else { return }
         do {
-            let albumID = try await library.addAssets(ids,
-                                                     albumIdentifier: profile.albumIdentifier,
-                                                     albumTitle: profile.name)
-            if albumID != profile.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
-                latest.albumIdentifier = albumID
-                try store.updateAndWait(latest)
+            try await saveCoordinator.serialized {
+                guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
+                let albumID = try await library.addAssets(ids,
+                                                         albumIdentifier: current.albumIdentifier,
+                                                         albumTitle: current.name)
+                if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
+                    latest.albumIdentifier = albumID
+                    try store.updateAndWait(latest)
+                }
             }
             reload()
         } catch let error as RecordAlbumError {

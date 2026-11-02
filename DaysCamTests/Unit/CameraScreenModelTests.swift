@@ -867,6 +867,49 @@ final class CameraScreenModelTests: XCTestCase {
         waitUntil { model.inFlightSaveCount == 0 }
     }
 
+    /// #651 review: a photo taken while the record's album is still being
+    /// created waits in the shared queue and saves into that album, so the
+    /// record gets one album.
+    func test_651_photoTakenWhileTheAlbumIsBeingCreatedSavesIntoIt() async throws {
+        let clock = MutableClock(try fixedNow())
+        let store = makeProfileStore(clock: clock)
+        var seeded = try XCTUnwrap(store.profiles.first)
+        seeded.albumIdentifier = "seeded"
+        try store.updateAndWait(seeded)
+        let record = try addRecord(to: store, name: "小寶")
+        let library = FakeRecordAlbumLibrary(status: .authorized)
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { await latch.hold() }
+        let coordinator = CaptureSaveCoordinator()
+        let list = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let backfill = Task { await list.backfillAlbumsIfNeeded() }
+        try await latch.waitUntilHolding()
+
+        let saves = SaveRecorder()
+        let (model, _, _, _) = try makeModel(clock: clock, profileStore: store, record: record,
+                                             saveCoordinator: coordinator, save: saves.save)
+        model.processCapturedImage(UIImage(), destination: destination(of: record))
+        try await poll { model.captureFlights.count == 1 }
+        XCTAssertTrue(saves.calls.isEmpty, "the save waits for the album")
+
+        latch.release()
+        await backfill.value
+        let created = try XCTUnwrap(library.albums.first?.id)
+        try await poll { saves.calls.count == 1 }
+        XCTAssertEqual(saves.calls.first?.albumIdentifier, created, "saved into the album just created")
+        saves.calls.first?.completion(.success(outcome("A", album: created)))
+        XCTAssertEqual(library.createdAlbumTitles, ["小寶"])
+        XCTAssertEqual(try storedRecord(record.id, in: store).albumIdentifier, created)
+    }
+
+    /// Async tests cannot block in `wait(for:)`; this sleeps in steps.
+    private func poll(_ condition: () -> Bool) async throws {
+        for _ in 0..<200 where !condition() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(condition())
+    }
+
     // MARK: - 621-3 limited access
 
     /// 621-3: no album id back (limited access): the asset id joins

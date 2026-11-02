@@ -91,7 +91,8 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 0)
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10), "12")
         XCTAssertTrue(app.staticTexts["還沒有照片"].exists, "12")
-        XCTAssertTrue(app.staticTexts["從相簿加入，或用相機拍一張"].exists, "12")
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的紀錄」相簿，會自動出現在這裡"].exists,
+                      "12, #651-15")
         XCTAssertTrue(element("addPhotosButton").exists, "12")
         XCTAssertTrue(element("wallSelectButton").exists, "#648-12")
         shot("photo-wall-empty")

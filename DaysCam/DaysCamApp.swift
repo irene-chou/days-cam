@@ -17,7 +17,10 @@ struct DaysCamApp: App {
         let library = Self.makeRecordAlbumLibrary(for: profileStore)
         styleCenter = StyleEditingCenter(profileStore: profileStore,
                                          fontLibrary: Self.uiTestFontLibrary ?? FontLibrary())
-        let recordListModel = RecordListModel(store: profileStore, library: library, exportSave: Self.exportSave)
+        // One queue for camera saves, "加入照片" and album creation (#651).
+        let recordListModel = RecordListModel(store: profileStore, library: library,
+                                              saveCoordinator: CaptureSaveCoordinator(),
+                                              exportSave: Self.exportSave)
         makeCameraModel = Self.cameraModelFactory(profileStore: profileStore, library: library,
                                                   listModel: recordListModel, styleCenter: styleCenter)
         _recordListModel = StateObject(wrappedValue: recordListModel)
@@ -144,8 +147,9 @@ struct DaysCamApp: App {
         let cameraService = CameraService()
         // One count and one save queue for every camera opened, so closing
         // and reopening cannot pass the in-flight limit or create a second
-        // album for a record (#636 review).
-        let saveCoordinator = CaptureSaveCoordinator()
+        // album for a record (#636 review). The list's album creation and
+        // "加入照片" share it (#651).
+        let saveCoordinator = listModel.saveCoordinator
         let save = cameraSave(library: library)
         return { id in
             profileStore.select(id: id)
