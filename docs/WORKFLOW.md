@@ -65,6 +65,14 @@ xcodegen generate && \
     -only-testing:DaysCamTests/<相關測試class> test
 ```
 
+### 字型 fixture
+
+`FontWeightShellAcceptanceTests`、`FontWeightRenderingTests`、`OverlayMetricsTests` 等需要真字型的測試，平時沒設環境變數就 `XCTSkip`。要實跑：
+
+1. 從 [fonts-manifest](fonts-manifest.md) 的 `dayscam-fonts@v4` 下載 `noto-serif-tc/NotoSerifTC-Bold.otf`、`NotoSerifTC-Black.otf` 到同一個資料夾（例如 `~/dayscam-fixtures/v4`），用 `shasum -a 256` 核對與 manifest 相同。
+2. 以 `TEST_RUNNER_DAYSCAM_FONT_FIXTURES=<資料夾絕對路徑>` 放在 `xcodebuild test` 前面（測試行程讀到的名稱是 `DAYSCAM_FONT_FIXTURES`），並用 `-only-testing` 限縮相關 class。
+3. 測試註冊字型後須 `FontFaceCache.shared.invalidate()`：同一行程內較早的測試可能已查過字型名稱並快取「載不到」，不清掉會把 Bold 誤解成 PingFang。
+
 任務卡以 issue 號碼識別，不再編 `TASK-N`；驗收在卡內編 1、2、3…，在別處引用寫 `#<issue>-<驗收>`（例如 `#537-3`）。舊卡的 `TASK-N`／`155.x` 照舊保留。PR 使用 [模板](../.github/PULL_REQUEST_TEMPLATE.md) 附驗收編號、具體指令、結果與假設；不要只寫「已測試」。開發者自驗 A 級，在 PR 列出「驗收編號 → 測試名稱或證據」對照表，供 reviewer 核對。
 
 ## Review

@@ -179,6 +179,9 @@ final class FontWeightShellAcceptanceTests: XCTestCase {
             _ = CTFontManagerRegisterFontsForURL(url, .process, &error)
         }
         try XCTSkipIf(UIFont(name: "NotoSerifTC-Black", size: 20) == nil, "fixture fonts did not register")
+        // Other tests in the process may have looked these names up before they
+        // were registered; the cache would keep answering "does not load".
+        FontFaceCache.shared.invalidate()
     }
 
     private func digest(of font: ResolvedOverlayFont, style: OverlayStyle) throws -> String {
