@@ -125,7 +125,7 @@ final class ExportUITests: XCTestCase {
         let exportButton = element("exportButton")
         XCTAssertTrue(exportButton.waitForExistence(timeout: 5))
         exportButton.tap()
-        XCTAssertTrue(element("exportToast").waitForExistence(timeout: 5), "已匯出 toast")
+        XCTAssertTrue(toastAppears(), "已匯出 toast")
         XCTAssertTrue(app.staticTexts["已匯出"].exists)
         XCTAssertFalse(element("exportView").exists, "no page change")
         XCTAssertTrue(element("photoDetailTitle").label.contains("第 9 天"), element("photoDetailTitle").label)
@@ -148,11 +148,11 @@ final class ExportUITests: XCTestCase {
         assertOnScreen(app.buttons["exportIntroStyleButton"], "先調整文字樣式 in view")
         shot("export-intro")
         app.buttons["exportIntroExportButton"].tap()
-        XCTAssertTrue(element("exportToast").waitForExistence(timeout: 8), "it exported")
+        XCTAssertTrue(toastAppears(), "it exported")
         XCTAssertFalse(element("exportIntroSheet").exists)
         waitUntilGone(element("exportToast"))
         element("exportButton").tap()
-        XCTAssertTrue(element("exportToast").waitForExistence(timeout: 5), "straight through the second time")
+        XCTAssertTrue(toastAppears(), "straight through the second time")
         XCTAssertFalse(element("exportIntroSheet").exists, "the comparison does not return")
     }
 
@@ -170,7 +170,7 @@ final class ExportUITests: XCTestCase {
         element("exportConfirmButton").tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
         element("exportButton").tap()
-        XCTAssertTrue(element("exportToast").waitForExistence(timeout: 5))
+        XCTAssertTrue(toastAppears())
         XCTAssertFalse(element("exportIntroSheet").exists)
     }
 
@@ -198,7 +198,25 @@ final class ExportUITests: XCTestCase {
 
     private func dismissCoachIfShown() {
         let ok = app.buttons["viewerCoachOkButton"]
-        if ok.waitForExistence(timeout: 3) { ok.tap() }
+        // Every caller launches with -UITestShowTips, so the bubble always comes
+        // once the image has loaded; a short wait let slow CI tap 匯出 under it.
+        if ok.waitForExistence(timeout: 10) {
+            ok.tap()
+            waitUntilGone(ok)
+        }
+    }
+
+    /// The 已匯出 toast stays only 1.6 s, shorter than a `waitForExistence` poll
+    /// interval plus the idle wait after a tap, so that call can miss it. Poll
+    /// `exists` back to back instead; a slow export still has the full timeout.
+    private func toastAppears(timeout: TimeInterval = 20) -> Bool {
+        let toast = element("exportToast")
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if toast.exists { return true }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while Date() < deadline
+        return false
     }
 
     private func waitUntilGone(_ item: XCUIElement, timeout: TimeInterval = 8,
