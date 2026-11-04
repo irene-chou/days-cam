@@ -525,19 +525,24 @@ final class PhotoWallModel: ObservableObject {
         do {
             try await saveCoordinator.serialized(withTicket: { [self] ticket in
                 guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
+                let bound = current.albumIdentifier
+                let boundExists = bound.map { id in library.userAlbums().contains { $0.id == id } } ?? false
                 // An album made earlier whose write-back failed is still the record's (#663).
-                let target = current.albumIdentifier ?? saveCoordinator.pendingAlbum(for: profileID)
+                let target = boundExists ? bound : saveCoordinator.pendingAlbum(for: profileID) ?? bound
                 let add = { try await self.library.addAssets(ids, albumIdentifier: target, albumTitle: current.name) }
                 let albumID: String
-                if current.albumIdentifier == nil {
-                    // This add makes the album (or finds the pending one): mark
+                if !boundExists {
+                    // This add makes the album (or finds the pending one), also
+                    // in place of a bound one deleted in the 「照片」 App: mark
                     // the record as creating, and let the coordinator finish a
-                    // late result instead of this body.
-                    albumID = try await saveCoordinator.createAlbum(for: profileID, ticket: ticket, assetIDs: ids, add)
+                    // late result instead of this body (#670).
+                    albumID = try await saveCoordinator.createAlbum(for: profileID, ticket: ticket, assetIDs: ids,
+                                                                    bindingAtStart: bound, add)
                 } else {
                     albumID = try await add()
-                    if albumID != current.albumIdentifier {
-                        try await saveCoordinator.finishIfLate(ticket, profileID: profileID, albumID: albumID, assetIDs: ids)
+                    if albumID != bound {
+                        try await saveCoordinator.finishIfLate(ticket, profileID: profileID, albumID: albumID,
+                                                               assetIDs: ids, bindingAtStart: bound)
                     }
                 }
                 if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {

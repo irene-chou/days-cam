@@ -121,7 +121,10 @@ final class CaptureSaveCoordinator: ObservableObject {
     /// returned after its body timed out (bind it, keep the photos it holds
     /// on the record, add the waiting photos), and adding the waiting photos
     /// to a ready album. Without them a late album is only remembered.
-    var lateAlbumHandler: (@MainActor (_ profileID: UUID, _ albumID: String, _ assetIDs: [String]) async -> Void)?
+    /// `bindingAtStart` is the record's album when the write began: a late
+    /// album replaces it only if it is still bound (#670).
+    var lateAlbumHandler: (@MainActor (_ profileID: UUID, _ albumID: String, _ assetIDs: [String],
+                                       _ bindingAtStart: String?) async -> Void)?
     var awaitingFlusher: (@MainActor (_ profileID: UUID) async -> Void)?
 
     /// Runs `call`, which makes an album for `profileID` (and may put
@@ -129,23 +132,28 @@ final class CaptureSaveCoordinator: ObservableObject {
     /// call until it returns, even past a timeout. Throws
     /// `albumCreationPending` if one is already running. If the body timed
     /// out meanwhile, the late album is finished here and this throws
-    /// `timedOut`, so the body writes nothing.
+    /// `timedOut`, so the body writes nothing. `bindingAtStart` is the
+    /// record's album when the body began (`nil`, or one no longer in the
+    /// library).
     func createAlbum(for profileID: UUID, ticket: WorkTicket, assetIDs: [String] = [],
+                     bindingAtStart: String? = nil,
                      _ call: () async throws -> String) async throws -> String {
         guard !creatingAlbums.contains(profileID) else { throw RecordAlbumError.albumCreationPending }
         creatingAlbums.insert(profileID)
         defer { creatingAlbums.remove(profileID) }
         let albumID = try await call()
-        try await finishIfLate(ticket, profileID: profileID, albumID: albumID, assetIDs: assetIDs)
+        try await finishIfLate(ticket, profileID: profileID, albumID: albumID, assetIDs: assetIDs,
+                               bindingAtStart: bindingAtStart)
         return albumID
     }
 
     /// If `ticket` is stale, finishes the album a late call returned and
     /// throws `timedOut`; otherwise does nothing.
-    func finishIfLate(_ ticket: WorkTicket, profileID: UUID, albumID: String, assetIDs: [String]) async throws {
+    func finishIfLate(_ ticket: WorkTicket, profileID: UUID, albumID: String, assetIDs: [String],
+                      bindingAtStart: String? = nil) async throws {
         guard ticket.isStale else { return }
         if let lateAlbumHandler {
-            await lateAlbumHandler(profileID, albumID, assetIDs)
+            await lateAlbumHandler(profileID, albumID, assetIDs, bindingAtStart)
         } else {
             setPendingAlbum(albumID, for: profileID)
         }

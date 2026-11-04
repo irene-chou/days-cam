@@ -133,8 +133,9 @@ final class RecordListModel: ObservableObject {
         }
         self.profiles = store.profiles
         self.showsCorruptionRecoveredAlert = store.didRecoverFromCorruption
-        coordinator.lateAlbumHandler = { [weak self] id, albumID, assetIDs in
-            await self?.completeLateAlbum(profileID: id, albumID: albumID, assetIDs: assetIDs)
+        coordinator.lateAlbumHandler = { [weak self] id, albumID, assetIDs, bindingAtStart in
+            await self?.completeLateAlbum(profileID: id, albumID: albumID, assetIDs: assetIDs,
+                                          bindingAtStart: bindingAtStart)
         }
         coordinator.awaitingFlusher = { [weak self] id in await self?.flushAwaitingPhotos(for: id) }
         store.$profiles
@@ -475,7 +476,8 @@ final class RecordListModel: ObservableObject {
             if let leftOver = saveCoordinator.pendingAlbum(for: id), library.userAlbums().contains(where: { $0.id == leftOver }) {
                 albumID = leftOver
             } else {
-                albumID = try await saveCoordinator.createAlbum(for: id, ticket: ticket) {
+                albumID = try await saveCoordinator.createAlbum(for: id, ticket: ticket,
+                                                                bindingAtStart: bindingAtRequest) {
                     try await library.createAlbum(title: current.name)
                 }
             }
@@ -495,13 +497,15 @@ final class RecordListModel: ObservableObject {
     }
 
     /// Finishes an album whose creation returned after its body timed out
-    /// (the coordinator's late hook): binds it if the record is still
-    /// unbound; if another album was bound meanwhile, keeps the photos it
-    /// holds on the record through `fallbackAssetIDs`; then adds the waiting
-    /// photos.
-    private func completeLateAlbum(profileID id: UUID, albumID: String, assetIDs: [String]) async {
+    /// (the coordinator's late hook): binds it if the record is unbound or
+    /// still has `bindingAtStart` (an album deleted in the 「照片」 App that
+    /// this one replaces, #670); if another album was bound meanwhile, keeps
+    /// the photos it holds on the record through `fallbackAssetIDs`; then
+    /// adds the waiting photos.
+    private func completeLateAlbum(profileID id: UUID, albumID: String, assetIDs: [String],
+                                   bindingAtStart: String?) async {
         guard var latest = store.profiles.first(where: { $0.id == id }) else { return }
-        if latest.albumIdentifier == nil {
+        if latest.albumIdentifier == nil || latest.albumIdentifier == bindingAtStart {
             latest.albumIdentifier = albumID
             do {
                 try store.updateAndWait(latest)
