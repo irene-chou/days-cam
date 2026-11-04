@@ -456,6 +456,24 @@ final class PhotoWallModelTests: XCTestCase {
         XCTAssertEqual(texts(model).first, "第 2 天")
     }
 
+    /// #663-2: an add whose library call never answers reports a failure
+    /// after the timeout, not success, and leaves the record alone.
+    func testAddThatNeverAnswersTimesOutWithAnError() async throws {
+        let (store, profile) = try makeStore()
+        let library = FakeRecordAlbumLibrary(assets: [asset("x", 1, 3)])
+        let latch = AlbumCreationLatch()
+        library.onAddAssets = { await latch.hold() }
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                                   saveCoordinator: CaptureSaveCoordinator(workTimeout: 0.2),
+                                   todayText: { _ in "今天第 10 天" })
+
+        await model.addPhotos(ids: ["x"])
+
+        XCTAssertEqual(model.errorMessage, "照片庫沒有回應，請再試一次。")
+        XCTAssertNil(store.profiles.first { $0.id == profile.id }?.albumIdentifier)
+        latch.release()
+    }
+
     /// 9: a failure shows an error, leaves the wall and the record alone.
     func testFailedAddShowsAnErrorAndChangesNothing() async throws {
         let (store, profile) = try makeStore()

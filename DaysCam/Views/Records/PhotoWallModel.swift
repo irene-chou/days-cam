@@ -523,16 +523,40 @@ final class PhotoWallModel: ObservableObject {
     func addPhotos(ids: [String]) async {
         guard !ids.isEmpty, profile != nil else { return }
         do {
-            try await saveCoordinator.serialized {
+            try await saveCoordinator.serialized(withTicket: { [self] ticket in
                 guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
-                let albumID = try await library.addAssets(ids,
-                                                         albumIdentifier: current.albumIdentifier,
-                                                         albumTitle: current.name)
+                // An album made earlier whose write-back failed is still the record's (#663).
+                let target = current.albumIdentifier ?? saveCoordinator.pendingAlbum(for: profileID)
+                let add = { try await self.library.addAssets(ids, albumIdentifier: target, albumTitle: current.name) }
+                let albumID: String
+                if current.albumIdentifier == nil {
+                    // This add makes the album (or finds the pending one): mark
+                    // the record as creating, and let the coordinator finish a
+                    // late result instead of this body.
+                    albumID = try await saveCoordinator.createAlbum(for: profileID, ticket: ticket, assetIDs: ids, add)
+                } else {
+                    albumID = try await add()
+                    if albumID != current.albumIdentifier {
+                        try await saveCoordinator.finishIfLate(ticket, profileID: profileID, albumID: albumID, assetIDs: ids)
+                    }
+                }
                 if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
                     latest.albumIdentifier = albumID
-                    try store.updateAndWait(latest)
+                    do {
+                        try store.updateAndWait(latest)
+                    } catch {
+                        saveCoordinator.setPendingAlbum(albumID, for: profileID)
+                        await saveCoordinator.addAwaitingAssets(to: albumID, of: profileID, title: current.name,
+                                                                using: library)
+                        throw error
+                    }
                 }
-            }
+                // A stale body (a pure write that answered late) writes nothing.
+                guard !ticket.isStale else { return }
+                saveCoordinator.setPendingAlbum(nil, for: profileID)
+                // Photos taken meanwhile, apart from the ones picked.
+                await saveCoordinator.addAwaitingAssets(to: albumID, of: profileID, title: current.name, using: library)
+            })
             reload()
         } catch let error as RecordAlbumError {
             report(Self.message(for: error), title: Self.addFailedTitle)

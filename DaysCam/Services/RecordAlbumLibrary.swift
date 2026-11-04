@@ -25,6 +25,13 @@ enum RecordAlbumError: Error, Equatable {
     case notFound
     /// The library refused the change or could not produce the image.
     case failed(String)
+
+    /// A queued write that never answered (#663).
+    static let timedOut = RecordAlbumError.failed("照片庫沒有回應，請再試一次。")
+
+    /// An earlier album creation for the record timed out and may still
+    /// finish; a second one would duplicate it (#663).
+    static let albumCreationPending = RecordAlbumError.failed("相簿還在建立中，請稍後再試。")
 }
 
 /// How a read is served for a given `.readWrite` status (PRD §7.3).

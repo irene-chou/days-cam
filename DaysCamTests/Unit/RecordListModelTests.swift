@@ -571,6 +571,210 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
     }
 
+    /// #663-1: after a failed write-back, "加入照片" binds the album that was
+    /// already created instead of making a second one, and the photo is in it.
+    func testAddingPhotosAfterAFailedWriteBackReusesTheCreatedAlbum() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let model = makeModel(store: store, library: library)
+        try setDirectoryWritable(false)
+        await model.backfillAlbumsIfNeeded(reportsFailure: true)
+        try setDirectoryWritable(true)
+        XCTAssertNil(store.profiles.first?.albumIdentifier)
+        XCTAssertEqual(library.albums.count, 1)
+
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.count, 1, "one album in all")
+        XCTAssertEqual(library.albums.first?.assetIDs, ["x"])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+        XCTAssertNil(model.saveCoordinator.pendingAlbum(for: record.id), "forgotten once stored")
+    }
+
+    /// #663-1: a failed write-back of "加入照片" itself keeps the album it
+    /// made for the next add.
+    func testFailedWriteBackOfAddingPhotosKeepsTheAlbumForTheNextAdd() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "y")])
+        let model = makeModel(store: store, library: library)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        try setDirectoryWritable(false)
+        await wall.addPhotos(ids: ["x"])
+        try setDirectoryWritable(true)
+        XCTAssertNotNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.count, 1)
+
+        await wall.addPhotos(ids: ["y"])
+        XCTAssertEqual(library.albums.count, 1, "no second album")
+        XCTAssertEqual(Set(library.albums.first?.assetIDs ?? []), ["x", "y"])
+        XCTAssertEqual(store.profiles.first?.albumIdentifier, library.albums.first?.id)
+    }
+
+    /// #663-2: a creation that never answers times out and is reported as
+    /// failed. While it may still finish, an add for the same record fails
+    /// and makes no second album; another record is not held; a late success
+    /// is bound and used by the next add.
+    func testAlbumCreationThatNeverAnswersTimesOutWithoutADuplicate() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        clock.now = clock.now.addingTimeInterval(60)
+        let other = try store.add(CameraProfile(name: "另一個", startDate: DateFixture.components(2026, 1, 1)))
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "y")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = {
+            if library.createdAlbumTitles.count == 1 { await latch.hold() }
+        }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let clock = clock
+        let calculator = DayCountCalculator(calendar: DateFixture.taipei, now: { clock.now })
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator,
+                                    calendar: DateFixture.taipei, calculator: calculator)
+        let backfill = Task { await model.backfillAlbumsIfNeeded(reportsFailure: true) }
+        try await latch.waitUntilHolding()
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        await backfill.value
+        XCTAssertEqual(model.lastError as? RecordAlbumError, .timedOut, "not reported as created")
+        XCTAssertEqual(wall.errorMessage, "相簿還在建立中，請稍後再試。", "the add fails")
+        XCTAssertTrue(library.albums.allSatisfy { $0.title != "小寶" || $0.assetIDs.isEmpty }, "no photo in a second album")
+        XCTAssertNil(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+
+        // Another record is not held back: the backfill made its album.
+        XCTAssertEqual(library.createdAlbumTitles.count, 2)
+        XCTAssertNotNil(store.profiles.first { $0.id == other.id }?.albumIdentifier)
+
+        // The stuck creation finally succeeds: its album is bound and reused.
+        latch.release()
+        for _ in 0..<200 where store.profiles.first(where: { $0.id == record.id })?.albumIdentifier == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let bound = try XCTUnwrap(store.profiles.first { $0.id == record.id }?.albumIdentifier)
+        wall.errorMessage = nil
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.createdAlbumTitles.count, 2, "no third album")
+        XCTAssertEqual(library.albums.first { $0.id == bound }?.assetIDs, ["x"])
+    }
+
+    /// #663 (qa): the write-back of a creation that finished after its
+    /// timeout cannot interleave with the next write for the record into a
+    /// second album: retries and adds started while it is stuck, or right as
+    /// it returns, leave one album for the record.
+    func testLateCreationWriteBackNeverMakesASecondAlbum() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let latch = AlbumCreationLatch()
+        library.onCreateAlbum = { if library.createdAlbumTitles.count == 1 { await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let first = Task { await model.backfillAlbumsIfNeeded(reportsFailure: true) }
+        try await latch.waitUntilHolding()
+        await first.value
+        await model.backfillAlbumsIfNeeded(reportsFailure: true) // retry while stuck
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        let adding = Task { await wall.addPhotos(ids: ["x"]) }
+        latch.release() // returns while the add is queued or starting
+        await adding.value
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await model.backfillAlbumsIfNeeded()
+        XCTAssertEqual(library.createdAlbumTitles.count, 1, "one creation call in all")
+        XCTAssertEqual(library.albums.count, 1)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, library.albums.first?.id)
+    }
+
+    /// #663 (Codex P1): "加入照片" makes album A and times out; while it is
+    /// stuck nothing else makes an album; when A finally comes back it is
+    /// bound, holds the picked photos, and the photos that waited join it.
+    func testLateAddPhotosCreationIsFinishedByTheCoordinator() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized,
+                                             assets: [.init(id: "x"), .init(id: "cam-1")])
+        let latch = AlbumCreationLatch()
+        var held = false
+        library.onAddAssets = { if !held { held = true; await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"]) // times out; the library call is stuck
+        XCTAssertEqual(wall.errorMessage, "照片庫沒有回應，請再試一次。")
+        XCTAssertTrue(coordinator.isCreatingAlbum(for: record.id))
+        coordinator.addAwaitingAsset("cam-1", for: record.id)
+        await model.backfillAlbumsIfNeeded(reportsFailure: true)
+        XCTAssertEqual(model.lastError as? RecordAlbumError, .albumCreationPending, "no second album while stuck")
+
+        latch.release()
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let album = try XCTUnwrap(library.albums.first { $0.title == record.name })
+        XCTAssertEqual(library.albums.filter { $0.title == record.name }.count, 1)
+        XCTAssertEqual(Set(album.assetIDs), ["x", "cam-1"])
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, album.id)
+    }
+
+    /// #663 (bot): the late album must not overwrite a binding made meanwhile;
+    /// the photos it holds stay on the record through `fallbackAssetIDs`.
+    func testLateAlbumKeepsANewerBindingAndTheUsersPhotos() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")],
+                                             albums: [.init(id: "b", title: "B", assetIDs: [])])
+        let latch = AlbumCreationLatch()
+        var held = false
+        library.onAddAssets = { if !held { held = true; await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first { $0.id == record.id }).with(albumIdentifier: "b"))
+
+        latch.release()
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let saved = try XCTUnwrap(store.profiles.first { $0.id == record.id })
+        XCTAssertEqual(saved.albumIdentifier, "b", "the newer binding stays")
+        XCTAssertEqual(saved.fallbackAssetIDs, ["x"], "the picked photo stays on the record")
+        XCTAssertNil(coordinator.pendingAlbum(for: record.id))
+    }
+
+    /// #663 (bot, required): a deleted waiting photo neither blocks nor is
+    /// retried; the user's own pick still goes in.
+    func testDeletedWaitingPhotoDoesNotBlockAddingNewOnes() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")])
+        let coordinator = CaptureSaveCoordinator()
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        coordinator.addAwaitingAsset("deleted", for: record.id)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.first { $0.title == record.name }?.assetIDs, ["x"])
+        XCTAssertTrue(coordinator.takeAwaitingAssets(for: record.id).isEmpty, "dropped, not retried")
+    }
+
+    /// #663 (Codex P2): a normal "加入照片" creation also adds the photos that
+    /// waited meanwhile, apart from the picked ones.
+    func testAddPhotosCreationAddsTheWaitingPhotosToo() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "cam-1")])
+        let coordinator = CaptureSaveCoordinator()
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        coordinator.addAwaitingAsset("cam-1", for: record.id)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        XCTAssertEqual(Set(library.albums.first { $0.title == record.name }?.assetIDs ?? []), ["x", "cam-1"])
+    }
+
     /// 10: launch and returning to the foreground never ask, even undecided.
     func testLaunchAndForegroundNeverRequestAccess() async throws {
         for status in [PHAuthorizationStatus.notDetermined, .limited, .denied, .authorized] {

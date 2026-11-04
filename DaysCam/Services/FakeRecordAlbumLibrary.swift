@@ -48,6 +48,9 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     /// Awaited inside `createAlbum` before it finishes: lets a test change
     /// the store, or hold the creation open, while an album is being made.
     var onCreateAlbum: (@MainActor () async -> Void)?
+    /// Awaited inside `addAssets` before it changes anything: lets a test
+    /// hold the write open, or never answer, like a stuck PhotoKit call.
+    var onAddAssets: (@MainActor () async -> Void)?
     private var nextID = 1
 
     init(status: PHAuthorizationStatus = .authorized, assets: [Asset] = [], albums: [Album] = []) {
@@ -109,6 +112,7 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
     }
 
     func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String {
+        await onAddAssets?()
         if let failure { throw failure }
         guard status == .authorized else { throw RecordAlbumError.permissionDenied }
         guard ids.allSatisfy({ id in assets.contains { $0.id == id } }) else { throw RecordAlbumError.notFound }
