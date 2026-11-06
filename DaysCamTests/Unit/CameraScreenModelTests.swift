@@ -696,6 +696,38 @@ final class CameraScreenModelTests: XCTestCase {
         XCTAssertFalse(model.isCapturing)
     }
 
+    // MARK: - Hardware shutter entry (#686)
+
+    func testHardwareCaptureEventIsANoOpWhenTheShutterIsDisabled() throws {
+        let (model, _, _, _) = try makeModel()
+        let view = CameraPreviewContainerView(onCaptureEvent: { model.capturePhoto() })
+        let drained = expectation(description: "drained")
+
+        view.handle(phase: .ended)
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+
+        XCTAssertFalse(model.isCapturing)
+    }
+
+    func testHardwareCaptureEventDuringCountdownCancelsIt() throws {
+        let settings = CaptureSettingsStore(defaults: defaults)
+        settings.cycleTimer() // .off -> .threeSeconds
+        let ticker = FakeCountdownTicker()
+        let (model, _, _, _) = try makeModel(captureSettingsStore: settings, countdownTicker: ticker)
+        model.beginCapture()
+        XCTAssertNotNil(model.countdownRemaining)
+        let view = CameraPreviewContainerView(onCaptureEvent: { model.capturePhoto() })
+        let drained = expectation(description: "drained")
+
+        view.handle(phase: .ended)
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+
+        XCTAssertNil(model.countdownRemaining)
+        XCTAssertEqual(model.toastState?.message, "已取消")
+    }
+
     // MARK: - Capture trigger
 
     func testCaptureTriggerFiresWhenTheShutterReallyFiresNotWhileCountingDownOrCancelling() throws {
