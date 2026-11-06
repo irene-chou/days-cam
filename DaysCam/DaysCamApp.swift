@@ -53,6 +53,9 @@ struct DaysCamApp: App {
     /// "測試相簿" with all `n` photos; `-UITestBindAlbum` (and
     /// `-UITestOpenExport`, #620) also binds every record to it.
     /// `-UITestUndatedPhotos <k>` takes the date off the oldest `k` (#650).
+    /// `-UITestFallbackPhotos <k>` keeps the newest `k` out of the album and
+    /// on the last used record's `fallbackAssetIDs`, as if taken under
+    /// limited access (#680).
     private static func makeRecordAlbumLibrary(for profileStore: ProfileStore) -> any RecordAlbumLibrary {
         #if DEBUG
         if let fake = FakeRecordAlbumLibrary.forUITests() {
@@ -62,14 +65,24 @@ struct DaysCamApp: App {
                let undated = Int(arguments[index + 1]) {
                 for offset in assets.indices.prefix(undated) { assets[offset].creationDate = nil }
             }
+            var fallbackIDs: [String] = []
+            if let index = arguments.firstIndex(of: "-UITestFallbackPhotos"), arguments.indices.contains(index + 1),
+               let count = Int(arguments[index + 1]) {
+                fallbackIDs = assets.suffix(count).map(\.id)
+            }
             let album = FakeRecordAlbumLibrary.Album(id: "uitest-album", title: "測試相簿",
-                                                     assetIDs: assets.map(\.id))
+                                                     assetIDs: assets.map(\.id).filter { !fallbackIDs.contains($0) })
             let library = FakeRecordAlbumLibrary(status: fake.status, assets: assets, albums: [album])
             if arguments.contains("-UITestBindAlbum") || arguments.contains("-UITestOpenExport") {
                 for var profile in profileStore.profiles {
                     profile.albumIdentifier = album.id
                     _ = try? profileStore.update(profile)
                 }
+            }
+            if !fallbackIDs.isEmpty, let lastUsed = profileStore.lastUsedProfileID,
+               var profile = profileStore.profiles.first(where: { $0.id == lastUsed }) {
+                profile.fallbackAssetIDs = PhotoWallModel.appendingNew(fallbackIDs, to: profile.fallbackAssetIDs)
+                _ = try? profileStore.update(profile)
             }
             // Limited access shows only a record's fallback ids (#640): the
             // generated photos belong to the last used record, as after the

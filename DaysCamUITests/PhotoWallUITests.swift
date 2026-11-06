@@ -239,4 +239,24 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(element("limitedAccessBanner").exists, "11")
         shot("photo-wall-selecting-limited")
     }
+
+    /// #680-1, 3, 9: three photos held only by the record show the notice
+    /// over the wall; 加進相簿 toasts and the notice goes, the wall unchanged.
+    func testAlbumSyncNoticeAddsTheFallbackPhotos() {
+        launchWall(photos: 5, arguments: ["-UITestFallbackPhotos", "3"])
+        let notice = element("wallAlbumSyncNotice")
+        XCTAssertTrue(notice.waitForExistence(timeout: 10), "1")
+        XCTAssertTrue(app.staticTexts["3 張照片還不在「我的紀錄」相簿"].exists, "1")
+        XCTAssertTrue(app.staticTexts["開放完整權限前拍的"].exists, "1")
+        let button = element("wallAlbumSyncButton")
+        XCTAssertTrue(button.isHittable, "9")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(notice.frame), "9")
+        shot("album-sync-notice")
+
+        button.tap()
+        XCTAssertTrue(app.staticTexts["已加進「我的紀錄」相簿 3 張"].waitForExistence(timeout: 5), "3")
+        shot("album-sync-done")
+        XCTAssertTrue(notice.waitForNonExistence(timeout: 5), "3")
+        XCTAssertEqual(dayLabels().count, 5, "#680-8")
+    }
 }

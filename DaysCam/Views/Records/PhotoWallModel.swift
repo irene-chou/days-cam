@@ -68,6 +68,12 @@ final class PhotoWallModel: ObservableObject {
     @Published private(set) var isSelecting = false
     /// The ticked photos (FR-17.12).
     @Published private(set) var selectedIDs: Set<String> = []
+    /// The record's `fallbackAssetIDs` on the wall but not in its bound
+    /// album, in `fallbackAssetIDs` order. Full access only; empty otherwise
+    /// (#680).
+    @Published private(set) var albumSyncIDs: [String] = []
+    /// 加進相簿 is running.
+    @Published private(set) var isSyncingAlbum = false
     /// The "已從紀錄移除 N 張" / "已刪除 N 張" toast while it shows.
     @Published private(set) var toastState: ToastState?
     /// A slide selection in progress: where it started and what was ticked
@@ -250,6 +256,7 @@ final class PhotoWallModel: ObservableObject {
             photoIDs = []
             undatedIDs = []
             sections = []
+            albumSyncIDs = []
             pruneSelection()
             return
         }
@@ -258,7 +265,21 @@ final class PhotoWallModel: ObservableObject {
         photoIDs = photos.map(\.id)
         undatedIDs = Set(photos.filter { $0.creationDate == nil }.map(\.id))
         sections = Self.sections(for: photos, profile: profile, calendar: calendar)
+        albumSyncIDs = idsMissingFromAlbum(profile)
         pruneSelection()
+    }
+
+    /// `fallbackAssetIDs` on the wall (still in the library) but not in the
+    /// bound album, once each, in their order. Only read under full access:
+    /// limited access never reads an album (§7.3).
+    private func idsMissingFromAlbum(_ profile: CameraProfile) -> [String] {
+        guard status == .authorized, !profile.fallbackAssetIDs.isEmpty else { return [] }
+        let inAlbum = profile.albumIdentifier.map { library.assetIDs(inAlbum: $0) } ?? []
+        let shown = Set(photoIDs)
+        var seen: Set<String> = []
+        return profile.fallbackAssetIDs.filter { id in
+            shown.contains(id) && !inAlbum.contains(id) && seen.insert(id).inserted
+        }
     }
 
     /// Drops ticks on photos no longer on the wall (FR-17.8), and leaves
@@ -521,7 +542,39 @@ final class PhotoWallModel: ObservableObject {
     /// album still being created is used rather than duplicated (#651).
     /// A failure sets `errorMessage` and leaves the wall as it was.
     func addPhotos(ids: [String]) async {
-        guard !ids.isEmpty, profile != nil else { return }
+        _ = await addToAlbum(ids, movingFromFallback: false)
+    }
+
+    // MARK: - Fallback photos into the album (#680)
+
+    /// The notice over the wall: full access, photos outside the album, not
+    /// selecting.
+    var showsAlbumSyncNotice: Bool { status == .authorized && !albumSyncIDs.isEmpty && !isSelecting }
+
+    /// "N 張照片還不在「<紀錄名>」相簿".
+    var albumSyncTitle: String { "\(albumSyncIDs.count) 張照片還不在「\(title)」相簿" }
+
+    /// 加進相簿: adds `albumSyncIDs` to the album through the same queue as
+    /// 加入照片 (creating the album if it is missing), and in the same record
+    /// write takes them out of `fallbackAssetIDs`. Success toasts "已加進
+    /// 「<紀錄名>」相簿 N 張"; a failure leaves `fallbackAssetIDs` alone and
+    /// shows the add failure alert.
+    func addFallbackPhotosToAlbum() async {
+        let ids = albumSyncIDs
+        guard !ids.isEmpty, !isSyncingAlbum, status == .authorized else { return }
+        isSyncingAlbum = true
+        defer { isSyncingAlbum = false }
+        let name = title
+        if await addToAlbum(ids, movingFromFallback: true) {
+            showToast("已加進「\(name)」相簿 \(ids.count) 張")
+        }
+    }
+
+    /// The body of `addPhotos`; with `movingFromFallback` the ids also leave
+    /// `fallbackAssetIDs` in the write that may bind the album. `false` on
+    /// failure, after setting `errorMessage`.
+    private func addToAlbum(_ ids: [String], movingFromFallback: Bool) async -> Bool {
+        guard !ids.isEmpty, profile != nil else { return false }
         do {
             try await saveCoordinator.serialized(withTicket: { [self] ticket in
                 guard let current = store.profiles.first(where: { $0.id == profileID }) else { return }
@@ -545,14 +598,22 @@ final class PhotoWallModel: ObservableObject {
                                                                assetIDs: ids, bindingAtStart: bound)
                     }
                 }
-                if albumID != current.albumIdentifier, var latest = store.profiles.first(where: { $0.id == profileID }) {
-                    latest.albumIdentifier = albumID
+                let rebinding = albumID != current.albumIdentifier
+                // Now in the album, they leave the record's own list; a stale
+                // body writes nothing (#680).
+                let moving: Set<String> = movingFromFallback && !ticket.isStale ? Set(ids) : []
+                if var latest = store.profiles.first(where: { $0.id == profileID }),
+                   rebinding || latest.fallbackAssetIDs.contains(where: moving.contains) {
+                    if rebinding { latest.albumIdentifier = albumID }
+                    latest.fallbackAssetIDs.removeAll(where: moving.contains)
                     do {
                         try store.updateAndWait(latest)
                     } catch {
-                        saveCoordinator.setPendingAlbum(albumID, for: profileID)
-                        await saveCoordinator.addAwaitingAssets(to: albumID, of: profileID, title: current.name,
-                                                                using: library)
+                        if rebinding {
+                            saveCoordinator.setPendingAlbum(albumID, for: profileID)
+                            await saveCoordinator.addAwaitingAssets(to: albumID, of: profileID, title: current.name,
+                                                                    using: library)
+                        }
                         throw error
                     }
                 }
@@ -563,6 +624,7 @@ final class PhotoWallModel: ObservableObject {
                 await saveCoordinator.addAwaitingAssets(to: albumID, of: profileID, title: current.name, using: library)
             })
             reload()
+            return true
         } catch let error as RecordAlbumError {
             report(Self.message(for: error), title: Self.addFailedTitle)
         } catch let error as ProfileStoreError {
@@ -570,6 +632,7 @@ final class PhotoWallModel: ObservableObject {
         } catch {
             report("無法加入照片，請再試一次。", title: Self.addFailedTitle)
         }
+        return false
     }
 
     /// The text of the failure alert for `error`.
