@@ -254,7 +254,9 @@ final class PhotoWallUITests: XCTestCase {
         shot("album-sync-notice")
 
         button.tap()
-        XCTAssertTrue(app.staticTexts["已加進「我的紀錄」相簿 3 張"].waitForExistence(timeout: 5), "3")
+        let toast = element("wallToast")
+        XCTAssertTrue(toast.waitForExistence(timeout: 5), "3")
+        XCTAssertEqual(toast.label, "已加進「我的紀錄」相簿 3 張", "3")
         shot("album-sync-done")
         XCTAssertTrue(notice.waitForNonExistence(timeout: 5), "3")
         XCTAssertEqual(dayLabels().count, 5, "#680-8")
