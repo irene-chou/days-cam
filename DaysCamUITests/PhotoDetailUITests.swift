@@ -1,6 +1,6 @@
 import XCTest
 
-/// #619: the photo viewer (acceptance 1, 5, 8). With `DAYSCAM_UI_SHOT_DIR` in
+/// #619／#679: the photo viewer (acceptance 1, 5, 8). With `DAYSCAM_UI_SHOT_DIR` in
 /// the test runner's environment the B′ screenshots are also written there.
 final class PhotoDetailUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -12,7 +12,7 @@ final class PhotoDetailUITests: XCTestCase {
 
     /// Seeds one record starting 2026-01-01, then launches on 2026-01-10 with
     /// five photos, one per day ending that day, and opens the record.
-    private func launchWall(mixedAspects: Bool = false, showTips: Bool = false) {
+    private func launchWall(mixedAspects: Bool = false, showTips: Bool = false, filmDate: Bool = false) {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
@@ -26,6 +26,7 @@ final class PhotoDetailUITests: XCTestCase {
                                 "-UITestRecordPhotos", "5", "-UITestBindAlbum"]
         if mixedAspects { app.launchArguments.append("-UITestMixedAspects") }
         if showTips { app.launchArguments.append("-UITestShowTips") }
+        if filmDate { app.launchArguments += ["-UITestFilmDate", "bottomTrailing"] }
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
         app.launch()
         XCTAssertTrue(cell(4).waitForExistence(timeout: 10))
@@ -78,23 +79,100 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertFalse(element("photoDetailCaption").exists)
     }
 
-    /// 1: 文字樣式 on the left, 匯出 on the right, both enabled for a dated
-    /// photo; no tip without `-UITestShowTips` (10).
-    func testBottomButtonsAndNoTipsByDefault() {
+    /// #679-1: 匯出 on the left, 刪除 on the right, the wall's selection bar:
+    /// same size and place as there. No ⋯, no 文字樣式; no tip without
+    /// `-UITestShowTips` (10).
+    func testBottomBarMatchesTheWallSelectionBar() {
         launchWall(mixedAspects: true)
+        element("wallSelectButton").tap()
+        cell(4).tap()
+        let wallExport = element("wallExportButton")
+        let wallDelete = element("wallDeleteButton")
+        XCTAssertTrue(wallExport.waitForExistence(timeout: 5))
+        XCTAssertTrue(wallExport.isEnabled)
+        let wallFrames = (wallExport.frame, wallDelete.frame)
+        Thread.sleep(forTimeInterval: 0.5)
+        shot("wall-selection-bar")
+        element("wallCancelSelectionButton").tap()
+        XCTAssertTrue(element("wallSelectButton").waitForExistence(timeout: 5))
+
         openViewer(cell: 4)
-        let style = element("styleButton")
-        let export = element("exportButton")
-        XCTAssertTrue(style.waitForExistence(timeout: 5))
-        XCTAssertTrue(export.exists)
-        XCTAssertTrue(style.isEnabled)
+        let export = element("photoDetailExportButton")
+        let delete = element("photoDetailDeleteButton")
+        XCTAssertTrue(export.waitForExistence(timeout: 5))
+        XCTAssertTrue(delete.exists)
         XCTAssertTrue(export.isEnabled)
-        XCTAssertLessThan(style.frame.midX, export.frame.midX, "文字樣式 left of 匯出")
-        XCTAssertTrue(app.frame.contains(style.frame) && app.frame.contains(export.frame))
-        XCTAssertTrue(style.label.contains("文字樣式"), style.label)
+        XCTAssertTrue(delete.isEnabled)
+        XCTAssertTrue(export.label.contains("匯出"), export.label)
+        XCTAssertTrue(delete.label.contains("刪除"), delete.label)
+        XCTAssertLessThan(export.frame.midX, delete.frame.midX, "匯出 left of 刪除")
+        XCTAssertTrue(app.frame.contains(export.frame) && app.frame.contains(delete.frame))
+        for (viewer, wall) in [(export.frame, wallFrames.0), (delete.frame, wallFrames.1)] {
+            XCTAssertEqual(viewer.width, wall.width, accuracy: 1, "same width as the wall's")
+            XCTAssertEqual(viewer.height, wall.height, accuracy: 1, "same height as the wall's")
+            XCTAssertEqual(viewer.midX, wall.midX, accuracy: 1, "same place as the wall's")
+            XCTAssertEqual(viewer.maxY, wall.maxY, accuracy: 1, "same place as the wall's")
+        }
+        XCTAssertFalse(element("photoDetailMoreButton").exists, "no ⋯")
+        XCTAssertFalse(element("styleButton").exists, "no 文字樣式")
+        XCTAssertFalse(element("exportButton").exists)
         XCTAssertFalse(element("viewerCoach").exists, "10 no coach without -UITestShowTips")
-        XCTAssertFalse(element("exportIntroSheet").exists, "10 no comparison without -UITestShowTips")
         shot("photo-detail-buttons")
+    }
+
+    /// #679-5: under the preview, 隱藏文字 above 調整文字樣式; 隱藏文字
+    /// takes the text off the preview, reads 顯示文字 and turns
+    /// 調整文字樣式 off; pressed again, all is back. Shot with the film date
+    /// off, then on.
+    func testHideTextOnTheExportSheet() {
+        assertHideText(filmDate: false)
+    }
+
+    func testHideTextOnTheExportSheetWithFilmDate() {
+        assertHideText(filmDate: true)
+    }
+
+    private func assertHideText(filmDate: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        let suffix = filmDate ? "-filmdate" : ""
+        launchWall(mixedAspects: true, filmDate: filmDate)
+        openViewer(cell: 4)
+        element("photoDetailExportButton").tap()
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), file: file, line: line)
+        let hide = element("exportHideTextButton")
+        let style = element("batchExportStyleLink")
+        let preview = element("batchExportPreview")
+        XCTAssertTrue(hide.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(hide.label, "隱藏文字", file: file, line: line)
+        XCTAssertLessThan(hide.frame.midY, style.frame.midY, "隱藏文字 above 調整文字樣式", file: file, line: line)
+        XCTAssertEqual(hide.frame.midX, style.frame.midX, accuracy: 1, "both centered", file: file, line: line)
+        XCTAssertTrue(style.isEnabled, file: file, line: line)
+        waitForLabel(preview, containing: "第 10 天", file: file, line: line)
+        XCTAssertTrue(app.frame.contains(element("batchExportStartButton").frame), "匯出 in view",
+                      file: file, line: line)
+        XCTAssertTrue(app.frame.contains(element("batchExportCancelButton").frame), "取消 in view",
+                      file: file, line: line)
+        Thread.sleep(forTimeInterval: 1)
+        shot("export-single-shown\(suffix)")
+
+        hide.tap()
+        waitForLabel(hide, containing: "顯示文字", file: file, line: line)
+        XCTAssertFalse(style.isEnabled, "調整文字樣式 is off", file: file, line: line)
+        XCTAssertFalse(preview.label.contains("第"), "no text on the preview: \(preview.label)", file: file, line: line)
+        Thread.sleep(forTimeInterval: 1)
+        shot("export-single-hidden\(suffix)")
+
+        hide.tap()
+        waitForLabel(hide, containing: "隱藏文字", file: file, line: line)
+        XCTAssertTrue(style.isEnabled, file: file, line: line)
+        waitForLabel(preview, containing: "第 10 天", file: file, line: line)
+    }
+
+    private func waitForLabel(_ target: XCUIElement, containing text: String,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let predicate = NSPredicate(format: "label CONTAINS %@", text)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: target)
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
+                       "label was \(target.label)", file: file, line: line)
     }
 
     /// 9: the first visit shows the bubble around the overlay; 知道了 closes
@@ -105,7 +183,7 @@ final class PhotoDetailUITests: XCTestCase {
         let coach = element("viewerCoach")
         XCTAssertTrue(coach.waitForExistence(timeout: 5), "9 the bubble")
         XCTAssertTrue(app.staticTexts["這是 DaysCam 加上的天數"].exists)
-        XCTAssertTrue(app.staticTexts["照片本身不會改；按「匯出」才會另存一張印上這行字的新照片。想換字型、顏色或位置，按「文字樣式」。"].exists)
+        XCTAssertTrue(app.staticTexts["照片本身不會改；按「匯出」才會另存一張印上這行字的新照片。想換字型、顏色或位置，在匯出時按「調整文字樣式」。"].exists, "#679-10 the new wording")
         XCTAssertTrue(app.frame.contains(coach.frame), "bubble in view: \(coach.frame)")
         shot("photo-detail-coach")
         app.buttons["viewerCoachOkButton"].tap()
@@ -117,8 +195,8 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertFalse(element("viewerCoach").waitForExistence(timeout: 2), "9 never again")
     }
 
-    /// 12: ⋯ has one item, 刪除…, which asks remove-or-delete with the record's name.
-    func testMoreMenuOpensTheRemoveOrDeleteDialog() {
+    /// #679-2: 刪除 asks remove-or-delete with the record's name.
+    func testDeleteOpensTheRemoveOrDeleteDialog() {
         launchWall()
         openViewer(cell: 4)
         openRemoveOrDeleteDialog()
@@ -132,10 +210,7 @@ final class PhotoDetailUITests: XCTestCase {
     }
 
     private func openRemoveOrDeleteDialog() {
-        element("photoDetailMoreButton").tap()
-        let item = app.buttons["刪除…"]
-        XCTAssertTrue(item.waitForExistence(timeout: 5))
-        item.tap()
+        element("photoDetailDeleteButton").tap()
         XCTAssertTrue(app.buttons["刪除照片"].waitForExistence(timeout: 5))
     }
 

@@ -10,6 +10,8 @@ private final class FakeBatchExport {
     var failures: [String: PhotoExportError] = [:]
     var holds = false
     private(set) var calls: [String] = []
+    /// 隱藏文字 as each call received it.
+    private(set) var hidesTextCalls: [Bool] = []
     private(set) var inFlight = 0
     private(set) var maxInFlight = 0
     private var held: [CheckedContinuation<Void, Never>] = []
@@ -37,7 +39,10 @@ private final class FakeBatchExport {
     }
 
     var asExport: BatchExportModel.Export {
-        { [self] photo, profile, _ in await self.export(photo, profile) }
+        { [self] photo, profile, hidesText, _ in
+            hidesTextCalls.append(hidesText)
+            return await self.export(photo, profile)
+        }
     }
 }
 
@@ -134,17 +139,14 @@ final class BatchExportModelTests: XCTestCase {
                     creationDate: day.flatMap { DateFixture.date(2026, 1, $0, hour: 15) })
     }
 
-    private func tips() -> FirstRunTips { FirstRunTips(defaults: defaults) }
-
     private func makeBatch(_ photos: [RecordPhoto], store: ProfileStore, profile: CameraProfile,
                            library: (any RecordAlbumLibrary)? = nil,
                            bake: ExportBakeRecorder = ExportBakeRecorder(),
-                           tips: FirstRunTips? = nil,
                            export: @escaping BatchExportModel.Export) -> BatchExportModel {
         BatchExportModel(photos: photos, profileID: profile.id, store: store,
                          library: library ?? ExportLibrary(photos: photos), calendar: calendar,
                          bake: { bake.bake($0, $1, $2, $3, $4, $5, $6, $7) },
-                         resolveFont: { _ in .pingFang }, tips: tips ?? self.tips(), export: export)
+                         resolveFont: { _ in .pingFang }, export: export)
     }
 
     /// Records each outcome the batch reports.
@@ -514,30 +516,87 @@ final class BatchExportModelTests: XCTestCase {
         XCTAssertEqual(wall.selectedIDs, ["p6", "p7", "p8"])
     }
 
-    // MARK: - 12: first-export comparison
+    // MARK: - #679: 隱藏文字 and the single sheet
 
-    /// 12: after the batch preview opened, the viewer's first export skips
-    /// the comparison and exports at once.
-    func testBatchPreviewCountsAsSeeingTheComparison() async throws {
+    /// #679-8: the batch sheet has 隱藏文字 too: the preview is baked without
+    /// text, every photo is exported without it, and the skip and count
+    /// rules stay as they are.
+    func testHiddenTextReachesThePreviewAndEveryExport() async throws {
         let (store, profile) = try makeStore()
-        let tips = tips()
-        XCTAssertFalse(tips.exportIntroSeen)
-        _ = makeBatch([photo(5)], store: store, profile: profile, tips: tips, export: FakeBatchExport().asExport)
-        XCTAssertTrue(tips.exportIntroSeen)
+        let recorder = ExportBakeRecorder()
+        let fake = FakeBatchExport()
+        let batch = makeBatch([photo(nil), photo(5), photo(6), photo(7)], store: store, profile: profile,
+                              bake: recorder, export: fake.asExport)
+        let finished = outcomes(of: batch)
+        XCTAssertFalse(batch.hidesText, "the sheet opens showing the text")
+        XCTAssertFalse(batch.isSingle)
 
-        let library = ExportLibrary(photos: [photo(5)])
-        var saves = 0
-        let viewer = PhotoDetailModel(profileID: profile.id, startingAt: "p5", store: store, library: library,
-                                      calendar: calendar, resolveFont: { _ in .pingFang },
-                                      pipeline: PhotoExportPipeline(library: library, calendar: calendar,
-                                                                    bake: { image, _, _, _, _, _, _, _ in image },
-                                                                    save: { _, completion in
-                                                                        saves += 1
-                                                                        completion(.success("new"))
-                                                                    }),
-                                      tips: tips, scheduleAfter: { _, _ in })
-        await viewer.requestExport()
-        XCTAssertFalse(viewer.showsExportIntro)
-        XCTAssertEqual(saves, 1)
+        batch.toggleHidesText()
+        XCTAssertTrue(batch.hidesText)
+        let shown = try XCTUnwrap(batch.previewPhoto)
+        XCTAssertNil(batch.overlayText(for: shown))
+        _ = await batch.previewImage(for: shown, targetSize: CGSize(width: 100, height: 100))
+        XCTAssertEqual(recorder.calls.last?.text, "", "the preview has no text")
+        XCTAssertEqual(batch.previewTitle, "匯出 3 張新照片")
+        XCTAssertEqual(batch.skippedMessage, "其中 1 張日期不明，無法標天數，會略過。")
+
+        batch.start()
+        XCTAssertTrue(batch.hidesText)
+        batch.toggleHidesText()
+        XCTAssertTrue(batch.hidesText, "no switching once running")
+        await batch.waitForRun()
+        XCTAssertEqual(fake.calls, ["p5", "p6", "p7"])
+        XCTAssertEqual(fake.hidesTextCalls, [true, true, true])
+        XCTAssertEqual(finished(), [.allSaved(count: 3)])
+
+        batch.toggleHidesText()
+        XCTAssertTrue(batch.hidesText, "nor after")
+    }
+
+    /// #679-6, 8: through the real pipeline, every hidden-text photo is baked
+    /// with no text and the record's film date stamp of its own day.
+    func testHiddenTextPipelineBakesNoTextButTheFilmDate() async throws {
+        let (store, created) = try makeStore()
+        var profile = created
+        profile.showFilmDate = true
+        try store.updateAndWait(profile)
+        let photos = [photo(5), photo(6)]
+        let recorder = ExportBakeRecorder()
+        let library = ExportLibrary(photos: photos)
+        let pipeline = PhotoExportPipeline(library: library, calendar: calendar,
+                                           bake: { recorder.bake($0, $1, $2, $3, $4, $5, $6, $7) },
+                                           save: { _, completion in completion(.success("new")) })
+        let batch = makeBatch(photos, store: store, profile: profile, library: library,
+                              export: BatchExportModel.pipelineExport(pipeline, resolveFont: { _ in .pingFang }))
+        batch.toggleHidesText()
+        batch.start()
+        await batch.waitForRun()
+
+        XCTAssertEqual(recorder.calls.count, 2)
+        for (call, photo) in zip(recorder.calls, photos) {
+            XCTAssertEqual(call.text, "")
+            let date = try XCTUnwrap(photo.creationDate)
+            XCTAssertEqual(call.filmDate, PhotoDetailModel.filmDateStamp(for: profile, creationDate: date,
+                                                                         calendar: calendar))
+            XCTAssertNotNil(call.filmDate)
+        }
+        XCTAssertEqual(store.profiles.first { $0.id == profile.id }, profile, "#679-7 the record is unchanged")
+    }
+
+    /// #679-3: one photo with a date is the single sheet; one dated photo
+    /// left after skipping is still a batch.
+    func testSingleSheetWording() throws {
+        let (store, profile) = try makeStore()
+        let single = makeBatch([photo(5)], store: store, profile: profile, export: FakeBatchExport().asExport)
+        XCTAssertTrue(single.isSingle)
+        XCTAssertEqual(single.previewTitle, "匯出這張照片")
+        XCTAssertEqual(single.previewNote, "另存一張新照片，原圖不動。")
+        XCTAssertEqual(single.exportButtonTitle, "匯出")
+
+        let batch = makeBatch([photo(nil), photo(5)], store: store, profile: profile, export: FakeBatchExport().asExport)
+        XCTAssertFalse(batch.isSingle)
+        XCTAssertEqual(batch.previewTitle, "匯出 1 張新照片")
+        XCTAssertEqual(batch.previewNote, BatchExportModel.previewMessage)
+        XCTAssertEqual(batch.exportButtonTitle, "匯出 1 張")
     }
 }

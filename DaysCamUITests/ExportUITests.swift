@@ -1,6 +1,6 @@
 import XCTest
 
-/// #620／#647: the 文字樣式 page and the viewer's two buttons. Launched with
+/// #620／#647／#679: the 文字樣式 page and the viewer's 匯出. Launched with
 /// `-UITestOpenExport`, the app opens the newest of five photos straight on
 /// its 文字樣式 page (formerly the export page). With `DAYSCAM_UI_SHOT_DIR` in the test runner's
 /// environment the B′ screenshots are also written there.
@@ -111,81 +111,48 @@ final class ExportUITests: XCTestCase {
         let closed = XCTNSPredicateExpectation(predicate: gone, object: element("exportView"))
         XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 5), .completed, "the style page closed")
         XCTAssertFalse(element("exportToast").exists, "nothing was exported")
-        XCTAssertTrue(element("exportButton").isEnabled)
+        XCTAssertTrue(element("photoDetailExportButton").isEnabled)
     }
 
-    /// 3: with the comparison already seen, 匯出 does not change page: the
-    /// toast 已匯出 shows and the viewer stays on the same photo.
+    /// #679-3, 4: 匯出 opens the export sheet for this one photo; its 匯出
+    /// closes it, toasts 已匯出 and stays on the same photo.
     func testViewerExportStaysOnThePhoto() {
         launch(opensExport: false)
         let cell = app.descendants(matching: .any).matching(identifier: "photoCell").element(boundBy: 3)
         XCTAssertTrue(cell.waitForExistence(timeout: 10))
         cell.tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
-        let exportButton = element("exportButton")
+        let exportButton = element("photoDetailExportButton")
         XCTAssertTrue(exportButton.waitForExistence(timeout: 5))
         exportButton.tap()
-        XCTAssertTrue(toastAppears(), "已匯出 toast")
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "3 the export sheet")
+        XCTAssertEqual(element("batchExportTitle").label, "匯出這張照片")
+        XCTAssertTrue(app.staticTexts["另存一張新照片，原圖不動。"].exists)
+        XCTAssertFalse(element("batchExportPosition").exists, "3 no ‹ i／M ›")
+        XCTAssertFalse(element("batchExportPrevious").exists)
+        XCTAssertFalse(element("batchExportNext").exists)
+        let start = element("batchExportStartButton")
+        XCTAssertEqual(start.label, "匯出")
+        start.tap()
+        XCTAssertTrue(toastAppears(), "4 已匯出 toast")
         XCTAssertTrue(app.staticTexts["已匯出"].exists)
+        XCTAssertFalse(element("batchExportSheet").exists, "4 the sheet closed")
         XCTAssertFalse(element("exportView").exists, "no page change")
         XCTAssertTrue(element("photoDetailTitle").label.contains("第 9 天"), element("photoDetailTitle").label)
-        XCTAssertFalse(element("exportIntroSheet").exists, "no comparison without -UITestShowTips")
     }
 
-    /// 7: the first 匯出 opens the comparison; 匯出 on it exports and it never
-    /// comes back.
-    func testFirstExportShowsTheComparisonOnce() {
+    /// #679-10: even on a first run, 匯出 goes straight to the export sheet;
+    /// the old comparison sheet is gone.
+    func testFirstExportHasNoComparison() {
         launch(opensExport: false, portrait: true, showTips: true)
         openNewestViewer()
         dismissCoachIfShown()
-        element("exportButton").tap()
-        XCTAssertTrue(element("exportIntroSheet").waitForExistence(timeout: 5), "comparison on the first press")
-        XCTAssertTrue(app.staticTexts["匯出會另存一張新照片"].exists)
-        XCTAssertTrue(app.staticTexts["原圖（不變）"].exists)
-        XCTAssertTrue(app.staticTexts["匯出的新照片"].exists)
-        Thread.sleep(forTimeInterval: 1)
-        assertOnScreen(app.buttons["exportIntroExportButton"], "匯出 in view")
-        assertOnScreen(app.buttons["exportIntroStyleButton"], "先調整文字樣式 in view")
-        shot("export-intro")
-        app.buttons["exportIntroExportButton"].tap()
+        element("photoDetailExportButton").tap()
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("exportIntroSheet").exists)
+        XCTAssertFalse(app.staticTexts["匯出會另存一張新照片"].exists)
+        element("batchExportStartButton").tap()
         XCTAssertTrue(toastAppears(), "it exported")
-        XCTAssertFalse(element("exportIntroSheet").exists)
-        waitUntilGone(element("exportToast"))
-        element("exportButton").tap()
-        XCTAssertTrue(toastAppears(), "straight through the second time")
-        XCTAssertFalse(element("exportIntroSheet").exists, "the comparison does not return")
-    }
-
-    /// 7: 先調整文字樣式 opens the style page, exports nothing and the
-    /// comparison does not return.
-    func testStyleFirstOpensTheStylePage() {
-        launch(opensExport: false, showTips: true)
-        openNewestViewer()
-        dismissCoachIfShown()
-        element("exportButton").tap()
-        XCTAssertTrue(element("exportIntroSheet").waitForExistence(timeout: 5))
-        app.buttons["exportIntroStyleButton"].tap()
-        XCTAssertTrue(element("exportView").waitForExistence(timeout: 8), "the style page opened")
-        XCTAssertFalse(element("exportToast").exists)
-        element("exportConfirmButton").tap()
-        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
-        element("exportButton").tap()
-        XCTAssertTrue(toastAppears())
-        XCTAssertFalse(element("exportIntroSheet").exists)
-    }
-
-    /// 7: swiping the comparison away exports nothing and is not seeing it.
-    func testSwipingTheComparisonAwayKeepsItPending() {
-        launch(opensExport: false, showTips: true)
-        openNewestViewer()
-        dismissCoachIfShown()
-        element("exportButton").tap()
-        XCTAssertTrue(element("exportIntroSheet").waitForExistence(timeout: 5))
-        element("exportIntroSheet").swipeDown(velocity: .fast)
-        waitUntilGone(element("exportIntroSheet"))
-        XCTAssertFalse(element("exportToast").exists, "nothing was exported")
-        element("exportButton").tap()
-        XCTAssertTrue(element("exportIntroSheet").waitForExistence(timeout: 5), "it comes back")
     }
 
     private func openNewestViewer() {
@@ -240,36 +207,46 @@ final class ExportUITests: XCTestCase {
         XCTAssertLessThan(moved.midX, before.midX - 15, "followed the finger")
         XCTAssertLessThan(moved.midY, before.midY - 15, "followed the finger")
 
-        // xmark does not roll back (FR-19.4); reopened, the text is still there.
+        // xmark does not roll back (FR-19.4); reopened from the export sheet,
+        // the text is still there.
         element("exportCancelButton").tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
-        let styleButton = element("styleButton")
-        XCTAssertTrue(styleButton.waitForExistence(timeout: 5))
-        styleButton.tap()
-        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
+        openStylePageFromTheExportSheet()
         XCTAssertTrue(draggableText.waitForExistence(timeout: 5))
         XCTAssertEqual(draggableText.frame.midX, moved.midX, accuracy: 3, "position kept")
         XCTAssertEqual(draggableText.frame.midY, moved.midY, accuracy: 3, "position kept")
     }
 
-    /// FR-18.5: the viewer's 文字樣式 button opens the page of the photo on
-    /// screen, and `xmark` closes it.
-    func testViewerStyleButtonOpensThePage() {
+    /// Opens the viewer's export sheet, then its 調整文字樣式.
+    private func openStylePageFromTheExportSheet() {
+        let exportButton = element("photoDetailExportButton")
+        XCTAssertTrue(exportButton.waitForExistence(timeout: 5))
+        exportButton.tap()
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
+        let link = element("batchExportStyleLink")
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        XCTAssertTrue(link.isEnabled)
+        link.tap()
+        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
+    }
+
+    /// #679: the viewer has no 文字樣式 button; the page opens from the
+    /// export sheet's 調整文字樣式, and `xmark` comes back to the sheet.
+    func testStylePageOpensFromTheExportSheet() {
         launch(opensExport: false)
         let cell = app.descendants(matching: .any).matching(identifier: "photoCell").element(boundBy: 3)
         XCTAssertTrue(cell.waitForExistence(timeout: 10))
         cell.tap()
-        let styleButton = element("styleButton")
-        XCTAssertTrue(styleButton.waitForExistence(timeout: 5))
-        XCTAssertTrue(styleButton.isEnabled)
-        XCTAssertTrue(element("exportButton").isEnabled)
-        styleButton.tap()
+        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("styleButton").exists)
+        openStylePageFromTheExportSheet()
         let title = element("exportTitle")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertTrue(title.label.contains("文字樣式"), title.label)
         element("exportCancelButton").tap()
-        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "back on the sheet")
     }
+
     // MARK: - Panel scrolling (116.5, 116.8 from the camera's panel, #621)
 
     /// 116.5: dragging down on the font list scrolls it and leaves the page

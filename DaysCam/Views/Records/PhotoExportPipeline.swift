@@ -73,13 +73,17 @@ final class PhotoExportPipeline {
     /// exported. The font is resolved when the call starts, so what is baked
     /// is what was on screen at the press.
     ///
-    /// - Parameter progress: the original's download progress, 0...1.
+    /// - Parameters:
+    ///   - hidesText: 隱藏文字 on the export sheet (#679): the day count, date
+    ///     and name are left out; the film date stamp still follows the record.
+    ///   - progress: the original's download progress, 0...1.
     func export(photo: RecordPhoto,
                 profile: CameraProfile,
+                hidesText: Bool = false,
                 resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont,
                 progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> Result<Void, PhotoExportError> {
         guard let date = photo.creationDate else { return .failure(.photoMissing) }
-        let text = renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        let text = hidesText ? "" : renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
         let style = profile.style
         let placement = profile.position
         let font = resolveFont(style)
