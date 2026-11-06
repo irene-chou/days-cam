@@ -1,8 +1,9 @@
 import XCTest
 
-/// TASK-149 (#518): the text-color page adds a light row (the dark row and
-/// film colors were dropped, PR #527); the outline and shadow pages do not. With `DAYSCAM_UI_SHOT_DIR` in
-/// the test runner's environment the B′ screenshots are also written there.
+/// TASK-149 (#518): the text color has a light row (the dark row and film
+/// colors were dropped, PR #527); since #678 it sits on the one style page.
+/// With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
+/// screenshots are also written there.
 final class ColorPresetRowsUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -13,7 +14,6 @@ final class ColorPresetRowsUITests: XCTestCase {
         XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
         XCTAssertTrue(app.buttons["樣式"].waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
-        app.buttons["顏色"].tap()
         XCTAssertTrue(app.buttons["#FFFFFF"].waitForExistence(timeout: 5))
     }
 
@@ -62,26 +62,5 @@ final class ColorPresetRowsUITests: XCTestCase {
         XCTAssertEqual(recentCount, recentBefore, "149.6 最近 unchanged")
         XCTAssertTrue(rainbow.isHittable, "149.9 the last row is in view")
         shot("149.11_color_light_selected")
-    }
-
-    /// 149.8: outline and shadow keep their one swatch row.
-    func testOutlineAndShadowPagesHaveNoNewRows() {
-        app.buttons["外框"].tap()
-        XCTAssertTrue(app.buttons["描邊"].waitForExistence(timeout: 3))
-        app.buttons["描邊"].tap()
-        XCTAssertTrue(app.buttons["#3897F0"].waitForExistence(timeout: 3), "outline palette shows")
-        for label in ["#E5E5EA", "#92C6F7", "#CC77D9"] {
-            XCTAssertFalse(app.buttons[label].exists, "149.8 outline: \(label)")
-        }
-        shot("149.8_outline")
-
-        app.buttons["陰影"].tap()
-        XCTAssertTrue(app.buttons["柔和"].waitForExistence(timeout: 3))
-        app.buttons["柔和"].tap()
-        XCTAssertTrue(app.buttons["#3897F0"].waitForExistence(timeout: 3), "shadow palette shows")
-        for label in ["#E5E5EA", "#92C6F7", "#CC77D9"] {
-            XCTAssertFalse(app.buttons[label].exists, "149.8 shadow: \(label)")
-        }
-        shot("149.8_shadow")
     }
 }

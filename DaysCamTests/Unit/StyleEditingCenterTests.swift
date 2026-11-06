@@ -248,14 +248,34 @@ final class StyleEditingCenterTests: XCTestCase {
         XCTAssertEqual(harness.notifications.messages, ["已套用「行楷」"], "35.6")
     }
 
-    func testApplyFontAnnouncesInTheOpenListWhenItIsOpen() throws {
+    /// #678: the font list left the panel, so even a list that reported
+    /// itself on screen no longer takes the message; the toast does.
+    func testApplyFontAnnouncesInTheToastNowThatTheListIsGone() throws {
         let harness = try makeHarness(states: [.xingkai: .notDownloaded])
         let editor = try harness.editor(for: harness.profileA)
         editor.styleTabModel.fontList.listDidAppear()
         harness.center.applyFont(.xingkai, profileID: harness.profileA.id)
         harness.library.finishDownload(.xingkai)
-        XCTAssertEqual(editor.styleTabModel.fontLibraryModel?.toast?.text, "已套用「行楷」")
-        XCTAssertTrue(harness.notifications.messages.isEmpty, "the open list shows it, nothing else does")
+        XCTAssertNil(editor.styleTabModel.fontLibraryModel)
+        XCTAssertEqual(harness.notifications.messages, ["已套用「行楷」"])
+    }
+
+    /// #678-4 end to end: a look whose font is not downloaded is saved at
+    /// once, downloads through `applyFont`, and the finished download keeps
+    /// the look's weight.
+    func testSelectingALookWithAFontToDownloadKeepsItsWeightWhenDone() throws {
+        let harness = try makeHarness(states: [.chenyuluoyan: .notDownloaded])
+        let editor = try harness.editor(for: harness.profileA)
+        editor.styleTabModel.selectPreset(.handwriting)
+        XCTAssertEqual(harness.library.downloads, [.chenyuluoyan], "678-4")
+        XCTAssertEqual(storedFont(harness.profileA.id, in: harness.store), .chenyuluoyan, "written at once")
+
+        harness.library.finishDownload(.chenyuluoyan)
+        let stored = try XCTUnwrap(harness.store.profiles.first { $0.id == harness.profileA.id })
+        XCTAssertEqual(stored.style.fontID, .chenyuluoyan, "678-4")
+        XCTAssertEqual(stored.style.fontWeight, "thin", "678-4")
+        XCTAssertEqual(editor.styleTabModel.selectedPreset, .handwriting)
+        XCTAssertEqual(harness.notifications.messages, ["已套用「辰宇落雁體」"])
     }
 
     func testApplyFontWithNoEditorOnScreenStillWritesAndNotifies() throws {

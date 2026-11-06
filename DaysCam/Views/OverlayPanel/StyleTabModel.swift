@@ -2,41 +2,18 @@ import Combine
 import Foundation
 import UIKit
 
-/// Drives the overlay panel's 樣式 (style) tab: font, color, outline, shadow
-/// and size (PRD 0.2 FR-10). Replaces 0.1's fixed theme picker — there is no
-/// preset or template, every attribute is adjusted independently (FR-10.1,
-/// FR-10.10).
+/// Drives the overlay panel's 樣式 (style) tab (D-10, #678): a row of ten
+/// named looks (`OverlayStylePreset`), the text color, the box button and the
+/// size. A look sets the font, outline and shadow as one; only the color, the
+/// box state and the size are adjusted on their own.
 ///
 /// Follows the same shape as `DisplaySettingsModel`: it holds a working copy
 /// of one `CameraProfile` and an injected `updateProfile` closure, so it is
 /// constructible and unit-testable without a real `ProfileStore` or panel
-/// shell (TASK-22 has not landed yet — this model does not depend on it).
-/// Every mutating method writes through immediately; there is no separate
-/// save step (FR-8.6).
+/// shell. Every mutating method writes through immediately; there is no
+/// separate save step (FR-8.6).
 @MainActor
 final class StyleTabModel: ObservableObject {
-    /// The five second-layer items (FR-10.1). Case order is display order and
-    /// matches the accessibility-label order acceptance 23.1 checks.
-    enum SubTab: CaseIterable {
-        case color, size, outline, shadow, font
-
-        /// The user-visible name, shown as the 10pt caption under the icon
-        /// (FR-10.1 as revised by TASK-110) and used as the accessibility
-        /// label, so VoiceOver reads each sub-tab exactly once.
-        var title: String {
-            switch self {
-            case .font: return "字型"
-            case .color: return "顏色"
-            case .outline: return "外框"
-            case .shadow: return "陰影"
-            case .size: return "字級"
-            }
-        }
-
-        /// Same word as `title`; kept so call sites and tests read naturally.
-        var accessibilityLabel: String { title }
-    }
-
     /// The profile as currently configured. Read-only from outside: every
     /// change goes through one of this model's setters so it is always
     /// persisted (FR-8.6).
@@ -48,19 +25,17 @@ final class StyleTabModel: ObservableObject {
                             currentWeightID: profile.style.fontWeight)
         }
     }
-    /// Which second-layer item is selected. In-memory only — not part of the
-    /// profile and not persisted, matching `lastPanelTab`'s sibling state.
-    @Published var selectedSubTab: SubTab = .color
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
-    /// The font list of the 字型 page (TASK-56). Lives as long as this model.
+    /// The font list of the former 字型 page (TASK-56). No longer shown
+    /// (#678); kept because `StyleEditingCenter` still reads its pending
+    /// weight. Lives as long as this model.
     let fontList: FontLibraryModel
 
-    /// The font list while it is on screen, `nil` otherwise:
-    /// `CameraScreenModel` announces "已套用" in it when there is one and on
-    /// the camera screen when there is not.
-    var fontLibraryModel: FontLibraryModel? { fontList.isVisible ? fontList : nil }
+    /// The font list while it is on screen: always `nil` since the list left
+    /// the panel (#678), so "已套用" and failures go to the toast.
+    var fontLibraryModel: FontLibraryModel? { nil }
 
     private let updateProfile: (CameraProfile) throws -> Void
     private let recentColorsStore: RecentColorsStore
@@ -71,16 +46,16 @@ final class StyleTabModel: ObservableObject {
     /// Creates a style tab model for `profile`.
     ///
     /// - Parameters:
-    ///   - recentColorsStore: Shared across text and outline color, and across
-    ///     profiles (PRD A-8). Defaults to a real store backed by
+    ///   - recentColorsStore: Shared across profiles (PRD A-8). Defaults to a real store backed by
     ///     `UserDefaults.standard`; tests inject their own instance.
     ///   - fontLibrary: Where each font's availability comes from and what
     ///     the font list can cancel or delete (PRD 0.3). The default has only
     ///     PingFang usable (previews, tests); the camera screen injects the
     ///     real `FontLibrary`.
-    ///   - applyFont: The one way a font gets written to a profile
+    ///   - applyFont: Downloads a font and writes it once usable
     ///     (`applyFont(fontID, profileID)`, FR-5.18), provided by
-    ///     `CameraScreenModel`. This model never writes `fontID` itself.
+    ///     `StyleEditingCenter`. `selectPreset` writes the look's font itself
+    ///     and calls this only to download a font that is not usable yet.
     ///   - allProfiles: Every profile, to count who uses a font before it is
     ///     deleted.
     ///   - updateProfile: Forwarded to the real persistence layer by the
@@ -109,7 +84,7 @@ final class StyleTabModel: ObservableObject {
             self?.applyFontWeight(weightID, for: fontID) ?? false
         }
         fontList.applyFontWithWeight = { [weak self] fontID, weightID in
-            self?.applyFont(fontID, weightID: weightID) ?? false
+            self?.applyFontWithWeight(fontID, weightID: weightID) ?? false
         }
 
         // Forward the store's changes so a view observing only this model
@@ -144,8 +119,7 @@ final class StyleTabModel: ObservableObject {
         profile.style = style
     }
 
-    /// Recently picked custom colors, newest first, shared by text and
-    /// outline color (FR-10.4, FR-10.6, FR-10.7, A-8).
+    /// Recently picked custom text colors, newest first (FR-10.7, A-8).
     var recentColors: [OverlayColor] {
         recentColorsStore.recentCustomColors
     }
@@ -166,35 +140,87 @@ final class StyleTabModel: ObservableObject {
     }
 }
 
-// MARK: - 字型 (PRD 0.3 FR-16, TASK-56)
+// MARK: - 樣式列 (D-10, #678)
 
 extension StyleTabModel {
-    /// `fontID` (default: the profile's font) at `size`, resolved the way the
-    /// viewfinder and the photo resolve it (FR-5.14): the font itself when it
-    /// is available, PingFang otherwise. For the font cells and the
-    /// outline/shadow previews.
-    func resolvedFont(ofSize size: CGFloat, for fontID: OverlayFontID? = nil) -> UIFont {
-        guard let fontID, fontID != profile.style.fontID else {
-            // The profile's own font keeps its chosen weight (TASK-89).
-            return OverlayMetrics.resolvedFont(for: profile.style, availability: fontLibrary).font(ofSize: size)
+    /// The ten looks, in the order the row shows them.
+    var presets: [OverlayStylePreset] { OverlayStylePreset.allCases }
+
+    /// The look the profile shows as; `nil` for a custom style, which the
+    /// row marks with an extra 自訂 capsule. The text color and the size do
+    /// not count (`OverlayStyle.preset`).
+    var selectedPreset: OverlayStylePreset? { profile.style.preset }
+
+    /// The box button's state; `nil` for a custom style, when the button is
+    /// disabled.
+    var boxState: OverlayBoxState? {
+        profile.style.preset.flatMap { profile.style.boxState(for: $0) }
+    }
+
+    /// The state of the exact face `preset` uses, for the capsule's badge.
+    func fontState(for preset: OverlayStylePreset) -> FontState {
+        let look = preset.style
+        return fontLibrary.state(for: look.fontID, weightID: look.fontWeight)
+    }
+
+    /// `preset`'s own face at `size` when it is usable, PingFang otherwise
+    /// (FR-5.14), for the capsule's name.
+    func nameFont(for preset: OverlayStylePreset, ofSize size: CGFloat) -> UIFont {
+        OverlayMetrics.resolvedFont(for: preset.style, availability: fontLibrary).font(ofSize: size)
+    }
+
+    /// Applies `preset` with one save: font, weight, outline and shadow; the
+    /// text color only when it is still the old look's default (#676). This
+    /// writes `fontID` itself, past FR-5.18's single writer, so the capsule
+    /// is selected while the font downloads; until then the text falls back
+    /// to PingFang (A-4).
+    ///
+    /// A face that is not usable yet starts downloading: the font's default
+    /// face through `applyFont`, which announces it when done; another face
+    /// (思源黑體 特粗) straight from the library, since `applyFont` only fetches
+    /// default faces. Tapping the selected look again retries a failed
+    /// download.
+    func selectPreset(_ preset: OverlayStylePreset) {
+        var style = profile.style
+        style.apply(preset)
+        if style != profile.style {
+            guard mutate({ $0 = style }) else { return }
         }
-        return OverlayMetrics.resolvedFont(for: fontID, availability: fontLibrary).font(ofSize: size)
+        downloadFontIfNeeded(for: preset)
     }
 
-    /// Applies `fontID` to this profile through `applyFont` (FR-5.18).
-    func selectFont(_ fontID: OverlayFontID) {
-        applyFont(fontID, profile.id)
+    /// Moves the box button to its next state (base, solid, translucent) and
+    /// saves. Does nothing for a custom style.
+    func cycleBoxState() {
+        guard let preset = selectedPreset else { return }
+        mutate { $0.cycleBoxState(for: preset) }
     }
 
+    private func downloadFontIfNeeded(for preset: OverlayStylePreset) {
+        let look = preset.style
+        let state = fontState(for: preset)
+        switch state {
+        case .available, .downloading: return
+        case .notDownloaded, .failed, .preparing: break
+        }
+        let entry = FontCatalog.entry(for: look.fontID)
+        if entry.weight(for: look.fontWeight).id == entry.defaultWeight.id {
+            applyFont(look.fontID, profile.id)
+        } else if state != .preparing {
+            fontLibrary.download(look.fontID, weightID: look.fontWeight)
+        }
+    }
+}
+
+// MARK: - 字重 (TASK-89, the hidden font list's write path)
+
+private extension StyleTabModel {
     /// Writes `weightID` of the profile's current font and saves it. Only a
-    /// face the library can already draw reaches here (`FontLibraryModel`
-    /// downloads the others first); a weight of another font or an unknown ID
-    /// is ignored.
+    /// face the library can already draw reaches here; a weight of another
+    /// font or an unknown ID is ignored.
     ///
     /// - Returns: whether the profile now has `weightID` saved. When saving
-    ///   fails the old weight is put back (and `lastError` is set), so the
-    ///   panel never shows a weight that would vanish on relaunch.
-    @discardableResult
+    ///   fails the old weight is put back (and `lastError` is set).
     func applyFontWeight(_ weightID: String, for fontID: OverlayFontID) -> Bool {
         let entry = FontCatalog.entry(for: fontID)
         guard fontID == profile.style.fontID,
@@ -208,15 +234,11 @@ extension StyleTabModel {
         return true
     }
 
-    /// Writes `fontID` and `weightID` together with one save (TASK-115): the
-    /// path of tapping a weight of a font that is not selected yet. Only a
-    /// face the library can already draw reaches here. For the profile's own
-    /// font this is `applyFontWeight`; an unknown weight is ignored.
+    /// Writes `fontID` and `weightID` together with one save (TASK-115).
     ///
     /// - Returns: whether the profile now has both. When saving fails the old
     ///   font and weight are both put back (and `lastError` is set).
-    @discardableResult
-    func applyFont(_ fontID: OverlayFontID, weightID: String) -> Bool {
+    func applyFontWithWeight(_ fontID: OverlayFontID, weightID: String) -> Bool {
         guard FontCatalog.entry(for: fontID).weights.contains(where: { $0.id == weightID }) else { return false }
         if fontID == profile.style.fontID { return applyFontWeight(weightID, for: fontID) }
         let previous = profile
@@ -232,7 +254,7 @@ extension StyleTabModel {
     }
 }
 
-// MARK: - 顏色 (FR-10.4, FR-10.6, FR-10.7)
+// MARK: - 顏色 (FR-10.4, FR-10.7)
 
 extension StyleTabModel {
     /// The first row of the text-color palette: the nine swatches (FR-10.4).
@@ -241,21 +263,8 @@ extension StyleTabModel {
     var textColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
     /// The light row under the text-color swatches, column for column
-    /// (TASK-149, #518). Text color only; outline and shadow keep their one
-    /// swatch row.
+    /// (TASK-149, #518).
     var textColorLightSwatches: [OverlayColor] { OverlayStyle.lightSwatches }
-
-    /// The first row of the outline-color palette: all nine swatches
-    /// (FR-10.6). The view prepends its own "automatic" button (represented
-    /// here by `outlineColor == nil`) and appends the rainbow `ColorPicker`,
-    /// for eleven items total.
-    var outlineColorSwatches: [OverlayColor] { OverlayStyle.swatches }
-
-    /// Whether the outline-color section should be disabled: there is no
-    /// outline to color while `outline` is `.none` (FR-10.6).
-    var isOutlineColorSectionDisabled: Bool {
-        profile.style.outline == .none
-    }
 
     /// Selects `color` as the text color from a swatch or the recent row,
     /// fully opaque: a swatch never carries a hidden opacity, which is set
@@ -264,15 +273,6 @@ extension StyleTabModel {
         let picked = color.withOpacity(1)
         guard picked != profile.style.textColor else { return }
         mutate { $0.textColor = picked }
-    }
-
-    /// Selects `color` as the outline color from a swatch or the recent row;
-    /// `nil` selects "automatic" (FR-10.6). Both are fully opaque (TASK-113);
-    /// only the color picker sets an opacity.
-    func selectOutlineColor(_ color: OverlayColor?) {
-        let picked = color.map { $0.withOpacity(1) }
-        guard picked != profile.style.outlineColor else { return }
-        mutate { $0.outlineColor = picked }
     }
 
     /// Applies a text color dragged in the custom color picker. Does not touch
@@ -284,14 +284,7 @@ extension StyleTabModel {
         mutate { $0.textColor = picked }
     }
 
-    /// Applies an outline color dragged in the custom color picker, mirroring
-    /// `applyCustomTextColor`.
-    func applyCustomOutlineColor(_ color: OverlayColor) {
-        let picked = Self.clampingOpacity(color)
-        mutate { $0.outlineColor = picked }
-    }
-
-    /// Adds the final color of a closed custom color picker to the shared
+    /// Adds the final color of a closed custom color picker to the
     /// recent-colors list (FR-10.7). Preset swatches are ignored by the store.
     /// Only the RGB is remembered: opacity belongs to the current setting, not
     /// to the recent color (TASK-69).
@@ -308,90 +301,6 @@ extension StyleTabModel {
 
     private static func clampingOpacity(_ color: OverlayColor) -> OverlayColor {
         color.withOpacity(min(max(color.opacity, OverlayColor.minimumStorableOpacity), 1))
-    }
-}
-
-// MARK: - 外框、陰影 (FR-10.5, FR-10.8, FR-10.10)
-
-extension StyleTabModel {
-    /// The four outline options, in display order (FR-10.5, TASK-70, TASK-81).
-    var outlineOptions: [OverlayOutline] { [.none, .stroke, .box, .squareBox] }
-
-    /// The four shadow options, in display order (FR-10.8).
-    var shadowOptions: [OverlayShadowPreset] { OverlayShadowPreset.allCases }
-
-    /// Selects `outline` and persists. Both outline and shadow may be `.none`
-    /// at once; nothing here warns about it (FR-10.10, overturning 0.1 FR-4.6).
-    func selectOutline(_ outline: OverlayOutline) {
-        guard outline != profile.style.outline else { return }
-        mutate { $0.outline = outline }
-    }
-
-    /// Slider step of the stroke width, in points at a 17pt font.
-    static let strokeWidthStep = 0.5
-    /// Slider step of the box padding, in points at a 17pt font.
-    static let boxPaddingStep = 1.0
-
-    /// Sets `strokeWidth` from a raw slider value, snapped to
-    /// `strokeWidthStep` and clamped to `OverlayStyle.strokeWidthRange`
-    /// (TASK-70); writes through at once.
-    func setStrokeWidth(_ rawValue: Double) {
-        let snapped = (rawValue / Self.strokeWidthStep).rounded() * Self.strokeWidthStep
-        let range = OverlayStyle.strokeWidthRange
-        let clamped = min(max(snapped, range.lowerBound), range.upperBound)
-        guard clamped != profile.style.strokeWidth else { return }
-        mutate { $0.strokeWidth = clamped }
-    }
-
-    /// Sets `boxPadding` from a raw slider value, snapped to `boxPaddingStep`
-    /// and clamped to `OverlayStyle.boxPaddingRange` (TASK-70).
-    func setBoxPadding(_ rawValue: Double) {
-        let snapped = (rawValue / Self.boxPaddingStep).rounded() * Self.boxPaddingStep
-        let range = OverlayStyle.boxPaddingRange
-        let clamped = min(max(snapped, range.lowerBound), range.upperBound)
-        guard clamped != profile.style.boxPadding else { return }
-        mutate { $0.boxPadding = clamped }
-    }
-
-    /// Selects `shadow` and persists, mirroring `selectOutline`.
-    func selectShadow(_ shadow: OverlayShadowPreset) {
-        guard shadow != profile.style.shadowPreset else { return }
-        mutate { $0.applyShadowPreset(shadow) }
-    }
-
-    /// Whether the shadow color section is disabled: there is no shadow to
-    /// color while it is off (preset 無, TASK-71).
-    var isShadowColorDisabled: Bool { !profile.style.showsShadow }
-
-    /// The opacity a swatch or "follow the text color" gives the shadow
-    /// (TASK-113): the default shadow's 60%, not fully opaque, which would be
-    /// a hard block. Only the color picker sets another value.
-    static let swatchShadowOpacity = OverlayStyle().shadowOpacity
-
-    /// Selects the shadow color from a swatch or the recent row: a custom
-    /// color at `swatchShadowOpacity`. `nil` follows the text color
-    /// ("跟隨文字顏色"), also at that opacity. Presets never touch the color
-    /// (TASK-86).
-    func selectShadowColor(_ color: OverlayColor?) {
-        mutate { style in
-            guard let color else {
-                style.shadowColorSource = .textColor
-                style.shadowOpacity = Self.swatchShadowOpacity
-                return
-            }
-            style.shadowColorSource = .custom
-            style.shadowColor = color.withOpacity(Self.swatchShadowOpacity)
-        }
-    }
-
-    /// Applies a color dragged in the custom color picker (alpha included,
-    /// clamped to the storable range) as a custom shadow color.
-    func applyCustomShadowColor(_ color: OverlayColor) {
-        let picked = Self.clampingOpacity(color)
-        mutate {
-            $0.shadowColorSource = .custom
-            $0.shadowColor = picked
-        }
     }
 }
 

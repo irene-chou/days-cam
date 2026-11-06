@@ -183,25 +183,25 @@ final class TabProfileWriterTests: XCTestCase {
         let other = try XCTUnwrap(FontCatalog.entry(for: .notoSerifTC).weights.first { $0.id != before }?.id)
         failing.failing = true
 
-        XCTAssertFalse(model.applyFontWeight(other, for: .notoSerifTC), "not reported as applied")
+        // The hidden font list's weight path (#678 took the list off the panel).
+        XCTAssertFalse(model.fontList.applyWeight(.notoSerifTC, other), "not reported as applied")
         XCTAssertEqual(model.profile.style.resolvedFontWeight.id, before, "tab went back")
         XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.resolvedFontWeight.id, before, "store went back")
         XCTAssertNotNil(model.lastError)
 
         failing.failing = false
-        XCTAssertTrue(model.applyFontWeight(other, for: .notoSerifTC))
+        XCTAssertTrue(model.fontList.applyWeight(.notoSerifTC, other))
         XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.resolvedFontWeight.id, other)
     }
 
-    /// 147.1: the first picker event from "follow the text color" is debounced,
-    /// not written on the main thread.
-    func testFirstShadowPickerEventFromFollowTextIsDebounced() throws {
+    /// 147.1 → #678: a color-picker event is debounced, not written on the
+    /// main thread; tapping a look (147.2's tap, now that the shadow color
+    /// is gone) writes before returning.
+    func testPickerEventIsDebouncedAndAPresetTapIsWrittenAtOnce() throws {
         let held = HeldWork()
         let store = ProfileStore(directory: directory, scheduler: held.scheduler)
         store.load()
-        var seeded = try XCTUnwrap(store.profiles.first)
-        seeded.style.shadowColorSource = .textColor
-        try store.updateAndWait(seeded)
+        let seeded = try XCTUnwrap(store.profiles.first)
         let writer = TabProfileWriter(baseline: seeded, profileStore: store)
         let suite = try XCTUnwrap(UserDefaults(suiteName: "TabProfileWriterTests-\(UUID().uuidString)"))
         let model = StyleTabModel(profile: seeded, recentColorsStore: RecentColorsStore(defaults: suite),
@@ -209,18 +209,17 @@ final class TabProfileWriterTests: XCTestCase {
                                   updateProfile: writer.write)
         let picked = OverlayColor(red8: 0x7A, green8: 0x4E, blue8: 0x9C)
 
-        model.applyCustomShadowColor(picked)
+        model.applyCustomTextColor(picked)
 
-        XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.shadowColorSource, .custom, "memory is current")
-        XCTAssertNotEqual(ProfileStore(directory: directory).load().first?.style.shadowColorSource, .custom,
+        XCTAssertEqual(try XCTUnwrap(store.profiles.first).style.textColor, picked, "memory is current")
+        XCTAssertNotEqual(ProfileStore(directory: directory).load().first?.style.textColor, picked,
                           "147.1 not written synchronously")
         XCTAssertEqual(held.items.count, 1, "debounce scheduled")
         store.flush()
-        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.shadowColorSource, .custom)
+        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.textColor, picked)
 
-        // 147.2: tapping "follow text color" writes before returning.
-        model.selectShadowColor(nil)
-        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.shadowColorSource, .textColor, "147.2")
+        model.selectPreset(.caption)
+        XCTAssertEqual(ProfileStore(directory: directory).load().first?.style.outline, .box, "147.2 a tap")
     }
 
     /// 583.3: the 寫法 the content tab picks reaches the store — the merge

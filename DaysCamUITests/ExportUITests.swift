@@ -272,46 +272,42 @@ final class ExportUITests: XCTestCase {
     }
     // MARK: - Panel scrolling (116.5, 116.8 from the camera's panel, #621)
 
-    /// 116.5: dragging down on the font list scrolls it and leaves the page
-    /// and the panel as they were.
-    func testSwipeDownOnTheFontListKeepsThePanel() {
+    /// 116.5: dragging down on the style page scrolls it and leaves the page
+    /// and the panel as they were (the font list left the panel in #678).
+    func testSwipeDownOnTheStylePageKeepsThePanel() {
         launch()
         app.buttons["樣式"].tap()
-        app.buttons["字型"].tap()
-        let list = app.scrollViews.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 3))
-        list.swipeUp()
-        list.swipeDown()
-        list.swipeDown()
+        XCTAssertTrue(app.buttons["stylePreset_classic"].waitForExistence(timeout: 3))
+        let page = app.scrollViews.containing(.button, identifier: "boxStateButton").firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 3))
+        page.swipeUp()
+        page.swipeDown()
+        page.swipeDown()
         XCTAssertTrue(element("exportView").exists, "116.5 still on the export page")
         XCTAssertTrue(app.buttons["樣式"].exists, "116.5 the panel is still there")
     }
 
-    /// 116.8: scrolled all the way down, the font list's last row ends above
-    /// the note under the panel and can be tapped.
-    func testFontListLastRowScrollsAboveTheNote() {
+    /// 116.8: scrolled all the way down, the style page's last control (the
+    /// size slider) ends above the note under the panel and can be used.
+    func testStylePageLastRowScrollsAboveTheNote() {
         launch()
         app.buttons["樣式"].tap()
-        app.buttons["字型"].tap()
-        let list = app.scrollViews.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 3))
-        let rows = list.buttons.allElementsBoundByIndex
-        XCTAssertFalse(rows.isEmpty, "116.8 the font list has rows")
-        guard let last = rows.last else { return }
+        let last = app.sliders["字級"]
+        XCTAssertTrue(last.waitForExistence(timeout: 3), "116.8 the page has the size slider")
         let note = app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"]
         XCTAssertTrue(note.exists)
         let bottom = note.frame.minY
         let top = app.buttons["樣式"].frame.maxY + 70
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-        for _ in 0..<10 {
-            let from = origin.withOffset(CGVector(dx: app.frame.midX, dy: bottom - 20))
+        for _ in 0..<4 {
+            let from = origin.withOffset(CGVector(dx: 8, dy: bottom - 20))
             from.press(forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: 0, dy: top - (bottom - 20))),
                        withVelocity: .fast, thenHoldForDuration: 0.2)
         }
         Thread.sleep(forTimeInterval: 0.8)
         XCTAssertLessThanOrEqual(last.frame.maxY, bottom + 1,
                                  "116.8 the last row ends above the note — last \(last.frame) note \(bottom)")
-        last.tap()
+        last.doubleTap()
         XCTAssertTrue(element("exportView").exists, "116.8 the last row can be operated without leaving the page")
         XCTAssertTrue(app.buttons["樣式"].exists)
     }
