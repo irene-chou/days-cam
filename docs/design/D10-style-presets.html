@@ -1,0 +1,368 @@
+<title>DaysCam 文字樣式 D-10</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&family=LXGW+WenKai+TC:wght@500;700&family=Huninn&family=Iansui&display=swap">
+<style>
+/* Layout: one column of 375pt phone mocks and style tiles; page chrome follows CameraTheme (暖白底、墨色字、杏桃主題色). */
+:root{
+  --bg:#F7F3EE; --card:#FFFFFF; --ink:#2A2622; --ink2:rgba(42,38,34,.62); --ink3:rgba(42,38,34,.38);
+  --fill:rgba(42,38,34,.07); --line:rgba(42,38,34,.12); --accent:#FFC27A; --active:#C9772A; --accent-control:#F0A64A;
+  --ok:#3E7C4B;
+  /* the phone is the App itself: fixed light, never themed */
+  --p-bg:#F7F3EE; --p-card:#FFFFFF; --p-ink:#2A2622; --p-ink2:rgba(42,38,34,.62); --p-ink3:rgba(42,38,34,.38);
+  --p-fill:rgba(42,38,34,.07); --p-line:rgba(42,38,34,.10); --p-active:#C9772A; --p-accent:#FFC27A;
+  --sans:"Noto Sans TC","PingFang TC","Helvetica Neue",system-ui,sans-serif;
+  --serif:"Noto Serif TC","Songti TC",serif;
+  --kai:"LXGW WenKai TC","Kaiti TC",serif;
+  --round:"Huninn","Noto Sans TC",sans-serif;
+  --hand:"Iansui","LXGW WenKai TC",serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#1E1C1A; --card:#2A2622; --ink:#F1EBE3; --ink2:rgba(241,235,227,.66); --ink3:rgba(241,235,227,.4); --fill:rgba(241,235,227,.08); --line:rgba(241,235,227,.14); --active:#E8A563; --ok:#8CC79A; color-scheme:dark } }
+:root[data-theme="dark"]{ --bg:#1E1C1A; --card:#2A2622; --ink:#F1EBE3; --ink2:rgba(241,235,227,.66); --ink3:rgba(241,235,227,.4); --fill:rgba(241,235,227,.08); --line:rgba(241,235,227,.14); --active:#E8A563; --ok:#8CC79A; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+main{max-width:860px;margin:0 auto;display:grid;gap:40px}
+h1{font-size:26px;line-height:1.25;margin:0 0 6px;text-wrap:balance;font-weight:700}
+h2{font-size:19px;margin:0 0 4px;font-weight:700;text-wrap:balance}
+h3{font-size:15px;margin:0 0 4px;font-weight:700}
+p{margin:0 0 8px;max-width:62ch}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--ink2);text-transform:uppercase}
+.muted{color:var(--ink2)}
+.small{font-size:13px}
+section{display:grid;gap:14px}
+.note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px}
+.note b{color:var(--active)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--card);border-radius:12px;overflow:hidden}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:700;background:var(--fill)}
+tr:last-child td{border-bottom:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--fill);color:var(--ink2)}
+.pill.rec{background:var(--accent);color:#2A1A08}
+.pill.dl{background:rgba(62,124,75,.12);color:var(--ok)}
+
+/* ---- phone mock, 375pt wide, always light ---- */
+.phones{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.phonecol{display:grid;gap:8px;max-width:375px;width:100%}
+.phonecol>figcaption{font-size:13px;color:var(--ink2)}
+.phone{width:100%;max-width:375px;background:var(--p-bg);border-radius:28px;border:1px solid var(--line);overflow:hidden;color:var(--p-ink);font-family:var(--sans);box-shadow:0 10px 30px rgba(42,38,34,.12)}
+.photo{position:relative;height:210px;overflow:hidden}
+.photo .ov{position:absolute;right:14px;bottom:14px;white-space:nowrap;font-size:20px;line-height:1.3}
+.panel{background:var(--p-bg);padding:10px 16px 16px;display:grid;gap:12px}
+.ptitle{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600}
+.ptitle .chk{color:var(--p-active);font-weight:700}
+.seg{display:flex;background:var(--p-fill);border-radius:10px;padding:2px}
+.seg span{flex:1;text-align:center;padding:5px 0;border-radius:8px;font-size:13px;color:var(--p-ink2)}
+.seg span.on{background:var(--p-card);color:var(--p-ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.subtabs{display:flex;justify-content:space-around;padding:4px 0}
+.subtabs div{display:grid;justify-items:center;gap:2px;font-size:10px;color:var(--p-ink3)}
+.subtabs div.on{color:var(--p-active)}
+.subtabs i{width:20px;height:20px;border-radius:5px;border:1.5px dashed currentColor;display:block}
+.subtabs i.ico-color{border-style:solid;border-radius:50%}
+.subtabs i.ico-size{border:0;font-style:normal;font-weight:700;font-size:17px;line-height:20px;text-align:center}
+.caption{font-size:12px;color:var(--p-ink2);text-align:center}
+/* style row */
+.row{display:flex;gap:10px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none;-webkit-mask:linear-gradient(90deg,#000 92%,transparent)}
+.row::-webkit-scrollbar{display:none}
+.tile{flex:0 0 auto;display:grid;gap:4px;justify-items:center;cursor:pointer;background:none;border:0;padding:0;font-family:inherit;color:inherit}
+.tile .thumb{width:64px;height:64px;border-radius:12px;position:relative;overflow:hidden;
+  background:radial-gradient(120% 90% at 20% 15%,#CBD7E2 0%,#8FA3B4 45%,#4E5F6E 100%)}
+.tile .thumb::after{content:"";position:absolute;inset:0;border-radius:12px;border:2px solid transparent;pointer-events:none}
+.tile.on .thumb::after{border-color:var(--p-active)}
+.tile .thumb span{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-size:11px;white-space:nowrap;line-height:1.2}
+.tile small{font-size:11px;color:var(--p-ink2)}
+.tile.on small{color:var(--p-active);font-weight:600}
+.tile .dl{position:absolute;right:4px;top:4px;width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.92);color:#2A2622;font-size:10px;line-height:16px;text-align:center;font-weight:700}
+/* IG style capsule row */
+.caps{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+.caps::-webkit-scrollbar{display:none}
+.caps span{flex:0 0 auto;padding:6px 14px;border-radius:999px;background:#2A2622;color:#fff;font-size:14px;line-height:1.2;white-space:nowrap}
+.caps span.on{outline:2px solid var(--p-active);outline-offset:1px}
+/* colors */
+.colors{display:grid;gap:8px}
+.dots{display:flex;justify-content:space-between;align-items:center}
+.dots i{width:28px;height:28px;border-radius:50%;display:block;border:1px solid rgba(42,38,34,.12)}
+.dots i.sel{outline:2px solid var(--p-active);outline-offset:2px}
+.abtn{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:14px;background:var(--p-ink);color:#fff;position:relative}
+.abtn.translucent{background:rgba(42,38,34,.45)}
+.abtn.none{background:none;color:var(--p-ink);border:1.5px solid var(--p-ink)}
+.rainbow{background:conic-gradient(#f44,#fc4,#4c4,#4cf,#44f,#f4f,#f44)}
+.recent{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--p-ink3);display:grid;place-items:center;font-size:12px;color:var(--p-ink3)}
+.slider{display:flex;align-items:center;gap:8px;font-size:13px}
+.slider .track{flex:1;height:4px;background:var(--p-fill);border-radius:2px;position:relative}
+.slider .track::before{content:"";position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--p-active);border-radius:2px}
+.slider .track::after{content:"";position:absolute;left:38%;top:-10px;width:24px;height:24px;margin-left:-12px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.slider .a1{font-size:13px;font-weight:600;color:var(--p-ink2)} .slider .a2{font-size:22px;font-weight:600;color:var(--p-ink2)}
+
+/* ---- style gallery ---- */
+.bgswitch{display:inline-flex;background:var(--fill);border-radius:10px;padding:2px;gap:2px}
+.bgswitch button{border:0;background:none;color:var(--ink2);font:inherit;font-size:13px;padding:5px 12px;border-radius:8px;cursor:pointer}
+.bgswitch button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.bgswitch button:focus-visible{outline:2px solid var(--active)}
+.gallery{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.style{display:grid;gap:8px;min-width:0}
+.style .shot{height:190px;border-radius:14px;position:relative;overflow:hidden;max-width:100%}
+.style .shot .ov{position:absolute;right:16px;bottom:16px;white-space:nowrap;font-size:20px;line-height:1.3}
+.style .hd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.style .hd b{font-size:16px}
+.style .def{font-size:12.5px;color:var(--ink2);line-height:1.55}
+.style .def code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:var(--fill);padding:0 4px;border-radius:4px;color:var(--ink)}
+/* backgrounds */
+.bg-photo{background:
+  radial-gradient(70% 60% at 25% 30%,rgba(255,236,200,.85),transparent 60%),
+  radial-gradient(60% 70% at 80% 70%,rgba(124,160,140,.9),transparent 60%),
+  linear-gradient(160deg,#D9C7B0 0%,#9FB1A4 50%,#4F6457 100%)}
+.bg-white{background:linear-gradient(180deg,#FFFFFF,#EDE9E3)}
+.bg-dark{background:radial-gradient(60% 50% at 70% 20%,#39405A,transparent 70%),linear-gradient(180deg,#1B1D28,#0B0C12)}
+.bg-busy{background:
+  repeating-linear-gradient(45deg,rgba(255,255,255,.35) 0 6px,transparent 6px 14px),
+  radial-gradient(40% 40% at 30% 60%,#E9A1A1,transparent 70%),
+  radial-gradient(40% 40% at 75% 35%,#7FB5D9,transparent 70%),
+  linear-gradient(135deg,#F3DFA2,#B8D8B0 50%,#8A6FAE)}
+
+/* ---- the ten presets as CSS classes; mirrored to OverlayStyle in the table ---- */
+.s-classic{font-family:var(--sans);font-weight:500;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.s-caption{font-family:var(--sans);font-weight:500;color:#fff;background:rgba(28,28,30,.45);padding:.3em .6em;border-radius:8px}
+.s-poster{font-family:var(--sans);font-weight:900;color:#fff;background:#1C1C1E;padding:.3em .6em;border-radius:0}
+.s-outline{font-family:var(--sans);font-weight:900;color:#fff;-webkit-text-stroke:3px #1C1C1E;paint-order:stroke fill}
+.s-serif{font-family:var(--serif);font-weight:700;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.s-hand{font-family:var(--hand);font-weight:400;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.s-note{font-family:var(--hand);font-weight:400;color:#2A2622;background:rgba(255,255,255,.88);padding:.3em .6em;border-radius:8px}
+.s-cute{font-family:var(--round);font-weight:400;color:#FF6B9D;-webkit-text-stroke:2px #fff;paint-order:stroke fill;text-shadow:0 2px 4px rgba(0,0,0,.35)}
+.s-neon{font-family:var(--round);font-weight:400;color:#FFD1E3;text-shadow:0 0 6px #FF6EB4,0 0 14px #FF6EB4,0 0 24px rgba(255,110,180,.8)}
+.s-retro{font-family:var(--sans);font-weight:500;color:#FF8A1E;text-shadow:0 0 6px #FF8A1E,0 0 14px rgba(255,138,30,.85)}
+.s-kai{font-family:var(--kai);font-weight:500;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.6)}
+.s-thin{font-family:var(--sans);font-weight:400;color:#fff;letter-spacing:.06em;text-shadow:0 1px 3px rgba(0,0,0,.55)}
+.thumb .s-outline{-webkit-text-stroke-width:1.5px}
+.thumb .s-cute{-webkit-text-stroke-width:1px}
+.thumb .s-caption,.thumb .s-poster,.thumb .s-note{padding:.2em .4em;left:50%!important;right:auto!important;transform:translate(-50%,-50%)!important}
+.ov.s-caption,.ov.s-poster,.ov.s-note{right:16px}
+
+.states{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.states .shot{height:120px}
+.states figcaption{font-size:12.5px;color:var(--ink2);text-align:center;margin-top:4px}
+.decide{display:grid;gap:10px}
+.decide li{list-style:none;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px}
+.decide ul{padding:0;margin:0;display:grid;gap:10px}
+footer{font-size:12.5px;color:var(--ink2)}
+@media (prefers-reduced-motion: no-preference){ .tile .thumb::after{transition:border-color .15s} }
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">DaysCam 2.0 · 設計稿 D-10 · 2026-11-05</div>
+  <h1>文字樣式改成固定組合</h1>
+  <p>把「字型／顏色／外框／陰影／字級」五個各自調整的子分頁，換成一列命名樣式。選一款就是一組好看的字型＋外框＋陰影；之後只能改顏色、底框和字級。這是 Instagram 限時動態的切法，也是研究裡使用者驗證最多的模式。</p>
+  <div class="note">已定（2026-11-04）：<b>IG 模式</b>（樣式鎖字型、外框、陰影；開放顏色、底框三態、字級）・<b>先不改版面</b>（疊字仍是單行「日期 名稱 第 N 天」）・<b>8～12 款</b>一列橫滑・<b>點樣式自動下載字型</b>。<br><b>已選定（人類 2026-11-06）</b>：樣式列用<b>方案乙</b>（膠囊名稱）・<b>十款全留</b>・<b>底框鈕要</b>・手寫用<b>辰宇落雁體</b>。</div>
+</header>
+
+<!-- ============ 1. 面板 ============ -->
+<section>
+  <h2>1. 「樣式」分頁：現況 → 方案甲／乙</h2>
+  <p class="muted small">面板是 FR-19／FR-20.10 共用的「文字樣式」面板，約 4 成高，從檢視頁與相機取景窗都開得到。寬度以 375pt 為準，樣式列可左右滑；下方顏色、字級沿用現有元件。</p>
+  <div class="phones">
+
+    <figure class="phonecol">
+      <figcaption><b>現況</b>：樣式分頁再分五個子分頁，一個一個調。</figcaption>
+      <div class="phone">
+        <div class="photo bg-photo"><span class="ov s-classic">2026.11.05 小芽 第 58 天</span></div>
+        <div class="panel">
+          <div class="ptitle"><span>文字樣式</span><span class="chk">✓</span></div>
+          <div class="seg"><span class="on">樣式</span><span>內容</span></div>
+          <div class="subtabs">
+            <div class="on"><i class="ico-color" style="border-color:#C9772A;background:#fff"></i>顏色</div>
+            <div><i class="ico-size">A</i>字級</div>
+            <div><i></i>外框</div>
+            <div><i style="border-style:solid;box-shadow:3px 3px 0 rgba(0,0,0,.18)"></i>陰影</div>
+            <div><i class="ico-size">A</i>字型</div>
+          </div>
+          <div class="colors">
+            <div class="dots"><i class="sel" style="background:#fff"></i><i style="background:#000"></i><i style="background:#3897F0"></i><i style="background:#70C050"></i><i style="background:#FDCB5C"></i><i style="background:#FD8D32"></i><i style="background:#ED4956"></i><i style="background:#D10869"></i><i style="background:#A307BA"></i></div>
+            <div class="dots"><i style="background:#E5E5EA"></i><i style="background:#48484A"></i><i style="background:#92C6F7"></i><i style="background:#B0DC9F"></i><i style="background:#FEE2A5"></i><i style="background:#FEC08E"></i><i style="background:#F59BA2"></i><i style="background:#E677AD"></i><i style="background:#CC77D9"></i></div>
+            <div class="dots" style="justify-content:flex-start;gap:12px"><i class="rainbow"></i><span class="recent">⟲</span><span class="caption" style="text-align:left">用彩虹圓自訂的顏色會出現在這裡</span></div>
+          </div>
+          <div class="caption">改動存到「小芽」；拍的照片仍是原圖，匯出時才印上</div>
+        </div>
+      </div>
+    </figure>
+
+    <figure class="phonecol">
+      <figcaption><b>方案甲</b>（未採用）：樣式列（縮圖＋名稱）→ 顏色＋底框鈕 → 字級，一頁放完、沒有子分頁。縮圖直接用「第 58 天」畫在小照片上，看得到字型、外框與陰影。</figcaption>
+      <div class="phone">
+        <div class="photo bg-photo"><span class="ov s-classic" id="phoneOverlay">2026.11.05 小芽 第 58 天</span></div>
+        <div class="panel">
+          <div class="ptitle"><span>文字樣式</span><span class="chk">✓</span></div>
+          <div class="seg"><span class="on">樣式</span><span>內容</span></div>
+          <div class="row" id="styleRow">
+            <button class="tile on" data-style="s-classic"><span class="thumb"><span class="s-classic">第 58 天</span></span><small>經典</small></button>
+            <button class="tile" data-style="s-caption"><span class="thumb"><span class="s-caption">第 58 天</span></span><small>字幕</small></button>
+            <button class="tile" data-style="s-poster"><span class="thumb"><span class="s-poster">第 58 天</span></span><small>海報</small></button>
+            <button class="tile" data-style="s-outline"><span class="thumb"><span class="s-outline">第 58 天</span></span><small>描邊</small></button>
+            <button class="tile" data-style="s-serif"><span class="thumb"><span class="s-serif">第 58 天</span><span class="dl">↓</span></span><small>雜誌</small></button>
+            <button class="tile" data-style="s-hand"><span class="thumb"><span class="s-hand">第 58 天</span><span class="dl">↓</span></span><small>手寫</small></button>
+            <button class="tile" data-style="s-note"><span class="thumb"><span class="s-note">第 58 天</span><span class="dl">↓</span></span><small>便條</small></button>
+            <button class="tile" data-style="s-cute"><span class="thumb"><span class="s-cute">第 58 天</span><span class="dl">↓</span></span><small>可愛</small></button>
+            <button class="tile" data-style="s-neon"><span class="thumb"><span class="s-neon">第 58 天</span><span class="dl">↓</span></span><small>霓虹</small></button>
+            <button class="tile" data-style="s-retro"><span class="thumb"><span class="s-retro">第 58 天</span></span><small>復古</small></button>
+          </div>
+          <div class="colors">
+            <div class="dots"><i class="sel" style="background:#fff"></i><i style="background:#000"></i><i style="background:#3897F0"></i><i style="background:#70C050"></i><i style="background:#FDCB5C"></i><i style="background:#FD8D32"></i><i style="background:#ED4956"></i><i style="background:#D10869"></i><i style="background:#A307BA"></i></div>
+            <div class="dots"><i style="background:#E5E5EA"></i><i style="background:#48484A"></i><i style="background:#92C6F7"></i><i style="background:#B0DC9F"></i><i style="background:#FEE2A5"></i><i style="background:#FEC08E"></i><i style="background:#F59BA2"></i><i style="background:#E677AD"></i><i style="background:#CC77D9"></i></div>
+            <div class="dots" style="justify-content:flex-start;gap:12px"><i class="rainbow"></i><span class="recent">⟲</span><span style="flex:1"></span><span class="abtn none">A</span></div>
+          </div>
+          <div class="slider"><span class="a1">A</span><span class="track"></span><span class="a2">A</span><span style="width:40px;text-align:right">100%</span></div>
+          <div class="caption">改動存到「小芽」；拍的照片仍是原圖，匯出時才印上</div>
+        </div>
+      </div>
+      <figcaption class="small">可以點縮圖試，上方照片會跟著換。右上有「↓」的樣式表示字型還沒下載：點了先用蘋方顯示，下載完自動換（沿用 PRD 0.3 FR-16.6）。右下黑色「A」是底框鈕，見第 3 節。</figcaption>
+    </figure>
+
+    <figure class="phonecol">
+      <figcaption><b>方案乙</b> <span class="pill rec">選定</span>：IG 式膠囊列，名稱本身用該樣式的字型寫，沒有縮圖。較省高度，但看不出外框與陰影，底框類樣式全長一樣。</figcaption>
+      <div class="phone">
+        <div class="photo bg-photo"><span class="ov s-classic">2026.11.05 小芽 第 58 天</span></div>
+        <div class="panel">
+          <div class="ptitle"><span>文字樣式</span><span class="chk">✓</span></div>
+          <div class="seg"><span class="on">樣式</span><span>內容</span></div>
+          <div class="caps">
+            <span class="on" style="font-family:var(--sans);font-weight:500">經典</span>
+            <span style="font-family:var(--sans);font-weight:500;background:rgba(42,38,34,.45)">字幕</span>
+            <span style="font-family:var(--sans);font-weight:900">海報</span>
+            <span style="font-family:var(--sans);font-weight:900;-webkit-text-stroke:1px #fff;color:#2A2622">描邊</span>
+            <span style="font-family:var(--serif);font-weight:700">雜誌</span>
+            <span style="font-family:var(--hand)" title="App 內為辰宇落雁體">手寫</span>
+            <span style="font-family:var(--hand);background:#fff;color:#2A2622;border:1px solid rgba(42,38,34,.15)">便條</span>
+            <span style="font-family:var(--round);color:#FF6B9D">可愛</span>
+            <span style="font-family:var(--round);color:#FFD1E3;text-shadow:0 0 6px #FF6EB4">霓虹</span>
+            <span style="font-family:var(--sans);color:#FF8A1E;text-shadow:0 0 6px #FF8A1E">復古</span>
+          </div>
+          <div class="colors">
+            <div class="dots"><i class="sel" style="background:#fff"></i><i style="background:#000"></i><i style="background:#3897F0"></i><i style="background:#70C050"></i><i style="background:#FDCB5C"></i><i style="background:#FD8D32"></i><i style="background:#ED4956"></i><i style="background:#D10869"></i><i style="background:#A307BA"></i></div>
+            <div class="dots"><i style="background:#E5E5EA"></i><i style="background:#48484A"></i><i style="background:#92C6F7"></i><i style="background:#B0DC9F"></i><i style="background:#FEE2A5"></i><i style="background:#FEC08E"></i><i style="background:#F59BA2"></i><i style="background:#E677AD"></i><i style="background:#CC77D9"></i></div>
+            <div class="dots" style="justify-content:flex-start;gap:12px"><i class="rainbow"></i><span class="recent">⟲</span><span style="flex:1"></span><span class="abtn none">A</span></div>
+          </div>
+          <div class="slider"><span class="a1">A</span><span class="track"></span><span class="a2">A</span><span style="width:40px;text-align:right">100%</span></div>
+          <div class="caption">改動存到「小芽」；拍的照片仍是原圖，匯出時才印上</div>
+        </div>
+      </div>
+    </figure>
+  </div>
+  <div class="note">取捨：甲多 20pt 高，但「字幕／海報／便條」這三款差在底框，只有縮圖看得出來；乙在 375pt 能同時露出 5～6 款，甲露出 4.5 款。兩案都保留現有的 18 色＋彩虹圓＋最近，字級滑桿照舊。<br>人類 2026-11-06 選定<b>乙</b>：省高度、一次露出更多款；底框差異由底框鈕與膠囊底色（字幕半透明、海報實心、便條白底）表達。</div>
+</section>
+
+<!-- ============ 2. 十款樣式 ============ -->
+<section>
+  <h2>2. 十款樣式（＋兩款候補）</h2>
+  <p class="muted small">字級以 375pt 寬取景窗的 100% 畫（約 20pt）。切換背景看每一款在亮、暗、花背景上是否都站得住。每款下方寫的是對應到 <code>OverlayStyle</code> 現有欄位的值；沒有新欄位。外框色與陰影色一律「自動」或「跟隨文字色」，所以改顏色時整組會一起變、不會打架。</p>
+  <div class="bgswitch" role="group" aria-label="背景">
+    <button class="on" data-bg="bg-photo" id="bgPhoto">照片</button>
+    <button data-bg="bg-white" id="bgWhite">白牆</button>
+    <button data-bg="bg-dark" id="bgDark">夜色</button>
+    <button data-bg="bg-busy" id="bgBusy">花背景</button>
+  </div>
+  <div class="gallery">
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-classic">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>經典</b><span class="pill">預設</span><span class="pill">蘋方</span></div>
+      <div class="def">蘋方 Semibold・白・無外框・柔和陰影。等於現在的預設，升級不會變樣。<br><code>pingFang / white / none / soft</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-caption">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>字幕</b><span class="pill">蘋方</span></div>
+      <div class="def">蘋方 Semibold・白・半透明深色圓角底框 45%・無陰影。IG 第三態；0.1「底片邊條」的後代，花背景最穩。<br><code>pingFang / white / box auto 0.45 / none</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-poster">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>海報</b><span class="pill dl">思源黑體 特粗 · 6MB</span></div>
+      <div class="def">思源黑體 Black・白・實心方角底框・無陰影。IG「Strong」／Snapseed「Manhattan」。改色時底框自動取對比色，黃字就變黑底。<br><code>notoSansTC(black) / white / squareBox auto 1.0 / none</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-outline">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>描邊</b><span class="pill dl">思源黑體 特粗 · 6MB</span></div>
+      <div class="def">思源黑體 Black・白・對比色描邊 3・無陰影。IG「Meme」／Canva「Outline」；任何背景都讀得到，沒有底框的厚重。<br><code>notoSansTC(black) / white / stroke auto, width 3 / none</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-serif">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>雜誌</b><span class="pill dl">思源宋體 · 8MB</span></div>
+      <div class="def">思源宋體 Bold・白・無外框・柔和陰影。IG「Elegant／Literature」那一路，紀念日、婚禮照合用。<br><code>notoSerifTC / white / none / soft</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-hand">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>手寫</b><span class="pill dl">辰宇落雁體 · 9.5MB</span></div>
+      <div class="def">辰宇落雁體 細・白・無外框・柔和陰影。IG「Signature」／TikTok「Handwriting」。人類 2026-11-06 選定辰宇落雁體；它不在 Google Fonts，這頁以芫荽示意。<br><code>chenyuluoyan(thin) / white / none / soft</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-note">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>便條</b><span class="pill dl">芫荽 · 9MB</span></div>
+      <div class="def">芫荽・墨色・白色圓角底框 88%・無陰影。像貼在照片上的標籤紙；0.1「極簡黑」換成手寫字。<br><code>iansui / #2A2622 / box auto 0.88 / none</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-cute">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>可愛</b><span class="pill dl">粉圓 · 5MB</span></div>
+      <div class="def">粉圓・粉 #FF6B9D・白描邊 2・淡陰影。0.1「柔粉」的後代，寶寶紀錄的主力。<br><code>huninn / #FF6B9D / stroke auto, width 2 / soft 0.35</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-neon">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>霓虹</b><span class="pill dl">粉圓 · 5MB</span></div>
+      <div class="def">粉圓・淺粉・無外框・發光（跟隨文字色，blur 8）。IG／TikTok「Neon」；夜色上最好看，白牆上會糊，所以預設給它有彩度的顏色。<br><code>huninn / #FFD1E3 / none / glow(textColor)</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-retro">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>復古</b><span class="pill">蘋方</span></div>
+      <div class="def">蘋方 Semibold・底片橘 #FF8A1E・無外框・發光（跟隨文字色）。研究裡最一致的日期戳原型；顏色同 1.1.0 的底片日期，兩者疊用也協調。<br><code>pingFang / #FF8A1E / none / glow(textColor)</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-kai">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>文楷</b><span class="pill">候補</span><span class="pill dl">霞鶩文楷 TC</span></div>
+      <div class="def">霞鶩文楷 Medium・白・無外框・柔和陰影。跟「手寫」只差字型，是否要兩款手感字型由你定。<br><code>lxgwWenKai / white / none / soft</code></div></figure>
+
+    <figure class="style"><div class="shot bg-photo"><span class="ov s-thin">2026.11.05 小芽 第 58 天</span></div>
+      <div class="hd"><b>極簡</b><span class="pill">候補</span><span class="pill">蘋方</span></div>
+      <div class="def">蘋方 Regular・白・無外框・淡陰影。字距略寬的那種安靜感要靠字距欄位，現在的模型沒有，只能用細字重近似。<br><code>pingFang(regular) / white / none / soft 0.55</code></div></figure>
+  </div>
+</section>
+
+<!-- ============ 3. 底框鈕 ============ -->
+<section>
+  <h2>3. 底框鈕「A」：三態循環</h2>
+  <p class="muted small">放在彩虹圓那一列的右端。每按一次換一態：<b>樣式原本的外框 → 實心底框 → 半透明底框 → 回到原本</b>。「原本」可能是無（經典）、描邊（描邊、可愛）或已經是底框（字幕、海報）；底框與描邊互斥，這跟現有 <code>OverlayOutline</code> 單一欄位一致。底框色一律自動對比色，不另選。</p>
+  <div class="states">
+    <figure><div class="shot bg-photo"><span class="ov s-classic" style="font-size:17px;right:12px;bottom:12px">第 58 天</span></div><figcaption>① 經典原本：無外框</figcaption></figure>
+    <figure><div class="shot bg-photo"><span class="ov s-poster" style="font-size:17px;right:12px;bottom:12px;font-weight:500;border-radius:8px">第 58 天</span></div><figcaption>② 實心底框（對比色 100%）</figcaption></figure>
+    <figure><div class="shot bg-photo"><span class="ov s-caption" style="font-size:17px;right:12px;bottom:12px">第 58 天</span></div><figcaption>③ 半透明底框（45%）</figcaption></figure>
+  </div>
+  <div class="note">要不要這顆鈕？<b>有</b>：IG／TikTok 都有，使用者熟；十款裡的「字幕」就是「經典＋第三態」，可以少一款。<b>沒有</b>：面板更乾淨，底框差異全靠樣式列承擔，十款都要保留。人類 2026-11-06 選定<b>有</b>；「字幕」仍保留為獨立一款。</div>
+</section>
+
+<!-- ============ 4. 規則 ============ -->
+<section>
+  <h2>4. 其他行為</h2>
+  <div class="tablewrap"><table>
+    <tr><th style="width:28%">情境</th><th>行為</th></tr>
+    <tr><td>選樣式</td><td>把樣式的字型、字重、外框、外框透明度、描邊寬、底框內距、陰影參數整組寫進紀錄的 <code>style</code>；<b>保留</b>使用者目前的文字顏色與字級（IG 行為：換字型不會把你調好的顏色洗掉）。例外：樣式帶「預設色」（可愛、霓虹、復古）且目前顏色是上一款的預設色或白色時，換成新預設色。</td></tr>
+    <tr><td>改顏色</td><td>只改 <code>textColor</code>。描邊、底框走自動對比色，發光跟隨文字色，所以整組一起變。</td></tr>
+    <tr><td>字型還沒下載</td><td>點了立刻選中，取景窗先用蘋方畫，縮圖右上「↓」變進度環；下載完自動換（沿用 FR-16.6「套回開始下載時的紀錄」）。下載失敗 toast「字型下載失敗，先用蘋方顯示」，樣式維持選中。</td></tr>
+    <tr><td>選中判定</td><td>紀錄的 <code>style</code> 在「字型、字重、外框、描邊寬、底框內距、陰影幾何」上等於某款 → 該款亮；顏色、字級、底框三態不影響判定（跟現在 <code>shadowPreset</code> 的做法一樣）。</td></tr>
+    <tr><td>舊紀錄的樣式不等於任何一款</td><td>樣式列最後多一張「自訂」卡，畫的就是現在這組，亮著；沒有編輯入口。點任一款就覆蓋；只有這張卡還在用時「自訂」才出現。這是 0.2 自由調整留下的唯一出口。</td></tr>
+    <tr><td>「更多字型」清單</td><td>從樣式分頁拿掉。字型授權頁要有新入口（紀錄編輯頁或關於頁），由 Lead 另開卡。</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ 5. 要決定 ============ -->
+<section class="decide">
+  <h2>5. 決定紀錄</h2>
+  <ul>
+    <li><b>樣式列</b>：乙（膠囊名稱）。</li>
+    <li><b>樣式</b>：十款全留——經典、字幕、海報、描邊、雜誌、手寫、便條、可愛、霓虹、復古；文楷、極簡不做。</li>
+    <li><b>底框鈕</b>：有。</li>
+    <li><b>手寫</b>：辰宇落雁體（細）。</li>
+  </ul>
+  <p class="small muted">人類 2026-11-06 裁定。存檔為 <code>docs/design/D10-style-presets.html</code>；任務卡見 GitHub issue。</p>
+</section>
+
+<footer>設計稿只是視覺依據，規格以 PRD 為準。蘋方在非 iOS 瀏覽器以思源黑體代替；內海字體不在 Google Fonts，手寫類以芫荽示意。</footer>
+</main>
+
+<script>
+(function(){
+  var row=document.getElementById('styleRow'), ov=document.getElementById('phoneOverlay');
+  if(row&&ov){row.addEventListener('click',function(e){var t=e.target.closest('.tile');if(!t)return;
+    row.querySelectorAll('.tile').forEach(function(x){x.classList.toggle('on',x===t)});
+    ov.className='ov '+t.dataset.style;});}
+  var sw=document.querySelector('.bgswitch');
+  if(sw){sw.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+    sw.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});
+    document.querySelectorAll('.gallery .shot').forEach(function(s){s.className='shot '+b.dataset.bg});});}
+})();
+</script>
