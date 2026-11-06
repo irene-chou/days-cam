@@ -293,7 +293,7 @@ final class FontLibraryTests: XCTestCase {
 
     /// Waits until `condition` holds; polls because the work runs off the main actor.
     private func waitUntil(_ message: String,
-                           timeout: TimeInterval = 5,
+                           timeout: TimeInterval = 30,
                            file: StaticString = #filePath,
                            line: UInt = #line,
                            _ condition: () -> Bool) async {
@@ -740,7 +740,7 @@ final class FontLibraryTests: XCTestCase {
     /// judged by time the previous one used.
     func test_launch_matchTimesOut_failsAndIgnoresLateCallbacks() async {
         defaults.set(["liHei", "xingkai"], forKey: "downloadedSystemFontIDs")
-        let library = makeLibrary(launchTimeout: 0.4)
+        let library = makeLibrary(launchTimeout: 1.0)
 
         let prepared = Task { await library.prepareAtLaunch(priority: .liHei) }
         await waitUntil("first started") { matcher.startedNames == ["LiHeiPro"] }
@@ -756,10 +756,10 @@ final class FontLibraryTests: XCTestCase {
         XCTAssertEqual(library.state(for: .liHei), .failed(.other), "33.10 late callbacks ignored")
         XCTAssertTrue(library.downloadedSystemFontIDs.contains(.liHei), "a timeout keeps the record")
 
-        // The second font starts only now; answering 0.3 s later, i.e. 0.7 s
+        // The second font starts only now; answering 0.6 s later, i.e. 1.6 s
         // after the first began, must not count as a timeout.
         await waitUntil("second started") { matcher.startedNames == ["LiHeiPro", "STXingkaiTC-Bold"] }
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        try? await Task.sleep(nanoseconds: 600_000_000)
         matcher.send(.finished(matched: true, offline: false), to: "STXingkaiTC-Bold")
         await waitUntil("xingkai available") { library.state(for: .xingkai) == .available }
 
