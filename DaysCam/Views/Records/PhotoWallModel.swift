@@ -599,9 +599,13 @@ final class PhotoWallModel: ObservableObject {
                     }
                 }
                 let rebinding = albumID != current.albumIdentifier
-                // Now in the album, they leave the record's own list; a stale
-                // body writes nothing (#680).
-                let moving: Set<String> = movingFromFallback && !ticket.isStale ? Set(ids) : []
+                // Now in the album, they leave the record's own list, but only
+                // while the record is still bound to that album (or about to
+                // be, unchanged since the start): a record rebound meanwhile in
+                // 編輯紀錄 keeps them. A stale body writes nothing (#680).
+                let latestBinding = store.profiles.first(where: { $0.id == profileID })?.albumIdentifier
+                let staysBound = latestBinding == albumID || (rebinding && latestBinding == current.albumIdentifier)
+                let moving: Set<String> = movingFromFallback && !ticket.isStale && staysBound ? Set(ids) : []
                 if var latest = store.profiles.first(where: { $0.id == profileID }),
                    rebinding || latest.fallbackAssetIDs.contains(where: moving.contains) {
                     if rebinding { latest.albumIdentifier = albumID }

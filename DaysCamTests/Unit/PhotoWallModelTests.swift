@@ -907,6 +907,30 @@ extension PhotoWallModelTests {
         XCTAssertEqual(model.albumSyncIDs, ["new"])
     }
 
+    /// 7: rebound to another album in 編輯紀錄 while the add runs, the
+    /// record keeps the photos on `fallbackAssetIDs` (they went into the old
+    /// album, not the new one) and the add still reports success.
+    func testRebindingMeanwhileKeepsTheFallback() async throws {
+        let library = fallbackLibrary()
+        let (model, store, profile) = try syncingModel(library)
+        library.onAddAssets = {
+            guard var latest = store.profiles.first(where: { $0.id == profile.id }),
+                  latest.albumIdentifier == "album" else { return }
+            latest.albumIdentifier = "other"
+            _ = try? store.updateAndWait(latest)
+        }
+
+        await model.addFallbackPhotosToAlbum()
+
+        let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        XCTAssertEqual(stored.albumIdentifier, "other")
+        XCTAssertEqual(stored.fallbackAssetIDs, Self.fallbackIDs)
+        XCTAssertEqual(library.albums.first { $0.id == "album" }?.assetIDs.suffix(3), ["f1", "f2", "f3"])
+        XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 3 張")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(Set(model.photoIDs), ["f1", "f2", "f3", "p7"])
+    }
+
     /// 7, #663: an add that answers after the queue gave up reports the
     /// timeout and writes nothing when it finally answers.
     func testLateAnswerWritesNothing() async throws {
