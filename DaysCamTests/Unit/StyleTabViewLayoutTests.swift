@@ -75,20 +75,19 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.presetRingWidth, 2)
         XCTAssertEqual(StyleTabView.presetRingOffset, 1)
         XCTAssertEqual(StyleTabView.presetBadgeSize, 14)
+        XCTAssertEqual(StyleTabView.presetRowVerticalInset, 4)
         XCTAssertEqual(StyleTabView.boxButtonSide, 28)
         XCTAssertEqual(StyleTabView.sectionSpacing, 12)
     }
 
-    /// 678-1: the one page — row of looks (42 with room for the ring), three
-    /// color rows (126), the size block kept as it was (#678 做法 1) —
-    /// measures 324pt: past the 244pt content area, so it scrolls there like
-    /// the old outline page (314pt cap) did, FR-8.8's small-screen rule.
-    /// Reported to Lead: fitting 244 needs a one-line size row.
-    func testThePageHeightIsTheRowColorsAndSizeBlock() throws {
+    /// 678-1 / #691 ruling: the one page — row of looks, three color rows,
+    /// the one-line size row — fits the 244pt content area, no scrolling on a
+    /// regular phone (FR-8.8).
+    func testThePageFitsTheRegularContentArea() throws {
         let height = pageHeight(try makeModel())
         let rowAndColors: CGFloat = 42 + 12 + 126 + 12
         XCTAssertGreaterThanOrEqual(height, rowAndColors)
-        XCTAssertLessThanOrEqual(height, 330, "樣式頁 \(height)pt")
+        XCTAssertLessThanOrEqual(height, 244, "樣式頁 \(height)pt")
     }
 
     /// 678-5: the box button's VoiceOver values.

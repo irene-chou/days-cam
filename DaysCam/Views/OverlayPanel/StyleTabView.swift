@@ -57,6 +57,11 @@ struct StyleTabView: View {
     static let presetRingOffset: CGFloat = 1
     /// Diameter of the download badge at a capsule's top-right corner.
     static let presetBadgeSize: CGFloat = 14
+    /// Room above and below the capsules for the ring (3pt out) and the
+    /// badge (3pt up).
+    static let presetRowVerticalInset: CGFloat = 4
+    /// Width of the size row's percentage, "160%" included.
+    static let sizePercentWidth: CGFloat = 44
     /// Side of the box button (#678-5).
     static let boxButtonSide: CGFloat = 28
 
@@ -103,7 +108,7 @@ struct StyleTabView: View {
             .padding(.horizontal, Self.contentHorizontalInset)
             // Room for the selection ring and the badge, which sit outside
             // the capsule.
-            .padding(.vertical, Self.presetBadgeSize / 2)
+            .padding(.vertical, Self.presetRowVerticalInset)
         }
     }
 
@@ -192,41 +197,32 @@ struct StyleTabView: View {
     // MARK: - 字級 (FR-10.9)
 
     private var sizeSlider: some View {
-        // Three lines, `spacing` 12 (TASK-49 E): the live percentage, the
-        // slider row, a hint. Double-tapping the percentage or the slider row
-        // resets to the default size.
-        VStack(spacing: 12) {
+        // One line, as D-10 draws it (#691 ruling): A, the slider, A, and the
+        // live percentage. Double-tapping the row resets to the default size.
+        // `.zrow{gap:8px}` (#106).
+        HStack(spacing: 8) {
+            Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
+            // Tapping the track seeks (TASK-114); the double tap below
+            // still resets, so the first tap of a double tap seeks first.
+            TapSeekSlider(
+                value: Double(model.profile.style.sizeScale),
+                range: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
+                step: Double(StyleTabModel.sizeScaleStep),
+                onChange: { model.setSizeScale(Int($0.rounded())) }
+            )
+            .tint(CameraTheme.accentControl)
+            .accessibilityLabel("字級")
+            .accessibilityAction(named: "回到預設大小") { model.resetSizeScale() }
+            Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
             Text("\(model.profile.style.sizeScale)%")
-                .font(.system(size: 28, weight: .bold).monospacedDigit())
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
                 .foregroundColor(CameraTheme.ink)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { model.resetSizeScale() }
+                .frame(width: Self.sizePercentWidth, alignment: .trailing)
                 .accessibilityLabel("字級 \(model.profile.style.sizeScale)%")
-            // `.zrow{gap:8px}` (#106) — was 12.
-            HStack(spacing: 8) {
-                Text("A").font(.system(size: 13, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-                // Tapping the track seeks (TASK-114); the double tap below
-                // still resets, so the first tap of a double tap seeks first.
-                TapSeekSlider(
-                    value: Double(model.profile.style.sizeScale),
-                    range: Double(StyleTabModel.sizeScaleRange.lowerBound)...Double(StyleTabModel.sizeScaleRange.upperBound),
-                    step: Double(StyleTabModel.sizeScaleStep),
-                    onChange: { model.setSizeScale(Int($0.rounded())) }
-                )
-                .tint(CameraTheme.accentControl)
-                .accessibilityLabel("字級")
-                .accessibilityAction(named: "回到預設大小") { model.resetSizeScale() }
-                Text("A").font(.system(size: 24, weight: .semibold)).foregroundColor(CameraTheme.inkSecondary).accessibilityHidden(true)
-            }
-            // Simultaneous, so the slider's own drag still works.
-            .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
-            .padding(.vertical, Self.sliderVerticalPadding)
-            Text("點或拖曳調整，點兩下回到預設大小")
-                .font(.system(size: 12))
-                .foregroundColor(CameraTheme.inkSecondary)
-                .frame(maxWidth: .infinity)
         }
+        // Simultaneous, so the slider's own drag still works.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { model.resetSizeScale() })
+        .padding(.vertical, Self.sliderVerticalPadding)
     }
 
     // MARK: - 共用：色票

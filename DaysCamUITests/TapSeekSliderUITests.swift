@@ -60,12 +60,12 @@ final class TapSeekSliderUITests: XCTestCase {
     }
 
     /// 114.1 / 114.4: the size slider seeks on a tap, its ends give the
-    /// bounds, the hint names tapping, and a double tap still resets.
+    /// bounds, and a double tap still resets (the hint line left with the
+    /// one-line size row, #691).
     func testSizeSliderSeeksAndDoubleTapStillResets() {
         let slider = app.sliders["字級"]
         settle(slider)
         XCTAssertEqual(sizePercent, "字級 100%")
-        XCTAssertTrue(app.staticTexts["點或拖曳調整，點兩下回到預設大小"].exists, "114.4 hint")
 
         tapTrack(slider, at: 0.75)
         let after = sizePercent
@@ -111,7 +111,7 @@ final class TapSeekSliderUITests: XCTestCase {
         let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
         XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
 
-        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
         let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: first), dy: 0.5))
         thumbNow.press(forDuration: 0.2, thenDragTo: end)
         XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")

@@ -71,6 +71,9 @@ final class StylePresetRowUITests: XCTestCase {
                        "the box button on the rainbow's row")
         XCTAssertGreaterThan(boxButton.frame.minX, app.buttons["#A307BA"].frame.minX - 1, "at the right end")
         XCTAssertTrue(preset("classic").isHittable && boxButton.isHittable)
+        XCTAssertTrue(slider.isHittable, "#691 the size row is in view without scrolling")
+        XCTAssertLessThan(slider.frame.maxY, app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].frame.minY,
+                          "#691 above the note")
         shot("12_default")
     }
 
