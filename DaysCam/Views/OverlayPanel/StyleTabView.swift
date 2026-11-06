@@ -369,8 +369,12 @@ private struct PresetCapsule: View {
         switch preset {
         case .outline:
             // Ink text in a 1pt white stroke, the renderer's real glyph outline.
+            // Laid out at the text's own size, so the stroke's overhang
+            // does not make this capsule taller than the others.
+            let textSize = (preset.displayName as NSString).size(withAttributes: [.font: font])
             Image(uiImage: StyleSwatchPreview.strokedText(preset.displayName, font: font,
                                                           fill: Self.ink, stroke: .white, strokeWidth: 1))
+                .frame(width: textSize.width, height: textSize.height)
         case .neon, .retro:
             let color = color(preset.defaultTextColor)
             Text(preset.displayName).font(Font(font)).foregroundColor(color)

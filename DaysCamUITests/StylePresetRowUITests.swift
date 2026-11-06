@@ -114,6 +114,7 @@ final class StylePresetRowUITests: XCTestCase {
         XCTAssertGreaterThan(custom.frame.minX, preset("retro").frame.minX, "7 at the end")
         shot("12_custom")
 
+        if row.exists { row.swipeRight() }
         preset("classic").tap()
         XCTAssertTrue(preset("classic").isSelected, "7")
         XCTAssertFalse(custom.exists, "7 自訂 is gone")
