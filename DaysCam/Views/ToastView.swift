@@ -89,3 +89,16 @@ struct ToastView: View {
             .padding()
     }
 }
+
+/// How long toasts stay up. UI tests launched with `-UITestLongToast` get a
+/// longer stay: `XCUIElement.tap()` waits for the app to idle first, which on a
+/// slow runner can outlast a 1.6 s toast. Without the flag nothing changes.
+enum ToastTiming {
+    static let uiTestDuration: TimeInterval = 6
+
+    /// `normal` unless `arguments` carry `-UITestLongToast`.
+    static func duration(_ normal: TimeInterval,
+                         arguments: [String] = ProcessInfo.processInfo.arguments) -> TimeInterval {
+        arguments.contains("-UITestLongToast") ? uiTestDuration : normal
+    }
+}

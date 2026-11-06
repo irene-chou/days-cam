@@ -26,7 +26,7 @@ final class ExportUITests: XCTestCase {
 
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles,
-                                "-UITestRecordPhotos", "5", "-UITestBindAlbum"]
+                                "-UITestRecordPhotos", "5", "-UITestBindAlbum", "-UITestLongToast"]
         if opensExport { app.launchArguments.append("-UITestOpenExport") }
         // The newest photo is then 3:4 portrait, as on D-7 screen 4.
         if portrait { app.launchArguments.append("-UITestMixedAspects") }

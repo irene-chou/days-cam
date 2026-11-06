@@ -257,7 +257,7 @@ final class PhotoDetailModel: ObservableObject {
             announce(Self.exportedMessage)
             let toast = ToastState(message: Self.exportedMessage)
             toastState = toast
-            scheduleAfter(Self.toastDuration) { [weak self] in
+            scheduleAfter(ToastTiming.duration(Self.toastDuration)) { [weak self] in
                 guard self?.toastState?.id == toast.id else { return }
                 self?.toastState = nil
             }

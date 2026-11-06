@@ -433,7 +433,7 @@ final class PhotoWallModel: ObservableObject {
         announce(message)
         let toast = ToastState(message: message)
         toastState = toast
-        scheduleAfter(Self.toastDuration) { [weak self] in
+        scheduleAfter(ToastTiming.duration(Self.toastDuration)) { [weak self] in
             guard self?.toastState?.id == toast.id else { return }
             self?.toastState = nil
         }

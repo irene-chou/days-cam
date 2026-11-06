@@ -25,6 +25,15 @@ final class OutlineSliderUITests: XCTestCase {
         Double((slider.value as? String ?? "").split(separator: " ").first ?? "") ?? -1
     }
 
+    /// Drags `slider` to its end. On a slow CI runner the synthesized drag can
+    /// stop short, so drag again until the value reaches `atLeast` (up to 4 tries).
+    private func dragToEnd(_ slider: XCUIElement, atLeast: Double) {
+        slider.adjust(toNormalizedSliderPosition: 1)
+        for _ in 0..<3 where points(slider) < atLeast {
+            slider.adjust(toNormalizedSliderPosition: 1)
+        }
+    }
+
     private func attach(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -69,7 +78,7 @@ final class OutlineSliderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["直角底框"].waitForExistence(timeout: 3))
         app.buttons["底框"].tap()
         XCTAssertTrue(paddingSlider.waitForExistence(timeout: 3))
-        paddingSlider.adjust(toNormalizedSliderPosition: 1)
+        dragToEnd(paddingSlider, atLeast: 23)
         let dragged = points(paddingSlider)
         XCTAssertGreaterThanOrEqual(dragged, 23, "dragged toward the end of 0...24")
         app.buttons["直角底框"].tap()
@@ -86,12 +95,7 @@ final class OutlineSliderUITests: XCTestCase {
     func testDraggingChangesTheValueAndItIsKept() {
         app.buttons["描邊"].tap()
         XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3))
-        strokeSlider.adjust(toNormalizedSliderPosition: 1)
-        // On a slow CI runner the synthesized drag can stop well short or one
-        // step short (5.5 of 6, even 5.0); drag again until it is near the end.
-        for _ in 0..<4 where points(strokeSlider) < 5.5 {
-            strokeSlider.adjust(toNormalizedSliderPosition: 1)
-        }
+        dragToEnd(strokeSlider, atLeast: 5.5)
         let dragged = points(strokeSlider)
         XCTAssertGreaterThanOrEqual(dragged, 5.5)
         app.buttons["底框"].tap()
