@@ -70,7 +70,9 @@ final class CameraScreenModel: ObservableObject {
     /// How the phone is held, for the icons (#572). Follows
     /// `CameraService.viewfinderRotationAngle` unless a fixed angle was
     /// passed to `init`.
-    @Published private(set) var viewfinderRotation: ViewfinderRotation = .portrait
+    @Published private(set) var viewfinderRotation: ViewfinderRotation = .portrait {
+        didSet { levelModel.rotation = viewfinderRotation }
+    }
     private let captureRotationAngleOverride: CGFloat?
 
     /// True from the moment the shutter fires until AVFoundation hands back
@@ -208,6 +210,12 @@ final class CameraScreenModel: ObservableObject {
     @Published private(set) var isOverlayPreviewOn: Bool
     private let overlayPreviewSetting: OverlayPreviewSetting
 
+    /// The 水平儀 switch (#687); app level, off until turned on.
+    @Published private(set) var isLevelOn: Bool
+    private let levelSetting: LevelSetting
+    /// Reads the sensor and decides what the level shows.
+    let levelModel: ViewfinderLevelModel
+
     /// Whether 「點這裡的文字可以改樣式」 has been dealt with (FR-20.10):
     /// the style sheet was opened once, in this or an earlier launch.
     @Published private(set) var overlayTapSeen: Bool
@@ -265,11 +273,18 @@ final class CameraScreenModel: ObservableObject {
          captureRotationAngleOverride: CGFloat? = nil,
          styleCenter: StyleEditingCenter? = nil,
          overlayPreviewDefaults: UserDefaults = .standard,
+         levelDefaults: UserDefaults = .standard,
+         levelSource: LevelSource? = nil,
          tips: FirstRunTips = .shared) {
         if overlayPreviewDefaults === UserDefaults.standard { OverlayPreviewSetting.applyUITestArguments() }
         let overlayPreviewSetting = OverlayPreviewSetting(defaults: overlayPreviewDefaults)
         self.overlayPreviewSetting = overlayPreviewSetting
         self.isOverlayPreviewOn = overlayPreviewSetting.isOn
+        if levelDefaults === UserDefaults.standard { LevelSetting.applyUITestArguments() }
+        let levelSetting = LevelSetting(defaults: levelDefaults)
+        self.levelSetting = levelSetting
+        self.isLevelOn = levelSetting.isOn
+        self.levelModel = Self.makeLevelModel(source: levelSource)
         self.tips = tips
         self.overlayTapSeen = tips.overlayTapSeen
         self.styleCenter = styleCenter
@@ -536,6 +551,7 @@ final class CameraScreenModel: ObservableObject {
     /// dismissed is handed on (`reportFailureAfterClose`), and so is any
     /// later failure.
     func onDisappear() {
+        levelModel.setConditions(LevelConditions(isSwitchOn: isLevelOn, isCameraVisible: false))
         if countdownRemaining != nil {
             countdownTicker.stop()
             countdownRemaining = nil
@@ -711,6 +727,30 @@ extension CameraScreenModel {
     /// Flips the grid overlay (PRD 0.2 FR-7.9).
     func toggleGrid() {
         captureSettingsStore.toggleGrid()
+    }
+
+    /// Flips the 水平儀 (#687) and remembers it.
+    func toggleLevel() {
+        isLevelOn.toggle()
+        levelSetting.set(isLevelOn)
+    }
+
+    /// Whether the level should be reading the sensor right now (#687-1).
+    func levelConditions(isSceneActive: Bool) -> LevelConditions {
+        LevelConditions(isSwitchOn: isLevelOn, isPanelOpen: panelModel.isOpen,
+                        isCountingDown: countdownRemaining != nil, isSceneActive: isSceneActive,
+                        isCameraVisible: !isClosed)
+    }
+
+    private static func makeLevelModel(source: LevelSource?) -> ViewfinderLevelModel {
+        if let source { return ViewfinderLevelModel(source: source) }
+        #if DEBUG
+        if let degrees = FixedAngleLevelSource.uiTestAngle {
+            // A fixed test angle never stops being level, so the hold must not end.
+            return ViewfinderLevelModel(source: FixedAngleLevelSource(degrees: degrees), holdDuration: .infinity)
+        }
+        #endif
+        return ViewfinderLevelModel(source: CoreMotionLevelSource())
     }
 
     /// Opens or closes the tools capsule (issue #135); opening closes the

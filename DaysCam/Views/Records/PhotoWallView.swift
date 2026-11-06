@@ -263,7 +263,6 @@ struct PhotoWallView: View {
                                     } action: { frame in
                                         slide.frames[cell.id] = frame
                                     }
-                                    .onDisappear { slide.frames[cell.id] = nil }
                                 }
                             }
                         }
@@ -271,14 +270,21 @@ struct PhotoWallView: View {
                     .padding(.horizontal, Self.columnSpacing)
                     .padding(.bottom, 8)
                     .frame(minHeight: proxy.size.height, alignment: .top)
-                    .gesture(WallSlideGesture(isEnabled: model.isSelecting, space: .named(Self.viewportSpace)) { phase in
-                        handleSlide(phase, height: proxy.size.height, scroller: scroller)
+                    .gesture(WallSlideGesture(isEnabled: model.isSelecting, space: .named(Self.viewportSpace),
+                                              canBegin: { [slide, model] point in
+                                                  slide.index(at: point, in: model.photoIDs, tolerance: side) != nil
+                                              }) { phase in
+                        handleSlide(phase, side: side, height: proxy.size.height, scroller: scroller)
                     })
                 }
                 .defaultScrollAnchor(.bottom)
                 // A slide owns the finger: the wall moves only by the edge
                 // auto-scroll until it ends.
                 .scrollDisabled(isSliding)
+                // Frames outlive a cell the lazy grid recycles, so a slide
+                // starting on a cell just brought back still finds it; only
+                // photos gone from the wall drop out.
+                .onChange(of: model.photoIDs) { _, ids in slide.prune(keeping: ids) }
             }
             .onAppear { preheat(side: side) }
             .accessibilityIdentifier("photoWall")
@@ -294,31 +300,36 @@ struct PhotoWallView: View {
     /// sideways selects (the gesture declines vertical starts, which scroll),
     /// the way 「照片」 does. Near the top or bottom edge the wall scrolls a row
     /// at a time and the range follows the finger.
-    private func handleSlide(_ phase: WallSlideGesture.Phase, height: CGFloat, scroller: ScrollViewProxy) {
+    @discardableResult
+    private func handleSlide(_ phase: WallSlideGesture.Phase, side: CGFloat, height: CGFloat,
+                             scroller: ScrollViewProxy) -> Bool {
         switch phase {
         case let .began(point):
-            guard let index = slide.index(at: point, in: model.photoIDs) else { return }
+            guard let index = slide.index(at: point, in: model.photoIDs, tolerance: side) else { return false }
             isSliding = true
             slide.finger = point
             model.beginDrag(at: index)
             slide.startAutoScroll { [model] in
-                autoScroll(height: height, scroller: scroller, model: model)
+                autoScroll(side: side, height: height, scroller: scroller, model: model)
             }
         case let .moved(point):
-            guard isSliding else { return }
+            guard isSliding else { return false }
             slide.finger = point
-            if let index = slide.index(at: point, in: model.photoIDs) { model.dragSelection(to: index) }
+            if let index = slide.index(at: point, in: model.photoIDs, tolerance: side) {
+                model.dragSelection(to: index)
+            }
         case .ended:
-            guard isSliding else { return }
+            guard isSliding else { return false }
             isSliding = false
             slide.stop()
             model.endDrag()
         }
+        return true
     }
 
     /// One auto-scroll step: with the finger within `edge` of the top or
     /// bottom, brings the next row into view, then re-reads the finger.
-    private func autoScroll(height: CGFloat, scroller: ScrollViewProxy, model: PhotoWallModel) {
+    private func autoScroll(side: CGFloat, height: CGFloat, scroller: ScrollViewProxy, model: PhotoWallModel) {
         let edge: CGFloat = 60
         guard let finger = slide.finger else { return }
         let ids = model.photoIDs
@@ -335,7 +346,7 @@ struct PhotoWallView: View {
         } else {
             return
         }
-        if let index = slide.index(at: finger, in: ids) { model.dragSelection(to: index) }
+        if let index = slide.index(at: finger, in: ids, tolerance: side) { model.dragSelection(to: index) }
     }
 
     /// The square side that fits three columns in `width` (FR-17.3).
@@ -646,11 +657,11 @@ private struct SelectionActionStyle: ButtonStyle {
     }
 }
 
-/// What slide selection needs outside view state: each visible cell's frame
-/// in the wall's viewport, the finger, and the auto-scroll loop. Writing
-/// frames here does not redraw the wall.
+/// What slide selection needs outside view state: each cell's last known
+/// frame in the wall's viewport, the finger, and the auto-scroll loop.
+/// Writing frames here does not redraw the wall.
 @MainActor
-private final class WallSlideTracker {
+final class WallSlideTracker {
     /// Seconds between auto-scroll steps.
     static let step: TimeInterval = 0.12
 
@@ -658,10 +669,30 @@ private final class WallSlideTracker {
     var finger: CGPoint?
     private var autoScrollTask: Task<Void, Never>?
 
-    /// The wall index of the cell under `point`, if any.
-    func index(at point: CGPoint, in ids: [String]) -> Int? {
-        guard let id = frames.first(where: { $0.value.contains(point) })?.key else { return nil }
+    /// The wall index of the cell under `point`, or of the nearest cell
+    /// within `tolerance` when the point falls in a gap or on a month title.
+    func index(at point: CGPoint, in ids: [String], tolerance: CGFloat) -> Int? {
+        let live = Set(ids)
+        let candidates = frames.filter { live.contains($0.key) }
+        guard let id = Self.nearestCell(to: point, in: candidates, maxDistance: tolerance) else { return nil }
         return ids.firstIndex(of: id)
+    }
+
+    /// Drops frames of photos no longer on the wall.
+    func prune(keeping ids: [String]) {
+        let live = Set(ids)
+        frames = frames.filter { live.contains($0.key) }
+    }
+
+    /// The id of the frame containing `point`; otherwise the one whose centre
+    /// is nearest, if no farther than `maxDistance`.
+    static func nearestCell(to point: CGPoint, in frames: [String: CGRect], maxDistance: CGFloat) -> String? {
+        if let hit = frames.first(where: { $0.value.contains(point) }) { return hit.key }
+        let nearest = frames
+            .map { (id: $0.key, distance: hypot($0.value.midX - point.x, $0.value.midY - point.y)) }
+            .min { $0.distance < $1.distance }
+        guard let nearest, nearest.distance <= maxDistance else { return nil }
+        return nearest.id
     }
 
     func startAutoScroll(_ tick: @escaping @MainActor () -> Void) {
@@ -682,9 +713,10 @@ private final class WallSlideTracker {
     }
 }
 
-/// A pan that only begins sideways, so vertical drags still scroll the wall
-/// (FR-17.12). Reports locations in `space`.
-private struct WallSlideGesture: UIGestureRecognizerRepresentable {
+/// A pan that only begins sideways and on a cell, so vertical drags still
+/// scroll the wall (FR-17.12). The wall's scroll pan waits for it to fail.
+/// Reports locations in `space`.
+struct WallSlideGesture: UIGestureRecognizerRepresentable {
     enum Phase {
         case began(CGPoint)
         case moved(CGPoint)
@@ -693,9 +725,24 @@ private struct WallSlideGesture: UIGestureRecognizerRepresentable {
 
     var isEnabled: Bool
     var space: NamedCoordinateSpace
-    var onChange: (Phase) -> Void
+    /// Whether a slide may start from this point (in `space`).
+    var canBegin: (CGPoint) -> Bool
+    /// Handles a phase; returning false from `.began` drops the slide.
+    var onChange: (Phase) -> Bool
 
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+    /// Whether a pan that has moved `translation` so far is sideways enough
+    /// to select rather than scroll.
+    static func shouldBegin(translation: CGPoint) -> Bool {
+        abs(translation.x) > abs(translation.y)
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        let coordinator = Coordinator()
+        coordinator.converter = converter
+        coordinator.space = space
+        coordinator.canBegin = canBegin
+        return coordinator
+    }
 
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
         let recognizer = UIPanGestureRecognizer()
@@ -707,6 +754,8 @@ private struct WallSlideGesture: UIGestureRecognizerRepresentable {
 
     func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
         recognizer.isEnabled = isEnabled
+        context.coordinator.space = space
+        context.coordinator.canBegin = canBegin
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
@@ -716,22 +765,47 @@ private struct WallSlideGesture: UIGestureRecognizerRepresentable {
             // Start from where the finger first went down, not where the pan
             // was recognized, so the first photo is the one touched.
             let moved = recognizer.translation(in: recognizer.view)
-            onChange(.began(CGPoint(x: point.x - moved.x, y: point.y - moved.y)))
-            onChange(.moved(point))
+            guard onChange(.began(CGPoint(x: point.x - moved.x, y: point.y - moved.y))) else {
+                // Nothing to select from here: cancel rather than hold the
+                // finger doing nothing.
+                recognizer.isEnabled = false
+                recognizer.isEnabled = isEnabled
+                return
+            }
+            _ = onChange(.moved(point))
         case .changed:
-            onChange(.moved(point))
+            _ = onChange(.moved(point))
         case .ended, .cancelled, .failed:
-            onChange(.ended)
+            _ = onChange(.ended)
         default:
             break
         }
     }
 
+    /// Decides when the slide may begin and makes the scroll view's pan wait
+    /// for it.
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var converter: CoordinateSpaceConverter?
+        var space: NamedCoordinateSpace?
+        var canBegin: ((CGPoint) -> Bool)?
+
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
-            let velocity = pan.velocity(in: pan.view)
-            return abs(velocity.x) > abs(velocity.y)
+            let moved = pan.translation(in: pan.view)
+            guard WallSlideGesture.shouldBegin(translation: moved) else { return false }
+            guard let converter, let space, let canBegin else { return true }
+            let point = converter.location(in: space)
+            return canBegin(CGPoint(x: point.x - moved.x, y: point.y - moved.y))
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            false
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            otherGestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer.view is UIScrollView
         }
     }
 }

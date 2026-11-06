@@ -103,7 +103,7 @@ struct CameraToolbar: View {
 
 /// The horizontal pill that floats below the toolbar's toggle, right-aligned
 /// under it (issue #135,
-/// D-1's `.pop` style) holding flash, timer and grid. Tapping a tool cycles
+/// D-1's `.pop` style) holding flash, timer, grid and level (#687). Tapping a tool cycles
 /// it and leaves the pill open, so several can be adjusted in a row. The pill
 /// has its own white background, so icons always use `CameraTheme.ink`.
 struct CameraToolsCapsule: View {
@@ -114,6 +114,7 @@ struct CameraToolsCapsule: View {
             flashButton
             timerButton
             gridButton
+            levelButton
         }
         .padding(4)
         .background(
@@ -167,6 +168,19 @@ struct CameraToolsCapsule: View {
                 .rotatedChrome(model.viewfinderRotation)
         }
         .accessibilityLabel(model.isGridToolActive ? "格線：開" : "格線：關")
+    }
+
+    /// The 水平儀 switch (#687): `active` while on.
+    private var levelButton: some View {
+        Button(action: model.toggleLevel) {
+            Image(systemName: "level")
+                .toolbarIcon(isActive: model.isLevelOn, isOnPhoto: false)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .accessibilityLabel("水平儀")
+        .accessibilityValue(model.isLevelOn ? "開" : "關")
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityIdentifier("levelToggle")
     }
 }
 

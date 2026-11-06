@@ -182,6 +182,34 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertFalse(cell(3).label.contains("已選取"))
     }
 
+    /// #681-2: a slide that starts in the 2pt gap between cells still selects,
+    /// from the nearest cell.
+    func testSlideStartingInAGapTicks() {
+        launchWall(photos: 6)
+        enterSelection()
+        let gap = cell(0).coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: 1, dy: 0))
+        let end = cell(2).coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+        gap.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
+        waitForTitle(containing: "已選")
+        XCTAssertTrue(cell(2).label.contains("已選取"))
+    }
+
+    /// #681-5: while selecting, a vertical drag still scrolls and ticks nothing.
+    func testVerticalDragScrollsWhileSelecting() {
+        launchWall(photos: 60)
+        enterSelection()
+        let newest = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'photoDayLabel' AND label == '第 10 天'")).firstMatch
+        XCTAssertTrue(newest.waitForExistence(timeout: 5))
+        let before = newest.frame.minY
+        let wall = element("photoWall")
+        let top = wall.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        let bottom = wall.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        top.press(forDuration: 0.05, thenDragTo: bottom, withVelocity: .default, thenHoldForDuration: 0.1)
+        XCTAssertTrue(!newest.exists || newest.frame.minY > before + 50, "scrolled toward older photos")
+        waitForTitle(containing: "選取照片")
+    }
+
     /// 7, 8: two ticked → the dialog names 2; cancel keeps everything;
     /// 從「…」移除 removes both without asking, toasts and leaves selection.
     func testDeleteDialogThenRemoveTwo() {
