@@ -742,3 +742,230 @@ extension PhotoWallModelTests {
         XCTAssertEqual(model.selectedIDs, ["p7"])
     }
 }
+
+/// #680: under full access, the photos the record holds in
+/// `fallbackAssetIDs` but not in its album go into the album in one tap
+/// (acceptance 1–8).
+extension PhotoWallModelTests {
+    /// p6…p10 in the album; f1…f3 only in the library. The record lists
+    /// f1…f3, p7 (already in the album), a deleted photo and f1 again.
+    private func fallbackLibrary(status: PHAuthorizationStatus = .authorized) -> FakeRecordAlbumLibrary {
+        let library = fiveJanuaryPhotos()
+        library.status = status
+        (1...3).forEach { library.addAsset(asset("f\($0)", 1, $0)) }
+        return library
+    }
+
+    private static let fallbackIDs = ["f1", "f2", "p7", "gone", "f3", "f1"]
+
+    private func syncingModel(_ library: FakeRecordAlbumLibrary, albumIdentifier: String? = "album",
+                              coordinator: CaptureSaveCoordinator? = nil)
+        throws -> (PhotoWallModel, ProfileStore, CameraProfile) {
+        let (store, added) = try makeStore(albumIdentifier: albumIdentifier)
+        var profile = added
+        profile.fallbackAssetIDs = Self.fallbackIDs
+        profile = try store.updateAndWait(profile)
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                                   saveCoordinator: coordinator, todayText: { _ in "" },
+                                   defaults: freshDefaults(), scheduleAfter: { _, _ in })
+        model.announce = { _ in }
+        return (model, store, profile)
+    }
+
+    private func storedFallback(_ store: ProfileStore, _ profile: CameraProfile) -> [String]? {
+        store.profiles.first { $0.id == profile.id }?.fallbackAssetIDs
+    }
+
+    /// 1, 4: three fallback photos outside the album count, in list order;
+    /// one already in the album, a deleted one and a repeat do not.
+    func testNoticeCountsFallbackPhotosOutsideTheAlbum() throws {
+        let (model, _, _) = try syncingModel(fallbackLibrary())
+        XCTAssertEqual(model.albumSyncIDs, ["f1", "f2", "f3"])
+        XCTAssertTrue(model.showsAlbumSyncNotice)
+        XCTAssertEqual(model.albumSyncTitle, "3 張照片還不在「小寶」相簿")
+    }
+
+    /// 2: no notice under limited, undecided or denied access (limited reads
+    /// no album), with every fallback photo in the album, or while selecting.
+    func testNoNoticeWithoutFullAccessAllInAlbumOrSelecting() throws {
+        for status in [PHAuthorizationStatus.limited, .notDetermined, .denied, .restricted] {
+            let library = fallbackLibrary(status: status)
+            let (model, _, _) = try syncingModel(library)
+            XCTAssertEqual(model.albumSyncIDs, [], "\(status.rawValue)")
+            XCTAssertFalse(model.showsAlbumSyncNotice, "\(status.rawValue)")
+            XCTAssertEqual(library.albumReadCount, 0, "\(status.rawValue)")
+        }
+
+        let library = fiveJanuaryPhotos()
+        let (store, added) = try makeStore(albumIdentifier: "album")
+        var profile = added
+        profile.fallbackAssetIDs = ["p7", "p8"]
+        _ = try store.updateAndWait(profile)
+        let inAlbum = makeModel(store: store, profile: profile, library: library)
+        XCTAssertEqual(inAlbum.albumSyncIDs, [])
+        XCTAssertFalse(inAlbum.showsAlbumSyncNotice)
+
+        let (selecting, _, _) = try syncingModel(fallbackLibrary())
+        selecting.beginSelecting()
+        XCTAssertFalse(selecting.showsAlbumSyncNotice)
+        selecting.endSelecting()
+        XCTAssertTrue(selecting.showsAlbumSyncNotice)
+    }
+
+    /// 3, 4, 8: 加進相簿 puts the three in the bound album, takes them off
+    /// `fallbackAssetIDs`, toasts and speaks, and the notice goes; the wall
+    /// keeps the same photos in the same order.
+    func testAddingMovesThemIntoTheAlbum() async throws {
+        let library = fallbackLibrary()
+        let (store, added) = try makeStore(albumIdentifier: "album")
+        var profile = added
+        profile.fallbackAssetIDs = Self.fallbackIDs
+        profile = try store.updateAndWait(profile)
+        let model = PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                                   todayText: { _ in "" }, defaults: freshDefaults(), scheduleAfter: { _, _ in })
+        var announced: [String] = []
+        model.announce = { announced.append($0) }
+        let wallBefore = model.photoIDs
+
+        await model.addFallbackPhotosToAlbum()
+
+        XCTAssertEqual(library.albums.map(\.id), ["album"])
+        XCTAssertEqual(library.albums.first?.assetIDs, ["p6", "p7", "p8", "p9", "p10", "f1", "f2", "f3"])
+        XCTAssertEqual(storedFallback(store, profile), ["p7", "gone"])
+        XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.albumIdentifier, "album")
+        XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 3 張")
+        XCTAssertEqual(announced, ["已加進「小寶」相簿 3 張"])
+        XCTAssertEqual(model.albumSyncIDs, [])
+        XCTAssertFalse(model.showsAlbumSyncNotice)
+        XCTAssertFalse(model.isSyncingAlbum)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.photoIDs, wallBefore)
+    }
+
+    /// 5: no album yet, or the bound one deleted in 「照片」: one album is
+    /// made with the record's photos (p7 counts too: it is in an album the
+    /// record is not bound to), bound, and they leave `fallbackAssetIDs`.
+    func testAddingWithoutAnAlbumMakesExactlyOne() async throws {
+        for bound in [nil, "deleted"] as [String?] {
+            let library = fallbackLibrary()
+            let (model, store, profile) = try syncingModel(library, albumIdentifier: bound)
+            XCTAssertEqual(model.albumSyncIDs, ["f1", "f2", "p7", "f3"], String(describing: bound))
+            let wallBefore = model.photoIDs
+
+            await model.addFallbackPhotosToAlbum()
+
+            let made = library.albums.filter { $0.id != "album" }
+            XCTAssertEqual(made.count, 1, String(describing: bound))
+            XCTAssertEqual(made.first?.title, "小寶")
+            XCTAssertEqual(made.first?.assetIDs, ["f1", "f2", "p7", "f3"])
+            let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+            XCTAssertEqual(stored.albumIdentifier, made.first?.id)
+            XCTAssertEqual(stored.fallbackAssetIDs, ["gone"])
+            XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 4 張")
+            XCTAssertFalse(model.showsAlbumSyncNotice)
+            XCTAssertEqual(model.photoIDs, wallBefore)
+        }
+    }
+
+    /// 6: a refused add leaves `fallbackAssetIDs` alone, shows the add
+    /// failure alert, keeps the notice and toasts nothing.
+    func testFailedAddKeepsTheFallbackAndTheNotice() async throws {
+        let library = fallbackLibrary()
+        library.failure = .failed("相簿忙碌中")
+        let (model, store, profile) = try syncingModel(library)
+
+        await model.addFallbackPhotosToAlbum()
+
+        XCTAssertEqual(model.errorTitle, PhotoWallModel.addFailedTitle)
+        XCTAssertEqual(model.errorMessage, "相簿忙碌中")
+        XCTAssertEqual(storedFallback(store, profile), Self.fallbackIDs)
+        XCTAssertTrue(model.showsAlbumSyncNotice)
+        XCTAssertNil(model.toastState)
+        XCTAssertFalse(model.isSyncingAlbum)
+    }
+
+    /// 7: a photo saved and a setting changed while the add runs both
+    /// survive; only the three added leave `fallbackAssetIDs`.
+    func testChangesMadeMeanwhileSurvive() async throws {
+        let library = fallbackLibrary()
+        library.addAsset(asset("new", 1, 9))
+        let (model, store, profile) = try syncingModel(library)
+        var changed = false
+        library.onAddAssets = {
+            guard !changed, var latest = store.profiles.first(where: { $0.id == profile.id }) else { return }
+            changed = true
+            latest.fallbackAssetIDs.append("new")
+            latest.showName.toggle()
+            _ = try? store.updateAndWait(latest)
+        }
+
+        await model.addFallbackPhotosToAlbum()
+
+        let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        XCTAssertEqual(stored.fallbackAssetIDs, ["p7", "gone", "new"])
+        XCTAssertNotEqual(stored.showName, profile.showName)
+        XCTAssertEqual(model.albumSyncIDs, ["new"])
+    }
+
+    /// 7: rebound to another album in 編輯紀錄 while the add runs, the
+    /// record keeps the photos on `fallbackAssetIDs` (they went into the old
+    /// album, not the new one) and the add still reports success.
+    func testRebindingMeanwhileKeepsTheFallback() async throws {
+        let library = fallbackLibrary()
+        let (model, store, profile) = try syncingModel(library)
+        library.onAddAssets = {
+            guard var latest = store.profiles.first(where: { $0.id == profile.id }),
+                  latest.albumIdentifier == "album" else { return }
+            latest.albumIdentifier = "other"
+            _ = try? store.updateAndWait(latest)
+        }
+
+        await model.addFallbackPhotosToAlbum()
+
+        let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        XCTAssertEqual(stored.albumIdentifier, "other")
+        XCTAssertEqual(stored.fallbackAssetIDs, Self.fallbackIDs)
+        XCTAssertEqual(library.albums.first { $0.id == "album" }?.assetIDs.suffix(3), ["f1", "f2", "f3"])
+        XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 3 張")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(Set(model.photoIDs), ["f1", "f2", "f3", "p7"])
+    }
+
+    /// 7, #663: an add that answers after the queue gave up reports the
+    /// timeout and writes nothing when it finally answers.
+    func testLateAnswerWritesNothing() async throws {
+        let library = fallbackLibrary()
+        let latch = AlbumCreationLatch()
+        library.onAddAssets = { await latch.hold() }
+        let (model, store, profile) = try syncingModel(library,
+                                                          coordinator: CaptureSaveCoordinator(workTimeout: 0.2))
+
+        await model.addFallbackPhotosToAlbum()
+        XCTAssertEqual(model.errorMessage, "照片庫沒有回應，請再試一次。")
+        latch.release()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(storedFallback(store, profile), Self.fallbackIDs)
+        XCTAssertNil(model.toastState)
+    }
+
+    /// 3: while the add runs the button is busy and a second tap does nothing.
+    func testSecondTapWhileRunningDoesNothing() async throws {
+        let library = fallbackLibrary()
+        let latch = AlbumCreationLatch()
+        var calls = 0
+        library.onAddAssets = { calls += 1; await latch.hold() }
+        let (model, store, profile) = try syncingModel(library)
+
+        let first = Task { await model.addFallbackPhotosToAlbum() }
+        try await latch.waitUntilHolding()
+        XCTAssertTrue(model.isSyncingAlbum)
+        await model.addFallbackPhotosToAlbum()
+        XCTAssertEqual(calls, 1)
+        latch.release()
+        await first.value
+
+        XCTAssertFalse(model.isSyncingAlbum)
+        XCTAssertEqual(storedFallback(store, profile), ["p7", "gone"])
+    }
+}

@@ -44,6 +44,7 @@ struct PhotoWallView: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.showsLimitedNotice && showsBottomBar { limitedBanner }
+            if model.showsAlbumSyncNotice && model.content == .photos { albumSyncNotice }
             content
             if model.isSelecting {
                 selectionBar
@@ -397,6 +398,57 @@ struct PhotoWallView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("limitedAccessBanner")
+    }
+
+    /// Full access with fallback photos outside the album: 加進相簿 adds
+    /// them in one tap and the notice goes once they are in (#680). No close
+    /// button.
+    private var albumSyncNotice: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "rectangle.stack.badge.plus")
+                .font(.system(size: 20))
+                .foregroundColor(CameraTheme.active)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.albumSyncTitle)
+                    .font(.footnote.weight(.bold))
+                    .foregroundColor(CameraTheme.ink)
+                Text("開放完整權限前拍的")
+                    .font(.footnote)
+                    .foregroundColor(CameraTheme.inkSecondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                Task { await model.addFallbackPhotosToAlbum() }
+            } label: {
+                ZStack {
+                    Text("加進相簿")
+                        .font(.footnote.weight(.heavy))
+                        .opacity(model.isSyncingAlbum ? 0 : 1)
+                    if model.isSyncingAlbum {
+                        ProgressView().tint(CameraTheme.inkOnAccent)
+                    }
+                }
+                .foregroundColor(CameraTheme.inkOnAccent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(CameraTheme.accent))
+                .fixedSize()
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isSyncingAlbum)
+            .accessibilityLabel("加進相簿")
+            .accessibilityIdentifier("wallAlbumSyncButton")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wallAlbumSyncNotice")
     }
 
     private var emptyState: some View {
