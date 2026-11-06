@@ -298,7 +298,9 @@ struct CameraScreen: View {
                 placeholderBackground
             } else {
                 // Sized to exactly `frameSize`; never `.ignoresSafeArea()`.
-                CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge)
+                CameraPreviewView(session: model.cameraService.session, bridge: model.focusModel.previewBridge,
+                                  onCaptureEvent: { model.capturePhoto() },
+                                  isCaptureEventEnabled: scenePhase == .active)
             }
 
             if model.captureSettingsStore.showsGrid {
