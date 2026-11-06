@@ -745,6 +745,73 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertNil(coordinator.pendingAlbum(for: record.id))
     }
 
+    /// #670-1: the record is bound to album D, deleted in the 「照片」 App.
+    /// "加入照片" makes album A and times out; while it is stuck no other
+    /// album is made; when A comes back it replaces D, and the next add
+    /// uses A instead of making a third album.
+    func testLateReplacementAlbumRebindsTheDeletedBinding() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        try store.updateAndWait(record.with(albumIdentifier: "d"))
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x"), .init(id: "y")])
+        let latch = AlbumCreationLatch()
+        var held = false
+        library.onAddAssets = { if !held { held = true; await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"]) // times out; the library call is stuck
+        XCTAssertEqual(wall.errorMessage, "照片庫沒有回應，請再試一次。")
+        XCTAssertTrue(coordinator.isCreatingAlbum(for: record.id), "the replacement counts as a creation")
+        wall.errorMessage = nil
+        await wall.addPhotos(ids: ["y"])
+        XCTAssertEqual(wall.errorMessage, "相簿還在建立中，請稍後再試。", "no second album while stuck")
+
+        latch.release()
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let album = try XCTUnwrap(library.albums.first)
+        XCTAssertEqual(library.albums.count, 1)
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, album.id, "A replaces D")
+        XCTAssertNil(coordinator.pendingAlbum(for: record.id))
+
+        wall.errorMessage = nil
+        await wall.addPhotos(ids: ["y"])
+        XCTAssertNil(wall.errorMessage)
+        XCTAssertEqual(library.albums.count, 1, "no third album")
+        XCTAssertEqual(Set(library.albums.first?.assetIDs ?? []), ["x", "y"])
+        XCTAssertEqual(store.profiles.first { $0.id == record.id }?.albumIdentifier, album.id)
+    }
+
+    /// #670-2: as #670-1, but the record is bound to album B while A is
+    /// stuck: the late A does not overwrite B, and the picked photo stays on
+    /// the record through `fallbackAssetIDs`.
+    func testLateReplacementAlbumKeepsABindingChangedMeanwhile() async throws {
+        let store = makeStore()
+        let record = try XCTUnwrap(store.profiles.first)
+        try store.updateAndWait(record.with(albumIdentifier: "d"))
+        let library = FakeRecordAlbumLibrary(status: .authorized, assets: [.init(id: "x")],
+                                             albums: [.init(id: "b", title: "B", assetIDs: [])])
+        let latch = AlbumCreationLatch()
+        var held = false
+        library.onAddAssets = { if !held { held = true; await latch.hold() } }
+        let coordinator = CaptureSaveCoordinator(workTimeout: 0.2)
+        let model = RecordListModel(store: store, library: library, saveCoordinator: coordinator)
+        let wall = model.photoWallModel(for: record.id, resolveFont: { _ in .pingFang })
+        await wall.addPhotos(ids: ["x"])
+        try store.updateAndWait(try XCTUnwrap(store.profiles.first { $0.id == record.id }).with(albumIdentifier: "b"))
+
+        latch.release()
+        for _ in 0..<200 where coordinator.isCreatingAlbum(for: record.id) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let saved = try XCTUnwrap(store.profiles.first { $0.id == record.id })
+        XCTAssertEqual(saved.albumIdentifier, "b", "the newer binding stays")
+        XCTAssertEqual(saved.fallbackAssetIDs, ["x"], "the picked photo stays on the record")
+        XCTAssertNil(coordinator.pendingAlbum(for: record.id))
+    }
+
     /// #663 (bot, required): a deleted waiting photo neither blocks nor is
     /// retried; the user's own pick still goes in.
     func testDeletedWaitingPhotoDoesNotBlockAddingNewOnes() async throws {
