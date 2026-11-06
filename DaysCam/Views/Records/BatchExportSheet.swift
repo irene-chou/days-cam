@@ -32,9 +32,9 @@ struct BatchExportSheet: View {
 
     /// Everything on the preview but the carousel's image, roughly: the
     /// padding, title, buttons and text options, plus ‹ i／M › and the skip
-    /// line when shown.
+    /// line when shown (the batch note wraps to two lines on an SE).
     private var carouselSize: CGSize {
-        let reserved: CGFloat = 290 + (model.exportable.count > 1 ? 52 : 0) + (model.skippedMessage == nil ? 0 : 24)
+        let reserved: CGFloat = 300 + (model.exportable.count > 1 ? 52 : 0) + (model.skippedMessage == nil ? 0 : 44)
         return Self.carouselSize(reserved: reserved)
     }
 
@@ -81,10 +81,12 @@ struct BatchExportSheet: View {
                 Text(model.previewNote)
                     .font(.system(size: 13.5))
                     .foregroundColor(CameraTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let skipped = model.skippedMessage {
                     Text(skipped)
                         .font(.system(size: 13.5))
                         .foregroundColor(CameraTheme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("batchExportSkipped")
                 }
             }
