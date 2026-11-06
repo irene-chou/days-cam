@@ -56,7 +56,13 @@ struct CameraScreen: View {
             // Light haptic on the same trigger (issue #148); the simulator
             // has no haptics, so this call site is the thing to check.
             .sensoryFeedback(.impact(weight: .light), trigger: model.captureTriggerCount)
-            .onAppear { model.onAppear() }
+            .onAppear {
+                model.onAppear()
+                model.levelModel.setConditions(model.levelConditions(isSceneActive: scenePhase == .active))
+            }
+            .onChange(of: model.levelConditions(isSceneActive: scenePhase == .active)) { _, conditions in
+                model.levelModel.setConditions(conditions)
+            }
             .task { await model.loadLatestThumbnail() }
             .onChange(of: scenePhase) { _, phase in
                 // The camera is back to continuous auto (issue #303).
@@ -308,6 +314,9 @@ struct CameraScreen: View {
             // Tap-to-focus reticle, exposure sun and AE/AF lock label
             // (issue #303); never takes touches.
             FocusExposureOverlay(focus: model.focusModel, frameSize: frameSize, rotation: rotation)
+
+            ViewfinderLevelOverlay(level: model.levelModel, rotation: rotation)
+                .frame(width: frameSize.width, height: frameSize.height)
 
             if model.showsOverlay {
                 overlayLayer(layerSize: layerSize, frameSize: frameSize, rotation: rotation)
