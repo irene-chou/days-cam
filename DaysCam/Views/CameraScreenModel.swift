@@ -259,7 +259,7 @@ final class CameraScreenModel: ObservableObject {
          reportFailureAfterClose: @escaping @MainActor (CaptureAlertError, Int) -> Void = { _, _ in },
          reportRecordWriteFailure: @escaping @MainActor (Error) -> Void = { _ in },
          scheduleToastDismiss: @escaping (@escaping () -> Void) -> Void = { work in
-             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+             DispatchQueue.main.asyncAfter(deadline: .now() + ToastTiming.duration(1.5), execute: work)
          },
          saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
          captureRotationAngleOverride: CGFloat? = nil,

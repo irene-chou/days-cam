@@ -28,7 +28,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles,
                                 "-UITestRecordPhotos", "5", "-UITestBindAlbum", "-UITestFocus",
-                                "-UITestFilmDate", "topLeading"] + extra
+                                "-UITestFilmDate", "topLeading", "-UITestLongToast"] + extra
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
         app.launch()
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 10))
