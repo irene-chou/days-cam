@@ -111,6 +111,12 @@ final class FakeRecordAlbumLibrary: RecordAlbumLibrary {
         }
     }
 
+    func assetIDs(inAlbum albumIdentifier: String) -> Set<String> {
+        guard status == .authorized else { return [] }
+        albumReadCount += 1
+        return Set(albums.first { $0.id == albumIdentifier }?.assetIDs ?? [])
+    }
+
     func addAssets(_ ids: [String], albumIdentifier: String?, albumTitle: String) async throws -> String {
         await onAddAssets?()
         if let failure { throw failure }
