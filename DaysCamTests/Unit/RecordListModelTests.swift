@@ -58,6 +58,17 @@ final class RecordListModelTests: XCTestCase {
 
     // MARK: Rows (2, 3, 4)
 
+    /// #677-3: the 字型授權 page pushes from the list and back empties the path.
+    func testFontLicenseOpensAndClosesBackToAnEmptyPath() {
+        let model = makeModel(store: makeStore(), library: FakeRecordAlbumLibrary())
+        model.openFontLicense()
+        XCTAssertEqual(model.path, [.fontLicense])
+        model.closeFontLicense()
+        XCTAssertTrue(model.path.isEmpty)
+        model.closeFontLicense()
+        XCTAssertTrue(model.path.isEmpty, "closing twice is harmless")
+    }
+
     /// 2: no access reads "—".
     func testSubtitleShowsDashWithoutAccess() throws {
         let store = makeStore()

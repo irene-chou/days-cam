@@ -9,11 +9,14 @@ enum RecordRoute: Hashable {
     case wall(UUID)
     /// The editor of a record (FR-21).
     case editor(UUID)
+    /// The read-only 字型授權 page (#677).
+    case fontLicense
 
-    /// The record the page belongs to.
-    var recordID: UUID {
+    /// The record the page belongs to; `nil` for pages that belong to none.
+    var recordID: UUID? {
         switch self {
         case let .wall(id), let .editor(id): return id
+        case .fontLicense: return nil
         }
     }
 }
@@ -286,6 +289,16 @@ final class RecordListModel: ObservableObject {
     /// Opens `id`'s editor from the list.
     func edit(id: UUID) {
         path = [.editor(id)]
+    }
+
+    /// Opens the 字型授權 page from the list's bottom entry (#677).
+    func openFontLicense() {
+        path = [.fontLicense]
+    }
+
+    /// Leaves the 字型授權 page back to the list.
+    func closeFontLicense() {
+        if path.last == .fontLicense { path.removeLast() }
     }
 
     /// Opens `id`'s photo wall (FR-17).

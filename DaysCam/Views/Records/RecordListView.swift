@@ -30,6 +30,20 @@ struct RecordListView: View {
                         .padding(.vertical, 12)
                         .accessibilityIdentifier("recordListFooter")
                 }
+                Button {
+                    model.openFontLicense()
+                } label: {
+                    Text("字型授權")
+                        .font(.system(size: 12.5))
+                        .foregroundColor(CameraTheme.inkTertiary)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 12)
+                .accessibilityLabel("字型授權")
+                .accessibilityIdentifier("fontLicenseButton")
             }
             .background(CameraTheme.background.ignoresSafeArea())
             .navigationTitle("紀錄")
@@ -56,6 +70,9 @@ struct RecordListView: View {
                         .id(id)
                 case let .editor(id):
                     RecordEditorView(model: model, profileID: id)
+                case .fontLicense:
+                    FontLicenseView(onBack: { model.closeFontLicense() })
+                        .toolbar(.hidden, for: .navigationBar)
                 }
             }
         }
