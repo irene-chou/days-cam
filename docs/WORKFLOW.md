@@ -65,6 +65,19 @@ xcodegen generate && \
     -only-testing:DaysCamTests/<相關測試class> test
 ```
 
+### 字型授權致謝（Settings.bundle）
+
+iOS「設定」→ DaysCam →「致謝」→「字型授權」由 `DaysCam/Resources/Settings.bundle` 提供，plist 由 `FontLicenseModel` 產生並 commit。改了字型清單（`FontCatalog`）或 `DaysCam/Resources/FontLicenses/` 任一檔後，在 repo 根目錄重跑：
+
+```sh
+swiftc -parse-as-library -o /tmp/generate-settings-acknowledgements \
+  scripts/generate-settings-acknowledgements.swift DaysCam/Models/*.swift \
+  DaysCam/Views/Theme/CameraTheme.swift DaysCam/Views/OverlayPanel/FontLicenseView.swift \
+&& /tmp/generate-settings-acknowledgements
+```
+
+忘了重跑時 `SettingsAcknowledgementsTests` 會失敗。
+
 ### 字型 fixture
 
 `FontWeightShellAcceptanceTests`、`FontWeightRenderingTests`、`OverlayMetricsTests` 等需要真字型的測試，平時沒設環境變數就 `XCTSkip`。要實跑：
