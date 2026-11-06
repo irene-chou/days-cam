@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import SwiftUI
 
 /// Wraps an `AVCaptureVideoPreviewLayer` bound to `session` (PRD S-1).
