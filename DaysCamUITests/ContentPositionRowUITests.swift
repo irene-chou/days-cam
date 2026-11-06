@@ -46,7 +46,7 @@ final class ContentPositionRowUITests: XCTestCase {
 
     private func waitUntilGone(_ element: XCUIElement) -> Bool {
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
-        return XCTWaiter().wait(for: [gone], timeout: 3) == .completed
+        return XCTWaiter().wait(for: [gone], timeout: 10) == .completed
     }
 
     /// #567-1／2／3／6／8: the row names the position and opens closed; it

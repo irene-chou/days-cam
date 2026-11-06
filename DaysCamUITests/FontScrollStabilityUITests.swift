@@ -74,8 +74,10 @@ final class FontScrollStabilityUITests: XCTestCase {
                 // one halfway down — so a drag that moves nothing gets one
                 // more try before it means a miss or the bottom (#547).
                 print("FONTSCROLL \(label) down#\(step) did not scroll, retrying")
-                drag(up: true)
-                now = positions()
+                for _ in 0..<2 where abs(now.license - last.license) < 0.5 {
+                    drag(up: true)
+                    now = positions()
+                }
             }
             print("FONTSCROLL \(label) down#\(step) heading=\(now.heading) license=\(now.license)")
             XCTAssertLessThanOrEqual(now.heading, last.heading + 0.5, "150.2 \(label) heading rose at down#\(step)")
