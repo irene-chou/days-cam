@@ -17,10 +17,25 @@ struct BatchExportSheet: View {
     /// The carousel's share of the sheet width (D8 `.car{width:62%}`).
     static let carouselWidthRatio: CGFloat = 0.62
 
-    /// The carousel's box: 62% of the content width at 3:4.
-    static var carouselSize: CGSize {
+    /// The preview's share of the screen height.
+    static let previewDetent: CGFloat = 0.85
+
+    /// The carousel's box: 62% of the content width at 3:4, shorter when the
+    /// rest of the preview (`reserved` points) would not fit the sheet
+    /// otherwise, as on an iPhone SE (#679).
+    static func carouselSize(reserved: CGFloat) -> CGSize {
         let width = ((UIScreen.main.bounds.width - 40) * carouselWidthRatio).rounded()
-        return CGSize(width: width, height: (width * 4 / 3).rounded())
+        let room = (UIScreen.main.bounds.height * previewDetent - reserved).rounded(.down)
+        let height = min((width * 4 / 3).rounded(), room)
+        return CGSize(width: min(width, (height * 3 / 4).rounded()), height: height)
+    }
+
+    /// Everything on the preview but the carousel's image, roughly: the
+    /// padding, title, buttons and text options, plus ‹ i／M › and the skip
+    /// line when shown.
+    private var carouselSize: CGSize {
+        let reserved: CGFloat = 290 + (model.exportable.count > 1 ? 52 : 0) + (model.skippedMessage == nil ? 0 : 24)
+        return Self.carouselSize(reserved: reserved)
     }
 
     var body: some View {
@@ -42,7 +57,7 @@ struct BatchExportSheet: View {
     }
 
     private var detents: Set<PresentationDetent> {
-        model.phase == .preview ? [.fraction(0.85)] : [.height(250)]
+        model.phase == .preview ? [.fraction(Self.previewDetent)] : [.height(250)]
     }
 
     @ViewBuilder
@@ -95,7 +110,7 @@ struct BatchExportSheet: View {
                         .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 6)
                 }
             }
-            .frame(width: Self.carouselSize.width, height: Self.carouselSize.height)
+            .frame(width: carouselSize.width, height: carouselSize.height)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.previewPhoto.flatMap(model.overlayText(for:)) ?? "")
             .accessibilityIdentifier("batchExportPreview")
@@ -114,7 +129,7 @@ struct BatchExportSheet: View {
         .task(id: PreviewKey(photoID: model.previewPhoto?.id, profile: model.profile,
                              hidesText: model.hidesText, scale: displayScale)) {
             guard let photo = model.previewPhoto else { return }
-            let side = Self.carouselSize.height * displayScale
+            let side = carouselSize.height * displayScale
             let image = await model.previewImage(for: photo, targetSize: CGSize(width: side, height: side))
             guard !Task.isCancelled else { return }
             previewImage = image

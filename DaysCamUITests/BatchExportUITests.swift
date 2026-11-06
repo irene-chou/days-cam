@@ -87,6 +87,12 @@ final class BatchExportUITests: XCTestCase {
         XCTAssertEqual(hide.label, "隱藏文字", "#679-8 the sheet opens showing the text")
         XCTAssertLessThan(hide.frame.midY, element("batchExportStyleLink").frame.midY)
         sleep(1)
+        // #679: the whole preview fits, on an iPhone SE too.
+        let sheet = element("batchExportSheet").frame
+        for id in ["batchExportTitle", "batchExportStartButton", "batchExportCancelButton"] {
+            XCTAssertTrue(sheet.contains(element(id).frame), "\(id) \(element(id).frame) in \(sheet)")
+        }
+        XCTAssertGreaterThan(element("batchExportTitle").frame.minY, sheet.minY + 10, "below the grabber")
         shot("batch-export-preview")
 
         // #679-8: 隱藏文字 on the batch sheet too.
