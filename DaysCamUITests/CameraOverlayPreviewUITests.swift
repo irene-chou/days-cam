@@ -71,6 +71,17 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         XCTAssertFalse(item.exists, message, file: file, line: line)
     }
 
+    /// A short toast can come and go between `waitForExistence` polls on a
+    /// slow runner, so poll tightly (same as ExportUITests, #672).
+    private func toastAppears(_ toast: XCUIElement, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if toast.exists { return true }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while Date() < deadline
+        return false
+    }
+
     // MARK: - 1: the switch
 
     /// 1: on at first (value 開), a tap turns it off and says so, another
@@ -85,14 +96,14 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "關")
         let offToast = element("overlayPreviewToast")
-        XCTAssertTrue(offToast.waitForExistence(timeout: 3), "656-1 toast")
+        XCTAssertTrue(toastAppears(offToast), "656-1 toast")
         XCTAssertEqual(offToast.label, "疊字預覽 關閉")
         waitForGone(overlayText, "656-1 no text with the preview off")
         shot("1_off")
 
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "開")
-        XCTAssertTrue(element("overlayPreviewToast").waitForExistence(timeout: 3))
+        XCTAssertTrue(toastAppears(element("overlayPreviewToast")))
         XCTAssertEqual(element("overlayPreviewToast").label, "疊字預覽 開啟")
         assertOnScreen(overlayText, "656-1 the text is back")
     }

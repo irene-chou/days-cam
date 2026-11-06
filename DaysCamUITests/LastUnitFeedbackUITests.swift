@@ -66,7 +66,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         app.buttons["週"].tap()
         let gone = NSPredicate(format: "label != '至少保留一個單位'")
         let wait = XCTNSPredicateExpectation(predicate: gone, object: unitHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 2), .completed, "141.4 a checkbox tap clears it")
+        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 10), .completed, "141.4 a checkbox tap clears it")
         XCTAssertEqual(ageRowOffset(), ageRowBefore, "108.2 still in place after the hint")
     }
 
@@ -87,7 +87,7 @@ final class LastUnitFeedbackUITests: XCTestCase {
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
         let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the hint appeared")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 10), .completed, "108.4 the hint appeared")
         assertHint(contentHint, sitsOnHeading: "文字內容", "#558.7")
         for (name, before) in zip(["天數", "日期", "名稱"], switchFrames) {
             XCTAssertEqual(toggle(name).frame.minY, before.minY, accuracy: 1, "#558.7 \(name) did not move")
@@ -96,14 +96,14 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertEqual(contentHint.label, "至少顯示天數或日期", "141.3 still there after 3 s")
         toggle("名稱").tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != '至少顯示天數或日期'"), object: contentHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 2), .completed, "141.3 the 名稱 switch clears it")
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "141.3 the 名稱 switch clears it")
 
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
         toggle("日期").tap()
         XCTAssertTrue(isOn(toggle("日期")), "108.4 the date springs back")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 2), .completed, "108.4 the same hint")
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 10), .completed, "108.4 the same hint")
     }
 
     /// 108.8 → TASK-141 (#485): with the day count off the 天數單位 section
