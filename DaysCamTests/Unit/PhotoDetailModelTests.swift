@@ -3,26 +3,6 @@ import UIKit
 import XCTest
 @testable import DaysCam
 
-/// What a stand-in `bake` was called with.
-private final class BakeRecorder: @unchecked Sendable {
-    struct Call {
-        let text: String
-        let cropRect: CGRect?
-        let tone: ColorTone
-    }
-    private let lock = NSLock()
-    private var recorded: [Call] = []
-    var calls: [Call] { lock.lock(); defer { lock.unlock() }; return recorded }
-
-    func bake(_ image: UIImage, _ text: String, _ style: OverlayStyle, _ placement: OverlayPlacement,
-              _ font: ResolvedOverlayFont, _ cropRect: CGRect?, _ filmDate: FilmDateStamp?, _ tone: ColorTone) -> UIImage? {
-        lock.lock()
-        recorded.append(Call(text: text, cropRect: cropRect, tone: tone))
-        lock.unlock()
-        return image
-    }
-}
-
 /// #619 acceptance 2, 3, 4, 6 and 7: the viewer's text, bake call, removal and
 /// deletion, over a real `ProfileStore` and a fake library.
 @MainActor
@@ -69,10 +49,8 @@ final class PhotoDetailModelTests: XCTestCase {
     }
 
     private func makeModel(store: ProfileStore, profile: CameraProfile, library: FakeRecordAlbumLibrary,
-                           startingAt id: String = "p5", recorder: BakeRecorder = BakeRecorder()) -> PhotoDetailModel {
-        PhotoDetailModel(profileID: profile.id, startingAt: id, store: store, library: library, calendar: calendar,
-                         bake: { recorder.bake($0, $1, $2, $3, $4, $5, $6, $7) },
-                         resolveFont: { _ in .pingFang })
+                           startingAt id: String = "p5") -> PhotoDetailModel {
+        PhotoDetailModel(profileID: profile.id, startingAt: id, store: store, library: library, calendar: calendar)
     }
 
     // MARK: Header and overlay (1, 2, 3, 4)
@@ -86,50 +64,43 @@ final class PhotoDetailModelTests: XCTestCase {
         XCTAssertEqual(model.dateLine(for: photo), "2026/1/10 15:07")
     }
 
-    /// 2: the text is the renderer's photo-moment output and the page is
-    /// drawn by `bake` with the standard tone and no crop.
-    func testPageIsBakedWithTheRendererTextAndStandardTone() async throws {
-        let (store, profile) = try makeStore()
-        let recorder = BakeRecorder()
-        let model = makeModel(store: store, profile: profile, library: library(), recorder: recorder)
+    /// #699-1: the page is the library's screen-sized original, untouched:
+    /// no day count, date, name or film date stamp is drawn on it, even for a
+    /// record with the film date on.
+    func testPageImageIsThePlainOriginal() async throws {
+        var (store, profile) = try makeStore()
+        profile.showFilmDate = true
+        try store.updateAndWait(profile)
+        let lib = library()
+        let model = makeModel(store: store, profile: profile, library: lib)
         let photo = try XCTUnwrap(model.currentPhoto)
-        let expected = TemplateRenderer().render(profile: profile, capturedAt: try XCTUnwrap(photo.creationDate),
-                                                 calendar: calendar, moment: .photo)
-        let image = await model.pageImage(for: photo, targetSize: CGSize(width: 200, height: 300))
-        XCTAssertNotNil(image)
-        XCTAssertEqual(recorder.calls.count, 1)
-        XCTAssertEqual(recorder.calls.first?.text, expected)
-        XCTAssertEqual(recorder.calls.first?.tone, .standard)
-        XCTAssertNil(recorder.calls.first?.cropRect)
-        XCTAssertTrue(expected.contains("10"), "the text carries the photo's day count")
+        let size = CGSize(width: 200, height: 300)
+        let page = try XCTUnwrap(await model.pageImage(for: photo, targetSize: size))
+        let original = try XCTUnwrap(await lib.displayImage(id: photo.id, targetSize: size))
+        XCTAssertEqual(page.pngData(), original.pngData())
     }
 
-    /// 3: a start date after the photo reads 前 N 天 in both the header and
-    /// the overlay, the same as the wall's mark.
-    func testStartDateAfterThePhotoReadsBeforeNDays() async throws {
+    /// 3: a start date after the photo reads 前 N 天 in the header, the same
+    /// as the wall's mark.
+    func testStartDateAfterThePhotoReadsBeforeNDays() throws {
         let (store, profile) = try makeStore(start: DateFixture.components(2026, 1, 12))
-        let recorder = BakeRecorder()
-        let model = makeModel(store: store, profile: profile, library: library(), recorder: recorder)
+        let model = makeModel(store: store, profile: profile, library: library())
         let photo = try XCTUnwrap(model.currentPhoto)
         XCTAssertEqual(model.title(for: photo), "前 2 天")
         let wall = PhotoWallModel.dayMark(creationDate: photo.creationDate, profile: profile, calendar: calendar)
         XCTAssertEqual(model.title(for: photo), wall.text)
-        _ = await model.pageImage(for: photo, targetSize: CGSize(width: 200, height: 300))
-        XCTAssertTrue(try XCTUnwrap(recorder.calls.first?.text).contains("前 2 天"))
     }
 
-    /// 4: no `creationDate` means no bake and 日期不明.
-    func testPhotoWithoutADateIsNotBaked() async throws {
+    /// 4: no `creationDate` means 日期不明; the plain photo is still shown.
+    func testPhotoWithoutADateShowsThePhoto() async throws {
         let (store, profile) = try makeStore()
-        let recorder = BakeRecorder()
         let model = makeModel(store: store, profile: profile, library: library(dates: [nil, 7]),
-                              startingAt: "p1", recorder: recorder)
+                              startingAt: "p1")
         let photo = try XCTUnwrap(model.currentPhoto)
         XCTAssertEqual(model.title(for: photo), "日期不明")
         XCTAssertNil(model.dateLine(for: photo))
         let image = await model.pageImage(for: photo, targetSize: CGSize(width: 200, height: 300))
         XCTAssertNotNil(image, "the plain photo is still shown")
-        XCTAssertTrue(recorder.calls.isEmpty)
     }
 
     /// The order is the wall's.
@@ -230,15 +201,6 @@ final class PhotoDetailModelTests: XCTestCase {
 
     // MARK: Export (#679: 2, 3, 4, 6, 7, 9)
 
-    private var tipsSuite = ""
-
-    private func makeTips(coachSeen: Bool = true) throws -> FirstRunTips {
-        tipsSuite = "FirstRunTips-\(UUID().uuidString)"
-        let tips = FirstRunTips(defaults: try XCTUnwrap(UserDefaults(suiteName: tipsSuite)))
-        if coachSeen { tips.markViewerCoachSeen() }
-        return tips
-    }
-
     private final class SaveCounter {
         var count = 0
         var result: Result<String, PhotoSaveError> = .success("new")
@@ -260,7 +222,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// A viewer over `ExportLibrary` whose export sheet runs the real
     /// pipeline, counting saves and recording what is baked; toast expiry
     /// runs only when the test says so.
-    private func makeExportRig(store: ProfileStore, profile: CameraProfile, tips: FirstRunTips,
+    private func makeExportRig(store: ProfileStore, profile: CameraProfile,
                                photoDay: Int? = 10) -> ExportRig {
         let photo = RecordPhoto(id: "p1", creationDate: photoDay.flatMap { DateFixture.date(2026, 1, $0, hour: 15, minute: 7) })
         let library = ExportLibrary(photos: [photo])
@@ -276,7 +238,7 @@ final class PhotoDetailModelTests: XCTestCase {
                                                completion(saves.result)
                                            })
         let model = PhotoDetailModel(profileID: profile.id, startingAt: "p1", store: store, library: library,
-                                     calendar: calendar, resolveFont: { _ in .pingFang },
+                                     calendar: calendar,
                                      makeExport: { photos in
                                          BatchExportModel(photos: photos, profileID: profile.id, store: store,
                                                           library: library, calendar: calendar,
@@ -285,7 +247,6 @@ final class PhotoDetailModelTests: XCTestCase {
                                                           export: BatchExportModel.pipelineExport(
                                                               pipeline, resolveFont: { _ in .pingFang }))
                                      },
-                                     tips: tips,
                                      scheduleAfter: { _, action in scheduled.actions.append(action) })
         model.announce = { announced.messages.append($0) }
         return ExportRig(model: model, library: library, saves: saves, announced: announced,
@@ -300,7 +261,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// own note, a plain 匯出 button; nothing is exported yet.
     func testExportOpensTheSingleSheet() throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.model.beginExport()
 
         let sheet = try XCTUnwrap(rig.model.export)
@@ -322,7 +283,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// goes away later.
     func testExportSucceedsWithToastAndStaysOnThePhoto() async throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.model.beginExport()
         let sheet = try XCTUnwrap(rig.model.export)
         sheet.start()
@@ -348,7 +309,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// permission text; no toast, nothing announced.
     func testPermissionRefusalIsTheSheetsFailure() async throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.saves.result = .failure(.permissionDenied)
         rig.model.beginExport()
         let sheet = try XCTUnwrap(rig.model.export)
@@ -373,7 +334,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// then toasts 已匯出.
     func testSaveFailureThenRetry() async throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.saves.result = .failure(.saveFailed("disk"))
         rig.model.beginExport()
         let sheet = try XCTUnwrap(rig.model.export)
@@ -395,7 +356,7 @@ final class PhotoDetailModelTests: XCTestCase {
     /// 取消 closes the sheet, exports nothing and says nothing.
     func testCancelExportsNothing() throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.model.beginExport()
         try XCTUnwrap(rig.model.export).cancel()
 
@@ -422,7 +383,7 @@ final class PhotoDetailModelTests: XCTestCase {
         var profile = created
         profile.showFilmDate = showsFilmDate
         try store.updateAndWait(profile)
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.model.beginExport()
         let sheet = try XCTUnwrap(rig.model.export)
         sheet.toggleHidesText()
@@ -449,7 +410,7 @@ final class PhotoDetailModelTests: XCTestCase {
     func testHiddenTextIsNotKeptInTheRecord() async throws {
         let (store, profile) = try makeStore()
         let before = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let rig = makeExportRig(store: store, profile: profile)
         rig.model.beginExport()
         let sheet = try XCTUnwrap(rig.model.export)
         sheet.toggleHidesText()
@@ -466,45 +427,11 @@ final class PhotoDetailModelTests: XCTestCase {
     /// 2: a photo without a date cannot open the sheet.
     func testPhotoWithoutDateCannotStartAnExport() throws {
         let (store, profile) = try makeStore()
-        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips(), photoDay: nil)
+        let rig = makeExportRig(store: store, profile: profile, photoDay: nil)
         XCTAssertFalse(rig.model.canStartExport)
         rig.model.beginExport()
         XCTAssertNil(rig.model.export)
         XCTAssertEqual(rig.library.fullImageCount, 0)
-    }
-
-    // MARK: Pointer bubble (#647: 9)
-
-    /// 9: the bubble shows on a photo with overlay text until 知道了.
-    func testCoachShowsUntilDismissed() throws {
-        let (store, profile) = try makeStore()
-        let tips = try makeTips(coachSeen: false)
-        let model = makeExportRig(store: store, profile: profile, tips: tips).model
-        XCTAssertTrue(model.showsCoach)
-        model.dismissCoach()
-        XCTAssertFalse(model.showsCoach)
-        XCTAssertTrue(tips.viewerCoachSeen)
-    }
-
-    /// 9: seen once, a new viewer does not show it again.
-    func testCoachStaysGoneInANewViewer() throws {
-        let (store, profile) = try makeStore()
-        let tips = try makeTips(coachSeen: false)
-        let first = makeExportRig(store: store, profile: profile, tips: tips).model
-        first.dismissCoach()
-        let second = makeExportRig(store: store, profile: profile, tips: tips).model
-        XCTAssertFalse(second.showsCoach)
-    }
-
-    /// The ring's frame sits inside the image and follows the placement.
-    func testOverlayFrameFollowsThePlacement() throws {
-        let (store, profile) = try makeStore()
-        let model = makeExportRig(store: store, profile: profile, tips: try makeTips()).model
-        let photo = try XCTUnwrap(model.currentPhoto)
-        let size = CGSize(width: 300, height: 400)
-        let frame = try XCTUnwrap(model.overlayFrame(for: photo, imageSize: size))
-        XCTAssertTrue(CGRect(origin: .zero, size: size).contains(frame), "\(frame)")
-        XCTAssertGreaterThan(frame.width, 0)
     }
 
     // MARK: Wording (#647: 12)
