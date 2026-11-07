@@ -3,6 +3,9 @@ import XCTest
 /// #619／#679: the photo viewer (acceptance 1, 5, 8). With `DAYSCAM_UI_SHOT_DIR` in
 /// the test runner's environment the B′ screenshots are also written there.
 final class PhotoDetailUITests: XCTestCase {
+    /// 44pt rows; the sheet reports its frames about 4% smaller (a sheet scale in the simulator).
+    private static let minTapHeight: CGFloat = 42
+
     private var app: XCUIApplication!
 
     override func setUp() {
@@ -145,6 +148,11 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertEqual(hide.label, "隱藏文字", file: file, line: line)
         XCTAssertLessThan(hide.frame.midY, style.frame.midY, "隱藏文字 above 調整文字樣式", file: file, line: line)
         XCTAssertEqual(hide.frame.midX, style.frame.midX, accuracy: 1, "both centered", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(hide.frame.height, Self.minTapHeight, "#698-1", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(style.frame.height, Self.minTapHeight, "#698-1", file: file, line: line)
+        XCTAssertLessThanOrEqual(hide.frame.maxY, style.frame.minY + 0.5, "#698-1 no overlap", file: file, line: line)
+        XCTAssertTrue(app.frame.contains(hide.frame) && app.frame.contains(style.frame), "#698-2 in view",
+                      file: file, line: line)
         XCTAssertTrue(style.isEnabled, file: file, line: line)
         waitForLabel(preview, containing: "第 10 天", file: file, line: line)
         XCTAssertTrue(app.frame.contains(element("batchExportStartButton").frame), "匯出 in view",
