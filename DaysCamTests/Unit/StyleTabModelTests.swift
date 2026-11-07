@@ -143,29 +143,6 @@ final class StyleTabModelTests: XCTestCase {
         XCTAssertEqual(model.textColorSwatches.count, 9, "23.4")
     }
 
-    // MARK: - TASK-149 (#518) 文字顏色的淺色列
-
-    /// 149.5: the text page's light row, column for column.
-    func testTextColorHasALightRow() {
-        let model = makeModel()
-        XCTAssertEqual(model.textColorLightSwatches, OverlayStyle.lightSwatches, "149.5")
-        XCTAssertEqual(model.textColorLightSwatches.count, model.textColorSwatches.count, "149.5 nine columns")
-    }
-
-    /// 149.6: a light swatch is applied fully opaque and never enters 最近.
-    func testSelectingALightSwatchIsOpaqueAndNotRecent() throws {
-        let store = RecentColorsStore(defaults: defaults)
-        let model = makeModel(store: store)
-        model.applyCustomTextColor(try hex("#12345680"))
-        for preset in OverlayStyle.lightSwatches {
-            model.selectTextColor(preset)
-            XCTAssertEqual(model.profile.style.textColor, preset, "149.6 \(preset.hexString)")
-            XCTAssertEqual(model.profile.style.textColor.opacity, 1, "149.6 opaque")
-            model.commitCustomColor(preset)
-        }
-        XCTAssertTrue(store.recentCustomColors.isEmpty, "149.6 最近 unchanged")
-    }
-
     // MARK: - 23.6 ColorPicker 選色：寫入、加入最近
 
     func testCommitCustomColorAddsRecent() throws {

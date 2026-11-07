@@ -262,10 +262,6 @@ extension StyleTabModel {
     /// ten items total.
     var textColorSwatches: [OverlayColor] { OverlayStyle.swatches }
 
-    /// The light row under the text-color swatches, column for column
-    /// (TASK-149, #518).
-    var textColorLightSwatches: [OverlayColor] { OverlayStyle.lightSwatches }
-
     /// Selects `color` as the text color from a swatch or the recent row,
     /// fully opaque: a swatch never carries a hidden opacity, which is set
     /// only in the color picker (TASK-113, replacing TASK-69's kept opacity).

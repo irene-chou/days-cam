@@ -14,8 +14,9 @@ struct StyleTabView: View {
     /// views run on under the home indicator, so this is that band's height,
     /// letting the last row scroll up above it.
     var bottomContentInset: CGFloat = 0
-    /// Swatch diameter for the color rows, every device (TASK-49 B; was 34).
-    static let swatchDiameter: CGFloat = 30
+    /// Swatch diameter for the color rows, every device (#691 ruling; was 30).
+    /// Nine of them keep 6pt gaps within a 375pt screen's 339pt content.
+    static let swatchDiameter: CGFloat = 32
     /// Both color rows share this many columns (TASK-39 B).
     static let colorColumnCount = 9
     /// Height of a color row and diameter of the selection ring: the ring is
@@ -39,8 +40,8 @@ struct StyleTabView: View {
     /// sliders and swatches 20pt from the panel edge. The row of looks
     /// scrolls past it to the panel edge, starting at the same inset.
     static let contentHorizontalInset: CGFloat = 18
-    /// Space between the page's three parts (D-10).
-    static let sectionSpacing: CGFloat = 12
+    /// Space between the page's three parts (#691 ruling; was 12).
+    static let sectionSpacing: CGFloat = 16
     /// Space above and below each slider row (TASK-117), on top of the page's
     /// 12pt stack spacing. Kept on the row, outside the slider itself.
     static let sliderVerticalPadding: CGFloat = 4
@@ -114,20 +115,15 @@ struct StyleTabView: View {
 
     // MARK: - 顏色 (FR-10.4, FR-10.7) 與底框鈕 (#678-5)
 
-    private var textColorPalette: some View {
+    var textColorPalette: some View {
         let current = model.profile.style.textColor
         let swatches = model.textColorSwatches
-        let presets = swatches + model.textColorLightSwatches
         // `.pal{gap:6px}` between the rows (#106).
         return VStack(alignment: .leading, spacing: 6) {
+            // The nine colors only: the light row left with the #691 ruling
+            // (plan A), light tints come from the rainbow.
             paletteRow {
                 ForEach(swatches, id: \.hexString) { swatch in
-                    colorDot(swatch, isSelected: isSame(current, swatch)) { model.selectTextColor(swatch) }
-                }
-            }
-            // Light tints, each under its swatch (TASK-149).
-            paletteRow {
-                ForEach(model.textColorLightSwatches, id: \.hexString) { swatch in
                     colorDot(swatch, isSelected: isSame(current, swatch)) { model.selectTextColor(swatch) }
                 }
             }
@@ -137,7 +133,7 @@ struct StyleTabView: View {
             paletteRow {
                 // The rainbow is "selected" for a color that matches no
                 // preset or recent swatch, which show their own ring (R.3).
-                let isCustomSelected = !presets.contains { isSame(current, $0) }
+                let isCustomSelected = !swatches.contains { isSame(current, $0) }
                     && !model.recentColors.contains { isSame(current, $0) }
                 customColorPicker(current: current, isSelected: isCustomSelected,
                                   onApply: { model.applyCustomTextColor($0) },
@@ -319,8 +315,9 @@ struct StyleTabView: View {
 
 // MARK: - 樣式膠囊 (#678-2)
 
-/// One look in the row: its name in its own face on the look's capsule
-/// colors (#678-2), the selection ring and the download badge (#678-4).
+/// One look in the row: its name in its own face and color (#678-2, as the
+/// #691 ruling restyled it), the selection ring and the download badge
+/// (#678-4).
 private struct PresetCapsule: View {
     let preset: OverlayStylePreset
     let nameFont: (CGFloat) -> UIFont
@@ -332,7 +329,6 @@ private struct PresetCapsule: View {
     @ScaledMetric(relativeTo: .subheadline) private var nameSize: CGFloat = 15
 
     private static let ink = OverlayColor(CameraTheme.ink) ?? OverlayColor(red8: 0x2A, green8: 0x26, blue8: 0x22)
-    private static let noteInk = OverlayColor(red8: 0x1C, green8: 0x1C, blue8: 0x1E)
 
     var body: some View {
         Button(action: action) {
@@ -342,12 +338,7 @@ private struct PresetCapsule: View {
                 .padding(.horizontal, StyleTabView.presetHorizontalPadding)
                 .padding(.vertical, StyleTabView.presetVerticalPadding)
                 .frame(minHeight: StyleTabView.presetHeight)
-                .background(background)
-                .overlay {
-                    Capsule()
-                        .strokeBorder(CameraTheme.active, lineWidth: isSelected ? StyleTabView.presetRingWidth : 0)
-                        .padding(-(StyleTabView.presetRingWidth + StyleTabView.presetRingOffset))
-                }
+                .modifier(PresetCapsuleChrome(isSelected: isSelected))
                 .overlay(alignment: .topTrailing) {
                     badge.offset(x: 3, y: -3)
                 }
@@ -364,12 +355,12 @@ private struct PresetCapsule: View {
         let font = nameFont(nameSize)
         switch preset {
         case .outline:
-            // Ink text in a 1pt white stroke, the renderer's real glyph outline.
+            // White text in a 1pt ink stroke, the renderer's real glyph outline.
             // Laid out at the text's own size, so the stroke's overhang
             // does not make this capsule taller than the others.
             let textSize = (preset.displayName as NSString).size(withAttributes: [.font: font])
             Image(uiImage: StyleSwatchPreview.strokedText(preset.displayName, font: font,
-                                                          fill: Self.ink, stroke: .white, strokeWidth: 1))
+                                                          fill: .white, stroke: Self.ink, strokeWidth: 1))
                 .frame(width: textSize.width, height: textSize.height)
         case .neon, .retro:
             let color = color(preset.defaultTextColor)
@@ -377,21 +368,8 @@ private struct PresetCapsule: View {
                 .shadow(color: color, radius: 4)
         case .cute:
             Text(preset.displayName).font(Font(font)).foregroundColor(color(preset.defaultTextColor))
-        case .note:
-            Text(preset.displayName).font(Font(font)).foregroundColor(color(Self.noteInk))
-        case .classic, .caption, .poster, .magazine, .handwriting:
-            Text(preset.displayName).font(Font(font)).foregroundColor(.white)
-        }
-    }
-
-    @ViewBuilder
-    private var background: some View {
-        switch preset {
-        case .caption: Capsule().fill(CameraTheme.ink.opacity(0.45))
-        case .note:
-            Capsule().fill(Color.white)
-                .overlay(Capsule().strokeBorder(CameraTheme.ink.opacity(0.15), lineWidth: 1))
-        default: Capsule().fill(CameraTheme.ink)
+        case .classic, .caption, .poster, .magazine, .handwriting, .note:
+            Text(preset.displayName).font(Font(font)).foregroundColor(CameraTheme.ink)
         }
     }
 
@@ -426,6 +404,24 @@ private struct PresetCapsule: View {
     }
 }
 
+/// The capsule look every item of the row shares (#691 ruling): no fill, a
+/// 1pt light edge (`ink` at 15%); selected adds a faint `active` fill and the
+/// 2pt `active` ring 1pt outside.
+private struct PresetCapsuleChrome: ViewModifier {
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule().fill(isSelected ? CameraTheme.active.opacity(0.15) : .clear))
+            .overlay(Capsule().strokeBorder(CameraTheme.ink.opacity(0.15), lineWidth: 1))
+            .overlay {
+                Capsule()
+                    .strokeBorder(CameraTheme.active, lineWidth: isSelected ? StyleTabView.presetRingWidth : 0)
+                    .padding(-(StyleTabView.presetRingWidth + StyleTabView.presetRingOffset))
+            }
+    }
+}
+
 /// The 自訂 capsule at the row's end while the style matches no look: always
 /// selected, does nothing when tapped (#678-2, #678-7).
 private struct CustomPresetCapsule: View {
@@ -441,12 +437,7 @@ private struct CustomPresetCapsule: View {
                 .padding(.horizontal, StyleTabView.presetHorizontalPadding)
                 .padding(.vertical, StyleTabView.presetVerticalPadding)
                 .frame(minHeight: StyleTabView.presetHeight)
-                .background(Capsule().fill(CameraTheme.fill))
-                .overlay {
-                    Capsule()
-                        .strokeBorder(CameraTheme.active, lineWidth: StyleTabView.presetRingWidth)
-                        .padding(-(StyleTabView.presetRingWidth + StyleTabView.presetRingOffset))
-                }
+                .modifier(PresetCapsuleChrome(isSelected: true))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("自訂")
