@@ -9,10 +9,10 @@ struct LevelIndicatorView: View {
     /// Turns the whole line to follow how the phone is held.
     var rotation: ViewfinderRotation = .portrait
 
-    static let thickness: CGFloat = 2
-    static let sideLength: CGFloat = 20
-    static let middleLength: CGFloat = 56
-    static let gap: CGFloat = 6
+    static let thickness: CGFloat = 1
+    static let sideLength: CGFloat = 36
+    static let middleLength: CGFloat = 96
+    static let gap: CGFloat = 8
     static let levelLength = sideLength * 2 + middleLength + gap * 2
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

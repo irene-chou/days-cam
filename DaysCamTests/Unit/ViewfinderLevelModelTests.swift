@@ -150,4 +150,13 @@ final class ViewfinderLevelModelTests: XCTestCase {
         model.setConditions(LevelConditions(isSwitchOn: true))
         XCTAssertEqual(source.starts, 1)
     }
+
+    /// #701-1: thin, long line close to the native camera's.
+    func test_701_1_lineDimensions() {
+        XCTAssertEqual(LevelIndicatorView.thickness, 1)
+        XCTAssertEqual(LevelIndicatorView.sideLength, 36)
+        XCTAssertEqual(LevelIndicatorView.middleLength, 96)
+        XCTAssertEqual(LevelIndicatorView.gap, 8)
+        XCTAssertEqual(LevelIndicatorView.levelLength, 184)
+    }
 }
