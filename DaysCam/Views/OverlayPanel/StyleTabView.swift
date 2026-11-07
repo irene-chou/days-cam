@@ -318,7 +318,7 @@ struct StyleTabView: View {
                             range: OverlayStyle.strokeWidthRange,
                             step: StyleTabModel.strokeWidthStep,
                             onChange: { model.setStrokeWidth($0) })
-        case .box, .squareBox:
+        case .box, .squareBox, .capsuleBox:
             parameterSlider(iconName: "arrow.left.and.right", accessibilityName: "底框留白",
                             identifier: "outlineBoxPaddingSlider",
                             value: model.profile.style.boxPadding,
@@ -673,16 +673,20 @@ struct StyleTabView: View {
                                                            strokeWidth: CGFloat(width) * scale * 0.5)
                 layered = AnyView(Image(uiImage: image)
                     .frame(width: textSize.width, height: textSize.height))
-            case let .backgroundBox(color, opacity, cornerRadius, insets):
-                layered = AnyView(
-                    layered
-                        .padding(.horizontal, insets.horizontal * scale * 0.5)
-                        .padding(.vertical, insets.vertical * scale * 0.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: cornerRadius * scale * 0.5, style: .continuous)
-                                .fill(swiftUIColor(color).opacity(opacity))
-                        )
-                )
+            case let .backgroundBox(color, opacity, corner, insets):
+                let fill = swiftUIColor(color).opacity(opacity)
+                let padded = layered
+                    .padding(.horizontal, insets.horizontal * scale * 0.5)
+                    .padding(.vertical, insets.vertical * scale * 0.5)
+                switch corner {
+                case .capsule:
+                    layered = AnyView(padded.background(Capsule(style: .continuous).fill(fill)))
+                case .square:
+                    layered = AnyView(padded.background(Rectangle().fill(fill)))
+                case let .rounded(radius):
+                    layered = AnyView(padded.background(
+                        RoundedRectangle(cornerRadius: radius * scale * 0.5, style: .continuous).fill(fill)))
+                }
             case let .shadow(offset, blur, opacity, color):
                 layered = AnyView(
                     layered
@@ -724,6 +728,7 @@ struct StyleTabView: View {
         case .stroke: return "描邊"
         case .box: return "底框"
         case .squareBox: return "直角底框"
+        case .capsuleBox: return "膠囊底框"
         }
     }
 

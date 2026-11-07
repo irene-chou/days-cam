@@ -103,13 +103,10 @@ final class OverlayStylePresetTests: XCTestCase {
     func testPosterAndOutlineCycleBackToTheirOwnOutline() {
         var poster = OverlayStyle()
         poster.apply(.poster)
+        // Its own outline is already the solid box: two states, not three (#692).
+        XCTAssertEqual(poster.boxState(for: .poster), .base)
         poster.cycleBoxState(for: .poster)
-        XCTAssertEqual(poster.outline, .box)
-        XCTAssertEqual(poster.autoOutlineOpacity, 1.0)
-        XCTAssertEqual(poster.boxState(for: .poster), .solid)
-        XCTAssertEqual(poster.preset, .poster)
-        poster.cycleBoxState(for: .poster)
-        XCTAssertEqual(poster.outline, .box)
+        XCTAssertEqual(poster.outline, .squareBox)
         XCTAssertEqual(poster.autoOutlineOpacity, 0.45)
         XCTAssertEqual(poster.boxState(for: .poster), .translucent)
         XCTAssertEqual(poster.preset, .poster)
@@ -120,7 +117,7 @@ final class OverlayStylePresetTests: XCTestCase {
 
         var outline = OverlayStyle()
         outline.apply(.outline)
-        let states: [(OverlayOutline, OverlayBoxState)] = [(.box, .solid), (.box, .translucent), (.stroke, .base)]
+        let states: [(OverlayOutline, OverlayBoxState)] = [(.squareBox, .solid), (.squareBox, .translucent), (.stroke, .base)]
         for (expectedOutline, expectedState) in states {
             outline.cycleBoxState(for: .outline)
             XCTAssertEqual(outline.outline, expectedOutline)
@@ -153,9 +150,87 @@ final class OverlayStylePresetTests: XCTestCase {
                 XCTAssertEqual(style.shadowBlur, before.shadowBlur)
                 XCTAssertEqual(style.preset, preset, "\(preset)")
             }
-            // Caption's own box is its translucent state, so it has two.
-            if preset != .caption { XCTAssertEqual(style, before, "\(preset)") }
+            // Caption's own box is its translucent state and poster's its solid one,
+            // so they have two states, not three.
+            if preset != .caption, preset != .poster { XCTAssertEqual(style, before, "\(preset)") }
         }
+    }
+
+    // #692 1
+    func testCapsulePresetsCycleThroughCapsuleBoxes() {
+        for preset in [OverlayStylePreset.cute, .neon, .handwriting] {
+            var style = OverlayStyle()
+            style.apply(preset)
+            style.cycleBoxState(for: preset)
+            XCTAssertEqual(style.outline, .capsuleBox, "\(preset)")
+            XCTAssertEqual(style.autoOutlineOpacity, 1, "\(preset)")
+            XCTAssertEqual(style.boxState(for: preset), .solid)
+            style.cycleBoxState(for: preset)
+            XCTAssertEqual(style.outline, .capsuleBox, "\(preset)")
+            XCTAssertEqual(style.autoOutlineOpacity, 0.45, "\(preset)")
+            XCTAssertEqual(style.boxState(for: preset), .translucent)
+            XCTAssertEqual(style.preset, preset)
+            style.cycleBoxState(for: preset)
+            XCTAssertEqual(style.outline, preset.style.outline)
+            XCTAssertEqual(style.boxState(for: preset), .base)
+        }
+    }
+
+    // #692 2
+    func testSquarePresetsCycleThroughSquareBoxes() {
+        var magazine = OverlayStyle()
+        magazine.apply(.magazine)
+        magazine.cycleBoxState(for: .magazine)
+        XCTAssertEqual(magazine.outline, .squareBox)
+        XCTAssertEqual(magazine.autoOutlineOpacity, 1.0)
+        XCTAssertEqual(magazine.preset, .magazine)
+
+        var poster = OverlayStyle()
+        poster.apply(.poster)
+        poster.cycleBoxState(for: .poster)
+        XCTAssertEqual(poster.outline, .squareBox)
+        XCTAssertEqual(poster.autoOutlineOpacity, 0.45)
+        poster.cycleBoxState(for: .poster)
+        XCTAssertEqual(poster, OverlayStylePreset.poster.style)
+    }
+
+    // #692 3
+    func testRoundedPresetsKeepTheCornerEightBox() {
+        for preset in [OverlayStylePreset.classic, .caption, .note, .retro] {
+            XCTAssertEqual(preset.boxShape, .box)
+            var style = OverlayStyle()
+            style.apply(preset)
+            style.cycleBoxState(for: preset)
+            if preset == .caption { style.cycleBoxState(for: preset) }
+            XCTAssertEqual(style.outline, .box, "\(preset)")
+            XCTAssertEqual(style.preset, preset)
+        }
+    }
+
+    // #692 4
+    func testEveryLookIsRecognizedInAllItsBoxStates() {
+        for preset in OverlayStylePreset.allCases {
+            var style = OverlayStyle()
+            style.apply(preset)
+            for _ in 0..<3 {
+                style.cycleBoxState(for: preset)
+                XCTAssertEqual(style.preset, preset, "\(preset)")
+            }
+        }
+        var classic = OverlayStyle()
+        classic.apply(.classic)
+        classic.cycleBoxState(for: .classic)
+        classic.cycleBoxState(for: .classic)
+        XCTAssertEqual(classic.preset, .classic)
+        XCTAssertEqual(classic.boxState(for: .classic), .translucent)
+    }
+
+    func testShapeAssignmentOfEveryLook() {
+        for preset in OverlayStylePreset.allCases {
+            XCTAssertTrue(preset.boxShape.isBox, "\(preset)")
+        }
+        XCTAssertEqual(OverlayStylePreset.allCases.filter { $0.boxShape == .squareBox }, [.poster, .outline, .magazine])
+        XCTAssertEqual(OverlayStylePreset.allCases.filter { $0.boxShape == .capsuleBox }, [.handwriting, .cute, .neon])
     }
 
     func testCaptionCyclesBetweenItsBoxAndASolidOne() {
