@@ -153,7 +153,8 @@ struct StyleTabView: View {
     /// three states; disabled for a custom style.
     var boxButton: some View {
         let state = model.boxState
-        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let boxShape = model.selectedPreset?.boxShape
+        let shape = RoundedRectangle(cornerRadius: Self.boxButtonCornerRadius(boxShape), style: .continuous)
         return Button {
             model.cycleBoxState()
         } label: {
@@ -176,16 +177,33 @@ struct StyleTabView: View {
         .buttonStyle(.plain)
         .disabled(state == nil)
         .accessibilityLabel("底框")
-        .accessibilityValue(Self.boxStateName(state))
+        .accessibilityValue(Self.boxStateName(state, shape: boxShape))
         .accessibilityIdentifier("boxStateButton")
     }
 
-    /// The box button's VoiceOver value.
-    static func boxStateName(_ state: OverlayBoxState?) -> String {
+    /// The box button's corner radius for the look's box shape (#693): square,
+    /// 7 (also for a custom style), or fully round.
+    static func boxButtonCornerRadius(_ shape: OverlayOutline?) -> CGFloat {
+        switch shape {
+        case .squareBox: return 0
+        case .capsuleBox: return boxButtonSide / 2
+        default: return 7
+        }
+    }
+
+    /// The box button's VoiceOver value; the filled states add the shape.
+    static func boxStateName(_ state: OverlayBoxState?, shape: OverlayOutline? = nil) -> String {
+        let shapeName: String
+        switch shape {
+        case .squareBox: shapeName = "，方角"
+        case .capsuleBox: shapeName = "，膠囊"
+        case .box: shapeName = "，圓角"
+        default: shapeName = ""
+        }
         switch state {
         case .base: return "原本"
-        case .solid: return "實心"
-        case .translucent: return "半透明"
+        case .solid: return "實心" + shapeName
+        case .translucent: return "半透明" + shapeName
         case nil: return "自訂"
         }
     }
