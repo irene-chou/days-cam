@@ -444,10 +444,8 @@ final class FontWeightPanelAcceptanceTests: XCTestCase {
             XCTAssertFalse(file.weightName.isEmpty)
             XCTAssertEqual(file.version, asset.version)
         }
-        let source = try String(contentsOfFile: #filePath.replacingOccurrences(
-            of: "DaysCamTests/Acceptance/FontWeightPanelAcceptanceTests.swift",
-            with: "DaysCam/Views/OverlayPanel/FontLicenseView.swift"), encoding: .utf8)
-        XCTAssertTrue(source.contains("if !entry.files.isEmpty"), "view 以有檔案就列出檔名與字重")
+        // #678 removed the license view; the Settings.bundle page (#677) is
+        // generated from this model, so the source check of the view is gone.
     }
 
     /// Row title: a multi-weight font shows the family name alone (expanded

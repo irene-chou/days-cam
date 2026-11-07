@@ -1,7 +1,7 @@
 import XCTest
 
-/// TASK-114: tapping a slider's track seeks to that point (114.1, 114.2,
-/// 114.4, 114.5, 114.6). With `DAYSCAM_UI_SHOT_DIR` in the runner's
+/// TASK-114: tapping the size slider's track seeks to that point (114.1,
+/// 114.4, 114.5; the stroke-width slider of 114.2 / 114.6 left with #678). With `DAYSCAM_UI_SHOT_DIR` in the runner's
 /// environment the screenshots are also written there.
 final class TapSeekSliderUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -41,15 +41,6 @@ final class TapSeekSliderUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '字級 '")).firstMatch.label
     }
 
-    /// The stroke-width slider on the 外框 page (the shadow page has no
-    /// slider since TASK-118).
-    private var strokeWidth: XCUIElement { app.sliders["outlineStrokeWidthSlider"] }
-
-    private func openStrokePage() {
-        app.buttons["外框"].tap()
-        app.buttons["描邊"].tap()
-    }
-
     /// Waits for `element`, then scrolls the page (slowly, from the left
     /// margin) just far enough that the row's middle sits well above the
     /// panel's bottom edge, where a fade hides it although it still counts
@@ -69,13 +60,12 @@ final class TapSeekSliderUITests: XCTestCase {
     }
 
     /// 114.1 / 114.4: the size slider seeks on a tap, its ends give the
-    /// bounds, the hint names tapping, and a double tap still resets.
+    /// bounds, and a double tap still resets (the hint line left with the
+    /// one-line size row, #691).
     func testSizeSliderSeeksAndDoubleTapStillResets() {
-        app.buttons["字級"].tap()
         let slider = app.sliders["字級"]
-        XCTAssertTrue(slider.waitForExistence(timeout: 3))
+        settle(slider)
         XCTAssertEqual(sizePercent, "字級 100%")
-        XCTAssertTrue(app.staticTexts["點或拖曳調整，點兩下回到預設大小"].exists, "114.4 hint")
 
         tapTrack(slider, at: 0.75)
         let after = sizePercent
@@ -94,30 +84,6 @@ final class TapSeekSliderUITests: XCTestCase {
         XCTAssertEqual(sizePercent, "字級 100%", "114.4 double tap resets")
     }
 
-    /// 114.2 / 114.6: a parameter slider seeks and the value is saved once;
-    /// a relaunch shows the tapped value.
-    func testStrokeWidthSeeksAndPersists() {
-        openStrokePage()
-        settle(strokeWidth)
-
-        tapTrack(strokeWidth, at: 0.02)
-        XCTAssertEqual(strokeWidth.value as? String, "1 點", "114.2 left end")
-        tapTrack(strokeWidth, at: 0.98)
-        XCTAssertEqual(strokeWidth.value as? String, "6 點", "114.2 right end")
-        tapTrack(strokeWidth, at: 0.5)
-        let middle = strokeWidth.value as? String
-        XCTAssertTrue(["3.5 點", "4 點", "3 點"].contains(middle ?? ""), "114.2 the middle: \(middle ?? "nil")")
-        attach("114.2_stroke-width-seek")
-
-        app.terminate()
-        app.launch()
-        XCTAssertTrue(app.waitForExportPage(), "the export page is up")
-        openStyleTab()
-        openStrokePage()
-        settle(strokeWidth)
-        XCTAssertEqual(strokeWidth.value as? String, middle, "114.6 the tapped value was saved")
-    }
-
     /// Where the size slider's thumb centre sits for `percent`, as a share of
     /// the slider's width (70…160 over the track inside a 14pt thumb radius
     /// at each end, as `TapSeekSlider` maps it).
@@ -132,9 +98,8 @@ final class TapSeekSliderUITests: XCTestCase {
     /// #551: pressing the thumb and dragging moves the value continuously
     /// (the tap gesture must not take over the slider's own drag).
     func testDraggingTheThumbChangesTheValue() {
-        app.buttons["字級"].tap()
         let slider = app.sliders["字級"]
-        XCTAssertTrue(slider.waitForExistence(timeout: 3))
+        settle(slider)
         XCTAssertEqual(sizePercent, "字級 100%")
 
         // Each drag starts on the thumb's centre for the current value: a
@@ -146,7 +111,7 @@ final class TapSeekSliderUITests: XCTestCase {
         let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
         XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
 
-        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
         let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: first), dy: 0.5))
         thumbNow.press(forDuration: 0.2, thenDragTo: end)
         XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")

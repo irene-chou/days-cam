@@ -96,9 +96,9 @@ final class SegmentSlideUITests: XCTestCase {
     /// from the export page, #621).
     func testBodyStillSwapsInPlace() {
         launch()
-        XCTAssertTrue(app.buttons["字型"].waitForExistence(timeout: 5), "樣式 shows its sub-tabs")
+        XCTAssertTrue(app.buttons["stylePreset_classic"].waitForExistence(timeout: 5), "樣式 shows its row of looks")
         contentTab.tap()
-        waitUntil("154.5 the style sub-tabs are gone") { !app.buttons["字型"].exists }
+        waitUntil("154.5 the row of looks is gone") { !app.buttons["stylePreset_classic"].exists }
         XCTAssertTrue(contentTab.isSelected)
     }
 

@@ -1,14 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// The font list inside the style tab's 字型 page (TASK-56): the downloaded
-/// fonts first, then the ones still to download by category, then the 字型授權
-/// row. One font per row with its full name; the state icon sits at the
+/// The font list of the style tab's former 字型 page (TASK-56; off the panel
+/// since #678): the downloaded fonts first, then the ones still to download
+/// by category. One font per row with its full name; the state icon sits at the
 /// trailing edge. All state and actions live in `FontLibraryModel`.
 struct FontListView: View {
     @ObservedObject var model: FontLibraryModel
 
-    @State private var showsLicense = false
     /// The name and size text follow Dynamic Type, so a row grows with them.
     @ScaledMetric(relativeTo: .body) private var nameSize = FontListView.rowTextSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -58,14 +57,10 @@ struct FontListView: View {
                     }
                 }
             }
-            licenseRow
         }
         .padding(.vertical, 4)
         .onAppear { model.listDidAppear() }
         .onDisappear { model.listDidDisappear() }
-        .fullScreenCover(isPresented: $showsLicense) {
-            FontLicenseView(onBack: { showsLicense = false })
-        }
         .confirmationDialog(model.deletePrompt?.title ?? "",
                             isPresented: Binding(get: { model.deletePrompt != nil },
                                                  set: { if !$0 { model.cancelDeletion() } }),
@@ -357,29 +352,6 @@ struct FontListView: View {
                 .font(.system(size: Self.statusIconSize))
                 .foregroundColor(CameraTheme.active)
         }
-    }
-
-    // MARK: - 字型授權 (FR-16.13)
-
-    private var licenseRow: some View {
-        Button {
-            showsLicense = true
-        } label: {
-            HStack {
-                Text(FontLibraryModel.licenseRowTitle)
-                    .font(.system(size: 13))
-                    .foregroundColor(CameraTheme.inkSecondary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(CameraTheme.inkTertiary)
-            }
-            .padding(.horizontal, 2)
-            .frame(height: 44)
-            .padding(.top, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 

@@ -86,32 +86,6 @@ final class SquareBoxAcceptanceTests: XCTestCase {
 
     /// 81.3: switching box <-> squareBox through the model keeps padding, color and opacity.
     @MainActor
-    func testSwitchingBetweenBoxShapesKeepsParameters() throws {
-        let store = try makeStore()
-        store.load()
-        let model = StyleTabModel(profile: try XCTUnwrap(store.profiles.first),
-                                  recentColorsStore: RecentColorsStore(defaults: defaults),
-                                  applyFont: { _, _ in }, allProfiles: { store.profiles },
-                                  updateProfile: { try? store.update($0) })
-        model.selectOutline(.box)
-        model.setBoxPadding(19)
-        model.applyCustomOutlineColor(try XCTUnwrap(OverlayColor(hex: "#336699")).withOpacity(0.4))
-        let before = model.profile.style
-        for outline in [OverlayOutline.squareBox, .box, .squareBox] {
-            model.selectOutline(outline)
-            let after = model.profile.style
-            XCTAssertEqual(after.outline, outline)
-            XCTAssertEqual(after.boxPadding, before.boxPadding)
-            XCTAssertEqual(after.outlineColor, before.outlineColor)
-            XCTAssertEqual(after.strokeWidth, before.strokeWidth)
-        }
-        let reopened = try XCTUnwrap(makeStore().load().first).style
-        XCTAssertEqual(reopened.outline, .squareBox, "81.4: kept after restart")
-        XCTAssertEqual(reopened.boxPadding, 19)
-        XCTAssertEqual(reopened.outlineColor, before.outlineColor)
-        let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [[String: Any]])
-        XCTAssertEqual((raw.first?["style"] as? [String: Any])?["outline"] as? String, "squareBox")
-    }
 
     /// 81.4: none / stroke / box (new names) and the four 0.5 names read exactly as before, and
     /// are written back without becoming squareBox.

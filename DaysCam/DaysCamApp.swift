@@ -143,6 +143,7 @@ struct DaysCamApp: App {
         profileStore.load()
         applyUITestSecondRecord(to: profileStore)
         applyUITestFilmDate(to: profileStore)
+        applyUITestCustomStyle(to: profileStore)
         return profileStore
     }
 
@@ -268,6 +269,19 @@ struct DaysCamApp: App {
         for var profile in profileStore.profiles {
             profile.showFilmDate = true
             profile.filmDateCorner = corner
+            _ = try? profileStore.update(profile)
+        }
+        #endif
+    }
+
+    /// UI tests pass `-UITestCustomStyle` to give every saved profile a style
+    /// that matches none of the ten looks (stroke width 4), as an old 0.2
+    /// profile can have, for the 自訂 capsule (#678-7). Debug builds only.
+    private static func applyUITestCustomStyle(to profileStore: ProfileStore) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-UITestCustomStyle") else { return }
+        for var profile in profileStore.profiles {
+            profile.style.strokeWidth = 4
             _ = try? profileStore.update(profile)
         }
         #endif

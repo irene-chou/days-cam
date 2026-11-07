@@ -185,7 +185,7 @@ final class ExportModelTests: XCTestCase {
         let style = try XCTUnwrap(model?.styleTabModel)
         XCTAssertNotEqual(style.profile.style.outline, .box)
 
-        style.selectOutline(.box)
+        style.selectPreset(.caption)
         XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.style.outline, .box)
 
         model = nil

@@ -56,15 +56,24 @@ final class RecentColorsStoreTests: XCTestCase {
         XCTAssertEqual(store.recentCustomColors, [])
     }
 
-    /// 149.3: no preset — the light row included — goes into the list.
+    /// 149.3: no swatch goes into the list.
     func testEveryPresetColorIsNotAdded() throws {
         let store = RecentColorsStore(defaults: defaults)
-        for preset in OverlayStyle.allPresetColors {
+        for preset in OverlayStyle.swatches {
             store.add(preset)
         }
         XCTAssertEqual(store.recentCustomColors, [], "149.3")
         store.add(try hex("#123456"))
         XCTAssertEqual(store.recentCustomColors, [try hex("#123456")], "a custom color still is")
+    }
+
+    /// #691: the light row left the panel, so a light color picked with the
+    /// rainbow goes into the list like any custom color.
+    func testLightRowColorsAreAddedAsCustom() throws {
+        let store = RecentColorsStore(defaults: defaults)
+        let light = Array(OverlayStyle.lightSwatches.prefix(3))
+        for color in light { store.add(color) }
+        XCTAssertEqual(store.recentCustomColors, light.reversed(), "#691 newest first")
     }
 
     /// The dark row and film colors of #523 are no longer presets (user

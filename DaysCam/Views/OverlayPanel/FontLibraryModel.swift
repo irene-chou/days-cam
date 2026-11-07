@@ -241,7 +241,6 @@ final class FontLibraryModel: ObservableObject {
         let text: String
     }
 
-    static let licenseRowTitle = "字型授權"
     static let weightSaveFailedMessage = "無法儲存字重設定"
     static let deleteFailedMessage = "無法刪除，請再試一次"
     /// How long the check of a just-finished download stays.

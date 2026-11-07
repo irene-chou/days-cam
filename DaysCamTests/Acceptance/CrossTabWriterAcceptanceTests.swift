@@ -4,7 +4,8 @@ import XCTest
 /// #70 M.1–M.4 (cross-tab edits never overwrite each other) through the
 /// export page's editor (`StyleEditingCenter.makeStyleEditor`), since the
 /// camera tests that covered them were deleted in #621. Written by qa for
-/// PR #636; added by the developer with Lead's authorization.
+/// PR #636; added by the developer with Lead's authorization. #678: the font
+/// is picked with a look (可愛 is 粉圓) now that the font list is gone.
 @MainActor
 final class CrossTabWriterAcceptanceTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -44,7 +45,7 @@ final class CrossTabWriterAcceptanceTests: XCTestCase {
     func test_M1_M2_editsAcrossTabsAllSurvive() throws {
         do {
             let (center, store, editor, id) = try make()
-            editor.styleTabModel.selectFont(.huninn)
+            editor.styleTabModel.selectPreset(.cute)
             editor.positionTabModel.selectAnchor(.bottomLeading)
             editor.formatTabModel.displaySettings.setShowDate(true)
             let stored = try XCTUnwrap(store.profiles.first { $0.id == id }); withExtendedLifetime(center) {}
@@ -57,7 +58,7 @@ final class CrossTabWriterAcceptanceTests: XCTestCase {
             let (center, store, editor, id) = try make()
             editor.formatTabModel.displaySettings.setShowDate(true)
             editor.positionTabModel.selectAnchor(.bottomLeading)
-            editor.styleTabModel.selectFont(.huninn)
+            editor.styleTabModel.selectPreset(.cute)
             let stored = try XCTUnwrap(store.profiles.first { $0.id == id }); withExtendedLifetime(center) {}
             XCTAssertEqual(stored.style.fontID, .huninn, "M.2")
             XCTAssertEqual(stored.position, .anchor(.bottomLeading), "M.2")
@@ -68,7 +69,7 @@ final class CrossTabWriterAcceptanceTests: XCTestCase {
     func test_M3_dragThenStyleKeepsThePosition() throws {
         let (center, store, editor, id) = try make(position: .anchor(.middleCenter))
         editor.dragAdapter.overlayDragEnded(center: CGPoint(x: 144, y: 192), viewfinderSize: CGSize(width: 288, height: 384))
-        editor.styleTabModel.selectFont(.huninn)
+        editor.styleTabModel.selectPreset(.cute)
         let stored = try XCTUnwrap(store.profiles.first { $0.id == id }); withExtendedLifetime(center) {}
         XCTAssertEqual(stored.position, .custom(x: 0.5, y: 0.5), "M.3")
         XCTAssertEqual(stored.style.fontID, .huninn, "M.3")
