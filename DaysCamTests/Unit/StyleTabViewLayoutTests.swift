@@ -105,6 +105,20 @@ final class StyleTabViewLayoutTests: XCTestCase {
         XCTAssertEqual(StyleTabView.boxStateName(.base), "原本")
         XCTAssertEqual(StyleTabView.boxStateName(.solid), "實心")
         XCTAssertEqual(StyleTabView.boxStateName(.translucent), "半透明")
+        XCTAssertEqual(StyleTabView.boxStateName(.base, shape: .capsuleBox), "原本", "693-3")
+        XCTAssertEqual(StyleTabView.boxStateName(.solid, shape: .squareBox), "實心，方角", "693-3")
+        XCTAssertEqual(StyleTabView.boxStateName(.translucent, shape: .capsuleBox), "半透明，膠囊", "693-3")
+        XCTAssertEqual(StyleTabView.boxStateName(.solid, shape: .box), "實心，圓角", "693-3")
+        XCTAssertEqual(StyleTabView.boxStateName(nil, shape: nil), "自訂", "693-2")
+    }
+
+    /// 693-1: the corner follows the look's box shape; a custom style keeps 7.
+    func testBoxButtonCornerFollowsBoxShape() {
+        XCTAssertEqual(StyleTabView.boxButtonCornerRadius(OverlayStylePreset.poster.boxShape), 0, "693-1")
+        XCTAssertEqual(StyleTabView.boxButtonCornerRadius(OverlayStylePreset.classic.boxShape), 7, "693-1")
+        XCTAssertEqual(StyleTabView.boxButtonCornerRadius(OverlayStylePreset.cute.boxShape),
+                       StyleTabView.boxButtonSide / 2, "693-1 a circle")
+        XCTAssertEqual(StyleTabView.boxButtonCornerRadius(nil), 7, "693-2")
     }
 
     private func width<V: View>(of view: V) -> CGFloat {

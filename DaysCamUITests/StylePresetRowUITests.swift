@@ -39,7 +39,7 @@ final class StylePresetRowUITests: XCTestCase {
             let directory = URL(fileURLWithPath: path, isDirectory: true)
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let device = UIDevice.current.name.filter { !$0.isWhitespace && $0 != "(" && $0 != ")" }
-            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR678_\(name)_\(device).png"))
+            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR\(name.hasPrefix("693") ? "693" : "678")_\(name)_\(device).png"))
         }
     }
 
@@ -93,12 +93,34 @@ final class StylePresetRowUITests: XCTestCase {
         XCTAssertEqual(boxButton.label, "底框")
         XCTAssertEqual(boxButton.value as? String, "原本")
         boxButton.tap()
-        XCTAssertEqual(boxButton.value as? String, "實心", "6")
+        XCTAssertEqual(boxButton.value as? String, "實心，圓角", "6")
         boxButton.tap()
-        XCTAssertEqual(boxButton.value as? String, "半透明", "6")
+        XCTAssertEqual(boxButton.value as? String, "半透明，圓角", "6")
         XCTAssertTrue(preset("classic").isSelected, "#676 ruling: still 經典")
         boxButton.tap()
         XCTAssertEqual(boxButton.value as? String, "原本", "6")
+    }
+
+    /// 693-1 / 693-2: the value names the look's box shape and keeps it through the states.
+    func testBoxButtonNamesTheLooksShape() {
+        openStyleTab()
+        // 海報's own outline is the solid box, so it cycles two states.
+        let expected = [("poster", "方角", ["半透明"]), ("classic", "圓角", ["實心", "半透明"]),
+                        ("cute", "膠囊", ["實心", "半透明"])]
+        for (look, shape, states) in expected {
+            if look == "cute" {
+                app.scrollViews.containing(.button, identifier: "stylePreset_classic").element(boundBy: 1).swipeLeft()
+            }
+            preset(look).tap()
+            XCTAssertEqual(boxButton.value as? String, "原本", "693-2 \(look)")
+            for state in states {
+                boxButton.tap()
+                XCTAssertEqual(boxButton.value as? String, "\(state)，\(shape)", "693-1 \(look)")
+                if state == states[0] { shot("693_\(look)") }
+            }
+            boxButton.tap()
+            XCTAssertEqual(boxButton.value as? String, "原本", "693-2 \(look)")
+        }
     }
 
     /// 7 / 12: a style matching no look shows 自訂 at the row's end,
