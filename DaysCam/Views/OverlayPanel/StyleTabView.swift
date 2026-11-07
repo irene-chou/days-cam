@@ -329,6 +329,7 @@ private struct PresetCapsule: View {
     @ScaledMetric(relativeTo: .subheadline) private var nameSize: CGFloat = 15
 
     private static let ink = OverlayColor(CameraTheme.ink) ?? OverlayColor(red8: 0x2A, green8: 0x26, blue8: 0x22)
+    private static let neonNameColor = OverlayColor(red8: 0xE0, green8: 0x45, blue8: 0x7B)
 
     var body: some View {
         Button(action: action) {
@@ -363,7 +364,10 @@ private struct PresetCapsule: View {
                                                           fill: .white, stroke: Self.ink, strokeWidth: 1))
                 .frame(width: textSize.width, height: textSize.height)
         case .neon, .retro:
-            let color = color(preset.defaultTextColor)
+            // 霓虹's own pale pink barely shows on the light panel, so its
+            // name takes a deeper pink of the same hue (#691 ruling, as the
+            // design draws it); the photo keeps the look's own color.
+            let color = color(preset == .neon ? Self.neonNameColor : preset.defaultTextColor)
             Text(preset.displayName).font(Font(font)).foregroundColor(color)
                 .shadow(color: color, radius: 4)
         case .cute:
