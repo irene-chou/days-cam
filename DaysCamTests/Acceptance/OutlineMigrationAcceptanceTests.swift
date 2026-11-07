@@ -113,12 +113,12 @@ final class OutlineMigrationAcceptanceTests: XCTestCase {
                 case let .stroke(strokeColor, width):
                     XCTAssertEqual(width, old.drawing.strokeWidth, "70.2: \(label): stroke width")
                     XCTAssertEqual(strokeColor.opacity, oldColorAlpha, accuracy: 0.0001, "70.2: \(label): stroke alpha")
-                case let .backgroundBox(boxColor, opacity, cornerRadius, insets):
+                case let .backgroundBox(boxColor, opacity, corner, insets):
                     let drawnAlpha = boxColor.opacity * opacity
                     let expected = oldColorAlpha * (old.drawing.boxAlphaFactor ?? 1)
                     // Loading quantizes alpha to 8 bits (PRD 4.1): 50% is 128/255.
                     XCTAssertEqual(drawnAlpha, expected, accuracy: 1.0 / 255, "70.2: \(label): box alpha drawn")
-                    XCTAssertEqual(cornerRadius, 8, "70.2: \(label): corner radius")
+                    XCTAssertEqual(corner, .rounded(8), "70.2: \(label): corner radius")
                     XCTAssertEqual(insets, OverlayInsets(horizontal: 12, vertical: 6), "70.2: \(label): padding 12 x 6")
                 case .shadow:
                     XCTFail(label)
@@ -274,7 +274,7 @@ final class OutlineMigrationAcceptanceTests: XCTestCase {
     /// 70.1 / 81: the outline has exactly these cases (TASK-81 added `squareBox`), and decoding no
     /// longer invents the 0.5 names from the current format.
     func testOutlineHasOnlyNoneStrokeBox() {
-        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox"])
+        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox", "capsuleBox"])
     }
 
     /// A current-format file with a 0.5 name still decodes (the two formats

@@ -99,6 +99,9 @@ protocol RecordAlbumLibrary {
     /// The user's regular albums in the Photos app's order. Empty unless
     /// access is full.
     func userAlbums() -> [AlbumSummary]
+    /// The ids of every asset in the album, without the fallback ids. Empty
+    /// unless access is full, or when the album is unknown (#680).
+    func assetIDs(inAlbum albumIdentifier: String) -> Set<String>
 
     /// Adds the assets to the album, creating a new album titled `albumTitle`
     /// when `albumIdentifier` is `nil` or unknown (a same-titled album is not
@@ -131,6 +134,9 @@ protocol RecordAlbumLibrary {
 
 extension RecordAlbumLibrary {
     func startCaching(ids: [String], targetSize: CGSize) {}
+
+    /// Test doubles without albums hold nothing in any album.
+    func assetIDs(inAlbum albumIdentifier: String) -> Set<String> { [] }
 
     /// Test doubles that never create albums fail like a refused change.
     func createAlbum(title: String) async throws -> String {
@@ -266,6 +272,15 @@ final class SystemRecordAlbumLibrary: RecordAlbumLibrary {
                                           photoCount: count))
         }
         return summaries
+    }
+
+    func assetIDs(inAlbum albumIdentifier: String) -> Set<String> {
+        guard authorizationStatus() == .authorized, let album = Self.album(identifier: albumIdentifier) else { return [] }
+        var ids: Set<String> = []
+        PHAsset.fetchAssets(in: album, options: nil).enumerateObjects { asset, _, _ in
+            ids.insert(asset.localIdentifier)
+        }
+        return ids
     }
 
     // MARK: Writing

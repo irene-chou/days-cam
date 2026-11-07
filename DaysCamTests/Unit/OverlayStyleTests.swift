@@ -51,7 +51,7 @@ final class OverlayStyleTests: XCTestCase {
 
     /// TASK-81 81.3–81.5: changing box shape keeps all stored parameters.
     func testBoxShapesPreserveParametersAndRoundTrip() throws {
-        for outline in [OverlayOutline.none, .stroke, .box, .squareBox] {
+        for outline in [OverlayOutline.none, .stroke, .box, .squareBox, .capsuleBox] {
             var style = OverlayStyle(outline: .box,
                                      outlineColor: .black.withOpacity(128.0 / 255),
                                      boxPadding: 20, shadow: .none)
@@ -67,6 +67,7 @@ final class OverlayStyleTests: XCTestCase {
         }
         XCTAssertTrue(OverlayOutline.box.isBox)
         XCTAssertTrue(OverlayOutline.squareBox.isBox)
+        XCTAssertTrue(OverlayOutline.capsuleBox.isBox)
         XCTAssertFalse(OverlayOutline.none.isBox)
         XCTAssertFalse(OverlayOutline.stroke.isBox)
     }
@@ -322,7 +323,7 @@ final class OverlayStyleTests: XCTestCase {
 
     /// 70.1 / 81.5: the four raw values stored in profiles.
     func testOutlinesIncludeSquareBox() {
-        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox"], "70.1 / 81.5")
+        XCTAssertEqual(OverlayOutline.allCases.map(\.rawValue), ["none", "stroke", "box", "squareBox", "capsuleBox"], "70.1 / 81.5")
     }
 
     func testOutlineParameterRanges() {

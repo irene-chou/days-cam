@@ -139,6 +139,16 @@ struct OverlayInsets: Equatable, Hashable {
     }
 }
 
+/// How a background box rounds its corners (#692).
+enum BoxCorner: Equatable, Hashable {
+    /// Square corners.
+    case square
+    /// A fixed radius in points at a 17pt font; scales with the decoration.
+    case rounded(Double)
+    /// Half the box's height, so the ends are half circles at any size.
+    case capsule
+}
+
 /// Something drawn behind or around the overlay text so that it stays legible
 /// on both pure white and pure black photos (PRD FR-4.6).
 ///
@@ -147,10 +157,10 @@ struct OverlayInsets: Equatable, Hashable {
 enum OverlayDecoration: Equatable, Hashable {
     /// A drop shadow behind the text.
     case shadow(offset: CGSize, blur: Double, opacity: Double, color: OverlayColor)
-    /// A box behind the text; radius zero gives square corners. Drawn at `color`'s alpha times
+    /// A box behind the text, its corners as `corner` says. Drawn at `color`'s alpha times
     /// `opacity`; `OverlayTheme` always passes an `opacity` of 1 since
     /// TASK-70 and puts the transparency in the color.
-    case backgroundBox(color: OverlayColor, opacity: Double, cornerRadius: Double, insets: OverlayInsets)
+    case backgroundBox(color: OverlayColor, opacity: Double, corner: BoxCorner, insets: OverlayInsets)
     /// An outline around the glyphs.
     case stroke(color: OverlayColor, width: Double)
 }
@@ -204,8 +214,13 @@ struct OverlayTheme: Equatable, Hashable {
     private static func outlineDecoration(for style: OverlayStyle) -> OverlayDecoration? {
         let color = style.resolvedOutlineColor
         if style.outline.isBox {
-            let radius = style.outline == .squareBox ? 0 : boxCornerRadius
-            return .backgroundBox(color: color, opacity: 1, cornerRadius: radius,
+            let corner: BoxCorner
+            switch style.outline {
+            case .squareBox: corner = .square
+            case .capsuleBox: corner = .capsule
+            default: corner = .rounded(boxCornerRadius)
+            }
+            return .backgroundBox(color: color, opacity: 1, corner: corner,
                                   insets: boxInsets(padding: style.boxPadding))
         }
         switch style.outline {
@@ -213,7 +228,7 @@ struct OverlayTheme: Equatable, Hashable {
             return nil
         case .stroke:
             return .stroke(color: color, width: style.strokeWidth)
-        case .box, .squareBox:
+        case .box, .squareBox, .capsuleBox:
             return nil // Handled by the shared box path above.
         }
     }

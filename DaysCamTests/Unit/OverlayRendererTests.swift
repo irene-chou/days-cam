@@ -52,6 +52,30 @@ final class OverlayRendererTests: XCTestCase {
         }
     }
 
+    /// #692 6: a capsule box's ends are half circles at any text size.
+    func testCapsuleBoxEndsAreHalfCircles() throws {
+        for scale in [70, 100, 160] {
+            let style = OverlayStyle(outline: .capsuleBox, outlineColor: .black, shadow: .none, sizeScale: scale)
+            let output = try XCTUnwrap(renderer.renderText("第 10 天", style: style,
+                fontSize: 34 * Double(scale) / 100, displayScale: 1, font: .pingFang))
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let flat = UIGraphicsImageRenderer(size: output.image.size, format: format).image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: output.image.size))
+                output.image.draw(at: .zero)
+            }
+            let grid = try pixels(of: flat)
+            let left = Int(output.textInsets.left), top = Int(output.textInsets.top)
+            let boxHeight = Int(output.blockSize.height)
+            let midY = top + boxHeight / 2
+            XCTAssertEqual(grid.color(x: left + 1, y: midY), .black, "scale \(scale): left end middle")
+            XCTAssertEqual(grid.color(x: left + 1, y: top + 1), .white, "scale \(scale): top-left corner open")
+            XCTAssertEqual(grid.color(x: left + 1, y: top + boxHeight - 2), .white, "scale \(scale): bottom-left corner open")
+        }
+    }
+
     // MARK: - 9.1 ... 9.3
 
     func test_9_1_outputKeepsTheInputPixelSize() throws {
