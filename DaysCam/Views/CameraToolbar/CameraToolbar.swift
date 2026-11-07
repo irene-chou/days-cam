@@ -94,9 +94,6 @@ struct CameraToolbar: View {
     /// `chevron.down.circle` (22pt wide); 18pt matches their visual width.
     static let overlayGlyphSize: CGFloat = 18
 
-    /// Diameter of the round keys' `CameraTheme.fill` disc (D9 `.round`).
-    static let roundKeyDiameter: CGFloat = 40
-
     /// Gap between the two round keys on the right (D9).
     static let roundKeySpacing = CameraScreenLayoutMetrics.toolbarRoundKeySpacing
 }
@@ -191,7 +188,7 @@ private struct ToolbarIconModifier: ViewModifier {
     let isActive: Bool
     let isOnPhoto: Bool
     let width: CGFloat
-    /// Overrides the icon's color (the overlay switch's icon on its accent disc).
+    /// Overrides the icon's color.
     var ink: Color?
     /// The icon's point size; 22 for every key unless a glyph needs a visual
     /// correction.
@@ -213,19 +210,12 @@ private extension View {
                                      glyphSize: glyphSize))
     }
 
-    /// A top-bar round key (D9 `.round`): the icon on a faint
-    /// `CameraTheme.fill` disc inside the 44pt tap target.
+    /// A top-bar key: just the icon inside the 44pt tap target, no disc.
     ///
-    /// `isHighlighted` only swaps the disc to `CameraTheme.accent` and the
-    /// icon to `inkOnAccent`; size, font and weight stay the same.
+    /// `isHighlighted` tints the icon `CameraTheme.active`; the caller swaps
+    /// to the filled symbol. Size, font and weight stay the same.
     func roundKey(isOnPhoto: Bool, isHighlighted: Bool = false, glyphSize: CGFloat = 22) -> some View {
-        toolbarIcon(isActive: false, isOnPhoto: isOnPhoto && !isHighlighted,
-                    ink: isHighlighted ? CameraTheme.inkOnAccent : nil, glyphSize: glyphSize)
-            .background(
-                Circle()
-                    .fill(isHighlighted ? CameraTheme.accent : CameraTheme.fill)
-                    .frame(width: CameraToolbar.roundKeyDiameter, height: CameraToolbar.roundKeyDiameter)
-            )
+        toolbarIcon(isActive: isHighlighted, isOnPhoto: isOnPhoto, glyphSize: glyphSize)
     }
 }
 

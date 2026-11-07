@@ -92,6 +92,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         XCTAssertEqual(toggle.value as? String, "開", "656-1 on by default")
         XCTAssertEqual(toggle.label, "疊字預覽")
         assertOnScreen(overlayText, "656-1 the text is drawn")
+        shot("1_on")
 
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "關")
