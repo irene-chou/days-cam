@@ -80,8 +80,7 @@ final class PhotoDetailUITests: XCTestCase {
     }
 
     /// #679-1: 匯出 on the left, 刪除 on the right, the wall's selection bar:
-    /// same size and place as there. No ⋯, no 文字樣式; no tip without
-    /// `-UITestShowTips` (10).
+    /// same size and place as there. No ⋯, no 文字樣式.
     func testBottomBarMatchesTheWallSelectionBar() {
         launchWall(mixedAspects: true)
         element("wallSelectButton").tap()
@@ -116,7 +115,6 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertFalse(element("photoDetailMoreButton").exists, "no ⋯")
         XCTAssertFalse(element("styleButton").exists, "no 文字樣式")
         XCTAssertFalse(element("exportButton").exists)
-        XCTAssertFalse(element("viewerCoach").exists, "10 no coach without -UITestShowTips")
         shot("photo-detail-buttons")
     }
 
@@ -175,24 +173,16 @@ final class PhotoDetailUITests: XCTestCase {
                        "label was \(target.label)", file: file, line: line)
     }
 
-    /// 9: the first visit shows the bubble around the overlay; 知道了 closes
-    /// it for good, even in a new viewer.
-    func testCoachShowsOnceUntilAcknowledged() {
+    /// #699-2, #699-3: the top bar still reads 第 N 天, and even on a first
+    /// visit (`-UITestShowTips`) no pointer bubble appears.
+    func testNoCoachAndHeaderStillShowsDay() {
         launchWall(mixedAspects: true, showTips: true)
         openViewer(cell: 4)
-        let coach = element("viewerCoach")
-        XCTAssertTrue(coach.waitForExistence(timeout: 5), "9 the bubble")
-        XCTAssertTrue(app.staticTexts["這是 DaysCam 加上的天數"].exists)
-        XCTAssertTrue(app.staticTexts["照片本身不會改；按「匯出」才會另存一張印上這行字的新照片。想換字型、顏色或位置，在匯出時按「調整文字樣式」。"].exists, "#679-10 the new wording")
-        XCTAssertTrue(app.frame.contains(coach.frame), "bubble in view: \(coach.frame)")
-        shot("photo-detail-coach")
-        app.buttons["viewerCoachOkButton"].tap()
-        XCTAssertFalse(coach.waitForExistence(timeout: 1))
-        app.navigationBars.firstMatch.buttons.firstMatch.tap()
-        XCTAssertTrue(cell(3).waitForExistence(timeout: 5))
-        openViewer(cell: 3)
-        waitForTitle(containing: "第 9 天")
-        XCTAssertFalse(element("viewerCoach").waitForExistence(timeout: 2), "9 never again")
+        waitForTitle(containing: "第 10 天")
+        XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("viewerCoach").waitForExistence(timeout: 2), "3 no bubble")
+        XCTAssertFalse(app.buttons["viewerCoachOkButton"].exists, "3 no 知道了")
+        shot("photo-detail-plain")
     }
 
     /// #679-2: 刪除 asks remove-or-delete with the record's name.

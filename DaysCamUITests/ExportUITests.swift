@@ -146,7 +146,6 @@ final class ExportUITests: XCTestCase {
     func testFirstExportHasNoComparison() {
         launch(opensExport: false, portrait: true, showTips: true)
         openNewestViewer()
-        dismissCoachIfShown()
         element("photoDetailExportButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
         XCTAssertFalse(element("exportIntroSheet").exists)
@@ -161,16 +160,6 @@ final class ExportUITests: XCTestCase {
         cell.tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
         XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))
-    }
-
-    private func dismissCoachIfShown() {
-        let ok = app.buttons["viewerCoachOkButton"]
-        // Every caller launches with -UITestShowTips, so the bubble always comes
-        // once the image has loaded; a short wait let slow CI tap 匯出 under it.
-        if ok.waitForExistence(timeout: 10) {
-            ok.tap()
-            waitUntilGone(ok)
-        }
     }
 
     /// The 已匯出 toast stays only 1.6 s, shorter than a `waitForExistence` poll
