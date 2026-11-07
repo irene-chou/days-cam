@@ -60,6 +60,24 @@ final class PhotoExportPipelineTests: XCTestCase {
         XCTAssertEqual(call.imageSize, CGSize(width: 300, height: 400), "the full original, not the display image")
     }
 
+    /// #679-6: with `hidesText` the bake gets empty text and the same film
+    /// date stamp as without it.
+    func testHiddenTextBakesEmptyTextAndTheFilmDate() async throws {
+        let profile = profile(showFilmDate: true)
+        let photo = photo(day: 10)
+        let recorder = ExportBakeRecorder()
+        let result = await pipeline(library: ExportLibrary(photos: [photo]), recorder: recorder)
+            .export(photo: photo, profile: profile, hidesText: true, resolveFont: { _ in .pingFang })
+
+        XCTAssertNoThrow(try result.get())
+        let call = try XCTUnwrap(recorder.calls.first)
+        XCTAssertEqual(call.text, "")
+        XCTAssertEqual(call.filmDate, PhotoDetailModel.filmDateStamp(
+            for: profile, creationDate: try XCTUnwrap(photo.creationDate), calendar: calendar))
+        XCTAssertNotNil(call.filmDate)
+        XCTAssertEqual(call.imageSize, CGSize(width: 300, height: 400))
+    }
+
     /// 4: saved to 「最近項目」 only: one plain write, no album write, nothing
     /// added to the record's album, and the record's `fallbackAssetIDs` is
     /// not touched.

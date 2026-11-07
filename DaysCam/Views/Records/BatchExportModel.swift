@@ -2,8 +2,9 @@ import Combine
 import Foundation
 import UIKit
 
-/// Drives the batch export sheet of the photo wall (PRD 2.0 FR-22.4–22.10,
-/// D8 「批次匯出」).
+/// Drives the export sheet (PRD 2.0 FR-22.4–22.10, D8 「批次匯出」): the
+/// wall's batch export, and since #679 also the viewer's single export, with
+/// just that one photo.
 ///
 /// Opens on a preview of what will be saved; on 匯出 M 張 the photos go
 /// through `PhotoExportPipeline` one at a time, each awaited before the next
@@ -13,9 +14,10 @@ import UIKit
 /// `fallbackAssetIDs`; that is the pipeline's to keep (FR-22.1).
 @MainActor
 final class BatchExportModel: ObservableObject, Identifiable {
-    /// Exports one photo with the record's style; `PhotoExportPipeline.export`
-    /// in the app. `progress` reports the original's download, 0...1.
-    typealias Export = @MainActor (RecordPhoto, CameraProfile, @escaping @Sendable (Double) -> Void) async
+    /// Exports one photo with the record's style, without its text when the
+    /// `Bool` (隱藏文字) is true; `PhotoExportPipeline.export` in the app.
+    /// `progress` reports the original's download, 0...1.
+    typealias Export = @MainActor (RecordPhoto, CameraProfile, Bool, @escaping @Sendable (Double) -> Void) async
         -> Result<Void, PhotoExportError>
 
     /// What the sheet shows.
@@ -58,6 +60,9 @@ final class BatchExportModel: ObservableObject, Identifiable {
     @Published private(set) var isStopping = false
     /// The last run hit a 「照片」 permission refusal.
     @Published private(set) var permissionDenied = false
+    /// 隱藏文字 (#679): the preview and the export leave out the day count,
+    /// date and name. Lives only as long as the sheet; never written to the record.
+    @Published private(set) var hidesText = false
 
     /// Called once when the sheet ends.
     var onFinish: (Outcome) -> Void = { _ in }
@@ -92,7 +97,6 @@ final class BatchExportModel: ObservableObject, Identifiable {
                                     font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
          },
          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
-         tips: FirstRunTips = .shared,
          export: @escaping Export) {
         exportable = photos.filter { $0.creationDate != nil }
         skippedCount = photos.count - exportable.count
@@ -105,8 +109,6 @@ final class BatchExportModel: ObservableObject, Identifiable {
         self.resolveFont = resolveFont
         self.exportPhoto = export
         self.profile = store.profiles.first { $0.id == profileID }
-        // Seeing the batch preview counts as seeing the first-export comparison (FR-22.3).
-        tips.markExportIntroSeen()
         subscription = store.$profiles
             .dropFirst()
             .sink { [weak self] profiles in
@@ -118,25 +120,34 @@ final class BatchExportModel: ObservableObject, Identifiable {
     /// Builds the export over `pipeline` with the record's font path.
     static func pipelineExport(_ pipeline: PhotoExportPipeline,
                                resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> Export {
-        { photo, profile, progress in
-            await pipeline.export(photo: photo, profile: profile, resolveFont: resolveFont, progress: progress)
+        { photo, profile, hidesText, progress in
+            await pipeline.export(photo: photo, profile: profile, hidesText: hidesText,
+                                  resolveFont: resolveFont, progress: progress)
         }
     }
 
     // MARK: - Preview (FR-22.5, FR-22.6)
 
-    /// "匯出 M 張新照片".
-    var previewTitle: String { "匯出 \(exportable.count) 張新照片" }
+    /// The viewer's one photo (#679): the sheet reads 匯出這張照片, with no
+    /// ‹ i／M ›. A batch with one dated photo left stays a batch.
+    var isSingle: Bool { exportable.count == 1 && skippedCount == 0 }
+
+    /// "匯出這張照片" for the viewer's one photo, else "匯出 M 張新照片".
+    var previewTitle: String { isSingle ? "匯出這張照片" : "匯出 \(exportable.count) 張新照片" }
 
     static let previewMessage = "原圖不動，每張另存一張印上天數的新照片到「最近項目」。"
+    static let singlePreviewMessage = "另存一張新照片，原圖不動。"
+
+    /// The line under the title.
+    var previewNote: String { isSingle ? Self.singlePreviewMessage : Self.previewMessage }
 
     /// "其中 N 張日期不明，無法標天數，會略過。", `nil` with none.
     var skippedMessage: String? {
         skippedCount > 0 ? "其中 \(skippedCount) 張日期不明，無法標天數，會略過。" : nil
     }
 
-    /// "匯出 M 張".
-    var exportButtonTitle: String { "匯出 \(exportable.count) 張" }
+    /// "匯出" for the viewer's one photo, else "匯出 M 張".
+    var exportButtonTitle: String { isSingle ? "匯出" : "匯出 \(exportable.count) 張" }
 
     /// The carousel's photo.
     var previewPhoto: RecordPhoto? {
@@ -157,19 +168,28 @@ final class BatchExportModel: ObservableObject, Identifiable {
         previewIndex = (previewIndex + 1) % exportable.count
     }
 
-    /// The overlay text of `photo` with the record's current style.
+    /// The overlay text of `photo` with the record's current style; `nil`
+    /// while 隱藏文字 is on.
     func overlayText(for photo: RecordPhoto) -> String? {
-        guard let profile, let date = photo.creationDate else { return nil }
+        guard !hidesText, let profile, let date = photo.creationDate else { return nil }
         return renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
     }
 
+    /// 隱藏文字／顯示文字: only on the preview, before anything is exported.
+    func toggleHidesText() {
+        guard phase == .preview else { return }
+        hidesText.toggle()
+    }
+
     /// The carousel image of `photo`: screen-sized, marked the way the viewer
-    /// marks it (`PhotoDetailModel.markedImage`), with its own date.
+    /// marks it (`PhotoDetailModel.markedImage`), with its own date; without
+    /// the text while 隱藏文字 is on.
     func previewImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
         guard let source = await library.displayImage(id: photo.id, targetSize: targetSize) else { return nil }
         guard let profile else { return source }
         return await PhotoDetailModel.markedImage(source, photo: photo, profile: profile, calendar: calendar,
-                                                  renderer: renderer, font: resolveFont(profile.style), bake: bake)
+                                                  renderer: renderer, font: resolveFont(profile.style),
+                                                  hidesText: hidesText, bake: bake)
     }
 
     /// 取消 (or swiping the preview away): nothing is exported.
@@ -238,7 +258,7 @@ final class BatchExportModel: ObservableObject, Identifiable {
                 continue
             }
             currentProgress = 0
-            let result = await exportPhoto(photo, profile) { [weak self] value in
+            let result = await exportPhoto(photo, profile, hidesText) { [weak self] value in
                 Task { @MainActor in self?.currentProgress = value }
             }
             switch result {

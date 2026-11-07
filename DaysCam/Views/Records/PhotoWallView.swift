@@ -472,13 +472,13 @@ struct PhotoWallView: View {
     /// 匯出｜刪除 in place of the bottom bar; both off with nothing ticked,
     /// 匯出 also off when every ticked photo is 日期不明.
     private var selectionBar: some View {
-        HStack(spacing: 0) {
-            selectionAction("匯出", systemImage: "square.and.arrow.up", color: CameraTheme.ink) {
+        SelectionActionBar {
+            SelectionActionButton(title: "匯出", systemImage: "square.and.arrow.up", color: CameraTheme.ink) {
                 model.beginBatchExport()
             }
             .disabled(!model.canExportSelection)
             .accessibilityIdentifier("wallExportButton")
-            selectionAction("刪除", systemImage: "trash", color: Self.destructive) {
+            SelectionActionButton(title: "刪除", systemImage: "trash", color: SelectionActionButton.destructive) {
                 showsRemoveOrDelete = true
             }
             .disabled(model.selectedIDs.isEmpty)
@@ -492,31 +492,6 @@ struct PhotoWallView: View {
                                   onRemove: { Task { await model.removeSelected() } },
                                   onDelete: { Task { await model.deleteSelected() } })
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .overlay(alignment: .top) {
-            Rectangle().fill(CameraTheme.ink.opacity(0.08)).frame(height: 1)
-        }
-    }
-
-    /// D8's #D2422C for 刪除.
-    private static let destructive = Color(red: 0xD2 / 255, green: 0x42 / 255, blue: 0x2C / 255)
-
-    private func selectionAction(_ title: String, systemImage: String, color: Color,
-                                 action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 19))
-                Text(title)
-                    .font(.system(size: 11.5, weight: .bold))
-            }
-            .foregroundColor(color)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SelectionActionStyle())
     }
 
     @ViewBuilder
@@ -696,16 +671,6 @@ private struct PhotoWallCell: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// Dims a selection-bar action while pressed or disabled.
-private struct SelectionActionStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(isEnabled ? (configuration.isPressed ? 0.5 : 1) : 0.35)
     }
 }
 

@@ -318,13 +318,7 @@ final class RecordListModel: ObservableObject {
                        saveCoordinator: saveCoordinator,
                        todayText: { [weak self] profile in self?.dayCountText(for: profile) ?? "" },
                        backfillAlbums: { [weak self] in await self?.backfillAlbumsIfNeeded(reportsFailure: true) },
-                       makeBatchExport: { [store, library, calendar, renderer, exportSave] photos in
-                           let pipeline = PhotoExportPipeline(library: library, calendar: calendar,
-                                                              renderer: renderer, save: exportSave)
-                           return BatchExportModel(photos: photos, profileID: id, store: store, library: library,
-                                                   calendar: calendar, renderer: renderer, resolveFont: resolveFont,
-                                                   export: BatchExportModel.pipelineExport(pipeline, resolveFont: resolveFont))
-                       })
+                       makeBatchExport: exportSheetFactory(for: id, resolveFont: resolveFont))
     }
 
     /// The viewer's model, opened on `photoID` of record `id` (#619).
@@ -332,8 +326,21 @@ final class RecordListModel: ObservableObject {
                           resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoDetailModel {
         PhotoDetailModel(profileID: id, startingAt: photoID, store: store, library: library,
                          calendar: calendar, renderer: renderer, resolveFont: resolveFont,
-                         pipeline: PhotoExportPipeline(library: library, calendar: calendar,
-                                                       renderer: renderer, save: exportSave))
+                         makeExport: exportSheetFactory(for: id, resolveFont: resolveFont))
+    }
+
+    /// Builds the export sheet's model over some photos of record `id`: the
+    /// wall's batch and the viewer's one photo share it (#679).
+    private func exportSheetFactory(for id: UUID,
+                                    resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont)
+        -> ([RecordPhoto]) -> BatchExportModel {
+        { [store, library, calendar, renderer, exportSave] photos in
+            let pipeline = PhotoExportPipeline(library: library, calendar: calendar,
+                                               renderer: renderer, save: exportSave)
+            return BatchExportModel(photos: photos, profileID: id, store: store, library: library,
+                                    calendar: calendar, renderer: renderer, resolveFont: resolveFont,
+                                    export: BatchExportModel.pipelineExport(pipeline, resolveFont: resolveFont))
+        }
     }
 
     /// The 文字樣式 page's model for `photo` of record `id` (#620): the panel

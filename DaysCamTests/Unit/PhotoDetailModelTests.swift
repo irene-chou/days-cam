@@ -228,18 +228,16 @@ final class PhotoDetailModelTests: XCTestCase {
         XCTAssertEqual(model.photos.count, 4)
     }
 
-    // MARK: Export (#647: 3, 5, 6, 7, 8)
+    // MARK: Export (#679: 2, 3, 4, 6, 7, 9)
 
     private var tipsSuite = ""
 
-    private func makeTips(exportIntroSeen: Bool = true, coachSeen: Bool = true) throws -> FirstRunTips {
+    private func makeTips(coachSeen: Bool = true) throws -> FirstRunTips {
         tipsSuite = "FirstRunTips-\(UUID().uuidString)"
         let tips = FirstRunTips(defaults: try XCTUnwrap(UserDefaults(suiteName: tipsSuite)))
-        if exportIntroSeen { tips.markExportIntroSeen() }
         if coachSeen { tips.markViewerCoachSeen() }
         return tips
     }
-
 
     private final class SaveCounter {
         var count = 0
@@ -250,165 +248,229 @@ final class PhotoDetailModelTests: XCTestCase {
         var messages: [String] = []
     }
 
-    /// A viewer over `ExportLibrary` whose pipeline counts saves; toast
-    /// expiry runs only when the test says so.
+    private struct ExportRig {
+        let model: PhotoDetailModel
+        let library: ExportLibrary
+        let saves: SaveCounter
+        let announced: Announcements
+        let scheduled: ScheduledActions
+        let recorder: ExportBakeRecorder
+    }
+
+    /// A viewer over `ExportLibrary` whose export sheet runs the real
+    /// pipeline, counting saves and recording what is baked; toast expiry
+    /// runs only when the test says so.
     private func makeExportRig(store: ProfileStore, profile: CameraProfile, tips: FirstRunTips,
-                               photoDay: Int? = 10) -> (PhotoDetailModel, ExportLibrary, SaveCounter, Announcements, ScheduledActions) {
+                               photoDay: Int? = 10) -> ExportRig {
         let photo = RecordPhoto(id: "p1", creationDate: photoDay.flatMap { DateFixture.date(2026, 1, $0, hour: 15, minute: 7) })
         let library = ExportLibrary(photos: [photo])
         let saves = SaveCounter()
         let announced = Announcements()
         let scheduled = ScheduledActions()
+        let recorder = ExportBakeRecorder()
+        let calendar = self.calendar
         let pipeline = PhotoExportPipeline(library: library, calendar: calendar,
-                                           bake: { image, _, _, _, _, _, _, _ in image },
+                                           bake: { recorder.bake($0, $1, $2, $3, $4, $5, $6, $7) },
                                            save: { _, completion in
                                                saves.count += 1
                                                completion(saves.result)
                                            })
         let model = PhotoDetailModel(profileID: profile.id, startingAt: "p1", store: store, library: library,
                                      calendar: calendar, resolveFont: { _ in .pingFang },
-                                     pipeline: pipeline, tips: tips,
+                                     makeExport: { photos in
+                                         BatchExportModel(photos: photos, profileID: profile.id, store: store,
+                                                          library: library, calendar: calendar,
+                                                          bake: { image, _, _, _, _, _, _, _ in image },
+                                                          resolveFont: { _ in .pingFang },
+                                                          export: BatchExportModel.pipelineExport(
+                                                              pipeline, resolveFont: { _ in .pingFang }))
+                                     },
+                                     tips: tips,
                                      scheduleAfter: { _, action in scheduled.actions.append(action) })
         model.announce = { announced.messages.append($0) }
-        return (model, library, saves, announced, scheduled)
+        return ExportRig(model: model, library: library, saves: saves, announced: announced,
+                         scheduled: scheduled, recorder: recorder)
     }
 
     private final class ScheduledActions {
         var actions: [() -> Void] = []
     }
 
-    /// 3: a seen comparison exports at once; success announces and toasts
-    /// 已匯出, stays on the same photo, and the toast goes away later.
+    /// 3: 匯出 opens the export sheet over this one photo: 匯出這張照片, its
+    /// own note, a plain 匯出 button; nothing is exported yet.
+    func testExportOpensTheSingleSheet() throws {
+        let (store, profile) = try makeStore()
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.model.beginExport()
+
+        let sheet = try XCTUnwrap(rig.model.export)
+        XCTAssertEqual(sheet.exportable.map(\.id), ["p1"])
+        XCTAssertTrue(sheet.isSingle)
+        XCTAssertEqual(sheet.previewTitle, "匯出這張照片")
+        XCTAssertEqual(sheet.previewNote, "另存一張新照片，原圖不動。")
+        XCTAssertEqual(sheet.exportButtonTitle, "匯出")
+        XCTAssertFalse(sheet.hidesText)
+        XCTAssertEqual(rig.saves.count, 0)
+        XCTAssertEqual(rig.library.fullImageCount, 0)
+        XCTAssertFalse(rig.model.canStartExport, "one sheet at a time")
+        rig.model.beginExport()
+        XCTAssertTrue(rig.model.export === sheet)
+    }
+
+    /// 4: 匯出 on the sheet saves one new photo with the overlay, closes the
+    /// sheet, toasts and announces 已匯出, stays on the same photo; the toast
+    /// goes away later.
     func testExportSucceedsWithToastAndStaysOnThePhoto() async throws {
         let (store, profile) = try makeStore()
-        let (model, _, saves, announced, scheduled) = makeExportRig(store: store, profile: profile, tips: try makeTips())
-        await model.requestExport()
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.model.beginExport()
+        let sheet = try XCTUnwrap(rig.model.export)
+        sheet.start()
+        await sheet.waitForRun()
 
-        XCTAssertEqual(saves.count, 1)
-        XCTAssertEqual(model.toastState?.message, "已匯出")
-        XCTAssertEqual(announced.messages, ["已匯出"])
-        XCTAssertNil(model.exportError)
-        XCTAssertFalse(model.isExporting)
-        XCTAssertEqual(model.selectedID, "p1")
-        XCTAssertFalse(model.shouldDismiss)
-        scheduled.actions.forEach { $0() }
-        XCTAssertNil(model.toastState)
+        XCTAssertNil(rig.model.export, "the sheet closed")
+        XCTAssertEqual(rig.saves.count, 1)
+        XCTAssertEqual(rig.library.fullImageCount, 1)
+        XCTAssertEqual(rig.library.addAssetsCount, 0)
+        XCTAssertEqual(rig.recorder.calls.count, 1)
+        XCTAssertTrue(rig.recorder.calls[0].text.contains("第 10 天"), rig.recorder.calls[0].text)
+        XCTAssertEqual(rig.model.toastState?.message, "已匯出")
+        XCTAssertEqual(rig.announced.messages, ["已匯出"])
+        XCTAssertEqual(rig.model.selectedID, "p1")
+        XCTAssertEqual(rig.model.photos.map(\.id), ["p1"], "the original is still there")
+        XCTAssertFalse(rig.model.shouldDismiss)
+        XCTAssertTrue(rig.model.canStartExport)
+        rig.scheduled.actions.forEach { $0() }
+        XCTAssertNil(rig.model.toastState)
     }
 
-    /// 5: a failed save alerts, never toasts or announces, and the button works again.
-    func testSaveFailureAlertsWithoutToast() async throws {
+    /// 9: a refused permission stays on the sheet as a failure with the
+    /// permission text; no toast, nothing announced.
+    func testPermissionRefusalIsTheSheetsFailure() async throws {
         let (store, profile) = try makeStore()
-        let (model, _, saves, announced, _) = makeExportRig(store: store, profile: profile, tips: try makeTips())
-        saves.result = .failure(.permissionDenied)
-        await model.requestExport()
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.saves.result = .failure(.permissionDenied)
+        rig.model.beginExport()
+        let sheet = try XCTUnwrap(rig.model.export)
+        sheet.start()
+        await sheet.waitForRun()
 
-        let error = try XCTUnwrap(model.exportError)
-        XCTAssertEqual(error.message, "新照片沒有存起來。請到「設定」›「DaysCam」›「照片」允許取用後再匯出一次。")
-        XCTAssertTrue(error.showsSettingsAction)
-        XCTAssertNil(model.toastState)
-        XCTAssertTrue(announced.messages.isEmpty)
-        XCTAssertFalse(model.isExporting)
-        XCTAssertTrue(model.canStartExport)
-        model.dismissExportError()
-        XCTAssertNil(model.exportError)
+        XCTAssertTrue(rig.model.export === sheet, "the sheet stays up")
+        XCTAssertEqual(sheet.phase, .failed(succeeded: 0, failed: 1))
+        XCTAssertEqual(sheet.failureTitle, "已匯出 0 張，1 張失敗")
+        XCTAssertEqual(sheet.failureMessage, "新照片沒有存起來。請到「設定」›「DaysCam」›「照片」允許取用後再匯出一次。")
+        XCTAssertNil(rig.model.toastState)
+        XCTAssertTrue(rig.announced.messages.isEmpty)
+
+        sheet.acknowledgeFailures()
+        XCTAssertNil(rig.model.export)
+        XCTAssertNil(rig.model.toastState, "好 is not a success")
+        XCTAssertTrue(rig.announced.messages.isEmpty)
+        XCTAssertEqual(rig.model.selectedID, "p1")
     }
 
-    /// 6: pressing again while the original downloads starts no second export.
-    func testSecondPressWhileExportingDoesNothing() async throws {
+    /// 9: a failed save is the sheet's failure too; 重試失敗的 that saves
+    /// then toasts 已匯出.
+    func testSaveFailureThenRetry() async throws {
         let (store, profile) = try makeStore()
-        let (model, library, saves, _, _) = makeExportRig(store: store, profile: profile, tips: try makeTips())
-        library.holdsFullImage = true
-        let first = Task { await model.requestExport() }
-        for _ in 0..<200 where library.heldCount == 0 { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertTrue(model.isExporting)
-        XCTAssertFalse(model.canStartExport)
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.saves.result = .failure(.saveFailed("disk"))
+        rig.model.beginExport()
+        let sheet = try XCTUnwrap(rig.model.export)
+        sheet.start()
+        await sheet.waitForRun()
 
-        await model.requestExport()
-        XCTAssertEqual(library.fullImageCount, 1)
+        XCTAssertEqual(sheet.phase, .failed(succeeded: 0, failed: 1))
+        XCTAssertEqual(sheet.failureMessage, "失敗的照片可能還在從 iCloud 下載，或儲存空間不足。")
+        XCTAssertNil(rig.model.toastState)
 
-        library.release()
-        await first.value
-        XCTAssertEqual(saves.count, 1)
-        XCTAssertFalse(model.isExporting)
+        rig.saves.result = .success("new")
+        sheet.retryFailed()
+        await sheet.waitForRun()
+        XCTAssertNil(rig.model.export)
+        XCTAssertEqual(rig.saves.count, 2)
+        XCTAssertEqual(rig.model.toastState?.message, "已匯出")
     }
 
-    /// 7: the first press opens the comparison and exports nothing.
-    func testFirstPressOpensTheComparisonFirst() async throws {
+    /// 取消 closes the sheet, exports nothing and says nothing.
+    func testCancelExportsNothing() throws {
         let (store, profile) = try makeStore()
-        let tips = try makeTips(exportIntroSeen: false)
-        let (model, library, saves, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
-        await model.requestExport()
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.model.beginExport()
+        try XCTUnwrap(rig.model.export).cancel()
 
-        XCTAssertTrue(model.showsExportIntro)
-        XCTAssertEqual(saves.count, 0)
-        XCTAssertEqual(library.fullImageCount, 0)
-        XCTAssertFalse(tips.exportIntroSeen, "opening it is not seeing it")
+        XCTAssertNil(rig.model.export)
+        XCTAssertEqual(rig.saves.count, 0)
+        XCTAssertNil(rig.model.toastState)
+        XCTAssertTrue(rig.announced.messages.isEmpty)
     }
 
-    /// 7: 匯出 on the comparison counts as seen and exports; later presses go straight through.
-    func testExportOnTheComparisonExportsAndIsSeen() async throws {
-        let (store, profile) = try makeStore()
-        let tips = try makeTips(exportIntroSeen: false)
-        let (model, _, saves, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
-        await model.requestExport()
-        await model.confirmExportIntro()
-
-        XCTAssertFalse(model.showsExportIntro)
-        XCTAssertTrue(tips.exportIntroSeen)
-        XCTAssertEqual(saves.count, 1)
-        await model.requestExport()
-        XCTAssertFalse(model.showsExportIntro)
-        XCTAssertEqual(saves.count, 2)
+    /// 6: with 隱藏文字 the bake gets no text and the film date stamp, as
+    /// the record has it on.
+    func testHiddenTextBakesNoTextAndKeepsTheFilmDate() async throws {
+        try await assertHiddenTextExport(showsFilmDate: true)
     }
 
-    /// 7: 先調整文字樣式 counts as seen and exports nothing.
-    func testStyleFirstOnTheComparisonIsSeenWithoutExporting() async throws {
-        let (store, profile) = try makeStore()
-        let tips = try makeTips(exportIntroSeen: false)
-        let (model, _, saves, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
-        await model.requestExport()
-        model.skipExportIntroForStyle()
-
-        XCTAssertFalse(model.showsExportIntro)
-        XCTAssertTrue(tips.exportIntroSeen)
-        XCTAssertEqual(saves.count, 0)
+    /// 6: …and no film date stamp while the record has it off.
+    func testHiddenTextBakesNoTextAndNoFilmDateWhenOff() async throws {
+        try await assertHiddenTextExport(showsFilmDate: false)
     }
 
-    /// 7: swiping the sheet away (the binding going false) is not seeing it and exports nothing.
-    func testSwipingTheComparisonAwayIsNotSeen() async throws {
-        let (store, profile) = try makeStore()
-        let tips = try makeTips(exportIntroSeen: false)
-        let (model, _, saves, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
-        await model.requestExport()
-        model.showsExportIntro = false
+    private func assertHiddenTextExport(showsFilmDate: Bool, file: StaticString = #filePath,
+                                        line: UInt = #line) async throws {
+        let (store, created) = try makeStore()
+        var profile = created
+        profile.showFilmDate = showsFilmDate
+        try store.updateAndWait(profile)
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.model.beginExport()
+        let sheet = try XCTUnwrap(rig.model.export)
+        sheet.toggleHidesText()
+        XCTAssertTrue(sheet.hidesText, file: file, line: line)
+        XCTAssertNil(sheet.overlayText(for: try XCTUnwrap(sheet.previewPhoto)), "the preview has no text",
+                     file: file, line: line)
+        sheet.start()
+        await sheet.waitForRun()
 
-        XCTAssertFalse(tips.exportIntroSeen)
-        XCTAssertEqual(saves.count, 0)
-        await model.requestExport()
-        XCTAssertTrue(model.showsExportIntro, "it comes back at the next press")
+        XCTAssertEqual(rig.recorder.calls.count, 1, file: file, line: line)
+        let call = try XCTUnwrap(rig.recorder.calls.first)
+        XCTAssertEqual(call.text, "", "no day count, date or name", file: file, line: line)
+        let photo = try XCTUnwrap(rig.model.currentPhoto)
+        let expected = PhotoDetailModel.filmDateStamp(for: profile, creationDate: try XCTUnwrap(photo.creationDate),
+                                                      calendar: calendar)
+        XCTAssertEqual(call.filmDate, expected, file: file, line: line)
+        XCTAssertEqual(call.filmDate != nil, showsFilmDate, file: file, line: line)
+        XCTAssertEqual(rig.saves.count, 1, file: file, line: line)
+        XCTAssertEqual(rig.model.toastState?.message, "已匯出", file: file, line: line)
     }
 
-    /// 8: after the batch preview marked it, a single export skips the comparison.
-    func testSeenByTheBatchPreviewSkipsTheComparison() async throws {
+    /// 7: 隱藏文字 is never written to the record, and the next sheet shows
+    /// the text again.
+    func testHiddenTextIsNotKeptInTheRecord() async throws {
         let (store, profile) = try makeStore()
-        let tips = try makeTips(exportIntroSeen: false)
-        tips.markExportIntroSeen()
-        let (model, _, saves, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
-        await model.requestExport()
+        let before = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        rig.model.beginExport()
+        let sheet = try XCTUnwrap(rig.model.export)
+        sheet.toggleHidesText()
+        sheet.start()
+        await sheet.waitForRun()
 
-        XCTAssertFalse(model.showsExportIntro)
-        XCTAssertEqual(saves.count, 1)
+        XCTAssertEqual(store.profiles.first { $0.id == profile.id }, before)
+        rig.model.beginExport()
+        let again = try XCTUnwrap(rig.model.export)
+        XCTAssertFalse(again.hidesText)
+        XCTAssertNotNil(again.overlayText(for: try XCTUnwrap(again.previewPhoto)))
     }
 
-    /// 1: a photo without a date cannot be exported, and nothing happens on a press.
-    func testPhotoWithoutDateCannotStartAnExport() async throws {
+    /// 2: a photo without a date cannot open the sheet.
+    func testPhotoWithoutDateCannotStartAnExport() throws {
         let (store, profile) = try makeStore()
-        let (model, library, saves, _, _) = makeExportRig(store: store, profile: profile, tips: try makeTips(),
-                                                          photoDay: nil)
-        XCTAssertFalse(model.canStartExport)
-        await model.requestExport()
-        XCTAssertEqual(saves.count, 0)
-        XCTAssertEqual(library.fullImageCount, 0)
+        let rig = makeExportRig(store: store, profile: profile, tips: try makeTips(), photoDay: nil)
+        XCTAssertFalse(rig.model.canStartExport)
+        rig.model.beginExport()
+        XCTAssertNil(rig.model.export)
+        XCTAssertEqual(rig.library.fullImageCount, 0)
     }
 
     // MARK: Pointer bubble (#647: 9)
@@ -417,7 +479,7 @@ final class PhotoDetailModelTests: XCTestCase {
     func testCoachShowsUntilDismissed() throws {
         let (store, profile) = try makeStore()
         let tips = try makeTips(coachSeen: false)
-        let (model, _, _, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
+        let model = makeExportRig(store: store, profile: profile, tips: tips).model
         XCTAssertTrue(model.showsCoach)
         model.dismissCoach()
         XCTAssertFalse(model.showsCoach)
@@ -428,16 +490,16 @@ final class PhotoDetailModelTests: XCTestCase {
     func testCoachStaysGoneInANewViewer() throws {
         let (store, profile) = try makeStore()
         let tips = try makeTips(coachSeen: false)
-        let (first, _, _, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
+        let first = makeExportRig(store: store, profile: profile, tips: tips).model
         first.dismissCoach()
-        let (second, _, _, _, _) = makeExportRig(store: store, profile: profile, tips: tips)
+        let second = makeExportRig(store: store, profile: profile, tips: tips).model
         XCTAssertFalse(second.showsCoach)
     }
 
     /// The ring's frame sits inside the image and follows the placement.
     func testOverlayFrameFollowsThePlacement() throws {
         let (store, profile) = try makeStore()
-        let (model, _, _, _, _) = makeExportRig(store: store, profile: profile, tips: try makeTips())
+        let model = makeExportRig(store: store, profile: profile, tips: try makeTips()).model
         let photo = try XCTUnwrap(model.currentPhoto)
         let size = CGSize(width: 300, height: 400)
         let frame = try XCTUnwrap(model.overlayFrame(for: photo, imageSize: size))

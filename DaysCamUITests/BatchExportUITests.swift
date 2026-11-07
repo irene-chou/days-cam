@@ -1,6 +1,6 @@
 import XCTest
 
-/// #650: the batch export sheet (acceptance 1, 4, 6, 14). With
+/// #650／#679: the batch export sheet (acceptance 1, 4, 6, 14; #679-8). With
 /// `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′ screenshots
 /// are also written there for the PR.
 final class BatchExportUITests: XCTestCase {
@@ -83,8 +83,29 @@ final class BatchExportUITests: XCTestCase {
         waitForLabel("batchExportPosition", containing: "2／4")
         waitForLabel("batchExportPreview", containing: "第 8 天")
         XCTAssertTrue(element("batchExportStartButton").label.contains("匯出 4 張"))
+        let hide = element("exportHideTextButton")
+        XCTAssertEqual(hide.label, "隱藏文字", "#679-8 the sheet opens showing the text")
+        XCTAssertLessThan(hide.frame.midY, element("batchExportStyleLink").frame.midY)
         sleep(1)
+        // #679: the whole preview fits, on an iPhone SE too.
+        let sheet = element("batchExportSheet").frame
+        for id in ["batchExportTitle", "batchExportStartButton", "batchExportCancelButton"] {
+            XCTAssertTrue(sheet.contains(element(id).frame), "\(id) \(element(id).frame) in \(sheet)")
+        }
+        XCTAssertGreaterThan(element("batchExportTitle").frame.minY, sheet.minY + 10, "below the grabber")
         shot("batch-export-preview")
+
+        // #679-8: 隱藏文字 on the batch sheet too.
+        hide.tap()
+        waitForLabel("exportHideTextButton", containing: "顯示文字")
+        XCTAssertFalse(element("batchExportStyleLink").isEnabled)
+        XCTAssertFalse(element("batchExportPreview").label.contains("第"), element("batchExportPreview").label)
+        XCTAssertTrue(element("batchExportStartButton").label.contains("匯出 4 張"), "the count is unchanged")
+        sleep(1)
+        shot("batch-export-hidden")
+        hide.tap()
+        waitForLabel("exportHideTextButton", containing: "隱藏文字")
+        waitForLabel("batchExportPreview", containing: "第 8 天")
 
         element("batchExportStyleLink").tap()
         XCTAssertTrue(element("exportView").waitForExistence(timeout: 5), "4")

@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The batch export sheet of the photo wall (PRD 2.0 FR-22.5–22.9, D8
-/// 「批次匯出」): the preview, then 匯出中 with 停止, then the failures if any.
+/// The export sheet (PRD 2.0 FR-22.5–22.9, D8 「批次匯出」), for the wall's
+/// batch and the viewer's one photo (#679): the preview, then 匯出中 with
+/// 停止, then the failures if any.
 /// Only the preview can be swiped away (that is 取消); the other two stay
 /// until their buttons are used.
 struct BatchExportSheet: View {
@@ -16,10 +17,25 @@ struct BatchExportSheet: View {
     /// The carousel's share of the sheet width (D8 `.car{width:62%}`).
     static let carouselWidthRatio: CGFloat = 0.62
 
-    /// The carousel's box: 62% of the content width at 3:4.
-    static var carouselSize: CGSize {
+    /// The preview's share of the screen height.
+    static let previewDetent: CGFloat = 0.85
+
+    /// The carousel's box: 62% of the content width at 3:4, shorter when the
+    /// rest of the preview (`reserved` points) would not fit the sheet
+    /// otherwise, as on an iPhone SE (#679).
+    static func carouselSize(reserved: CGFloat) -> CGSize {
         let width = ((UIScreen.main.bounds.width - 40) * carouselWidthRatio).rounded()
-        return CGSize(width: width, height: (width * 4 / 3).rounded())
+        let room = (UIScreen.main.bounds.height * previewDetent - reserved).rounded(.down)
+        let height = min((width * 4 / 3).rounded(), room)
+        return CGSize(width: min(width, (height * 3 / 4).rounded()), height: height)
+    }
+
+    /// Everything on the preview but the carousel's image, roughly: the
+    /// padding, title, buttons and text options, plus ‹ i／M › and the skip
+    /// line when shown (the batch note wraps to two lines on an SE).
+    private var carouselSize: CGSize {
+        let reserved: CGFloat = 300 + (model.exportable.count > 1 ? 52 : 0) + (model.skippedMessage == nil ? 0 : 44)
+        return Self.carouselSize(reserved: reserved)
     }
 
     var body: some View {
@@ -41,7 +57,7 @@ struct BatchExportSheet: View {
     }
 
     private var detents: Set<PresentationDetent> {
-        model.phase == .preview ? [.fraction(0.85)] : [.height(250)]
+        model.phase == .preview ? [.fraction(Self.previewDetent)] : [.height(250)]
     }
 
     @ViewBuilder
@@ -62,22 +78,21 @@ struct BatchExportSheet: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundColor(CameraTheme.ink)
                     .accessibilityIdentifier("batchExportTitle")
-                Text(BatchExportModel.previewMessage)
+                Text(model.previewNote)
                     .font(.system(size: 13.5))
                     .foregroundColor(CameraTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let skipped = model.skippedMessage {
                     Text(skipped)
                         .font(.system(size: 13.5))
                         .foregroundColor(CameraTheme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("batchExportSkipped")
                 }
             }
             .multilineTextAlignment(.center)
             carousel
-            Button("調整文字樣式") { stylingPhoto = model.previewPhoto }
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(CameraTheme.active)
-                .accessibilityIdentifier("batchExportStyleLink")
+            textOptions
             Spacer(minLength: 0)
             primaryButton(model.exportButtonTitle, identifier: "batchExportStartButton") { model.start() }
             secondaryButton("取消", identifier: "batchExportCancelButton") { model.cancel() }
@@ -97,24 +112,26 @@ struct BatchExportSheet: View {
                         .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 6)
                 }
             }
-            .frame(width: Self.carouselSize.width, height: Self.carouselSize.height)
+            .frame(width: carouselSize.width, height: carouselSize.height)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.previewPhoto.flatMap(model.overlayText(for:)) ?? "")
             .accessibilityIdentifier("batchExportPreview")
-            HStack(spacing: 14) {
-                navButton("chevron.left", label: "上一張", identifier: "batchExportPrevious") { model.showPrevious() }
-                Text(model.previewPosition)
-                    .font(.system(size: 12.5).monospacedDigit())
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .accessibilityIdentifier("batchExportPosition")
-                navButton("chevron.right", label: "下一張", identifier: "batchExportNext") { model.showNext() }
+            if model.exportable.count > 1 {
+                HStack(spacing: 14) {
+                    navButton("chevron.left", label: "上一張", identifier: "batchExportPrevious") { model.showPrevious() }
+                    Text(model.previewPosition)
+                        .font(.system(size: 12.5).monospacedDigit())
+                        .foregroundColor(CameraTheme.inkSecondary)
+                        .accessibilityIdentifier("batchExportPosition")
+                    navButton("chevron.right", label: "下一張", identifier: "batchExportNext") { model.showNext() }
+                }
             }
-            .opacity(model.exportable.count > 1 ? 1 : 0)
         }
-        // Redrawn for another photo, or when 文字樣式 changed the record.
-        .task(id: PreviewKey(photoID: model.previewPhoto?.id, profile: model.profile, scale: displayScale)) {
+        // Redrawn for another photo, when 文字樣式 changed the record, or on 隱藏文字.
+        .task(id: PreviewKey(photoID: model.previewPhoto?.id, profile: model.profile,
+                             hidesText: model.hidesText, scale: displayScale)) {
             guard let photo = model.previewPhoto else { return }
-            let side = Self.carouselSize.height * displayScale
+            let side = carouselSize.height * displayScale
             let image = await model.previewImage(for: photo, targetSize: CGSize(width: side, height: side))
             guard !Task.isCancelled else { return }
             previewImage = image
@@ -124,7 +141,28 @@ struct BatchExportSheet: View {
     private struct PreviewKey: Equatable {
         let photoID: String?
         let profile: CameraProfile?
+        let hidesText: Bool
         let scale: CGFloat
+    }
+
+    /// 隱藏文字 over 調整文字樣式 (#679): plain text buttons alike. While the
+    /// text is hidden the first reads 顯示文字 and the style page is off.
+    private var textOptions: some View {
+        VStack(spacing: 8) {
+            textButton(model.hidesText ? "顯示文字" : "隱藏文字", identifier: "exportHideTextButton") {
+                model.toggleHidesText()
+            }
+            textButton("調整文字樣式", identifier: "batchExportStyleLink") { stylingPhoto = model.previewPhoto }
+                .disabled(model.hidesText)
+                .opacity(model.hidesText ? 0.4 : 1)
+        }
+    }
+
+    private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundColor(CameraTheme.active)
+            .accessibilityIdentifier(identifier)
     }
 
     private func navButton(_ systemImage: String, label: String, identifier: String,

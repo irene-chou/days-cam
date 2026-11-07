@@ -4,18 +4,16 @@ import SwiftUI
 ///
 /// Each photo is shown at its own aspect ratio with the record's overlay
 /// baked on as a preview (`PhotoDetailModel.pageImage`); swiping moves
-/// through the wall's order. The two buttons at the bottom open the 文字樣式
-/// page (FR-19) and export the photo on screen with the record's current
-/// style (FR-18.5, FR-22.2). The first visit points the overlay out
-/// (FR-18.8), the first export shows a comparison first (FR-22.3).
+/// through the wall's order. The bottom bar is the wall's selection bar
+/// (#679): 匯出 opens the export sheet the batch export uses, with just this
+/// photo, and 刪除 asks remove-or-delete (FR-18.6). The first visit points
+/// the overlay out (FR-18.8).
 struct PhotoDetailView: View {
     @StateObject private var model: PhotoDetailModel
     @Environment(\.dismiss) private var dismiss
-    /// The photo whose 文字樣式 page is up.
+    /// The photo whose 文字樣式 page is up; only `-UITestOpenExport` opens it
+    /// from here, otherwise it is reached from the export sheet.
     @State private var stylingPhoto: RecordPhoto?
-    /// 先調整文字樣式 was chosen on the comparison sheet; the page opens once
-    /// the sheet is gone.
-    @State private var opensStyleAfterIntro = false
     /// The remove-or-delete dialog is up.
     @State private var showsRemoveOrDelete = false
     /// Builds the 文字樣式 page's model for a photo of this record.
@@ -35,8 +33,6 @@ struct PhotoDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // No swiping to another photo while one is being exported (FR-22.2).
-            .scrollDisabled(model.isExporting)
             actionBar
         }
         .background(CameraTheme.background.ignoresSafeArea())
@@ -44,11 +40,8 @@ struct PhotoDetailView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("photoDetail")
         .navigationBarTitleDisplayMode(.inline)
-        // Leaving now would orphan the export's toast and error (#633).
-        .navigationBarBackButtonHidden(model.isExporting)
         .toolbar {
             ToolbarItem(placement: .principal) { titleView }
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
         .tint(CameraTheme.active)
         .onAppear {
@@ -60,26 +53,10 @@ struct PhotoDetailView: View {
         .fullScreenCover(item: $stylingPhoto) { photo in
             ExportView(model: makeExportModel(photo))
         }
-        .sheet(isPresented: $model.showsExportIntro, onDismiss: {
-            if opensStyleAfterIntro {
-                opensStyleAfterIntro = false
-                stylingPhoto = model.currentPhoto
-            }
-        }) {
-            ExportIntroSheet(model: model) { opensStyleAfterIntro = true }
-        }
-        .alert("無法匯出", isPresented: exportErrorBinding, presenting: model.exportError) { error in
-            if error.showsSettingsAction {
-                Button("前往設定") {
-                    model.dismissExportError()
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                }
-            }
-            Button("好", role: .cancel) { model.dismissExportError() }
-        } message: { error in
-            Text(error.message)
+        // Progress and failures stay on the sheet, which cannot be swiped
+        // away then, so the viewer cannot be used until it ends.
+        .sheet(item: exportBinding) { export in
+            BatchExportSheet(model: export, makeExportModel: makeExportModel)
         }
         .onChange(of: model.shouldDismiss) { _, shouldDismiss in
             if shouldDismiss { dismiss() }
@@ -112,87 +89,28 @@ struct PhotoDetailView: View {
         .accessibilityIdentifier("photoDetailTitle")
     }
 
-    /// 刪除… (FR-18.6): one item, which asks whether to remove the photo
-    /// from the record or delete it from 「照片」.
-    private var moreMenu: some View {
-        Menu {
-            Button(role: .destructive) {
-                showsRemoveOrDelete = true
-            } label: {
-                Label("刪除…", systemImage: "trash")
-            }
-            .accessibilityIdentifier("deleteMenuButton")
-        } label: {
-            Image(systemName: "ellipsis")
-        }
-        // Anchored to ⋯, where 刪除… lives, so the popover's arrow points at
-        // it (#662).
-        .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
-                              title: RemoveOrDeleteDialog.title(recordName: model.recordName),
-                              recordName: model.recordName,
-                              onRemove: { Task { await model.removeFromRecord() } },
-                              onDelete: { Task { await model.deletePhoto() } })
-        .accessibilityLabel("更多")
-        .accessibilityIdentifier("photoDetailMoreButton")
-    }
+    // MARK: - Bottom bar (#679)
 
-    // MARK: - Bottom buttons (FR-18.5)
-
-    /// 文字樣式 on the left, 匯出 on the right; both disabled for a photo
-    /// without a date (§6.1.3), both while an export runs.
+    /// 匯出｜刪除, the wall's selection bar. 匯出 is off for a photo without
+    /// a date (§6.1.3); 刪除 asks remove-or-delete, its popover pointing at it.
     private var actionBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                stylingPhoto = model.currentPhoto
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "paintbrush")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("文字樣式")
-                        .font(.system(size: 14, weight: .heavy))
-                }
-                .foregroundColor(CameraTheme.ink)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 9)
-                .background(Capsule().fill(CameraTheme.fill))
+        SelectionActionBar {
+            SelectionActionButton(title: "匯出", systemImage: "square.and.arrow.up", color: CameraTheme.ink) {
+                model.beginExport()
             }
-            .buttonStyle(.plain)
             .disabled(!model.canStartExport)
-            .opacity(model.canStartExport ? 1 : 0.4)
-            .accessibilityIdentifier("styleButton")
-            Button {
-                Task { await model.requestExport() }
-            } label: {
-                HStack(spacing: 6) {
-                    if model.isExporting {
-                        ProgressView(value: model.exportProgress)
-                            .progressViewStyle(.circular)
-                            .tint(CameraTheme.inkOnAccent)
-                    } else {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 17, weight: .semibold))
-                    }
-                    Text(model.isExporting ? "匯出中" : "匯出")
-                        .font(.system(size: 14, weight: .heavy))
-                }
-                .foregroundColor(CameraTheme.inkOnAccent)
-                .padding(.leading, 12)
-                .padding(.trailing, 16)
-                .padding(.vertical, 9)
-                .background(Capsule().fill(CameraTheme.accent))
+            .accessibilityIdentifier("photoDetailExportButton")
+            SelectionActionButton(title: "刪除", systemImage: "trash", color: SelectionActionButton.destructive) {
+                showsRemoveOrDelete = true
             }
-            .buttonStyle(.plain)
-            .disabled(!model.canStartExport)
-            .opacity(canExportCurrentPhoto ? 1 : 0.4)
-            .accessibilityLabel(model.isExporting ? "匯出中" : "匯出")
-            .accessibilityIdentifier("exportButton")
+            .disabled(model.currentPhoto == nil)
+            .accessibilityIdentifier("photoDetailDeleteButton")
+            .removeOrDeleteDialog(isPresented: $showsRemoveOrDelete,
+                                  title: RemoveOrDeleteDialog.title(recordName: model.recordName),
+                                  recordName: model.recordName,
+                                  onRemove: { Task { await model.removeFromRecord() } },
+                                  onDelete: { Task { await model.deletePhoto() } })
         }
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-    }
-
-    private var canExportCurrentPhoto: Bool {
-        model.currentPhoto.map(model.canExport) ?? false
     }
 
     @ViewBuilder
@@ -206,8 +124,9 @@ struct PhotoDetailView: View {
         }
     }
 
-    private var exportErrorBinding: Binding<Bool> {
-        Binding(get: { model.exportError != nil }, set: { if !$0 { model.dismissExportError() } })
+    /// Swiping the preview away is 取消.
+    private var exportBinding: Binding<BatchExportModel?> {
+        Binding(get: { model.export }, set: { if $0 == nil { model.export?.cancel() } })
     }
 
     /// Debug UI tests: `-UITestOpenExport` opens the 文字樣式 page of the photo
@@ -316,7 +235,7 @@ private struct ViewerCoach: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("這是 DaysCam 加上的天數")
                 .font(.system(size: 13, weight: .bold))
-            Text("照片本身不會改；按「匯出」才會另存一張印上這行字的新照片。想換字型、顏色或位置，按「文字樣式」。")
+            Text("照片本身不會改；按「匯出」才會另存一張印上這行字的新照片。想換字型、顏色或位置，在匯出時按「調整文字樣式」。")
                 .font(.system(size: 13))
                 .lineSpacing(2)
             Button(action: onDismiss) {
@@ -348,98 +267,5 @@ private struct ViewerCoach: View {
         .shadow(color: Color.black.opacity(0.25), radius: 12, x: 0, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("viewerCoach")
-    }
-}
-
-/// The first-export comparison (FR-22.3, D8 ③): the original next to the
-/// new photo with the overlay, then 匯出 or 先調整文字樣式. Either button
-/// counts as seen; swiping the sheet away does not, and exports nothing.
-private struct ExportIntroSheet: View {
-    @ObservedObject var model: PhotoDetailModel
-    /// Called when 先調整文字樣式 is chosen, before the sheet closes.
-    var onStyleFirst: () -> Void
-
-    @State private var original: UIImage?
-    @State private var exported: UIImage?
-    @Environment(\.displayScale) private var displayScale
-
-    private static let side: CGFloat = 150
-
-    var body: some View {
-        VStack(spacing: 14) {
-            VStack(spacing: 6) {
-                Text("匯出會另存一張新照片")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(CameraTheme.ink)
-                Text("原圖不動，新照片印上天數，存到「最近項目」。")
-                    .font(.system(size: 13.5))
-                    .foregroundColor(CameraTheme.inkSecondary)
-                    .multilineTextAlignment(.center)
-            }
-            HStack(alignment: .top, spacing: 14) {
-                figure(original, caption: "原圖（不變）")
-                figure(exported, caption: "匯出的新照片")
-            }
-            Button {
-                Task { await model.confirmExportIntro() }
-            } label: {
-                Text("匯出")
-                    .font(.system(size: 15, weight: .heavy))
-                    .foregroundColor(CameraTheme.inkOnAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(CameraTheme.accent))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("exportIntroExportButton")
-            Button {
-                onStyleFirst()
-                model.skipExportIntroForStyle()
-            } label: {
-                Text("先調整文字樣式")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(CameraTheme.ink)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(CameraTheme.fill))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("exportIntroStyleButton")
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 12)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(CameraTheme.background.ignoresSafeArea())
-        .presentationDetents([.fraction(0.75)])
-        .presentationDragIndicator(.visible)
-        .preferredColorScheme(.light)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("exportIntroSheet")
-        .task {
-            guard let photo = model.currentPhoto else { return }
-            let pixels = CGSize(width: Self.side * displayScale * 2, height: Self.side * displayScale * 2)
-            original = await model.plainImage(for: photo, targetSize: pixels)
-            exported = await model.pageImage(for: photo, targetSize: pixels)
-        }
-    }
-
-    private func figure(_ image: UIImage?, caption: String) -> some View {
-        VStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.black.opacity(0.08))
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.side * 1.25)
-            Text(caption)
-                .font(.system(size: 12))
-                .foregroundColor(CameraTheme.inkSecondary)
-        }
     }
 }

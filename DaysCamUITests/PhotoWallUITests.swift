@@ -213,7 +213,8 @@ final class PhotoWallUITests: XCTestCase {
     /// 7, 8: two ticked → the dialog names 2; cancel keeps everything;
     /// 從「…」移除 removes both without asking, toasts and leaves selection.
     func testDeleteDialogThenRemoveTwo() {
-        launchWall(photos: 5)
+        // The toast stays long enough for the wait to see it.
+        launchWall(photos: 5, arguments: ["-UITestLongToast"])
         enterSelection()
         cell(0).tap()
         waitForTitle(containing: "已選 1 張")
@@ -271,7 +272,7 @@ final class PhotoWallUITests: XCTestCase {
     /// #680-1, 3, 9: three photos held only by the record show the notice
     /// over the wall; 加進相簿 toasts and the notice goes, the wall unchanged.
     func testAlbumSyncNoticeAddsTheFallbackPhotos() {
-        launchWall(photos: 5, arguments: ["-UITestFallbackPhotos", "3"])
+        launchWall(photos: 5, arguments: ["-UITestFallbackPhotos", "3", "-UITestLongToast"])
         let notice = element("wallAlbumSyncNotice")
         XCTAssertTrue(notice.waitForExistence(timeout: 10), "1")
         XCTAssertTrue(app.staticTexts["3 張照片還不在「我的紀錄」相簿"].exists, "1")

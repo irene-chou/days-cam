@@ -24,16 +24,11 @@ final class PhotoDetailModel: ObservableObject {
     @Published var errorMessage: String?
     /// Nothing is left to show next: the view goes back to the wall.
     @Published private(set) var shouldDismiss = false
-    /// From pressing 匯出 until the result is known (FR-22.2).
-    @Published private(set) var isExporting = false
-    /// The original's download progress, 0...1, while exporting.
-    @Published private(set) var exportProgress: Double = 0
-    /// A failure to alert on (0.1 §7.3); `nil` once dismissed.
-    @Published private(set) var exportError: CaptureAlertError?
+    /// The export sheet of the photo on screen while it is up (#679); it
+    /// carries the progress and failures too.
+    @Published private(set) var export: BatchExportModel?
     /// The "已匯出" toast while it shows.
     @Published private(set) var toastState: ToastState?
-    /// The first-export comparison sheet is up (FR-22.3).
-    @Published var showsExportIntro = false
     /// The pointer bubble was dismissed (or the viewer left) in this session.
     @Published private(set) var coachDismissed = false
 
@@ -54,7 +49,7 @@ final class PhotoDetailModel: ObservableObject {
     private let renderer: TemplateRenderer
     private let bake: Bake
     private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
-    private let pipeline: PhotoExportPipeline
+    private let makeExport: (([RecordPhoto]) -> BatchExportModel)?
     private let tips: FirstRunTips
     private let scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
     private var subscription: AnyCancellable?
@@ -71,12 +66,12 @@ final class PhotoDetailModel: ObservableObject {
                                     font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
          },
          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
-         pipeline: PhotoExportPipeline? = nil,
+         makeExport: (([RecordPhoto]) -> BatchExportModel)? = nil,
          tips: FirstRunTips = .shared,
          scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, action in
              DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
          }) {
-        self.pipeline = pipeline ?? PhotoExportPipeline(library: library, calendar: calendar, renderer: renderer)
+        self.makeExport = makeExport
         self.tips = tips
         self.scheduleAfter = scheduleAfter
         self.profileID = profileID
@@ -165,10 +160,10 @@ final class PhotoDetailModel: ObservableObject {
         profile != nil && photo.creationDate != nil
     }
 
-    /// Whether 匯出 can be pressed for the photo on screen: one export at a
-    /// time (FR-22.2), and only with a date.
+    /// Whether 匯出 can be pressed for the photo on screen: no sheet already
+    /// up, and only with a date.
     var canStartExport: Bool {
-        !isExporting && (currentPhoto.map(canExport) ?? false)
+        export == nil && (currentPhoto.map(canExport) ?? false)
     }
 
     /// The name of the record, for the remove action's title.
@@ -190,10 +185,12 @@ final class PhotoDetailModel: ObservableObject {
     /// `source` with `profile`'s overlay for `photo`'s own moment baked in,
     /// the way the viewer and the batch preview show it; `source` itself
     /// when the photo has no date or baking fails.
+    /// With `hidesText` (隱藏文字, #679) only the film date stamp is drawn.
     static func markedImage(_ source: UIImage, photo: RecordPhoto, profile: CameraProfile, calendar: Calendar,
-                            renderer: TemplateRenderer, font: ResolvedOverlayFont, bake: @escaping Bake) async -> UIImage {
+                            renderer: TemplateRenderer, font: ResolvedOverlayFont, hidesText: Bool = false,
+                            bake: @escaping Bake) async -> UIImage {
         guard let date = photo.creationDate else { return source }
-        let text = renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        let text = hidesText ? "" : renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
         let filmDate = filmDateStamp(for: profile, creationDate: date, calendar: calendar)
         let style = profile.style
         let placement = profile.position
@@ -211,49 +208,24 @@ final class PhotoDetailModel: ObservableObject {
         return FilmDateStamp(text: FilmDateStamp.text(for: components), corner: profile.filmDateCorner)
     }
 
-    // MARK: - Export (FR-22.2, FR-22.3)
+    // MARK: - Export (#679)
 
-    /// The 匯出 button: the first time, the comparison sheet opens instead
-    /// (FR-22.3); afterwards the photo on screen is exported at once.
-    func requestExport() async {
-        guard canStartExport else { return }
-        guard tips.exportIntroSeen else {
-            showsExportIntro = true
-            return
-        }
-        await runExport()
+    /// 匯出: opens the export sheet over the photo on screen, the same sheet
+    /// as the wall's batch export with just this one photo.
+    func beginExport() {
+        guard canStartExport, let photo = currentPhoto, let makeExport else { return }
+        let model = makeExport([photo])
+        model.onFinish = { [weak self] outcome in self?.finishExport(outcome) }
+        export = model
     }
 
-    /// 匯出 on the comparison sheet: counts as seen, then exports.
-    func confirmExportIntro() async {
-        tips.markExportIntroSeen()
-        showsExportIntro = false
-        await runExport()
-    }
-
-    /// 先調整文字樣式 on the comparison sheet: counts as seen; the view opens
-    /// the style page.
-    func skipExportIntroForStyle() {
-        tips.markExportIntroSeen()
-        showsExportIntro = false
-    }
-
-    /// Dismisses the failure alert.
-    func dismissExportError() {
-        exportError = nil
-    }
-
-    private func runExport() async {
-        guard canStartExport, let profile, let photo = currentPhoto else { return }
-        isExporting = true
-        exportProgress = 0
-        let result = await pipeline.export(photo: photo, profile: profile, resolveFont: resolveFont) { [weak self] value in
-            Task { @MainActor in self?.exportProgress = value }
-        }
-        isExporting = false
-        switch result {
-        case .success:
-            exportProgress = 1
+    /// The sheet ended. A saved photo toasts and announces 已匯出; the viewer
+    /// stays on the same photo either way.
+    func finishExport(_ outcome: BatchExportModel.Outcome) {
+        export = nil
+        switch outcome {
+        case let .allSaved(count), let .stopped(count):
+            guard count > 0 else { return }
             announce(Self.exportedMessage)
             let toast = ToastState(message: Self.exportedMessage)
             toastState = toast
@@ -261,8 +233,8 @@ final class PhotoDetailModel: ObservableObject {
                 guard self?.toastState?.id == toast.id else { return }
                 self?.toastState = nil
             }
-        case let .failure(error):
-            exportError = CaptureAlertError(message: error.message, showsSettingsAction: error.showsSettingsAction)
+        case .cancelled, .keptFailures:
+            break
         }
     }
 
@@ -292,11 +264,6 @@ final class PhotoDetailModel: ObservableObject {
                                                        displayScale: 1, font: font)?.blockSize else { return nil }
         let origin = OverlayMetrics.origin(forBlockSize: block, in: imageSize, placement: profile.position)
         return CGRect(origin: origin, size: block)
-    }
-
-    /// The screen-sized image of `photo` as it is, for the comparison sheet.
-    func plainImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
-        await library.displayImage(id: photo.id, targetSize: targetSize)
     }
 
     // MARK: - Removing and deleting (FR-18.6)
