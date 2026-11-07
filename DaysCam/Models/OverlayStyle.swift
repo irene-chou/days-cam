@@ -95,11 +95,14 @@ enum OverlayOutline: String, Codable, CaseIterable {
     case box
     /// A square-cornered box with the same padding and color as `.box`.
     case squareBox
+    /// A box with the same padding and color as `.box`, its ends half circles
+    /// (corner radius half the box's height).
+    case capsuleBox
 
     /// Whether this outline draws a background box behind the text.
     var isBox: Bool {
         switch self {
-        case .box, .squareBox: return true
+        case .box, .squareBox, .capsuleBox: return true
         case .none, .stroke: return false
         }
     }
@@ -229,7 +232,7 @@ struct OverlayStyle: Equatable, Hashable, Codable {
     /// Visible stroke width of `.stroke` outside the glyphs, in points at a
     /// 17pt font; `strokeWidthRange`. Kept while another outline is chosen.
     var strokeWidth: Double
-    /// Horizontal padding inside `.box` or `.squareBox`, in points at a 17pt font;
+    /// Horizontal padding inside `.box`, `.squareBox` or `.capsuleBox`, in points at a 17pt font;
     /// `boxPaddingRange`. The vertical padding follows at
     /// `OverlayTheme.boxVerticalPaddingRatio`. Kept while another outline
     /// is chosen.

@@ -271,8 +271,8 @@ private struct OverlayLayout {
             switch decoration {
             case let .stroke(color, width):
                 block = stroked(block, textSize: textSize, color: color, width: width)
-            case let .backgroundBox(color, opacity, cornerRadius, insets):
-                block = boxed(block, color: color, opacity: opacity, cornerRadius: cornerRadius, insets: insets)
+            case let .backgroundBox(color, opacity, corner, insets):
+                block = boxed(block, color: color, opacity: opacity, corner: corner, insets: insets)
             case let .shadow(offset, blur, opacity, color):
                 block = shadowed(block, offset: offset, blur: blur, opacity: opacity, color: color)
             }
@@ -335,16 +335,21 @@ private struct OverlayLayout {
         }
     }
 
-    /// A rounded box behind `inner`, grown by the scaled insets.
+    /// A box behind `inner`, grown by the scaled insets.
     private func boxed(_ inner: DrawingBlock,
                        color: OverlayColor,
                        opacity: Double,
-                       cornerRadius: Double,
+                       corner: BoxCorner,
                        insets: OverlayInsets) -> DrawingBlock {
         let padX = CGFloat(insets.horizontal) * decorationScale
         let padY = CGFloat(insets.vertical) * decorationScale
         let size = CGSize(width: inner.size.width + padX * 2, height: inner.size.height + padY * 2)
-        let radius = CGFloat(cornerRadius) * decorationScale
+        let radius: CGFloat
+        switch corner {
+        case .square: radius = 0
+        case let .rounded(points): radius = CGFloat(points) * decorationScale
+        case .capsule: radius = size.height / 2 // Already actual size.
+        }
         let boxColor = uiColor(color, opacity: color.opacity * opacity)
         // The box covers its insets; only ink reaching past them spills out.
         let overflow = UIEdgeInsets(top: max(0, inner.overflow.top - padY),

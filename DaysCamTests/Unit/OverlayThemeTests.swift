@@ -107,9 +107,19 @@ final class OverlayThemeStyleTests: XCTestCase {
                 style.outline = .squareBox
                 let square = OverlayTheme(style: style)
                 XCTAssertEqual(square.decorations, [.backgroundBox(
-                    color: style.resolvedOutlineColor, opacity: 1, cornerRadius: 0,
+                    color: style.resolvedOutlineColor, opacity: 1, corner: .square,
                     insets: OverlayInsets(horizontal: padding, vertical: padding / 2))], "81.5")
             }
+        }
+    }
+
+    /// #692 5: each box outline maps to its own corner.
+    func testBoxOutlinesMapToTheirCorners() {
+        let expected: [OverlayOutline: BoxCorner] = [.box: .rounded(8), .squareBox: .square, .capsuleBox: .capsule]
+        for (outline, corner) in expected {
+            let style = OverlayStyle(outline: outline, outlineColor: blue, shadow: .none)
+            XCTAssertEqual(OverlayTheme(style: style).decorations,
+                           [.backgroundBox(color: blue, opacity: 1, corner: corner, insets: insets)], "\(outline)")
         }
     }
 
@@ -120,13 +130,13 @@ final class OverlayThemeStyleTests: XCTestCase {
     func testSolidBoxWithAutomaticColorUsesTheContrastColor() {
         let style = OverlayStyle(textColor: .white, outline: .box, outlineColor: nil, shadow: .none)
         XCTAssertEqual(OverlayTheme(style: style).decorations,
-                       [.backgroundBox(color: dark, opacity: 1.0, cornerRadius: 8, insets: insets)], "18.2")
+                       [.backgroundBox(color: dark, opacity: 1.0, corner: .rounded(8), insets: insets)], "18.2")
     }
 
     func testSolidBoxWithExplicitColorUsesIt() {
         let style = OverlayStyle(textColor: .white, outline: .box, outlineColor: blue, shadow: .none)
         XCTAssertEqual(OverlayTheme(style: style).decorations,
-                       [.backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets)], "18.3")
+                       [.backgroundBox(color: blue, opacity: 1.0, corner: .rounded(8), insets: insets)], "18.3")
     }
 
     func testNoOutlineAndNoShadowHasNoDecorations() {
@@ -136,8 +146,8 @@ final class OverlayThemeStyleTests: XCTestCase {
     func testEveryOutlineMatchesTheConstantTable() {
         let expected: [OverlayOutline: OverlayDecoration] = [
             .stroke: .stroke(color: blue, width: 2),
-            .box: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 8, insets: insets),
-            .squareBox: .backgroundBox(color: blue, opacity: 1.0, cornerRadius: 0, insets: insets)
+            .box: .backgroundBox(color: blue, opacity: 1.0, corner: .rounded(8), insets: insets),
+            .squareBox: .backgroundBox(color: blue, opacity: 1.0, corner: .square, insets: insets)
         ]
         for outline in OverlayOutline.allCases {
             let theme = OverlayTheme(style: OverlayStyle(outline: outline, outlineColor: blue, shadow: .none))
@@ -159,7 +169,7 @@ final class OverlayThemeStyleTests: XCTestCase {
                                                          boxPadding: padding, shadow: .none))
             let expected = OverlayInsets(horizontal: padding, vertical: padding / 2)
             XCTAssertEqual(theme.decorations,
-                           [.backgroundBox(color: blue, opacity: 1, cornerRadius: 8, insets: expected)],
+                           [.backgroundBox(color: blue, opacity: 1, corner: .rounded(8), insets: expected)],
                            "70.3 box \(padding)")
         }
         XCTAssertEqual(OverlayTheme.boxInsets(padding: 12), insets, "the 0.5 boxes' 12x6")
@@ -171,7 +181,7 @@ final class OverlayThemeStyleTests: XCTestCase {
         let auto = OverlayTheme(style: OverlayStyle(textColor: .white, outline: .box,
                                                     autoOutlineOpacity: 0.5, shadow: .none))
         XCTAssertEqual(auto.decorations,
-                       [.backgroundBox(color: dark.withOpacity(0.5), opacity: 1, cornerRadius: 8, insets: insets)])
+                       [.backgroundBox(color: dark.withOpacity(0.5), opacity: 1, corner: .rounded(8), insets: insets)])
         let opaqueAuto = OverlayTheme(style: OverlayStyle(textColor: .white, outline: .stroke, shadow: .none))
         XCTAssertEqual(opaqueAuto.decorations, [.stroke(color: dark, width: 2)], "automatic stays opaque by default")
     }
@@ -208,7 +218,7 @@ final class OverlayThemeStyleTests: XCTestCase {
         let stroke = OverlayTheme(style: OverlayStyle(outline: .stroke, outlineColor: faded, shadow: .none))
         XCTAssertEqual(stroke.decorations, [.stroke(color: faded, width: 2)], "69.5")
         let box = OverlayTheme(style: OverlayStyle(outline: .box, outlineColor: faded, shadow: .none))
-        XCTAssertEqual(box.decorations, [.backgroundBox(color: faded, opacity: 1, cornerRadius: 8, insets: insets)],
+        XCTAssertEqual(box.decorations, [.backgroundBox(color: faded, opacity: 1, corner: .rounded(8), insets: insets)],
                        "69.5: the box is drawn in the color's alpha")
     }
 

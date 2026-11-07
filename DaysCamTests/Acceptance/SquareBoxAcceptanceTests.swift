@@ -49,9 +49,9 @@ final class SquareBoxAcceptanceTests: XCTestCase {
         try Data("[\(records.joined(separator: ","))]".utf8).write(to: fileURL, options: [.atomic])
     }
 
-    private func boxDecoration(of style: OverlayStyle) -> (color: OverlayColor, opacity: Double, radius: Double, insets: OverlayInsets)? {
+    private func boxDecoration(of style: OverlayStyle) -> (color: OverlayColor, opacity: Double, corner: BoxCorner, insets: OverlayInsets)? {
         for decoration in OverlayTheme(style: style).decorations {
-            if case let .backgroundBox(color, opacity, radius, insets) = decoration { return (color, opacity, radius, insets) }
+            if case let .backgroundBox(color, opacity, corner, insets) = decoration { return (color, opacity, corner, insets) }
         }
         return nil
     }
@@ -59,7 +59,7 @@ final class SquareBoxAcceptanceTests: XCTestCase {
     /// 81.3 / decoration numbers: for every padding and outline color (automatic, opaque, translucent),
     /// `squareBox` equals `box` except the radius is 0; `isBox` is true for both only.
     func testSquareBoxIsTheRoundedBoxWithRadiusZero() throws {
-        XCTAssertEqual(OverlayOutline.allCases.filter(\.isBox), [.box, .squareBox])
+        XCTAssertEqual(OverlayOutline.allCases.filter(\.isBox), [.box, .squareBox, .capsuleBox])
         let colors: [OverlayColor?] = [nil, .black, OverlayColor(hex: "#0A84FF"), OverlayColor(hex: "#FF3B30F2"),
                                        OverlayColor(hex: "#12345680")]
         for padding in [0.0, 1, 12, 24] {
@@ -70,8 +70,8 @@ final class SquareBoxAcceptanceTests: XCTestCase {
                     let rounded = try XCTUnwrap(boxDecoration(of: style))
                     style.outline = .squareBox
                     let square = try XCTUnwrap(boxDecoration(of: style))
-                    XCTAssertEqual(square.radius, 0)
-                    XCTAssertEqual(rounded.radius, OverlayTheme.boxCornerRadius)
+                    XCTAssertEqual(square.corner, .square)
+                    XCTAssertEqual(rounded.corner, .rounded(OverlayTheme.boxCornerRadius))
                     XCTAssertEqual(square.color, rounded.color, "color \(String(describing: color)) pad \(padding)")
                     XCTAssertEqual(square.opacity, rounded.opacity)
                     XCTAssertEqual(square.insets, rounded.insets, "padding \(padding)")

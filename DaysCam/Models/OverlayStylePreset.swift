@@ -46,6 +46,16 @@ enum OverlayStylePreset: String, CaseIterable, Codable {
         }
     }
 
+    /// The box shape this look gives its solid and translucent box states
+    /// (#692): `squareBox`, `box` (corner 8) or `capsuleBox`.
+    var boxShape: OverlayOutline {
+        switch self {
+        case .poster, .outline, .magazine: return .squareBox
+        case .classic, .caption, .note, .retro: return .box
+        case .handwriting, .cute, .neon: return .capsuleBox
+        }
+    }
+
     /// The look as a style in `defaultTextColor` at size 100. Every field
     /// but `textColor` and `sizeScale` is what `OverlayStyle.apply` writes.
     var style: OverlayStyle {
@@ -88,9 +98,9 @@ enum OverlayStylePreset: String, CaseIterable, Codable {
 enum OverlayBoxState: CaseIterable {
     /// The outline the look's table gives it.
     case base
-    /// `.box`, automatic color at full opacity, padding 12.
+    /// The look's `boxShape`, automatic color at full opacity, padding 12.
     case solid
-    /// `.box`, automatic color at 0.45, padding 12.
+    /// The look's `boxShape`, automatic color at 0.45, padding 12.
     case translucent
 
     /// The state one press of the button leads to.
@@ -135,24 +145,37 @@ extension OverlayStyle {
     /// it equals a box state, as `caption`'s translucent box does.
     func boxState(for preset: OverlayStylePreset) -> OverlayBoxState? {
         if hasOutline(of: preset.style) { return .base }
-        guard outline == .box, outlineColor == nil, boxPadding == Self.defaultBoxPadding else { return nil }
+        guard outline == preset.boxShape, outlineColor == nil, boxPadding == Self.defaultBoxPadding else { return nil }
         return OverlayBoxState.allCases.first { $0.boxOpacity == autoOutlineOpacity }
     }
 
     /// Moves the outline to the next box state of `preset`: base, solid,
     /// translucent, base. Changes only the outline fields. Does nothing when
-    /// the outline is in none of the states, as for a custom style.
+    /// the outline is in none of the states, as for a custom style. A state
+    /// that would look the same as the current one is skipped, so `poster`,
+    /// whose own outline is the solid box, cycles base, translucent, base.
     mutating func cycleBoxState(for preset: OverlayStylePreset) {
         guard let state = boxState(for: preset) else { return }
-        let next = state.next
-        if let opacity = next.boxOpacity {
-            outline = .box
-            outlineColor = nil
-            autoOutlineOpacity = opacity
-            boxPadding = Self.defaultBoxPadding
-        } else {
-            copyOutline(from: preset.style)
+        var next = state.next
+        if hasOutline(of: Self.outlineAfter(next, of: preset, from: self)) {
+            next = next.next
         }
+        self = Self.outlineAfter(next, of: preset, from: self)
+    }
+
+    /// `style` with its outline fields moved to `state` of `preset`.
+    private static func outlineAfter(_ state: OverlayBoxState, of preset: OverlayStylePreset,
+                                     from style: OverlayStyle) -> OverlayStyle {
+        var result = style
+        if let opacity = state.boxOpacity {
+            result.outline = preset.boxShape
+            result.outlineColor = nil
+            result.autoOutlineOpacity = opacity
+            result.boxPadding = defaultBoxPadding
+        } else {
+            result.copyOutline(from: preset.style)
+        }
+        return result
     }
 
     /// Applies `preset`'s font, weight, outline and shadow; keeps the size.

@@ -68,7 +68,7 @@ final class SquareBoxViewfinderParityAcceptanceTests: XCTestCase {
     /// 81.2: viewfinder and photo agree on box rectangle (within 2px at 3x) and on corner shape.
     func testViewfinderAndBakedSquareBoxShareGeometry() throws {
         for padding in [6.0, 12, 24] {
-            for (outline, expectedCorner) in [(OverlayOutline.squareBox, true), (.box, false)] {
+            for (outline, expectedCorner) in [(OverlayOutline.squareBox, true), (.box, false), (.capsuleBox, false)] {
                 let style = OverlayStyle(outline: outline, outlineColor: .black, boxPadding: padding, shadow: .none)
                 let live = box(try viewfinder(style: style, text: "第 10 天"))
                 let photo = box(try baked(style: style, text: "第 10 天"))
