@@ -148,7 +148,7 @@ struct BatchExportSheet: View {
     /// 隱藏文字 over 調整文字樣式 (#679): plain text buttons alike. While the
     /// text is hidden the first reads 顯示文字 and the style page is off.
     private var textOptions: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             textButton(model.hidesText ? "顯示文字" : "隱藏文字", identifier: "exportHideTextButton") {
                 model.toggleHidesText()
             }
@@ -159,10 +159,16 @@ struct BatchExportSheet: View {
     }
 
     private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundColor(CameraTheme.active)
-            .accessibilityIdentifier(identifier)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(CameraTheme.active)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(identifier)
     }
 
     private func navButton(_ systemImage: String, label: String, identifier: String,
