@@ -68,16 +68,18 @@ final class PhotoDetailModelTests: XCTestCase {
     /// no day count, date, name or film date stamp is drawn on it, even for a
     /// record with the film date on.
     func testPageImageIsThePlainOriginal() async throws {
-        var (store, profile) = try makeStore()
+        let (store, made) = try makeStore()
+        var profile = made
         profile.showFilmDate = true
         try store.updateAndWait(profile)
         let lib = library()
         let model = makeModel(store: store, profile: profile, library: lib)
         let photo = try XCTUnwrap(model.currentPhoto)
         let size = CGSize(width: 200, height: 300)
-        let page = try XCTUnwrap(await model.pageImage(for: photo, targetSize: size))
-        let original = try XCTUnwrap(await lib.displayImage(id: photo.id, targetSize: size))
-        XCTAssertEqual(page.pngData(), original.pngData())
+        let page = await model.pageImage(for: photo, targetSize: size)
+        let original = await lib.displayImage(id: photo.id, targetSize: size)
+        XCTAssertNotNil(page)
+        XCTAssertEqual(page?.pngData(), original?.pngData())
     }
 
     /// 3: a start date after the photo reads 前 N 天 in the header, the same
