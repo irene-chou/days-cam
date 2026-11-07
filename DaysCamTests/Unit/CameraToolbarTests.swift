@@ -8,10 +8,8 @@ final class CameraToolbarTests: XCTestCase {
         XCTAssertEqual(CameraToolbar.buttonSize, 44)
     }
 
-    /// 655-1: the round keys at the top right fit their 44pt tap targets,
-    /// 8pt apart.
+    /// 655-1: the round keys at the top right are 8pt apart (no disc, #700).
     func test_655_1_roundKeysFitTheirTapTargets() {
-        XCTAssertLessThanOrEqual(CameraToolbar.roundKeyDiameter, CameraToolbar.buttonSize)
         XCTAssertEqual(CameraToolbar.roundKeySpacing, 8)
     }
 
