@@ -13,6 +13,7 @@ struct DaysCamApp: App {
     private let makeCameraModel: @MainActor (UUID) -> CameraScreenModel
 
     init() {
+        Self.applyUITestCaptureRatio()
         let profileStore = Self.makeProfileStore()
         let library = Self.makeRecordAlbumLibrary(for: profileStore)
         styleCenter = StyleEditingCenter(profileStore: profileStore,
@@ -293,6 +294,24 @@ struct DaysCamApp: App {
         return UITestFontLibrary.fromLaunchArguments(ProcessInfo.processInfo.arguments)
         #else
         return nil
+        #endif
+    }
+
+    /// Debug UI tests start the camera at 3:4, since the ratio is remembered
+    /// across launches (#712); `-UITestCaptureRatio <raw value>` starts it at
+    /// another ratio and `-UITestKeepCaptureRatio` keeps what is stored (to
+    /// check it survives a relaunch).
+    private static func applyUITestCaptureRatio() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains(where: { $0.hasPrefix("-UITest") }),
+              !arguments.contains("-UITestKeepCaptureRatio") else { return }
+        var ratio = CaptureAspectRatio.threeByFour
+        if let flag = arguments.firstIndex(of: "-UITestCaptureRatio"), arguments.indices.contains(flag + 1),
+           let requested = CaptureAspectRatio(rawValue: arguments[flag + 1]) {
+            ratio = requested
+        }
+        CaptureSettingsStore().setAspectRatio(ratio)
         #endif
     }
 

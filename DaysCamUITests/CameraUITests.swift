@@ -1,8 +1,8 @@
 import XCTest
 
-/// #621: the slimmed camera (acceptance 6, 7, 8, 11) and #655: the D9
-/// layout with the record switcher and 「返回圖庫」 (acceptance 1–3, 8, 9,
-/// 12, 13). With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
+/// #621: the slimmed camera (acceptance 6, 7, 8, 11), #655: the record
+/// switcher and 「返回圖庫」 (acceptance 1–3, 8, 9, 12, 13) and #712: the 1.x
+/// layout (acceptance 1). With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
 /// B′ screenshots are also written there for the PR.
 final class CameraUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -94,25 +94,21 @@ final class CameraUITests: XCTestCase {
         return name
     }
 
-    /// 6 (#655-1, #656): no 「第 N 天」 HUD ever; with 疊字預覽 off no overlay
-    /// or film date on the viewfinder either (with it on they are drawn,
-    /// `CameraOverlayPreviewUITests`).
-    func test_621_6_viewfinderShowsNoOverlayOrHUD() {
-        launchCamera(extra: ["-UITestOverlayPreviewOff"])
+    /// 6 (#655-1): no 「第 N 天」 HUD ever (the overlay itself is always
+    /// drawn since #712, `CameraOverlayPreviewUITests`).
+    func test_621_6_viewfinderShowsNoHUD() {
+        launchCamera()
         XCTAssertTrue(switcher.waitForExistence(timeout: 5))
         XCTAssertFalse(element("cameraDayHUD").exists, "655-1 no HUD")
-        XCTAssertFalse(element("overlayText").exists, "6 no overlay")
-        XCTAssertFalse(element("overlayTextDraggable").exists, "6 no overlay")
-        XCTAssertFalse(element("filmDateStamp").exists, "6 no film date")
     }
 
-    /// 7: no ratio, tone, profile menu or panel entry, in the bar or the
-    /// tools capsule.
-    func test_621_7_cameraHasNoRatioToneProfileOrPanel() {
+    /// 7: no tone, profile menu or old panel entry, in the bar or the tools
+    /// capsule; the ratio key is back since #712.
+    func test_621_7_cameraHasNoToneProfileOrOldPanel() {
         launchCamera()
         XCTAssertFalse(app.buttons["疊字設定"].exists, "7 panel entry")
         XCTAssertFalse(element("panelCollapseButton").exists, "7 panel")
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '比例'")).firstMatch.exists, "7 ratio")
+        XCTAssertTrue(element("cameraRatioButton").exists, "712-1 the ratio key is back")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '設定檔'")).firstMatch.exists, "7 profile menu")
         app.buttons["相機設定"].tap()
         XCTAssertTrue(app.buttons["閃光燈"].waitForExistence(timeout: 5), "7 the capsule is still there")
@@ -138,45 +134,55 @@ final class CameraUITests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
-    /// 655-1, 655-2, 655-12 (D9): an empty slot at the top left, the switcher
-    /// centered, the tools toggle and flip at the top right with flip
-    /// outermost; 「返回圖庫」 and the shutter along the bottom, nothing at the
-    /// right; the capsule opens under the toggle.
-    func test_655_1_2_12_layoutFollowsD9() {
+    /// 712-1 (with 655-1, 655-2, 655-12): the tools toggle at the top left,
+    /// the switcher centered, the ratio key and flip at the top right with
+    /// flip outermost; 「返回圖庫」, the shutter and the 文字樣式 key along the
+    /// bottom; the capsule's four keys open under the toggle.
+    func test_712_1_layoutIsBackTo1x() {
         launchCamera()
         let tools = app.buttons["相機設定"]
+        let ratio = element("cameraRatioButton")
         let flip = app.buttons["翻轉鏡頭"]
         let shutter = app.buttons["快門"]
-        for item in [switcher, tools, flip, thumbnail, shutter] {
+        let style = element("cameraStyleButton")
+        for item in [switcher, tools, ratio, flip, thumbnail, shutter, style] {
             XCTAssertTrue(item.waitForExistence(timeout: 5), "\(item)")
         }
         XCTAssertEqual(switcher.label, "切換紀錄")
         XCTAssertFalse(element("cameraCloseButton").exists, "655-1 no xmark")
-        XCTAssertFalse(app.buttons["回到照片牆"].exists, "655-1 no xmark")
-        XCTAssertFalse(element("cameraDayHUD").exists, "655-1 no HUD")
+        XCTAssertFalse(element("overlayPreviewToggle").exists, "712-6 no 疊字預覽 switch")
 
         XCTAssertEqual(switcher.frame.midX, app.frame.midX, accuracy: 2, "655-1 the switcher is centered")
-        XCTAssertGreaterThan(switcher.frame.minX, 12 + 44, "655-1 the left slot stays free")
-        XCTAssertGreaterThan(tools.frame.minX, switcher.frame.maxX, "655-1 tools right of the switcher")
-        XCTAssertGreaterThan(flip.frame.minX, tools.frame.maxX, "655-1 flip outermost")
-        XCTAssertEqual(tools.frame.midY, switcher.frame.midY, accuracy: 2, "655-1 one top row")
-        XCTAssertEqual(flip.frame.midY, switcher.frame.midY, accuracy: 2, "655-1 one top row")
+        XCTAssertEqual(tools.frame.minX, 12, accuracy: 2, "712-1 the toggle at the top left")
+        XCTAssertLessThan(tools.frame.maxX, switcher.frame.minX, "712-1 toggle left of the switcher")
+        XCTAssertGreaterThan(ratio.frame.minX, switcher.frame.maxX, "712-1 ratio right of the switcher")
+        XCTAssertGreaterThan(flip.frame.minX, ratio.frame.maxX, "712-1 flip outermost")
+        XCTAssertEqual(flip.frame.maxX, app.frame.maxX - 12, accuracy: 2, "712-1 flip at the right edge")
+        for item in [tools, ratio, flip] {
+            XCTAssertEqual(item.frame.midY, switcher.frame.midY, accuracy: 2, "712-1 one top row: \(item)")
+            XCTAssertEqual(item.frame.width, 44, accuracy: 1, "712-1 44pt: \(item)")
+        }
 
         XCTAssertEqual(thumbnail.label, "返回圖庫", "655-2")
         XCTAssertLessThan(thumbnail.frame.maxX, shutter.frame.minX, "655-2 thumbnail left of the shutter")
-        XCTAssertGreaterThan(thumbnail.frame.midY, switcher.frame.maxY, "655-2 at the bottom")
-        let rightOfShutter = app.buttons.allElementsBoundByIndex.filter {
-            $0.isHittable && $0.frame.minX > shutter.frame.maxX && abs($0.frame.midY - shutter.frame.midY) < 40
-        }
-        XCTAssertTrue(rightOfShutter.isEmpty, "655-2 nothing right of the shutter: \(rightOfShutter)")
+        XCTAssertGreaterThan(style.frame.minX, shutter.frame.maxX, "712-1 the 文字樣式 key right of the shutter")
+        XCTAssertEqual(style.frame.midY, shutter.frame.midY, accuracy: 2, "712-1 one bottom row")
+        XCTAssertEqual(app.frame.maxX - style.frame.midX, thumbnail.frame.midX, accuracy: 2,
+                       "712-1 the side keys mirror each other")
 
         tools.tap()
         let flash = app.buttons["閃光燈"]
         XCTAssertTrue(flash.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(flash.frame.minY, tools.frame.maxY, "655-12 the capsule opens below the toggle")
-        // #687 put 水平儀 after 格線, so it is the capsule's rightmost key.
-        let level = app.descendants(matching: .any).matching(identifier: "levelToggle").firstMatch
-        XCTAssertEqual(level.frame.maxX, tools.frame.maxX, accuracy: 8, "655-12 lined up under the toggle")
+        let timer = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '計時器'")).firstMatch
+        let grid = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '格線'")).firstMatch
+        let level = element("levelToggle")
+        for key in [flash, timer, grid, level] {
+            XCTAssertTrue(key.exists, "712-1 four keys: \(key)")
+            XCTAssertGreaterThan(key.frame.minY, tools.frame.maxY, "712-1 the capsule opens below the toggle")
+        }
+        XCTAssertEqual(flash.frame.minX, tools.frame.minX, accuracy: 8, "712-1 lined up under the toggle")
+        XCTAssertLessThan(flash.frame.maxX, timer.frame.minX + 1)
+        XCTAssertLessThan(grid.frame.maxX, level.frame.minX + 1)
         shot("camera-tools-open")
     }
 
@@ -294,6 +300,7 @@ final class CameraUITests: XCTestCase {
         launchCamera()
         assertOnScreen(switcher, "switcher")
         assertOnScreen(app.buttons["相機設定"], "tools")
+        assertOnScreen(element("cameraRatioButton"), "ratio")
         assertOnScreen(app.buttons["翻轉鏡頭"], "flip")
         assertOnScreen(app.buttons["快門"], "shutter")
         assertOnScreen(thumbnail, "返回圖庫")

@@ -196,7 +196,8 @@ final class CameraScreenModelTests: XCTestCase {
     }
 
     private func destination(of record: CameraProfile) -> CameraScreenModel.CaptureDestination {
-        CameraScreenModel.CaptureDestination(profileID: record.id, albumTitle: record.name)
+        CameraScreenModel.CaptureDestination(profileID: record.id, albumTitle: record.name,
+                                             aspectRatio: .threeByFour)
     }
 
     /// Builds a model for `record` (the store's first record when `nil`).

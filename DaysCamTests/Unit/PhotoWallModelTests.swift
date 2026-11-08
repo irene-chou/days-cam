@@ -324,7 +324,7 @@ final class PhotoWallModelTests: XCTestCase {
         library.addAsset(asset("new", 1, 10))
         library.visibleIDs?.insert("new")
         CameraScreenModel.record(RecordSaveOutcome(assetID: "new", albumID: nil),
-                                 savedFor: .init(profileID: first.id, albumTitle: first.name),
+                                 savedFor: .init(profileID: first.id, albumTitle: first.name, aspectRatio: .threeByFour),
                                  albumAtSave: nil, in: store, reportWriteFailure: { XCTFail("\($0)") })
         firstWall.reload()
         secondWall.reload()
