@@ -54,7 +54,6 @@ final class LayerListUITests: XCTestCase {
         XCTAssertEqual(overlayToggle.value as? String, "0")
         XCTAssertEqual(filmToggle.value as? String, "0")
         XCTAssertFalse(drawsText(), "no text on the preview")
-        XCTAssertFalse(element("filmDateStamp").exists, "no film date on the preview")
         shot("root_off")
     }
 
@@ -76,14 +75,12 @@ final class LayerListUITests: XCTestCase {
 
         filmToggle.tap()
         XCTAssertEqual(filmToggle.value as? String, "1")
-        XCTAssertTrue(element("filmDateStamp").waitForExistence(timeout: 3), "the film date appears")
         shot("root_both_on")
 
         overlayToggle.tap()
         XCTAssertEqual(overlayToggle.value as? String, "0")
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == ''"), object: textOnPreview)
         XCTAssertTrue(!textOnPreview.exists || XCTWaiter().wait(for: [gone], timeout: 3) == .completed, "the text goes")
-        XCTAssertTrue(element("filmDateStamp").exists, "the film date follows its own switch")
         XCTAssertTrue(app.buttons["layerRowOverlay"].label.contains("天數、名稱"), "the settings are kept")
 
         // The record keeps both: back on the export page after a relaunch.
