@@ -111,7 +111,10 @@ final class TapSeekSliderUITests: XCTestCase {
         let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
         XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
 
-        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5))
+        // Past the end, as a finger would: a press a point or two beside the
+        // thumb's centre keeps that offset, so stopping right on the edge can
+        // land a step short (#708: 155% on CI and 1 in 4 on rinclaw).
+        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5)).withOffset(CGVector(dx: 20, dy: 0))
         let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: first), dy: 0.5))
         thumbNow.press(forDuration: 0.2, thenDragTo: end)
         XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")

@@ -174,8 +174,9 @@ final class CameraUITests: XCTestCase {
         let flash = app.buttons["閃光燈"]
         XCTAssertTrue(flash.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(flash.frame.minY, tools.frame.maxY, "655-12 the capsule opens below the toggle")
-        let grid = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '格線'")).firstMatch
-        XCTAssertEqual(grid.frame.maxX, tools.frame.maxX, accuracy: 8, "655-12 lined up under the toggle")
+        // #687 put 水平儀 after 格線, so it is the capsule's rightmost key.
+        let level = app.descendants(matching: .any).matching(identifier: "levelToggle").firstMatch
+        XCTAssertEqual(level.frame.maxX, tools.frame.maxX, accuracy: 8, "655-12 lined up under the toggle")
         shot("camera-tools-open")
     }
 
