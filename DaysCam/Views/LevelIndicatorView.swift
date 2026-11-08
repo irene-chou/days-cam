@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The level's line in the middle of the viewfinder (#687-4): three short
 /// segments, the middle one tilting with the phone, which join into one
-/// `accent` line when level. Draws only; `ViewfinderLevelModel` decides what
+/// `focusYellow` line when level. Draws only; `ViewfinderLevelModel` decides what
 /// shows. Takes no touches.
 struct LevelIndicatorView: View {
     let display: LevelDisplay
@@ -45,7 +45,7 @@ struct LevelIndicatorView: View {
                 }
             }
         }
-        .foregroundColor(isLevel ? CameraTheme.accent : .white.opacity(0.8))
+        .foregroundColor(isLevel ? CameraTheme.focusYellow : .white.opacity(0.8))
         .shadow(color: .black.opacity(0.35), radius: 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("水平儀")

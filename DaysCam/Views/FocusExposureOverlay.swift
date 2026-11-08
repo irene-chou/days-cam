@@ -12,7 +12,7 @@ struct FocusExposureOverlay: View {
     static let squareSize: CGFloat = 70
     private static let sunSize: CGFloat = 22
     private static let sunGap: CGFloat = 14
-    private static let yellow = Color(red: 1, green: 0.84, blue: 0.04)
+    private static let yellow = CameraTheme.focusYellow
 
     var body: some View {
         ZStack(alignment: .top) {

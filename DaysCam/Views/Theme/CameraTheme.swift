@@ -30,6 +30,8 @@ enum CameraTheme {
     static let fill = Color("fill")
     /// The shutter's inner circle, and other "on" accents (`#FFC27A`).
     static let accent = Color("accent")
+    /// The focus frame's yellow, shared with the level line when level (#711).
+    static let focusYellow = Color(red: 1, green: 0.84, blue: 0.04)
     /// Selected/active state — the toolbar icons a tool being on turns this
     /// color (`#C9772A`).
     static let active = Color("active")
