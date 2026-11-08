@@ -239,18 +239,18 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["週"].isSelected && app.buttons["天"].isSelected, "#558.3 ticks kept")
     }
 
-    /// The (c) shot: the 文字內容 hint on its heading line.
-    func testContentHintShot() {
+    /// #713-6 shot: 天數／日期／名稱 all off, the viewfinder prints nothing.
+    func testAllContentSwitchesOffShot() {
         launch(startDay: "2023-08-05")
-        toggle("日期").tap()
-        toggle("天數").tap()
-        XCTAssertFalse(isOn(toggle("天數")))
-        toggle("日期").tap()
-        XCTAssertTrue(isOn(toggle("日期")), "springs back")
-        let hint = app.staticTexts["contentSwitchHint"]
-        let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: hint)], timeout: 2), .completed)
-        shot("558.12c_content_hint")
+        let overlay = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5), "the text is there before")
+        set("天數", on: false)
+        set("日期", on: false)
+        set("名稱", on: false)
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertTrue(!overlay.exists || overlay.label.isEmpty, "#713-3 viewfinder draws nothing")
+        XCTAssertFalse(app.staticTexts["至少顯示天數或日期"].exists, "#713-4 no hint")
+        shot("713.6_content_all_off")
     }
 
     /// A future start date with 歲 on: no countdown note under the

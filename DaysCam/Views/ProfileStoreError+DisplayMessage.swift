@@ -37,8 +37,6 @@ extension CameraProfileValidationError {
             return "名稱過長（\(length) 字），上限 \(CameraProfile.maximumNameLength) 字"
         case .startDateMissingComponents, .startDateHasExtraComponents, .startDateNotARealDate:
             return "起始日不正確"
-        case .displaySwitchesAllOff:
-            return "至少需要顯示天數或日期其中一項"
         case .displayUnitsEmpty:
             return "至少要勾選一個天數單位"
         // TASK-17: 0.2 style and position invariants (PRD 0.2 §4.1). The 0.1 UI

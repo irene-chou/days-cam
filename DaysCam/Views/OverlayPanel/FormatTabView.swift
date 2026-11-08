@@ -49,19 +49,11 @@ struct FormatTabView: View {
 
     /// The unit whose checkbox is bouncing right now (TASK-108).
     @State private var bouncingUnit: DisplayUnit?
-    /// The content switch bouncing right now (TASK-108).
-    @State private var bouncingSwitch: DisplaySettingsModel.Rejection.ContentSwitch?
     /// The refusal whose hint is showing under the unit row, if any (the
     /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
     private var unitHint: DisplaySettingsModel.Rejection? {
         guard let hint = model.displaySettings.visibleHint else { return nil }
         if case .lastUnit = hint.kind { return hint }
-        return nil
-    }
-    /// The refusal whose hint is showing under the display-content row, if any.
-    private var contentHint: DisplaySettingsModel.Rejection? {
-        guard let hint = model.displaySettings.visibleHint else { return nil }
-        if case .lastContentSwitch = hint.kind { return hint }
         return nil
     }
 
@@ -70,7 +62,7 @@ struct FormatTabView: View {
         // 戳記, each a heading over a white card whose rows all put the words
         // on the left and the control on the right.
         VStack(alignment: .leading, spacing: 0) {
-            heading("文字內容", hint: contentHint, hintIdentifier: "contentSwitchHint", topPadding: 0)
+            heading("文字內容", topPadding: 0)
             contentCard
             // Collapsed, heading and all, while the day count is off
             // (TASK-141 #485): the switch that brings it back sits above, so
@@ -98,9 +90,9 @@ struct FormatTabView: View {
         // #106 R2): each tab owns its own padding rather than a generic one.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
-        // A refused change (the last unit, the last of 天數／日期) bounces
+        // A refused change (the last unit) bounces
         // the control, taps the haptic engine and shows a hint until the
-        // next tap here (TASK-108 #422, TASK-141 #485; FR-11.2／FR-11.3). On
+        // next tap here (TASK-108 #422, TASK-141 #485; FR-11.3). On
         // the simulator the haptic is simply absent (108.6).
         .onChange(of: model.displaySettings.lastRejection) { _, rejection in
             guard let rejection else { return }
@@ -124,14 +116,11 @@ struct FormatTabView: View {
         switch rejection.kind {
         case .lastUnit(let unit):
             withAnimation(bounce) { bouncingUnit = unit }
-        case .lastContentSwitch(let contentSwitch):
-            withAnimation(bounce) { bouncingSwitch = contentSwitch }
         }
         UIAccessibility.post(notification: .announcement, argument: rejection.hint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             withAnimation(.easeOut(duration: 0.15)) {
                 bouncingUnit = nil
-                bouncingSwitch = nil
             }
         }
     }
@@ -184,20 +173,17 @@ struct FormatTabView: View {
         Rectangle().fill(Self.rowSeparator).frame(height: 1)
     }
 
-    // MARK: - 文字內容 (FR-11.1, FR-11.2)
+    // MARK: - 文字內容 (FR-11.1)
 
     private var contentCard: some View {
-        // None is ever disabled: the last of 天數／日期 refuses to turn off
-        // in the model, so the switch springs back (107.3; TASK-108 adds
-        // the feedback).
+        // Any switch may be turned off, all three included: the overlay is
+        // then empty (#713).
         card(identifier: "contentCard") {
-            switchRow("天數", isOn: model.displaySettings.profile.showDayCount,
-                      isBouncing: bouncingSwitch == .dayCount) {
+            switchRow("天數", isOn: model.displaySettings.profile.showDayCount) {
                 model.displaySettings.setShowDayCount($0)
             }
             rowDivider
-            switchRow("日期", isOn: model.displaySettings.profile.showDate,
-                      isBouncing: bouncingSwitch == .date) {
+            switchRow("日期", isOn: model.displaySettings.profile.showDate) {
                 model.displaySettings.setShowDate($0)
             }
             rowDivider
@@ -215,7 +201,6 @@ struct FormatTabView: View {
     /// ends on the card's inner edge (#558).
     private func switchRow(_ label: String,
                            isOn: Bool,
-                           isBouncing: Bool = false,
                            onChange: @escaping (Bool) -> Void) -> some View {
         HStack(spacing: 8) {
             // The switch carries the label for VoiceOver, so the visible
@@ -229,7 +214,6 @@ struct FormatTabView: View {
             Toggle(label, isOn: Binding(get: { isOn }, set: onChange))
                 .tint(CameraTheme.accentControl)
                 .labelsHidden()
-                .scaleEffect(isBouncing ? 1.12 : 1)
         }
         .frame(minHeight: Self.rowMinHeight)
     }

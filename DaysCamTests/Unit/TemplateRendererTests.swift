@@ -69,6 +69,19 @@ final class TemplateRendererTests: XCTestCase {
         renderer.render(profile: subject, capturedAt: capturedAt, calendar: calendar)
     }
 
+    // MARK: - #713 天數、日期、名稱可同時關
+
+    /// #713-3: only the name on prints the name; all three off prints nothing.
+    func testNameOnlyAndAllOffRender() throws {
+        let capturedAt = try referenceCapture()
+        XCTAssertEqual(render(profile(showDayCount: false, showDate: false, showName: true), at: capturedAt), "小寶")
+        XCTAssertEqual(render(profile(showDayCount: false, showDate: false, showName: false), at: capturedAt), "", "#713-3 empty")
+        XCTAssertEqual(render(profile(showDayCount: false, showDate: true, showName: true), at: capturedAt), "2026.03.20 小寶")
+        XCTAssertEqual(renderer.render(profile: profile(showDayCount: false, showDate: false, showName: false),
+                                       capturedAt: capturedAt, calendar: DateFixture.taipei, moment: .photo),
+                       "", "#713-3 also at the photo moment")
+    }
+
     // MARK: - A-1 (4.1 ... 4.8) the eight legal unit pairs
 
     func testEightLegalUnitPairsRenderExactly() throws {

@@ -1,8 +1,8 @@
 import XCTest
 
 /// TASK-108 (#422): the last checked unit is not dimmed; tapping it bounces,
-/// shows a hint and moves nothing; the last of 天數／日期 gets the same
-/// treatment. TASK-141 (#485): the hint stays until the next tap.
+/// shows a hint and moves nothing; 天數／日期／名稱 may all be off with no
+/// hint (#713). TASK-141 (#485): the hint stays until the next tap.
 final class LastUnitFeedbackUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -18,7 +18,6 @@ final class LastUnitFeedbackUITests: XCTestCase {
     }
 
     private var unitHint: XCUIElement { app.staticTexts["unitHint"] }
-    private var contentHint: XCUIElement { app.staticTexts["contentSwitchHint"] }
     private func toggle(_ name: String) -> XCUIElement {
         let s = app.switches[name]
         return s.exists ? s : app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch
@@ -80,30 +79,24 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertNotEqual(unitHint.label, "至少保留一個單位", "108.3 no hint")
     }
 
-    /// 108.4: turning off the only one of 天數／日期 springs back with its
-    /// own hint, both ways.
-    func testLastContentSwitchSpringsBackWithAHint() {
-        let switchFrames = ["天數", "日期", "名稱"].map { toggle($0).frame }
-        toggle("天數").tap()
-        XCTAssertTrue(isOn(toggle("天數")), "108.4 springs back")
-        let shown = NSPredicate(format: "label == '至少顯示天數或日期'")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 10), .completed, "108.4 the hint appeared")
-        assertHint(contentHint, sitsOnHeading: "文字內容", "#558.7")
-        for (name, before) in zip(["天數", "日期", "名稱"], switchFrames) {
-            XCTAssertEqual(toggle(name).frame.minY, before.minY, accuracy: 1, "#558.7 \(name) did not move")
+    /// #713-4: turning off the last of 天數／日期／名稱 sticks, with no
+    /// bounce-back and no hint, and the overlay on the viewfinder goes away.
+    func testAllContentSwitchesTurnOffWithoutAHint() {
+        let overlay = app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
+        XCTAssertTrue(isOn(toggle("天數")), "starts with the day count on")
+        for name in ["日期", "名稱"] where isOn(toggle(name)) {
+            toggle(name).tap()
+            Thread.sleep(forTimeInterval: 0.5)
         }
-        Thread.sleep(forTimeInterval: 3)
-        XCTAssertEqual(contentHint.label, "至少顯示天數或日期", "141.3 still there after 3 s")
-        toggle("名稱").tap()
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != '至少顯示天數或日期'"), object: contentHint)
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "141.3 the 名稱 switch clears it")
-
-        toggle("日期").tap()
         toggle("天數").tap()
-        XCTAssertFalse(isOn(toggle("天數")))
-        toggle("日期").tap()
-        XCTAssertTrue(isOn(toggle("日期")), "108.4 the date springs back")
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: shown, object: contentHint)], timeout: 10), .completed, "108.4 the same hint")
+        XCTAssertFalse(isOn(toggle("天數")), "#713-4 stays off")
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertFalse(isOn(toggle("天數")), "#713-4 does not spring back")
+        XCTAssertFalse(app.staticTexts["contentSwitchHint"].exists, "#713-4 no hint")
+        XCTAssertFalse(app.staticTexts["至少顯示天數或日期"].exists, "#713-4 no hint text")
+        XCTAssertFalse(isOn(toggle("日期")))
+        XCTAssertFalse(isOn(toggle("名稱")))
+        XCTAssertTrue(!overlay.exists || overlay.label.isEmpty, "#713-3 nothing drawn")
     }
 
     /// 108.8 → TASK-141 (#485): with the day count off the 天數單位 section
