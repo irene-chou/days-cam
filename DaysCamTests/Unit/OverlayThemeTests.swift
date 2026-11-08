@@ -147,7 +147,8 @@ final class OverlayThemeStyleTests: XCTestCase {
         let expected: [OverlayOutline: OverlayDecoration] = [
             .stroke: .stroke(color: blue, width: 2),
             .box: .backgroundBox(color: blue, opacity: 1.0, corner: .rounded(8), insets: insets),
-            .squareBox: .backgroundBox(color: blue, opacity: 1.0, corner: .square, insets: insets)
+            .squareBox: .backgroundBox(color: blue, opacity: 1.0, corner: .square, insets: insets),
+            .capsuleBox: .backgroundBox(color: blue, opacity: 1.0, corner: .capsule, insets: insets)
         ]
         for outline in OverlayOutline.allCases {
             let theme = OverlayTheme(style: OverlayStyle(outline: outline, outlineColor: blue, shadow: .none))

@@ -158,8 +158,8 @@ final class StylePresetRowUITests: XCTestCase {
         shot("10_largest_text")
     }
 
-    /// 11: the camera's text (FR-20.10) and the viewer's 文字樣式 (FR-19)
-    /// both open this style tab.
+    /// 11: the camera's text (FR-20.10) and the viewer's 調整文字樣式 on its
+    /// export sheet (#679) both open this style tab.
     func testCameraAndViewerOpenTheSameStyleTab() {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
@@ -175,18 +175,20 @@ final class StylePresetRowUITests: XCTestCase {
         app.launch()
         let element: (String) -> XCUIElement = { self.app.descendants(matching: .any).matching(identifier: $0).firstMatch }
 
-        // The viewer's 文字樣式.
+        // The viewer's 匯出 → 調整文字樣式 (#679: no 文字樣式 key on the photo page).
         let cell = element("photoCell")
         XCTAssertTrue(cell.waitForExistence(timeout: 10))
         cell.tap()
-        XCTAssertTrue(element("styleButton").waitForExistence(timeout: 5))
-        element("styleButton").tap()
+        XCTAssertTrue(element("photoDetailExportButton").waitForExistence(timeout: 5))
+        element("photoDetailExportButton").tap()
+        XCTAssertTrue(element("batchExportStyleLink").waitForExistence(timeout: 5))
+        element("batchExportStyleLink").tap()
         XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
         app.buttons["樣式"].tap()
         XCTAssertTrue(preset("classic").waitForExistence(timeout: 5), "11 viewer: the row of looks")
         XCTAssertTrue(boxButton.exists, "11 viewer")
         element("exportCancelButton").tap()
-        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
         app.terminate()
 
         // The camera's text.
