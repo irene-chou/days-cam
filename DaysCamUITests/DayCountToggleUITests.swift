@@ -1,7 +1,7 @@
 import XCTest
 
 /// TASK-107 (#426): the content tab's 天數 switch is back; a date-only
-/// profile prints only the date, the last of 天數／日期 springs back, the
+/// profile prints only the date, both of 天數／日期 may be off (#713), the
 /// units collapse (TASK-141). The profile list's 只顯示日期 subtitle (107.5)
 /// went with the camera's profile sheet in #621.
 final class DayCountToggleUITests: XCTestCase {
@@ -72,15 +72,16 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["週"].isSelected, "107.4 the units are live again")
     }
 
-    /// 107.3: the last of 天數／日期 springs back, both ways.
-    func testTheLastOfDayCountAndDateSpringsBack() {
+    /// 107.3, replaced by #713: 天數 and 日期 may both be off, nothing springs
+    /// back (the overlay is then empty).
+    func testDayCountAndDateMayBothBeOff() {
         openContentTab()
         toggle("天數").tap()
-        XCTAssertTrue(isOn(toggle("天數")), "107.3 the day count stays on while the date is off")
+        XCTAssertFalse(isOn(toggle("天數")), "#713 the day count turns off with the date already off")
         toggle("日期").tap()
-        toggle("天數").tap()
+        XCTAssertTrue(isOn(toggle("日期")))
+        toggle("日期").tap()
+        XCTAssertFalse(isOn(toggle("日期")), "#713 the date turns off too")
         XCTAssertFalse(isOn(toggle("天數")))
-        toggle("日期").tap()
-        XCTAssertTrue(isOn(toggle("日期")), "107.3 the date stays on while the day count is off")
     }
 }

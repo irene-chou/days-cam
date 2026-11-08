@@ -59,12 +59,6 @@ struct LayerListView: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
-        .alert("無法儲存", isPresented: Binding(get: { formatModel.displaySettings.lastError != nil },
-                                             set: { if !$0 { formatModel.displaySettings.lastError = nil } })) {
-            Button("好") { formatModel.displaySettings.lastError = nil }
-        } message: {
-            Text("請再試一次。")
-        }
     }
 
     /// One layer: the push (icon, name, summary) on the left, the switch and

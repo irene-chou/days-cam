@@ -90,12 +90,6 @@ struct FormatTabView: View {
         // Switching to another tab (or closing the panel) ends the hint
         // too (141.4).
         .onDisappear { model.displaySettings.dismissHint() }
-        .alert("無法儲存", isPresented: Binding(get: { model.displaySettings.lastError != nil },
-                                             set: { if !$0 { model.displaySettings.lastError = nil } })) {
-            Button("好") { model.displaySettings.lastError = nil }
-        } message: {
-            Text("請再試一次。")
-        }
     }
 
     /// Bounce, hint and VoiceOver announcement for one refusal (TASK-108).

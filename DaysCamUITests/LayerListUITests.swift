@@ -111,7 +111,10 @@ final class LayerListUITests: XCTestCase {
         XCTAssertTrue(app.backToLayerList())
         XCTAssertTrue(element("exportCancelButton").exists, "xmark again")
 
+        filmToggle.tap()
+        XCTAssertEqual(filmToggle.value as? String, "1")
         XCTAssertTrue(app.openLayer("layerRowFilmDate", expecting: app.buttons["filmDateCorner_bottomLeading"]))
+        XCTAssertTrue(app.buttons["filmDateCorner_bottomLeading"].isEnabled, "the layer is on, so the picker works")
         XCTAssertTrue(element("exportTitle").label.contains("底片日期"), element("exportTitle").label)
         XCTAssertTrue(element("stampCard").exists)
         shot("film_detail")

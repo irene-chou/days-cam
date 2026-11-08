@@ -151,6 +151,24 @@ final class OverlayLayerTests: XCTestCase {
         XCTAssertEqual(written.last, sampleProfile())
     }
 
+    /// #718 review: a failed write of the switch (the layer list, a 顯示 key or
+    /// the corner picker) is surfaced through the panel's one alert, never
+    /// reported as done.
+    func test_718_failedWriteIsSurfacedAndDismissable() {
+        struct Failure: Error {}
+        let model = DisplaySettingsModel(profile: sampleProfile()) { _ in throw Failure() }
+        XCTAssertFalse(DisplaySaveErrorHost.isPresented(for: model).wrappedValue)
+        model.setShowOverlay(false)
+        XCTAssertTrue(DisplaySaveErrorHost.isPresented(for: model).wrappedValue, "the switch")
+        DisplaySaveErrorHost.isPresented(for: model).wrappedValue = false
+        XCTAssertNil(model.lastError)
+        model.setShowFilmDate(false)
+        XCTAssertTrue(DisplaySaveErrorHost.isPresented(for: model).wrappedValue, "the film date")
+        DisplaySaveErrorHost.isPresented(for: model).wrappedValue = false
+        model.setFilmDateCorner(.topLeading)
+        XCTAssertTrue(DisplaySaveErrorHost.isPresented(for: model).wrappedValue, "the corner")
+    }
+
     // MARK: - 718-4: summaries and routes
 
     func test_718_4_overlaySummaryListsStyleContentsAndPosition() {

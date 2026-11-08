@@ -88,6 +88,13 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
                 PositionSaveErrorHost(model: positionTabModel)
             }
         }
+        // A failed switch, 顯示 key or corner write on any page (#718): one
+        // alert here, so the layer list and both pages show it.
+        .background {
+            if let formatTabModel = model.formatTabModel {
+                DisplaySaveErrorHost(model: formatTabModel.displaySettings)
+            }
+        }
     }
 
     // MARK: - Pages (#718)
@@ -522,6 +529,27 @@ struct PositionSaveErrorHost: View {
 
     /// True while there is an error to show; dismissing clears it.
     static func isPresented(for model: PositionTabModel) -> Binding<Bool> {
+        Binding(get: { model.lastError != nil },
+                set: { if !$0 { model.lastError = nil } })
+    }
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .alert("無法儲存", isPresented: Self.isPresented(for: model)) {
+                Button("好") { model.lastError = nil }
+            } message: {
+                Text("請再試一次。")
+            }
+    }
+}
+
+/// Presents `DisplaySettingsModel.lastError` for every page of the panel (#718).
+struct DisplaySaveErrorHost: View {
+    @ObservedObject var model: DisplaySettingsModel
+
+    /// True while there is an error to show; dismissing clears it.
+    static func isPresented(for model: DisplaySettingsModel) -> Binding<Bool> {
         Binding(get: { model.lastError != nil },
                 set: { if !$0 { model.lastError = nil } })
     }
