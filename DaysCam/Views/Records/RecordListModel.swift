@@ -369,7 +369,8 @@ final class RecordListModel: ObservableObject {
         }
         var newProfile = CameraProfile(name: store.uniqueName(base: Self.newRecordPlaceholder),
                                        startDate: calculator.currentDateComponents(),
-                                       showName: true)
+                                       showName: true,
+                                       showOverlay: false)
         if let template = profile(id: store.selectedProfileID) {
             newProfile.position = template.position
             newProfile.style = template.style

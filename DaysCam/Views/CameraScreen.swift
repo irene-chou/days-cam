@@ -456,7 +456,7 @@ struct CameraScreen: View {
     // MARK: - Style sheet (FR-20.10)
 
     /// The 文字樣式 sheet from the bottom, about 4/10 of the screen: the title
-    /// and the checkmark, the shared 樣式｜內容 panel, and where changes are
+    /// and the checkmark, the shared layer panel (#718), and where changes are
     /// saved. The viewfinder yields the room above it.
     @ViewBuilder
     private func stylePanel(metrics: CameraScreenLayoutMetrics) -> some View {
@@ -506,12 +506,16 @@ struct CameraScreen: View {
 
     private var stylePanelHeader: some View {
         ZStack {
-            Text("文字樣式")
+            Text(model.panelModel.route.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(CameraTheme.ink)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("stylePanelTitle")
             HStack {
+                // A pushed layer page goes back to the layer list (#718).
+                if model.panelModel.route != .root {
+                    PanelBackButton { model.panelModel.goBack() }
+                }
                 Spacer()
                 Button {
                     model.closeStylePanel()
@@ -632,11 +636,11 @@ struct CameraScreen: View {
         .accessibilityIdentifier("cameraLatestThumbnail")
     }
 
-    /// Right key (#712): opens the 文字樣式 sheet, like a tap on the text.
+    /// Right key (#712): opens the 文字樣式 sheet on the layer list (#718).
     /// `text.below.photo` in plain ink, at the 18pt that matches the 22pt
     /// keys' visual width; the first-run hint points at it.
     private func styleButton(isOnPhoto: Bool) -> some View {
-        Button(action: model.handleOverlayTextTap) {
+        Button(action: model.handleStyleKeyTap) {
             Image(systemName: "text.below.photo")
                 .font(.system(size: Self.styleGlyphSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)

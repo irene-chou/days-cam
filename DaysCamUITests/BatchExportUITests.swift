@@ -152,4 +152,39 @@ final class BatchExportUITests: XCTestCase {
         waitForLabel("wallTitle", containing: "已選 2 張")
         XCTAssertFalse(element("wallToast").exists, "9 no success toast")
     }
+
+    /// #718-8: a record whose 疊字 is off reads as 隱藏文字 already on and cannot
+    /// be tapped, while 調整文字樣式 stays up to turn it back on.
+    func testRecordWithOverlayOffShowsHideTextOnAndLocked() {
+        launchWall(photos: 5)
+        openPreviewOfAll()
+        let hide = element("exportHideTextButton")
+        XCTAssertTrue(hide.waitForExistence(timeout: 5))
+        XCTAssertEqual(hide.label, "隱藏文字")
+        XCTAssertTrue(hide.isEnabled)
+
+        element("batchExportStyleLink").tap()
+        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
+        let toggle = app.switches["layerToggleOverlay"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        element("exportConfirmButton").tap()
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "back on the sheet")
+
+        waitForLabel("exportHideTextButton", containing: "顯示文字")
+        XCTAssertFalse(hide.isEnabled, "the record hides the text; not tappable")
+        XCTAssertTrue(element("batchExportStyleLink").isEnabled, "調整文字樣式 is the way back")
+        XCTAssertFalse(element("batchExportPreview").label.contains("第"), element("batchExportPreview").label)
+        shot("PR718_batch_export_overlay_off")
+
+        element("batchExportStyleLink").tap()
+        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["layerToggleOverlay"].waitForExistence(timeout: 5))
+        app.switches["layerToggleOverlay"].tap()
+        element("exportConfirmButton").tap()
+        XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
+        waitForLabel("exportHideTextButton", containing: "隱藏文字")
+        XCTAssertTrue(element("exportHideTextButton").isEnabled)
+    }
 }

@@ -79,6 +79,12 @@ struct CameraProfile: Identifiable, Equatable, Codable {
     var position: OverlayPlacement
     /// How the overlay looks (PRD 0.2 §4.2).
     var style: OverlayStyle
+    /// Whether the text layer (天數／日期／名稱) is drawn at all (#718). Off
+    /// hides the whole layer in the viewfinder preview and the export, and
+    /// leaves `showDayCount`, `showDate`, `showName`, `style` and `position`
+    /// as they are. The film date stamp is a layer of its own and follows
+    /// `showFilmDate`.
+    var showOverlay: Bool
     /// Whether a film date stamp is printed in a corner, independent of
     /// `showDate` and outside the "day count or date" rule (TASK-151 #520).
     var showFilmDate: Bool
@@ -114,6 +120,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
          dayCountFormat: DayCountFormat = .default,
          position: OverlayPlacement = .default,
          style: OverlayStyle = OverlayStyle(),
+         showOverlay: Bool = true,
          showFilmDate: Bool = false,
          filmDateCorner: FilmDateCorner = .default,
          createdAt: Date = Date(),
@@ -133,6 +140,7 @@ struct CameraProfile: Identifiable, Equatable, Codable {
         self.dayCountFormat = dayCountFormat
         self.position = position
         self.style = style
+        self.showOverlay = showOverlay
         self.showFilmDate = showFilmDate
         self.filmDateCorner = filmDateCorner
         self.createdAt = createdAt
@@ -263,7 +271,7 @@ extension CameraProfile {
     private enum CodingKeys: String, CodingKey {
         case id, name, startDate, countingRule, showDayCount, showDate, showName
         case displayUnits, useAgeWording, position, style, createdAt, updatedAt
-        case showFilmDate, filmDateCorner
+        case showOverlay, showFilmDate, filmDateCorner
         case dayCountFormat
         case albumIdentifier, fallbackAssetIDs, exportFormat
     }
@@ -316,6 +324,7 @@ extension CameraProfile {
         try container.encode(dayCountFormat, forKey: .dayCountFormat)
         try container.encode(position, forKey: .position)
         try container.encode(style, forKey: .style)
+        try container.encode(showOverlay, forKey: .showOverlay)
         try container.encode(showFilmDate, forKey: .showFilmDate)
         try container.encode(filmDateCorner, forKey: .filmDateCorner)
         try container.encode(createdAt, forKey: .createdAt)
@@ -347,6 +356,9 @@ extension CameraProfile {
         // that cannot be read at all falls back too, rather than losing the
         // profile (PRD 0.2 §4.3).
         showFilmDate = try container.decodeIfPresent(Bool.self, forKey: .showFilmDate) ?? false
+        // Added by #718: older records had their text drawn, so a missing (or
+        // unreadable) key keeps it on rather than silently hiding it.
+        showOverlay = (try? container.decodeIfPresent(Bool.self, forKey: .showOverlay)) ?? true
         filmDateCorner = (try? container.decodeIfPresent(FilmDateCorner.self, forKey: .filmDateCorner)) ?? .default
         // Added by #582: older files lack it, and an unreadable value falls
         // back too, so the profile is kept.

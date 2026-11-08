@@ -146,15 +146,19 @@ struct BatchExportSheet: View {
     }
 
     /// 隱藏文字 over 調整文字樣式 (#679): plain text buttons alike. While the
-    /// text is hidden the first reads 顯示文字 and the style page is off.
+    /// text is hidden by the sheet the first reads 顯示文字 and the style page is off.
     private var textOptions: some View {
         VStack(spacing: 4) {
             textButton(model.hidesText ? "顯示文字" : "隱藏文字", identifier: "exportHideTextButton") {
                 model.toggleHidesText()
             }
+            // A record whose 疊字 is off reads as already hidden and cannot be
+            // switched here (#718); 調整文字樣式 stays up, it is the way to turn it on.
+            .disabled(model.recordHidesText)
+            .opacity(model.recordHidesText ? 0.4 : 1)
             textButton("調整文字樣式", identifier: "batchExportStyleLink") { stylingPhoto = model.previewPhoto }
-                .disabled(model.hidesText)
-                .opacity(model.hidesText ? 0.4 : 1)
+                .disabled(model.hidesTextChoice)
+                .opacity(model.hidesTextChoice ? 0.4 : 1)
         }
     }
 

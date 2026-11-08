@@ -553,6 +553,33 @@ final class BatchExportModelTests: XCTestCase {
         XCTAssertTrue(batch.hidesText, "nor after")
     }
 
+    /// #718-8: a record whose 疊字 is off reads as 隱藏文字 already on, cannot be
+    /// switched, and exports without text; turning it on gives the choice back.
+    func testRecordWithOverlayOffHidesTextAndCannotBeSwitched() async throws {
+        let (store, created) = try makeStore()
+        var profile = created
+        profile.showOverlay = false
+        try store.updateAndWait(profile)
+        let recorder = ExportBakeRecorder()
+        let fake = FakeBatchExport()
+        let batch = makeBatch([photo(5), photo(6)], store: store, profile: profile,
+                              bake: recorder, export: fake.asExport)
+        XCTAssertTrue(batch.hidesText)
+        XCTAssertTrue(batch.recordHidesText)
+        batch.toggleHidesText()
+        XCTAssertTrue(batch.hidesText, "not tappable")
+        XCTAssertNil(batch.overlayText(for: try XCTUnwrap(batch.previewPhoto)))
+
+        batch.start()
+        await batch.waitForRun()
+        XCTAssertEqual(fake.hidesTextCalls, [true, true])
+
+        profile.showOverlay = true
+        try store.updateAndWait(profile)
+        XCTAssertFalse(batch.recordHidesText)
+        XCTAssertFalse(batch.hidesText, "the sheet's own choice was never made")
+    }
+
     /// #679-6, 8: through the real pipeline, every hidden-text photo is baked
     /// with no text and the record's film date stamp of its own day.
     func testHiddenTextPipelineBakesNoTextButTheFilmDate() async throws {

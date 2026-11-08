@@ -294,6 +294,23 @@ final class RecordListModelTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, before + 1)
     }
 
+    /// #718-1: a new record starts with both layers off, whatever the
+    /// record it takes its style from has.
+    func testNewRecordStartsWithBothLayersOff() throws {
+        let store = makeStore()
+        var template = try XCTUnwrap(store.profiles.first)
+        template.showOverlay = true
+        template.showFilmDate = true
+        try store.updateAndWait(template)
+        let model = makeModel(store: store, library: FakeRecordAlbumLibrary())
+
+        model.addRecord()
+        guard case let .editor(id)? = model.path.first else { return XCTFail("the editor is pushed") }
+        let added = try XCTUnwrap(store.profiles.first { $0.id == id })
+        XCTAssertFalse(added.showOverlay)
+        XCTAssertFalse(added.showFilmDate)
+    }
+
     // MARK: Album on create and backfill (#651)
 
     /// Adds a draft, names it and confirms it, waiting for its album.

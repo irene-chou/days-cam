@@ -5,14 +5,40 @@ extension XCUIApplication {
     /// lives since #621 took it off the camera: five photos, the newest one's
     /// export page opened. Set `launchEnvironment` (e.g. `DAYSCAM_FAKE_TODAY`)
     /// before calling. Returns whether the page appeared.
+    ///
+    /// The panel opens on the layer list (#718); `entersOverlayDetail` pushes
+    /// 疊字 so the 樣式｜內容 tabs are up, which is where most tests start.
+    /// A fresh test record has 疊字 on (`-UITestOverlayOff` gives the real
+    /// default, off).
     @discardableResult
     func launchOnExportPage(profiles: String = UUID().uuidString,
                             extraArguments: [String] = [],
+                            entersOverlayDetail: Bool = true,
                             timeout: TimeInterval = 15) -> Bool {
         launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles,
                             "-UITestRecordPhotos", "5", "-UITestOpenExport"] + extraArguments
         launch()
-        return waitForExportPage(timeout: timeout)
+        guard waitForExportPage(timeout: timeout) else { return false }
+        return !entersOverlayDetail || openLayer("layerRowOverlay", expecting: buttons["樣式"])
+    }
+
+    /// Pushes a layer page from the layer list: taps `row` (an identifier
+    /// such as `layerRowOverlay`) and waits for `marker` to appear.
+    @discardableResult
+    func openLayer(_ row: String, expecting marker: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        let button = buttons[row]
+        guard button.waitForExistence(timeout: timeout) else { return false }
+        button.tap()
+        return marker.waitForExistence(timeout: timeout)
+    }
+
+    /// Goes back from a layer page to the layer list.
+    @discardableResult
+    func backToLayerList(timeout: TimeInterval = 5) -> Bool {
+        let back = buttons["panelBackButton"]
+        guard back.waitForExistence(timeout: timeout) else { return false }
+        back.tap()
+        return buttons["layerRowOverlay"].waitForExistence(timeout: timeout)
     }
 
     /// Waits for the export page; also what a relaunch with the same

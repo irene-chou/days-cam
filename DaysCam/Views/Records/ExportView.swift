@@ -3,10 +3,11 @@ import SwiftUI
 /// The 文字樣式 page of one photo (PRD 2.0 FR-19, D8 ④): the page that used
 /// to be the export page, now only styling; nothing is exported here.
 ///
-/// Top bar `xmark`｜文字樣式 + 紀錄名｜`checkmark` (both just go back); a preview about 52% of the
+/// Top bar `xmark`｜文字樣式 + 紀錄名｜`checkmark` (both just go back; on a layer's
+/// page the left key is 返回 to the layer list, #718); a preview about 52% of the
 /// width at the photo's own aspect ratio, with the record's overlay drawn by
 /// the same `OverlayTextView`／`FilmDateStampView` the bake matches; the
-/// overlay panel (樣式｜內容) below it, always open; one line at the bottom.
+/// overlay panel (the layer list, #718) below it, always open; one line at the bottom.
 /// The output-form switch (疊字／拍立得) is not drawn in the first phase: there
 /// is only one form (§2.4).
 struct ExportView: View {
@@ -92,21 +93,30 @@ struct ExportView: View {
 
     private var header: some View {
         HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(CameraTheme.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            // A pushed layer page goes back to the layer list instead (#718).
+            if model.panelModel.route == .root {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(CameraTheme.ink)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("取消")
+                .accessibilityIdentifier("exportCancelButton")
+            } else {
+                PanelBackButton { model.panelModel.goBack() }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("取消")
-            .accessibilityIdentifier("exportCancelButton")
             Spacer()
+            confirmButton
+        }
+        // The title stays centered whatever the left key's width.
+        .overlay {
             VStack(spacing: 1) {
-                Text("文字樣式")
+                Text(model.panelModel.route.title)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(CameraTheme.ink)
                 Text(model.subtitle)
@@ -116,8 +126,6 @@ struct ExportView: View {
             .lineLimit(1)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("exportTitle")
-            Spacer()
-            confirmButton
         }
         .padding(.horizontal, 8)
         .frame(height: Self.headerHeight)

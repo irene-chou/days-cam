@@ -10,8 +10,9 @@ import SwiftUI
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
 /// sections now sit on one page. #558: one card per thing on the photo —
-/// 文字內容 (天數、日期、名稱), 天數單位 (units, 「年」改成「歲」) and 戳記
-/// (底片日期 and its corner). With the day count off the 天數單位 card is
+/// 文字內容 (天數、日期、名稱) and 天數單位 (units, 「年」改成「歲」); the
+/// 戳記 card (底片日期 and its corner) moved to its own layer page,
+/// `FilmDateDetailView` (#718). With the day count off the 天數單位 card is
 /// not shown; the switches above it stay put. #567: with a
 /// `positionTabModel` the 文字內容 card ends in a 位置 row that opens the
 /// nine-point grid in place.
@@ -42,10 +43,6 @@ struct FormatTabView: View {
     private static let cardBackground = Color.white
     /// Hairline between rows inside a card.
     private static let rowSeparator = CameraTheme.ink.opacity(0.1)
-    /// The film date stamp's own orange, for the corner icons.
-    private static let stampColor = Color(red: FilmDateStamp.Metrics.red,
-                                          green: FilmDateStamp.Metrics.green,
-                                          blue: FilmDateStamp.Metrics.blue)
 
     /// The unit whose checkbox is bouncing right now (TASK-108).
     @State private var bouncingUnit: DisplayUnit?
@@ -58,8 +55,8 @@ struct FormatTabView: View {
     }
 
     var body: some View {
-        // One card per thing on the photo (#558): 文字內容, 天數單位 and
-        // 戳記, each a heading over a white card whose rows all put the words
+        // One card per thing on the photo (#558): 文字內容 and 天數單位,
+        // each a heading over a white card whose rows all put the words
         // on the left and the control on the right.
         VStack(alignment: .leading, spacing: 0) {
             heading("文字內容", topPadding: 0)
@@ -76,15 +73,6 @@ struct FormatTabView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("dayCountUnits")
             }
-            heading("戳記")
-            stampCard
-            Text("底片日期的字樣固定，不受「樣式」分頁和文字位置影響。")
-                .font(.system(size: 12))
-                .foregroundColor(CameraTheme.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 4)
-                .padding(.top, 5)
-                .accessibilityIdentifier("stampNote")
         }
         // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
         // #106 R2): each tab owns its own padding rather than a generic one.
@@ -265,94 +253,6 @@ struct FormatTabView: View {
             .contentShape(Rectangle())
         }
         .accessibilityAddTraits(isChecked ? [.isSelected] : [])
-    }
-
-    // MARK: - 戳記 (#521, #558)
-
-    private var stampCard: some View {
-        card(identifier: "stampCard") {
-            switchRow("底片日期", isOn: model.displaySettings.profile.showFilmDate) {
-                model.displaySettings.setShowFilmDate($0)
-            }
-            // Collapsed while off; the chosen corner stays in the profile.
-            if model.displaySettings.profile.showFilmDate {
-                rowDivider
-                cornerRow
-            }
-        }
-    }
-
-    /// The four corners in one row, each a tiny photo with the stamp drawn
-    /// in that corner.
-    private var cornerRow: some View {
-        HStack(spacing: 6) {
-            ForEach([FilmDateCorner.topLeading, .topTrailing, .bottomLeading, .bottomTrailing], id: \.self) {
-                cornerButton($0)
-            }
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("filmDateCorners")
-    }
-
-    private func cornerButton(_ corner: FilmDateCorner) -> some View {
-        let isSelected = model.displaySettings.profile.filmDateCorner == corner
-        let name = Self.cornerName(corner)
-        return Button {
-            model.displaySettings.setFilmDateCorner(corner)
-        } label: {
-            VStack(spacing: 4) {
-                ZStack(alignment: Self.alignment(of: corner)) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .strokeBorder(CameraTheme.ink.opacity(0.35), lineWidth: 1)
-                    // Lies the way the stamp does on the photo: across where
-                    // the corner draws it unturned, upright where turned.
-                    let upright = corner.rotation != 0
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Self.stampColor)
-                        .frame(width: upright ? 4 : 11, height: upright ? 11 : 4)
-                        .padding(3)
-                }
-                .frame(width: 34, height: 26)
-                Text(name)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(CameraTheme.ink)
-            }
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, minHeight: Self.rowMinHeight)
-            .background(isSelected ? CameraTheme.active.opacity(0.08) : .clear,
-                        in: RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 10).strokeBorder(CameraTheme.active, lineWidth: 1.5)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("底片日期位置，\(name)")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
-        .accessibilityIdentifier("filmDateCorner_\(corner.rawValue)")
-    }
-
-    private static func alignment(of corner: FilmDateCorner) -> Alignment {
-        switch corner {
-        case .topLeading: return .topLeading
-        case .topTrailing: return .topTrailing
-        case .bottomLeading: return .bottomLeading
-        case .bottomTrailing: return .bottomTrailing
-        }
-    }
-
-    private static func cornerName(_ corner: FilmDateCorner) -> String {
-        switch corner {
-        case .topLeading: return "左上"
-        case .topTrailing: return "右上"
-        case .bottomLeading: return "左下"
-        case .bottomTrailing: return "右下"
-        }
     }
 
     /// The checkbox label; the year reads 歲 while `useAgeWording` is on,

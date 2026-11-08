@@ -136,7 +136,11 @@ final class CameraScreenModelOverlayTests: XCTestCase {
 
     /// 3: the text is what exporting a photo taken now would print.
     func test_656_3_textIsThePhotoMomentRenderedNow() throws {
-        let rig = try makeRig()
+        let store = makeStore()
+        var seeded = try XCTUnwrap(store.profiles.first)
+        seeded.showOverlay = true // the seeded record starts with 疊字 off (#718)
+        try store.updateAndWait(seeded)
+        let rig = try makeRig(store: store)
         let profile = try XCTUnwrap(rig.model.profile)
         let expected = TemplateRenderer().render(profile: profile, capturedAt: now,
                                                  calendar: DateFixture.taipei, moment: .photo)
@@ -233,6 +237,37 @@ final class CameraScreenModelOverlayTests: XCTestCase {
 
         rig.model.closeStylePanel()
         XCTAssertFalse(rig.model.panelModel.isOpen)
+    }
+
+    /// #718-3, 7: with 疊字 off the viewfinder draws no text, the film date
+    /// still follows its own switch, and the sub-settings come back on.
+    func test_718_3_overlayOffDrawsNoText() throws {
+        let store = makeStore()
+        var profile = try addRecord(to: store, name: "甲", start: DateFixture.components(2026, 1, 1))
+        let rig = try makeRig(store: store, record: profile)
+        XCTAssertFalse(rig.model.overlayText.isEmpty)
+
+        profile.showOverlay = false
+        profile.showFilmDate = true
+        try store.updateAndWait(profile)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(rig.model.overlayText, "")
+        XCTAssertNotNil(rig.model.filmDateStamp)
+
+        profile.showOverlay = true
+        try store.updateAndWait(profile)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(rig.model.overlayText.isEmpty)
+    }
+
+    /// #718-7: a tap on the text opens 疊字; the key opens the layer list.
+    func test_718_7_textOpensOverlayAndKeyOpensTheList() throws {
+        let rig = try makeRig()
+        rig.model.handleOverlayTextTap()
+        XCTAssertEqual(rig.model.panelModel.route, .overlay)
+        rig.model.closeStylePanel()
+        rig.model.handleStyleKeyTap()
+        XCTAssertEqual(rig.model.panelModel.route, .root)
     }
 
     /// 8: only a touch on the text is shielded from focus.

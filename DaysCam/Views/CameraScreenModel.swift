@@ -1189,7 +1189,7 @@ extension CameraScreenModel {
     /// through `refreshTick`.
     var overlayText: String {
         guard let profile else { return "" }
-        return renderer.render(profile: profile, capturedAt: calculator.now(), calendar: calendar, moment: .photo)
+        return renderer.overlayText(profile: profile, capturedAt: calculator.now(), calendar: calendar, moment: .photo)
     }
 
     /// The film date of today, `nil` while the record has it off.
@@ -1227,23 +1227,34 @@ extension CameraScreenModel {
         "改動存到「\(profile?.name ?? "")」；拍的照片仍是原圖，匯出時才印上"
     }
 
-    /// A tap on the overlay text or the 文字樣式 key (FR-20.10, #712):
-    /// opens the style sheet. A tap while it is open does nothing — the text
-    /// is what it edits.
+    /// A tap on the overlay text (FR-20.10, #712): opens the style sheet on
+    /// 疊字, the layer the text belongs to (#718). A tap while it is open does
+    /// nothing — the text is what it edits.
     func handleOverlayTextTap() {
+        prepareToOpenStylePanel()
+        openStylePanel(at: .overlay)
+    }
+
+    /// A tap on the 文字樣式 key (FR-20.9, #712): opens the style sheet on the
+    /// layer list (#718).
+    func handleStyleKeyTap() {
+        prepareToOpenStylePanel()
+        openStylePanel(at: .root)
+    }
+
+    private func prepareToOpenStylePanel() {
         zoomExpansion.collapse()
         collapseCameraTools()
         closeRecordMenu()
-        openStylePanel()
     }
 
-    /// Opens the style sheet; only with the overlay drawn and no countdown
-    /// running. The hint is dealt with from now on.
-    func openStylePanel() {
+    /// Opens the style sheet on `route`; only with the overlay drawn and no
+    /// countdown running. The hint is dealt with from now on.
+    func openStylePanel(at route: OverlayPanelModel.Route = .root) {
         guard showsOverlay, countdownRemaining == nil, !panelModel.isOpen else { return }
         tips.markOverlayTapSeen()
         overlayTapSeen = true
-        panelModel.open()
+        panelModel.open(at: route)
     }
 
     /// Closes the style sheet (the checkmark).
@@ -1411,6 +1422,7 @@ final class TabProfileWriter {
         if updated.useAgeWording != baseline.useAgeWording { merged.useAgeWording = updated.useAgeWording }
         if updated.position != baseline.position { merged.position = updated.position }
         if updated.style != baseline.style { merged.style = updated.style }
+        if updated.showOverlay != baseline.showOverlay { merged.showOverlay = updated.showOverlay }
         if updated.showFilmDate != baseline.showFilmDate { merged.showFilmDate = updated.showFilmDate }
         if updated.filmDateCorner != baseline.filmDateCorner { merged.filmDateCorner = updated.filmDateCorner }
         if updated.dayCountFormat != baseline.dayCountFormat { merged.dayCountFormat = updated.dayCountFormat }

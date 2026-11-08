@@ -91,6 +91,8 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertTrue(seeded.showDayCount, "3.2")
         XCTAssertFalse(seeded.showDate, "3.2")
         XCTAssertTrue(seeded.showName, "119.1 name is shown by default")
+        XCTAssertFalse(seeded.showOverlay, "718-1 the text layer starts off")
+        XCTAssertFalse(seeded.showFilmDate, "718-1 the film date starts off")
         XCTAssertEqual(seeded.displayUnits, [.day], "3.2")
         XCTAssertFalse(seeded.useAgeWording, "3.2")
         XCTAssertEqual(seeded.position, .anchor(.bottomTrailing), "3.2")

@@ -82,6 +82,11 @@ final class ExportUITests: XCTestCase {
         XCTAssertTrue(element("exportConfirmButton").isEnabled)
         XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the panel stays open here")
 
+        // The layer list is first (#718); 疊字 pushes the tabs.
+        XCTAssertTrue(app.buttons["layerRowOverlay"].exists && app.buttons["layerRowFilmDate"].exists)
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
+        XCTAssertTrue(element("exportTitle").label.contains("疊字"), element("exportTitle").label)
+
         // 樣式, after the open-time dashed frame (#599) has faded.
         XCTAssertTrue(app.buttons["樣式"].isSelected)
         Thread.sleep(forTimeInterval: 2)
@@ -242,6 +247,7 @@ final class ExportUITests: XCTestCase {
     /// and the panel as they were (the font list left the panel in #678).
     func testSwipeDownOnTheStylePageKeepsThePanel() {
         launch()
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
         app.buttons["樣式"].tap()
         XCTAssertTrue(app.buttons["stylePreset_classic"].waitForExistence(timeout: 3))
         let page = app.scrollViews.containing(.button, identifier: "boxStateButton").firstMatch
@@ -257,6 +263,7 @@ final class ExportUITests: XCTestCase {
     /// size slider) ends above the note under the panel and can be used.
     func testStylePageLastRowScrollsAboveTheNote() {
         launch()
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
         app.buttons["樣式"].tap()
         let last = app.sliders["字級"]
         XCTAssertTrue(last.waitForExistence(timeout: 3), "116.8 the page has the size slider")

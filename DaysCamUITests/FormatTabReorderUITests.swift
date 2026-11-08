@@ -1,7 +1,7 @@
 import XCTest
 
-/// #558: the content tab is three cards, 文字內容 → 天數單位 → 戳記, every
-/// row words-left, control-right; with the day count off 天數單位 collapses
+/// #558: the content tab is two cards, 文字內容 → 天數單位 (the 戳記 card moved
+/// to the 底片日期 page, #718), every row words-left, control-right; with the day count off 天數單位 collapses
 /// and the switches above stay put (TASK-141 #485). With
 /// `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
 /// screenshots are also written there for the PR.
@@ -119,9 +119,9 @@ final class FormatTabReorderUITests: XCTestCase {
         }
     }
 
-    /// #558.1／.2／.5／.6／.10: card order top to bottom, every switch on the
-    /// same right edge, the corners in one row, nothing named 位置 but the
-    /// 位置 row, the stamp note always there; with the B′ shot (a).
+    /// #558.1／.2／.6: card order top to bottom, every switch on the same
+    /// right edge, nothing named 位置 but the 位置 row; #718: no 戳記 card and
+    /// no 底片日期 switch on this tab any more.
     func testCardsReadTopToBottomWithOneRightEdge() {
         launch(startDay: "2023-08-05")
         XCTAssertFalse(element("formatDivider").exists, "#558.6 no divider")
@@ -134,28 +134,12 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertLessThan(app.staticTexts["文字內容"].frame.maxX, app.frame.width / 2, "#558.2 heading on the left")
         assertTopToBottom(pairs: [app.staticTexts["文字內容"], toggle("天數"), toggle("日期"), toggle("名稱"),
-                                  app.buttons["positionRow"], app.staticTexts["天數單位"], app.buttons["天"], toggle(ageWording),
-                                  app.staticTexts["戳記"], toggle("底片日期")], "#558.1")
-        for name in [ageWording, "底片日期"] {
-            XCTAssertEqual(toggle(name).frame.maxX, rightEdge, accuracy: 1, "#558.2 \(name)")
-        }
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
-        XCTAssertTrue(note.exists, "#558.10 note while off")
-
-        set("底片日期", on: true)
-        let corners = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"].map { app.buttons["filmDateCorner_\($0)"] }
-        // The row opens below the panel's edge on a taller screen.
-        scrollTo(corners[0])
-        assertTopToBottom(pairs: [toggle("底片日期"), corners[0], note], "#558.1 lower part")
-        let xs = corners.map(\.frame.minX)
-        XCTAssertEqual(xs, xs.sorted(), "#558.5 左上、右上、左下、右下 left to right")
-        for corner in corners {
-            XCTAssertEqual(corner.frame.midY, corners[0].frame.midY, accuracy: 1, "#558.5 one row")
-            XCTAssertGreaterThanOrEqual(corner.frame.width, 44, "#558.5 44pt wide")
-            XCTAssertGreaterThanOrEqual(corner.frame.height, 44, "#558.5 44pt tall")
-        }
-        XCTAssertTrue(corners[2].isSelected, "#558.5 左下 by default")
-        XCTAssertEqual(corners[2].label, "底片日期位置，左下")
+                                  app.buttons["positionRow"], app.staticTexts["天數單位"], app.buttons["天"], toggle(ageWording)],
+                          "#558.1")
+        XCTAssertEqual(toggle(ageWording).frame.maxX, rightEdge, accuracy: 1, "#558.2 \(ageWording)")
+        XCTAssertFalse(app.staticTexts["戳記"].exists, "#718 the 戳記 card moved to the 底片日期 page")
+        XCTAssertFalse(toggle("底片日期").exists, "#718 no 底片日期 switch here")
+        XCTAssertFalse(element("stampCard").exists, "#718 no stamp card here")
         // #568: the 位置 tab is gone, so the 位置 row is the only thing named so.
         let places = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "位置")).allElementsBoundByIndex
         // A hair of slack: the row's frame can come back a few ulps right
@@ -165,7 +149,7 @@ final class FormatTabReorderUITests: XCTestCase {
                       "#558.6 位置 only on the 位置 row: \(places.map { "\($0.label) \($0.frame)" })")
     }
 
-    /// B′ shot (a): everything on, 左下, in as many screens as it takes.
+    /// B′ shot (a): every text switch on, in as many screens as it takes.
     func testAllOnShots() {
         launch(startDay: "2023-08-05")
         toggle("日期").tap()
@@ -176,30 +160,6 @@ final class FormatTabReorderUITests: XCTestCase {
         scrollTo(toggle(ageWording))
         XCTAssertTrue(isOnScreen(app.buttons["年"]), "units card in the shot")
         shot("558.12a_all_on_2_units")
-        scrollTo(toggle("底片日期"))
-        set("底片日期", on: true)
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
-        scrollTo(app.buttons["filmDateCorner_bottomLeading"])
-        scrollTo(note)
-        XCTAssertTrue(isOnScreen(toggle("底片日期")) && isOnScreen(app.buttons["filmDateCorner_bottomLeading"]), "stamp card in the shot")
-        shot("558.12a_all_on_3_stamp")
-    }
-
-    /// #558.4: the corner row collapses while off and the corner is kept.
-    func testCornerRowCollapsesAndKeepsTheCorner() {
-        launch(startDay: "2023-08-05")
-        scrollTo(toggle("底片日期"))
-        XCTAssertFalse(element("filmDateCorners").exists, "#558.4 no corner row while off")
-        set("底片日期", on: true)
-        let topTrailing = app.buttons["filmDateCorner_topTrailing"]
-        scrollTo(topTrailing)
-        topTrailing.tap()
-        XCTAssertTrue(topTrailing.isSelected)
-        set("底片日期", on: false)
-        XCTAssertFalse(topTrailing.exists, "#558.4 collapsed")
-        set("底片日期", on: true)
-        scrollTo(topTrailing)
-        XCTAssertTrue(topTrailing.isSelected, "#558.4 右上 kept")
     }
 
     /// #558.3 on a past start date: with the day count off the 天數單位 card
@@ -227,10 +187,6 @@ final class FormatTabReorderUITests: XCTestCase {
             XCTAssertEqual(after.minX, before.minX, accuracy: 1, "#558.3 \(name) did not move")
         }
         shot("558.12b_daycount_and_film_off_1_text")
-        let note = app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"]
-        scrollTo(note)
-        XCTAssertTrue(isOnScreen(toggle("底片日期")), "stamp card in the shot")
-        shot("558.12b_daycount_and_film_off_2_stamp")
         scrollToTop()
 
         toggle("天數").tap()

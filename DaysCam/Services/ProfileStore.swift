@@ -297,6 +297,7 @@ extension ProfileStore {
         let seeded = CameraProfile(name: Self.defaultProfileName,
                                    startDate: today,
                                    showName: true,
+                                   showOverlay: false,
                                    createdAt: timestamp,
                                    updatedAt: timestamp)
         profiles = [seeded]
@@ -486,6 +487,7 @@ extension ProfileStore {
                                        dayCountFormat: source.dayCountFormat,
                                        position: source.position,
                                        style: source.style,
+                                       showOverlay: source.showOverlay,
                                        showFilmDate: source.showFilmDate,
                                        filmDateCorner: source.filmDateCorner,
                                        createdAt: timestamp,
