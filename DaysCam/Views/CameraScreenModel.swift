@@ -201,22 +201,13 @@ final class CameraScreenModel: ObservableObject {
     /// The pending toast ("已取消", "改存到「…」"), if any.
     @Published private(set) var toastState: ToastState?
 
-    /// The short toast in the middle of the screen saying the 疊字預覽 switch
-    /// changed (FR-20.9).
-    @Published private(set) var centerToast: ToastState?
-
-    /// Whether the viewfinder draws the record's overlay (FR-20.9); app
-    /// level, persisted through `overlayPreviewSetting`.
-    @Published private(set) var isOverlayPreviewOn: Bool
-    private let overlayPreviewSetting: OverlayPreviewSetting
-
     /// The 水平儀 switch (#687); app level, off until turned on.
     @Published private(set) var isLevelOn: Bool
     private let levelSetting: LevelSetting
     /// Reads the sensor and decides what the level shows.
     let levelModel: ViewfinderLevelModel
 
-    /// Whether 「點這裡的文字可以改樣式」 has been dealt with (FR-20.10):
+    /// Whether 「點這裡改文字樣式」 has been dealt with (FR-20.10):
     /// the style sheet was opened once, in this or an earlier launch.
     @Published private(set) var overlayTapSeen: Bool
     private let tips: FirstRunTips
@@ -272,14 +263,9 @@ final class CameraScreenModel: ObservableObject {
          saveTimeout: TimeInterval = CameraScreenModel.defaultSaveTimeout,
          captureRotationAngleOverride: CGFloat? = nil,
          styleCenter: StyleEditingCenter? = nil,
-         overlayPreviewDefaults: UserDefaults = .standard,
          levelDefaults: UserDefaults = .standard,
          levelSource: LevelSource? = nil,
          tips: FirstRunTips = .shared) {
-        if overlayPreviewDefaults === UserDefaults.standard { OverlayPreviewSetting.applyUITestArguments() }
-        let overlayPreviewSetting = OverlayPreviewSetting(defaults: overlayPreviewDefaults)
-        self.overlayPreviewSetting = overlayPreviewSetting
-        self.isOverlayPreviewOn = overlayPreviewSetting.isOn
         if levelDefaults === UserDefaults.standard { LevelSetting.applyUITestArguments() }
         let levelSetting = LevelSetting(defaults: levelDefaults)
         self.levelSetting = levelSetting
@@ -729,6 +715,19 @@ extension CameraScreenModel {
         captureSettingsStore.toggleGrid()
     }
 
+    /// The ratio the viewfinder shows and the next photo is cropped to
+    /// (#712); app level, remembered by `captureSettingsStore`.
+    var captureAspectRatio: CaptureAspectRatio {
+        captureSettingsStore.captureAspectRatio
+    }
+
+    /// Cycles the ratio key 3:4 → 1:1 → 9:16 → 3:4 (#712, as 1.3.0).
+    func cycleAspectRatio() {
+        let ratios = CaptureAspectRatio.allCases
+        let index = ratios.firstIndex(of: captureAspectRatio) ?? 0
+        captureSettingsStore.setAspectRatio(ratios[(index + 1) % ratios.count])
+    }
+
     /// Flips the 水平儀 (#687) and remembers it.
     func toggleLevel() {
         isLevelOn.toggle()
@@ -782,13 +781,15 @@ extension CameraScreenModel {
 // MARK: - Shutter (TASK-10, FR-20.4)
 
 extension CameraScreenModel {
-    /// Where a photo goes, fixed when the shutter fires: the record, and the
-    /// title a new album for it gets. The album itself is read when the save
+    /// Where a photo goes and how it is cut, fixed when the shutter is
+    /// pressed: the record, the title a new album for it gets, and the ratio
+    /// it is cropped to (#712). The album itself is read when the save
     /// starts, so a photo taken right after the first one of a record without
     /// an album lands in the album the first one created.
     struct CaptureDestination: Equatable {
         let profileID: UUID
         let albumTitle: String
+        let aspectRatio: CaptureAspectRatio
     }
 
     /// Triggers a capture, or cancels an in-progress timer countdown (PRD 0.2
@@ -815,7 +816,8 @@ extension CameraScreenModel {
     /// running session.
     func beginCapture() {
         guard let profile else { return }
-        let destination = CaptureDestination(profileID: profile.id, albumTitle: profile.name)
+        let destination = CaptureDestination(profileID: profile.id, albumTitle: profile.name,
+                                             aspectRatio: captureAspectRatio)
         let seconds = captureSettingsStore.timerSeconds.rawValue
         guard seconds > 0 else {
             performCapture(for: destination)
@@ -910,8 +912,9 @@ extension CameraScreenModel {
         DispatchQueue.main.async { completion(.success(image)) }
     }
 
-    /// Saves `image` as taken (FR-20.4): orientation normalized off the main
-    /// thread, then saved for the record — never cropped, toned or baked.
+    /// Saves `image` without any overlay (FR-20.4): orientation normalized
+    /// and center-cropped to the ratio chosen at the shutter off the main
+    /// thread, then saved for the record — never toned or baked (#712).
     ///
     /// On success the record learns where the photo went (`record(_:...)`).
     /// Failure and timeout raise the alert and never count as saved (0.2
@@ -934,7 +937,9 @@ extension CameraScreenModel {
         pipelineQueue.async {
             // A 12MP wide-gamut redraw can be ~100MB; release it between
             // rapid presses (PRD 0.1 acceptance 10.22).
-            let upright = autoreleasepool { Self.uprightImage(image) }
+            let upright = autoreleasepool {
+                Self.uprightImage(image).flatMap { Self.cropped($0, to: destination.aspectRatio) }
+            }
             guard let upright else {
                 CaptureTiming.discard(id: timingID)
                 DispatchQueue.main.async {
@@ -1104,6 +1109,20 @@ extension CameraScreenModel {
         return drawn.cgImage == nil ? nil : drawn
     }
 
+    /// `image` (already upright) center-cropped to `ratio` with
+    /// `ImageCropper`, without redrawing; `image` itself at 3:4, which is
+    /// never cropped (#712). A landscape photo stays landscape: the crop
+    /// follows the pixels, as in 1.3.0. `nil` when there is no bitmap.
+    nonisolated static func cropped(_ image: UIImage, to ratio: CaptureAspectRatio) -> UIImage? {
+        guard ratio != .threeByFour else { return image }
+        guard let cgImage = image.cgImage else { return nil }
+        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
+        let window = ImageCropper.cropRect(forPixelSize: pixelSize, ratio: ratio)
+        guard window.size != pixelSize else { return image }
+        guard let croppedImage = cgImage.cropping(to: window) else { return nil }
+        return UIImage(cgImage: croppedImage, scale: image.scale, orientation: .up)
+    }
+
     /// Longest side of the picture used for the flight animation, in points.
     static let flightImageMaxDimension: CGFloat = 300
 
@@ -1158,10 +1177,10 @@ extension CameraScreenModel {
 // MARK: - Overlay preview (PRD 2.0 FR-20.2, FR-20.6, FR-20.9, FR-20.10, #656)
 
 extension CameraScreenModel {
-    /// Whether the viewfinder draws the overlay now: the switch is on and
-    /// the record exists.
+    /// Whether the viewfinder draws the overlay now: always while the record
+    /// exists; there is no switch any more (#712).
     var showsOverlay: Bool {
-        isOverlayPreviewOn && profile != nil
+        profile != nil
     }
 
     /// The overlay text of the selected record as the photo taken right now
@@ -1195,28 +1214,7 @@ extension CameraScreenModel {
         profile?.position ?? .default
     }
 
-    // MARK: Switch
-
-    /// Flips 疊字預覽 (FR-20.9), remembers it and says so in the middle of the
-    /// screen. Turning it off also closes the style sheet.
-    func toggleOverlayPreview() {
-        isOverlayPreviewOn.toggle()
-        overlayPreviewSetting.set(isOverlayPreviewOn)
-        if !isOverlayPreviewOn { closeStylePanel() }
-        showCenterToast(message: isOverlayPreviewOn ? "疊字預覽 開啟" : "疊字預覽 關閉")
-    }
-
-    /// Shows `message` in the middle of the screen for a moment.
-    private func showCenterToast(message: String) {
-        let state = ToastState(message: message)
-        centerToast = state
-        scheduleToastDismiss { [weak self] in
-            guard self?.centerToast?.id == state.id else { return }
-            self?.centerToast = nil
-        }
-    }
-
-    /// Whether the hint 「點這裡的文字可以改樣式」 shows: the overlay is drawn
+    /// Whether the hint 「點這裡改文字樣式」 shows: the overlay is drawn
     /// and the sheet was never opened (FR-20.10).
     var showsOverlayTip: Bool {
         showsOverlay && !overlayTapSeen && !panelModel.isOpen
@@ -1229,8 +1227,9 @@ extension CameraScreenModel {
         "改動存到「\(profile?.name ?? "")」；拍的照片仍是原圖，匯出時才印上"
     }
 
-    /// A tap on the overlay text (FR-20.10): opens the style sheet. A tap
-    /// while it is open does nothing — the text is what it edits.
+    /// A tap on the overlay text or the 文字樣式 key (FR-20.10, #712):
+    /// opens the style sheet. A tap while it is open does nothing — the text
+    /// is what it edits.
     func handleOverlayTextTap() {
         zoomExpansion.collapse()
         collapseCameraTools()

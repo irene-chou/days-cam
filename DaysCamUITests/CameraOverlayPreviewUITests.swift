@@ -1,9 +1,10 @@
 import XCTest
 
-/// #656: the camera's 疊字預覽 switch (acceptance 1, 2), the style sheet
-/// opened from the text (6, 7), tap-to-focus next to it (8) and the first-run
-/// hint (9). With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
-/// B′ screenshots (D9 ①②③) are also written there for the PR.
+/// #656, #712: the style sheet opened from the text or the 文字樣式 key
+/// (656-6, 656-7, 712-5), tap-to-focus next to the text (656-8) and the
+/// first-run hint on the key (656-9). There is no 疊字預覽 switch any more
+/// (712-6). With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
+/// B′ screenshots are also written there for the PR.
 final class CameraOverlayPreviewUITests: XCTestCase {
     private var app: XCUIApplication!
     private var profiles = ""
@@ -39,7 +40,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    private var toggle: XCUIElement { element("overlayPreviewToggle") }
+    private var styleButton: XCUIElement { element("cameraStyleButton") }
     private var overlayText: XCUIElement { element("overlayText") }
     private var draggableText: XCUIElement { element("overlayTextDraggable") }
     private var panel: XCUIElement { element("stylePanel") }
@@ -55,7 +56,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let device = UIDevice.current.name.replacingOccurrences(of: " ", with: "")
                 .replacingOccurrences(of: "(", with: "").replacingOccurrences(of: ")", with: "")
-            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR656_\(name)_\(device).png"))
+            try? screenshot.pngRepresentation.write(to: directory.appendingPathComponent("PR712_\(name)_\(device).png"))
         }
     }
 
@@ -71,70 +72,56 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         XCTAssertFalse(item.exists, message, file: file, line: line)
     }
 
-    /// A short toast can come and go between `waitForExistence` polls on a
-    /// slow runner, so poll tightly (same as ExportUITests, #672).
-    private func toastAppears(_ toast: XCUIElement, timeout: TimeInterval = 20) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if toast.exists { return true }
-            Thread.sleep(forTimeInterval: 0.05)
-        } while Date() < deadline
-        return false
+    // MARK: - 712-5: the 文字樣式 key
+
+    /// 712-5／712-6: the key sits at the bottom right, right of the shutter
+    /// and level with it; a tap opens the sheet. No 疊字預覽 switch, and the
+    /// text is drawn from the start.
+    func test_712_5_styleKeyOpensTheSheet() {
+        launchCamera()
+        assertOnScreen(styleButton, "712-5 the key is on screen")
+        XCTAssertEqual(styleButton.label, "文字樣式")
+        let shutter = app.buttons["快門"]
+        XCTAssertGreaterThan(styleButton.frame.minX, shutter.frame.maxX, "712-5 right of the shutter")
+        XCTAssertEqual(styleButton.frame.midY, shutter.frame.midY, accuracy: 2, "712-5 one bottom row")
+        XCTAssertEqual(styleButton.frame.width, 44, accuracy: 1, "712-5 44pt")
+        XCTAssertFalse(element("overlayPreviewToggle").exists, "712-6 no switch")
+        assertOnScreen(overlayText, "712-6 the text is drawn")
+
+        styleButton.tap()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "712-5 the key opens the sheet")
+        XCTAssertEqual(element("stylePanelTitle").label, "文字樣式")
+        Thread.sleep(forTimeInterval: 1.5)
+        shot("panel_open")
+        app.buttons["stylePanelDoneButton"].tap()
+        waitForGone(panel, "the checkmark closes it")
     }
 
-    // MARK: - 1: the switch
-
-    /// 1: on at first (value 開), a tap turns it off and says so, another
-    /// tap turns it on; the text follows.
-    func test_656_1_switchTogglesWithToast() {
+    /// 712-6: the text stays after a relaunch; nothing can turn it off.
+    func test_712_6_textIsAlwaysDrawn() {
         launchCamera()
-        assertOnScreen(toggle, "656-1 the switch is on screen")
-        XCTAssertEqual(toggle.value as? String, "開", "656-1 on by default")
-        XCTAssertEqual(toggle.label, "疊字預覽")
-        assertOnScreen(overlayText, "656-1 the text is drawn")
-        shot("1_on")
-
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "關")
-        let offToast = element("overlayPreviewToast")
-        XCTAssertTrue(toastAppears(offToast), "656-1 toast")
-        XCTAssertEqual(offToast.label, "疊字預覽 關閉")
-        waitForGone(overlayText, "656-1 no text with the preview off")
-        shot("1_off")
-
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "開")
-        XCTAssertTrue(toastAppears(element("overlayPreviewToast")))
-        XCTAssertEqual(element("overlayPreviewToast").label, "疊字預覽 開啟")
-        assertOnScreen(overlayText, "656-1 the text is back")
-    }
-
-    // MARK: - 2: remembered
-
-    /// 2: off stays off after the app is relaunched.
-    func test_656_2_switchSurvivesARelaunch() {
-        launchCamera()
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "關")
+        assertOnScreen(overlayText, "712-6 the text is drawn")
+        XCTAssertTrue(element("filmDateStamp").exists, "712-6 the film date too")
         app.terminate()
-
-        launchCamera(extra: ["-UITestKeepOverlayPreview"], reusingProfiles: true)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "關", "656-2 still off")
-        XCTAssertFalse(overlayText.exists)
+        launchCamera(reusingProfiles: true)
+        assertOnScreen(overlayText, "712-6 still drawn after a relaunch")
     }
 
     // MARK: - 6, 7, 9: the sheet
 
-    /// 6／7／9: the hint shows, a tap on the text opens the sheet (title, note,
-    /// bottom bar gone), a drag saves a custom position, the checkmark closes
-    /// it and the hint never returns.
+    /// 6／7／9: the hint shows over the 文字樣式 key (712), a tap on the text
+    /// opens the sheet (title, note, bottom bar gone), a drag saves a custom
+    /// position, the checkmark closes it and the hint never returns.
     func test_656_6_tapOnTextOpensSheetAndDragSavesPosition() {
         launchCamera(extra: ["-UITestShowTips"])
         assertOnScreen(overlayText, "656-6 the text is drawn")
-        XCTAssertTrue(element("overlayTip").waitForExistence(timeout: 5), "656-9 the hint shows first")
-        XCTAssertEqual(element("overlayTip").label, "點這裡的文字可以改樣式")
-        shot("2_on_tip")
+        let tip = element("overlayTip")
+        XCTAssertTrue(tip.waitForExistence(timeout: 5), "656-9 the hint shows first")
+        XCTAssertEqual(tip.label, "點這裡改文字樣式")
+        assertOnScreen(tip, "712 the hint is on screen")
+        XCTAssertLessThan(tip.frame.maxY, styleButton.frame.minY, "712 the hint sits above the key")
+        XCTAssertEqual(tip.frame.maxX, styleButton.frame.maxX, accuracy: 8, "712 the hint hangs over the key")
+        shot("tip")
 
         overlayText.tap()
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "656-6 the sheet opens")
@@ -146,7 +133,6 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         XCTAssertFalse(element("overlayTip").exists, "656-9 no hint while the sheet is open")
         XCTAssertTrue(draggableText.waitForExistence(timeout: 3), "656-7 draggable with the sheet open")
         Thread.sleep(forTimeInterval: 1.5)
-        shot("3_sheet")
 
         let before = draggableText.frame
         let start = draggableText.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -181,8 +167,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
 
     // MARK: - 8: focus next to the text
 
-    /// 8: with the preview off a tap on the viewfinder is focus and opens
-    /// no sheet; with it on, a tap off the text is focus too.
+    /// 8: a tap on the viewfinder off the text is focus and opens no sheet.
     func test_656_8_tapsAreFocusExceptOnTheText() {
         launchCamera()
         let reticle = element("focusReticle")
@@ -191,11 +176,5 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         viewfinderTop.tap()
         XCTAssertTrue(reticle.waitForExistence(timeout: 3), "656-8 a tap off the text focuses")
         XCTAssertFalse(panel.exists, "656-8 and opens no sheet")
-
-        toggle.tap()
-        waitForGone(overlayText, "656-8 preview off")
-        viewfinderTop.tap()
-        XCTAssertTrue(reticle.waitForExistence(timeout: 3), "656-8 off: a tap focuses")
-        XCTAssertFalse(panel.exists, "656-8 off: no sheet entry")
     }
 }

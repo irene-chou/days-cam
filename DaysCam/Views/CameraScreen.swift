@@ -3,13 +3,14 @@ import SwiftUI
 /// The camera (PRD 2.0 FR-20, D9), full screen over the photo wall that
 /// opened it.
 ///
-/// Composes the viewfinder, the permission guidance screen, the top bar
-/// with the record switcher and its menu, the shutter, the newest-photo
-/// button (「返回圖庫」) and the failure alert. The viewfinder draws the
-/// record's overlay while 疊字預覽 is on (FR-20.2) and a tap on it opens the
-/// 文字樣式 sheet (FR-20.10); the photo is still saved as taken and the
-/// overlay is added only on export (§6.3). All state and decisions live in
-/// `CameraScreenModel`; this view only lays it out.
+/// Composes the viewfinder at the chosen ratio, the permission guidance
+/// screen, the top bar with the record switcher and its menu, the shutter,
+/// the newest-photo button (「返回圖庫」), the 文字樣式 key and the failure
+/// alert (#712). The viewfinder always draws the record's overlay (FR-20.2)
+/// and a tap on it, or on the 文字樣式 key, opens the 文字樣式 sheet
+/// (FR-20.10); the photo is saved cropped to the ratio but without the
+/// overlay, which is added only on export (§6.3). All state and decisions
+/// live in `CameraScreenModel`; this view only lays it out.
 ///
 /// Fixed light theme (PRD 0.2 FR-14.1): every color here comes from
 /// `CameraTheme`, plus `.preferredColorScheme(.light)` at the root. The one
@@ -21,10 +22,6 @@ struct CameraScreen: View {
     /// and a swipe down both call it. The caller reads
     /// `model.selectedProfileID` to know which record's wall to show.
     var onClose: () -> Void
-
-    /// The viewfinder always shows the sensor's own 3:4 picture: nothing is
-    /// cropped any more, so the user sees all of what is saved (#621).
-    static let viewfinderRatio: CaptureAspectRatio = .threeByFour
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -71,7 +68,6 @@ struct CameraScreen: View {
             // #621-9: closing the camera really stops the session.
             .onDisappear { model.onDisappear() }
             .overlay(alignment: .bottomLeading) { toastOverlay }
-            .overlay { centerToastOverlay }
             .alert("無法完成拍照", isPresented: captureErrorBinding, presenting: model.captureError) { error in
                 if error.showsSettingsAction {
                     Button("前往設定") {
@@ -163,17 +159,18 @@ struct CameraScreen: View {
 
     // MARK: - Viewfinder box
 
-    /// The picture's rectangle in screen coordinates — where a capture flight
-    /// starts (issue #148).
+    /// The picture's rectangle in screen coordinates at the chosen ratio —
+    /// where a capture flight starts (issue #148, #712).
     private func viewfinderFrame(metrics: CameraScreenLayoutMetrics) -> CGRect {
-        metrics.viewfinderFrame(for: Self.viewfinderRatio, boxWidth: metrics.screenSize.width)
+        metrics.closedPictureFrame(for: model.captureAspectRatio)
     }
 
     /// Always laid out at its closed size and only scaled about its center
     /// (and moved) while the style sheet is open, so the camera layer scales
     /// with it instead of jumping to the final size (#153).
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
-        let placement = metrics.viewfinderPlacement(isStyleSheetOpen: model.panelModel.isOpen)
+        let placement = metrics.viewfinderPlacement(for: model.captureAspectRatio,
+                                                    isStyleSheetOpen: model.panelModel.isOpen)
         let size = placement.layoutSize
         return viewfinderContent(frameSize: size)
             .frame(width: size.width, height: size.height)
@@ -183,6 +180,8 @@ struct CameraScreen: View {
                     .allowsHitTesting(false)
             )
             .clipped()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("cameraViewfinder")
             .scaleEffect(x: placement.scale.width, y: placement.scale.height, anchor: .center)
             .offset(x: placement.center.x - size.width / 2, y: placement.center.y - size.height / 2)
     }
@@ -193,7 +192,7 @@ struct CameraScreen: View {
     /// status bar; the record switcher sits in its middle (FR-20.7). A swipe
     /// down from here closes the camera.
     private func headerBar(metrics: CameraScreenLayoutMetrics) -> some View {
-        let isOnPhoto = metrics.isViewfinderBehindHeader(ratio: Self.viewfinderRatio, isPanelOpen: false)
+        let isOnPhoto = metrics.isViewfinderBehindHeader(ratio: model.captureAspectRatio, isPanelOpen: false)
         return VStack(spacing: 0) {
             Spacer().frame(height: metrics.topInset)
             CameraToolbar(model: model, isOnPhoto: isOnPhoto)
@@ -237,18 +236,14 @@ struct CameraScreen: View {
 
     // MARK: - Tools capsule (issue #135)
 
-    /// Floats above the viewfinder, right-aligned with the toggle button
-    /// (inside the flip button at the top right) and 4pt below it (FR-20.7,
-    /// D9).
+    /// Floats above the viewfinder, left-aligned with the toggle button at
+    /// the top left and 4pt below it (#712, as 1.x).
     @ViewBuilder
     private func toolsCapsule(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.isCameraToolsExpanded {
-            let inset = CameraScreenLayoutMetrics.toolbarHorizontalInset
-            let trailing = CameraScreenLayoutMetrics.toolsCapsuleTrailingInset
             CameraToolsCapsule(model: model)
-                .frame(width: metrics.screenSize.width - inset - trailing, alignment: .trailing)
-                .offset(x: inset, y: metrics.toolsCapsuleTop)
-                .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
+                .offset(x: CameraScreenLayoutMetrics.toolsCapsuleLeadingInset, y: metrics.toolsCapsuleTop)
+                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
         }
     }
 
@@ -274,7 +269,7 @@ struct CameraScreen: View {
     /// ③). Always a transparent background (issue #121). A swipe down from
     /// here closes the camera.
     private func footer(metrics: CameraScreenLayoutMetrics) -> some View {
-        let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: Self.viewfinderRatio, isPanelOpen: false)
+        let isOnPhoto = metrics.isViewfinderBehindFooter(ratio: model.captureAspectRatio, isPanelOpen: false)
         return bottomBar(metrics: metrics, isOnPhoto: isOnPhoto)
             .frame(width: metrics.screenSize.width,
                    height: metrics.footerBase - metrics.footerRegionTop,
@@ -292,8 +287,8 @@ struct CameraScreen: View {
 
     /// Everything drawn inside the viewfinder box, sized to `frameSize`: the
     /// live preview (or placeholder), the optional grid (never saved), the
-    /// focus reticle, the record's overlay text and film date while 疊字預覽
-    /// is on (FR-20.2), the countdown's big number (FR-7.6), the transient
+    /// focus reticle, the record's overlay text and film date (FR-20.2,
+    /// always on since #712), the countdown's big number (FR-7.6), the transient
     /// status message and the permission guidance screen.
     @ViewBuilder
     private func viewfinderContent(frameSize: CGSize) -> some View {
@@ -399,9 +394,6 @@ struct CameraScreen: View {
     private func overlayLayer(layerSize: CGSize, frameSize: CGSize, rotation: ViewfinderRotation) -> some View {
         let isDraggable = model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching
         return ZStack {
-            if model.showsOverlayTip, !overlayTextLayerRect.isNull {
-                overlayHighlight(rect: overlayTextLayerRect, layerSize: layerSize)
-            }
             OverlayTextView(text: model.overlayText,
                             style: model.overlayStyle,
                             placement: model.overlayPlacement,
@@ -423,46 +415,23 @@ struct CameraScreen: View {
         .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
     }
 
-    /// Space between the text and its highlight frame.
+    /// Space between the 文字樣式 key and its highlight frame.
     private static let highlightPadding: CGFloat = 6
 
-    private static func tipAlignment(isBelow: Bool, trailing: Bool) -> Alignment {
-        switch (isBelow, trailing) {
-        case (false, true): return .topTrailing
-        case (false, false): return .topLeading
-        case (true, true): return .bottomTrailing
-        case (true, false): return .bottomLeading
-        }
-    }
-
-    /// The bubble's tail, 16pt in from the side it hangs from.
-    private func tail(pointsUp: Bool) -> some View {
-        Triangle()
-            .fill(CameraTheme.toastBackground)
-            .frame(width: 12, height: 6)
-            .rotationEffect(.degrees(pointsUp ? 180 : 0))
-            .padding(.horizontal, 16)
-    }
-
-    /// The first-run hint (FR-20.10): a rounded frame around the overlay text
-    /// (accent stroke, faint accent fill) with 「點這裡的文字可以改樣式」 above
-    /// it (below it when the text is at the top edge), pointing at it. Drawn in the overlay layer, so it follows the text
-    /// when it is dragged or resized and turns with the phone. Never takes
-    /// touches.
-    private func overlayHighlight(rect: CGRect, layerSize: CGSize) -> some View {
-        let frame = rect.insetBy(dx: -Self.highlightPadding, dy: -Self.highlightPadding)
-        // The bubble hangs from the side of the frame that has more room.
-        let alignsTrailing = frame.midX > layerSize.width / 2
-        let isBelow = CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: frame.minY)
-        return RoundedRectangle(cornerRadius: 8, style: .continuous)
+    /// The first-run hint (FR-20.10, #712): a rounded frame around the
+    /// 文字樣式 key (accent stroke, faint accent fill) with
+    /// 「點這裡改文字樣式」 above it, its tail pointing down at the
+    /// key and its right edge on the frame's. Never takes touches.
+    private var styleKeyTip: some View {
+        let side = Self.footerButtonSize + 2 * Self.highlightPadding
+        return RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(CameraTheme.accent.opacity(0.18))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(CameraTheme.accent, lineWidth: 2))
-            .frame(width: frame.width, height: frame.height)
-            .overlay(alignment: Self.tipAlignment(isBelow: isBelow, trailing: alignsTrailing)) {
-                VStack(alignment: alignsTrailing ? .trailing : .leading, spacing: 0) {
-                    if isBelow { tail(pointsUp: true) }
-                    Text("點這裡的文字可以改樣式")
+            .frame(width: side, height: side)
+            .overlay(alignment: .bottomTrailing) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text("點這裡改文字樣式")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(1)
@@ -472,12 +441,15 @@ struct CameraScreen: View {
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(CameraTheme.toastBackground))
                         .accessibilityIdentifier("overlayTip")
-                    if !isBelow { tail(pointsUp: false) }
+                    Triangle()
+                        .fill(CameraTheme.toastBackground)
+                        .frame(width: 12, height: 6)
+                        // Centered over the key.
+                        .padding(.trailing, side / 2 - 6)
                 }
-                // Hangs 2pt clear of the frame, above it or below it.
-                .alignmentGuide(isBelow ? .bottom : .top) { isBelow ? $0[.top] - 2 : $0[.bottom] + 2 }
+                // Hangs 2pt clear of the frame, above it.
+                .alignmentGuide(.bottom) { $0[.bottom] + side + 2 }
             }
-            .position(x: frame.midX, y: frame.midY)
             .allowsHitTesting(false)
     }
 
@@ -590,12 +562,12 @@ struct CameraScreen: View {
     // MARK: - Bottom bar (FR-20.5, FR-20.11)
 
     /// Newest photo with 「返回圖庫」 under it at the left, the shutter in the
-    /// middle, nothing at the right (FR-20.7, D9). No background (PRD 0.2
+    /// middle, the 文字樣式 key at the right (#712). No background (PRD 0.2
     /// FR-14.2).
     ///
-    /// The thumbnail's center sits `footerSideButtonCenterInset` from the
-    /// left edge, level with the shutter's; the row sits 16pt above the
-    /// bottom of the footer region.
+    /// The side keys' centers sit `footerSideButtonCenterInset` from their
+    /// edge, level with the shutter's; the row sits 16pt above the bottom of
+    /// the footer region.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
         let sideInset = metrics.footerSideButtonCenterInset - Self.footerButtonSize / 2
         return ZStack {
@@ -603,6 +575,11 @@ struct CameraScreen: View {
             HStack {
                 thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
+                styleButton(isOnPhoto: isOnPhoto)
+                    // Outside the button, so the hint is its own element.
+                    .overlay {
+                        if model.showsOverlayTip { styleKeyTip }
+                    }
             }
             .padding(.horizontal, sideInset)
         }
@@ -655,6 +632,29 @@ struct CameraScreen: View {
         .accessibilityIdentifier("cameraLatestThumbnail")
     }
 
+    /// Right key (#712): opens the 文字樣式 sheet, like a tap on the text.
+    /// `text.below.photo` in plain ink, at the 18pt that matches the 22pt
+    /// keys' visual width; the first-run hint points at it.
+    private func styleButton(isOnPhoto: Bool) -> some View {
+        Button(action: model.handleOverlayTextTap) {
+            Image(systemName: "text.below.photo")
+                .font(.system(size: Self.styleGlyphSize, weight: .medium))
+                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
+                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
+                .contentShape(Rectangle())
+                .legibleOverPhoto(isOnPhoto)
+                .rotatedChrome(model.viewfinderRotation)
+        }
+        .disabled(!model.showsOverlay)
+        .accessibilityLabel("文字樣式")
+        .accessibilityIdentifier("cameraStyleButton")
+    }
+
+    /// Point size of the 文字樣式 key's glyph: `text.below.photo` is wider
+    /// and heavier than the 22pt toolbar glyphs, so 18pt matches their
+    /// visual width.
+    private static let styleGlyphSize: CGFloat = 18
+
     /// Gap between the thumbnail and 「返回圖庫」 under it (D9).
     private static let backLabelGap: CGFloat = 4
 
@@ -692,18 +692,6 @@ struct CameraScreen: View {
     private var captureErrorBinding: Binding<Bool> {
         Binding(get: { model.captureError != nil },
                 set: { isPresented in if !isPresented { model.dismissCaptureError() } })
-    }
-
-    /// 「疊字預覽 開啟／關閉」 (FR-20.9), in the middle of the screen. Never
-    /// takes touches.
-    @ViewBuilder
-    private var centerToastOverlay: some View {
-        if let state = model.centerToast {
-            ToastView(state: state)
-                .transition(.opacity)
-                .animation(.easeInOut, value: state.id)
-                .accessibilityIdentifier("overlayPreviewToast")
-        }
     }
 
     /// "已取消" (0.2 FR-7.6) and "改存到「…」" (FR-20.8) toasts, above the

@@ -432,10 +432,9 @@ final class CameraScreenLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(se.toolsCapsuleTop, 20 + (46 - 44) / 2 + 44 + 4, accuracy: 0.05)
     }
 
-    /// 655-12: the capsule opens under the tools toggle, which sits one key
-    /// and an 8pt gap inside the flip button at the top right (D9).
-    func test_655_12_toolsCapsuleLinesUpUnderTheInnerToggle() {
-        XCTAssertEqual(CameraScreenLayoutMetrics.toolsCapsuleTrailingInset, 12 + 44 + 8)
+    /// 712-1: the capsule opens under the tools toggle at the top left.
+    func test_712_1_toolsCapsuleLinesUpUnderTheLeftToggle() {
+        XCTAssertEqual(CameraScreenLayoutMetrics.toolsCapsuleLeadingInset, 12)
     }
 
     /// #659 review: the record menu stops 16pt above the bottom bar's
@@ -541,7 +540,7 @@ final class CameraScreenStyleSheetMetricsTests: XCTestCase {
             let m = metrics(size, bottom: bottom, top: top)
             XCTAssertEqual(m.styleSheetVisibleHeight, m.styleSheetHeight + bottom, accuracy: 0.5)
             XCTAssertEqual(m.styleSheetVisibleHeight / size.height, 0.4, accuracy: 0.08, "\(size)")
-            let frame = m.styleSheetViewfinderFrame
+            let frame = m.styleSheetViewfinderFrame(aspect: 0.75)
             XCTAssertGreaterThanOrEqual(frame.minY, m.headerBottom - 0.5, "\(size) below the header")
             XCTAssertLessThanOrEqual(frame.maxY, m.styleSheetTop + 0.5, "\(size) above the sheet")
             XCTAssertEqual(frame.width / frame.height, 0.75, accuracy: 0.001, "\(size) stays 3:4")
@@ -549,31 +548,44 @@ final class CameraScreenStyleSheetMetricsTests: XCTestCase {
         }
     }
 
-    /// The placement keeps the closed layout size and only scales and moves.
-    func test_656_6_placementScalesAboutTheClosedLayout() {
+    /// The placement keeps the closed layout size and only scales and moves,
+    /// at every ratio, by the same amount on both axes (#712-4).
+    func test_712_4_placementScalesAboutTheClosedLayoutAtEveryRatio() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            for ratio in CaptureAspectRatio.allCases {
+                let closed = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: false)
+                let open = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: true)
+                let picture = m.closedPictureFrame(for: ratio)
+                XCTAssertEqual(closed.layoutSize, picture.size, "\(ratio)")
+                XCTAssertEqual(closed.center.x, picture.midX, accuracy: 0.5)
+                XCTAssertEqual(closed.center.y, picture.midY, accuracy: 0.5)
+                XCTAssertEqual(closed.layoutSize, open.layoutSize)
+                XCTAssertEqual(closed.scale, CGSize(width: 1, height: 1))
+                XCTAssertLessThan(open.scale.width, 1, "\(size) \(ratio)")
+                XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.0001)
+                let openHeight = closed.layoutSize.height * open.scale.height
+                XCTAssertGreaterThanOrEqual(open.center.y - openHeight / 2, m.headerBottom - 0.5, "\(ratio) below the header")
+                XCTAssertLessThanOrEqual(open.center.y + openHeight / 2, m.styleSheetTop + 0.5, "\(ratio) above the sheet")
+            }
+        }
+    }
+
+    /// 712-4: the picture has the chosen ratio's shape: 1:1 is the square
+    /// centered in the 3:4 box, 3:4 and 9:16 (outside the SE fallback) start
+    /// at the header.
+    func test_712_4_closedPictureHasTheRatiosShape() {
         let m = metrics(CGSize(width: 402, height: 874), bottom: 34, top: 62)
-        let closed = m.viewfinderPlacement(isStyleSheetOpen: false)
-        let open = m.viewfinderPlacement(isStyleSheetOpen: true)
-        XCTAssertEqual(closed.layoutSize, open.layoutSize)
-        XCTAssertEqual(closed.scale, CGSize(width: 1, height: 1))
-        XCTAssertLessThan(open.scale.width, 1)
-        XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.0001)
-        XCTAssertEqual(open.center.x, m.styleSheetViewfinderFrame.midX, accuracy: 0.5)
-        XCTAssertEqual(open.center.y, m.styleSheetViewfinderFrame.midY, accuracy: 0.5)
+        let expected: [CaptureAspectRatio: CGFloat] = [.threeByFour: 3.0 / 4, .oneByOne: 1, .nineBySixteen: 9.0 / 16]
+        for (ratio, aspect) in expected {
+            let frame = m.closedPictureFrame(for: ratio)
+            XCTAssertEqual(frame.width, 402, accuracy: 0.5, "\(ratio) full width")
+            XCTAssertEqual(frame.width / frame.height, aspect, accuracy: 0.001, "\(ratio)")
+        }
+        XCTAssertEqual(m.closedPictureFrame(for: .threeByFour).minY, m.headerBottom, accuracy: 0.5)
+        XCTAssertEqual(m.closedPictureFrame(for: .nineBySixteen).minY, m.headerBottom, accuracy: 0.5)
+        XCTAssertEqual(m.closedPictureFrame(for: .oneByOne).midY, m.closedPictureFrame(for: .threeByFour).midY, accuracy: 0.5)
     }
 }
 
-// MARK: - First-run hint placement (#656)
-
-final class OverlayTipPlacementTests: XCTestCase {
-    /// The hint hangs above the frame, unless the frame is too close to the
-    /// top for the bubble to fit; then it hangs below.
-    func test_656_9_tipFlipsBelowWhenThereIsNoRoomAbove() {
-        let height = CameraScreenLayoutMetrics.overlayTipHeight
-        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 400), "bottom of the picture")
-        XCTAssertFalse(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height), "exactly enough room")
-        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: height - 1))
-        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: 0), "at the top edge")
-        XCTAssertTrue(CameraScreenLayoutMetrics.overlayTipIsBelow(frameMinY: -10), "frame padded past the edge")
-    }
-}

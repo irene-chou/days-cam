@@ -268,41 +268,40 @@ struct CameraScreenLayoutMetrics {
                height: max(styleSheetTop - panelGapAboveBox - headerBottom, 0))
     }
 
-    /// Where the 3:4 picture sits while the sheet is open: fitted to
-    /// `styleSheetViewfinderArea` and centered in it.
-    var styleSheetViewfinderFrame: CGRect {
+    /// Where a picture of `aspect` (width ÷ height) sits while the sheet is
+    /// open: fitted to `styleSheetViewfinderArea` and centered in it.
+    func styleSheetViewfinderFrame(aspect: CGFloat) -> CGRect {
         let area = styleSheetViewfinderArea
-        let aspect = CaptureAspectRatio.threeByFour.shortToLongRatio
+        guard aspect > 0 else { return .zero }
         let width = min(area.width, area.height * aspect)
         let height = width / aspect
         return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
     }
 
-    /// The picture is laid out at its closed size and only scaled and moved
-    /// while the sheet is open, so the camera layer scales with it (#153).
-    func viewfinderPlacement(isStyleSheetOpen: Bool) -> ViewfinderPlacement {
-        let closed = viewfinderFrame(for: .threeByFour, boxWidth: screenSize.width)
-        guard isStyleSheetOpen else {
+    /// The `ratio` picture's own rectangle while the sheet is closed, in
+    /// screen coordinates: 3:4 and 9:16 fill their box, 1:1 is the square
+    /// centered in the 3:4 box (rule ②, #712).
+    func closedPictureFrame(for ratio: CaptureAspectRatio) -> CGRect {
+        let box = viewfinderFrame(for: ratio, boxWidth: screenSize.width)
+        let size = viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: false)
+        return CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
+    /// The `ratio` picture is laid out at its closed size and only scaled
+    /// and moved while the sheet is open, so the camera layer scales with it
+    /// (#153). The open frame keeps the closed picture's own shape, so the
+    /// scale is the same on both axes (#712).
+    func viewfinderPlacement(for ratio: CaptureAspectRatio, isStyleSheetOpen: Bool) -> ViewfinderPlacement {
+        let closed = closedPictureFrame(for: ratio)
+        guard isStyleSheetOpen, closed.height > 0 else {
             return ViewfinderPlacement(layoutSize: closed.size, scale: CGSize(width: 1, height: 1),
                                        center: CGPoint(x: closed.midX, y: closed.midY))
         }
-        let open = styleSheetViewfinderFrame
+        let open = styleSheetViewfinderFrame(aspect: closed.width / closed.height)
         let scale = CGSize(width: closed.width > 0 ? open.width / closed.width : 1,
-                           height: closed.height > 0 ? open.height / closed.height : 1)
+                           height: open.height / closed.height)
         return ViewfinderPlacement(layoutSize: closed.size, scale: scale, center: CGPoint(x: open.midX, y: open.midY))
-    }
-
-    // MARK: - First-run hint (#656)
-
-    /// Room the hint's bubble and tail need above the text's frame: 12pt of
-    /// padding, one line of 13pt bold text, a 6pt tail and a 2pt gap.
-    static let overlayTipHeight: CGFloat = 40
-
-    /// Whether the hint hangs below the text's highlight frame instead of
-    /// above it: when the frame is too close to the layer's top edge for the
-    /// bubble to fit (`frameMinY` in the layer's coordinates).
-    static func overlayTipIsBelow(frameMinY: CGFloat) -> Bool {
-        frameMinY < overlayTipHeight
     }
 
     // MARK: - Tools capsule (issue #135)
@@ -313,15 +312,14 @@ struct CameraScreenLayoutMetrics {
     /// The toolbar's icon button height.
     static let toolbarButtonHeight: CGFloat = 44
 
-    /// Gap between the two round keys at the top right (D9): the tools
-    /// toggle (inner) and flip (outermost).
+    /// Gap between the two round keys at the top right: the ratio key
+    /// (inner) and flip (outermost) (#712).
     static let toolbarRoundKeySpacing: CGFloat = 8
 
-    /// Distance from the screen's right edge to the tools capsule's right
-    /// edge: the capsule opens under the toggle, which sits one key and one
-    /// gap inside the flip button (FR-20.7, D9).
-    static var toolsCapsuleTrailingInset: CGFloat {
-        toolbarHorizontalInset + toolbarButtonHeight + toolbarRoundKeySpacing
+    /// Distance from the screen's left edge to the tools capsule's left
+    /// edge: the capsule opens under the toggle at the top left (#712).
+    static var toolsCapsuleLeadingInset: CGFloat {
+        toolbarHorizontalInset
     }
 
     /// Top edge of the tools capsule and of the record switcher's menu: the

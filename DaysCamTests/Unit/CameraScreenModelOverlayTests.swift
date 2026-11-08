@@ -2,9 +2,10 @@ import UIKit
 import XCTest
 @testable import DaysCam
 
-/// #656: the camera's overlay preview — the switch (FR-20.9), the text drawn
-/// in the viewfinder (FR-20.2, FR-20.6), the style sheet opened from it
-/// (FR-20.10) and the clean original the shutter still saves (FR-20.4).
+/// #656, #712: the camera's overlay preview — the text always drawn in the
+/// viewfinder (FR-20.2, FR-20.6), the style sheet opened from it or from the
+/// 文字樣式 key (FR-20.10), and the shutter saving the photo cropped to the
+/// ratio but never with the overlay (FR-20.4).
 @MainActor
 final class CameraScreenModelOverlayTests: XCTestCase {
     private var directory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -44,9 +45,11 @@ final class CameraScreenModelOverlayTests: XCTestCase {
 
     private final class SaveRecorder {
         private(set) var images: [UIImage] = []
+        private(set) var albumTitles: [String] = []
         func save(_ image: UIImage, _ albumIdentifier: String?, _ albumTitle: String,
                   _ completion: @escaping (Result<RecordSaveOutcome, PhotoSaveError>) -> Void) {
             images.append(image)
+            albumTitles.append(albumTitle)
             completion(.success(RecordSaveOutcome(assetID: "asset", albumID: nil)))
         }
     }
@@ -96,49 +99,37 @@ final class CameraScreenModelOverlayTests: XCTestCase {
                                       captureImage: captureImage,
                                       scheduleToastDismiss: spy.schedule,
                                       styleCenter: center,
-                                      overlayPreviewDefaults: defaults,
                                       tips: tips)
         return Rig(model: model, store: store, center: center, toastSpy: spy, tips: tips)
     }
 
-    // MARK: - 2: the switch
+    // MARK: - 712-6: no switch
 
-    /// 1／2: on by default; a flip is remembered across models (app level).
-    func test_656_2_switchDefaultsToOnAndIsRemembered() throws {
+    /// 712-6: the overlay is always drawn for a record, in every record.
+    func test_712_6_overlayIsAlwaysDrawn() throws {
         let rig = try makeRig()
-        XCTAssertTrue(rig.model.isOverlayPreviewOn)
         XCTAssertTrue(rig.model.showsOverlay)
-
-        rig.model.toggleOverlayPreview()
-        XCTAssertFalse(rig.model.isOverlayPreviewOn)
-        XCTAssertFalse(rig.model.showsOverlay)
-
-        let reopened = try makeRig(store: rig.store)
-        XCTAssertFalse(reopened.model.isOverlayPreviewOn, "656-2 survives closing and reopening the camera")
-    }
-
-    /// 2: not per record — another record sees the same state.
-    func test_656_2_switchDoesNotDependOnTheRecord() throws {
-        let rig = try makeRig()
         let other = try addRecord(to: rig.store, name: "第二個", start: DateFixture.components(2026, 1, 1))
-        rig.model.toggleOverlayPreview()
-        let second = try makeRig(store: rig.store, record: other)
-        XCTAssertFalse(second.model.isOverlayPreviewOn)
+        rig.model.selectRecord(other.id)
+        XCTAssertTrue(rig.model.showsOverlay)
     }
 
-    /// 1: each flip says so in the middle of the screen, then the toast goes.
-    func test_656_1_toggleShowsACenterToast() throws {
-        let rig = try makeRig()
-        rig.model.toggleOverlayPreview()
-        XCTAssertEqual(rig.model.centerToast?.message, "疊字預覽 關閉")
-        rig.model.toggleOverlayPreview()
-        XCTAssertEqual(rig.model.centerToast?.message, "疊字預覽 開啟")
+    // MARK: - 712-2: the ratio key
 
-        // The first toast's dismiss fires late and must not take the newer one.
-        rig.toastSpy.scheduled[0]()
-        XCTAssertEqual(rig.model.centerToast?.message, "疊字預覽 開啟")
-        rig.toastSpy.scheduled[1]()
-        XCTAssertNil(rig.model.centerToast)
+    /// 712-2: 3:4 → 1:1 → 9:16 → 3:4, remembered by the app (a new store on
+    /// the same defaults reads it back).
+    func test_712_2_ratioCyclesAndIsRemembered() throws {
+        let rig = try makeRig()
+        XCTAssertEqual(rig.model.captureAspectRatio, .threeByFour)
+        rig.model.cycleAspectRatio()
+        XCTAssertEqual(rig.model.captureAspectRatio, .oneByOne)
+        rig.model.cycleAspectRatio()
+        XCTAssertEqual(rig.model.captureAspectRatio, .nineBySixteen)
+        XCTAssertEqual(CaptureSettingsStore(defaults: defaults).captureAspectRatio, .nineBySixteen,
+                       "712-2 survives a relaunch")
+        rig.model.cycleAspectRatio()
+        XCTAssertEqual(rig.model.captureAspectRatio, .threeByFour)
+        XCTAssertEqual(try makeRig(store: rig.store).model.captureAspectRatio, .threeByFour)
     }
 
     // MARK: - 3, 5: the text
@@ -188,7 +179,7 @@ final class CameraScreenModelOverlayTests: XCTestCase {
                                       profileStore: store, profileID: record.id,
                                       captureSettingsStore: CaptureSettingsStore(defaults: defaults),
                                       calendar: DateFixture.taipei, calculator: calculator,
-                                      overlayPreviewDefaults: defaults, tips: FirstRunTips(defaults: tipsDefaults))
+                                      tips: FirstRunTips(defaults: tipsDefaults))
         let before = model.overlayText
         clock.value = try XCTUnwrap(DateFixture.date(2026, 1, 11, hour: 0))
         XCTAssertNotEqual(model.overlayText, before)
@@ -244,28 +235,13 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         XCTAssertFalse(rig.model.panelModel.isOpen)
     }
 
-    /// 8: with the preview off there is no way into the sheet and no text
-    /// to shield from focus.
-    func test_656_8_noSheetAndNoShieldWhilePreviewIsOff() throws {
+    /// 8: only a touch on the text is shielded from focus.
+    func test_656_8_onlyTheTextIsShieldedFromFocus() throws {
         let rig = try makeRig()
         rig.model.overlayTextFrame = CGRect(x: 10, y: 10, width: 100, height: 40)
         XCTAssertTrue(rig.model.viewfinderTouchStartsOnOverlayText(at: CGPoint(x: 20, y: 20)))
         XCTAssertFalse(rig.model.viewfinderTouchStartsOnOverlayText(at: CGPoint(x: 300, y: 300)),
                        "656-8 outside the text is focus")
-
-        rig.model.toggleOverlayPreview()
-        rig.model.handleOverlayTextTap()
-        XCTAssertFalse(rig.model.panelModel.isOpen)
-        XCTAssertFalse(rig.model.viewfinderTouchStartsOnOverlayText(at: CGPoint(x: 20, y: 20)),
-                       "656-8 off: the whole viewfinder is focus")
-    }
-
-    /// 6: no sheet during a countdown, and turning the preview off closes it.
-    func test_656_6_sheetNeedsThePreviewAndNoCountdown() throws {
-        let rig = try makeRig()
-        rig.model.handleOverlayTextTap()
-        rig.model.toggleOverlayPreview()
-        XCTAssertFalse(rig.model.panelModel.isOpen)
     }
 
     /// 6: the sheet edits the selected record, so the switcher waits, the
@@ -283,15 +259,10 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         XCTAssertFalse(rig.model.focusModel.canAcceptGesture())
     }
 
-    /// 9: the hint shows with the preview on until the sheet was opened once,
-    /// in any later launch too; off, it is not shown.
+    /// 9: the hint shows until the sheet was opened once, in any later
+    /// launch too.
     func test_656_9_hintGoesAwayForGoodOnceTheSheetWasOpened() throws {
         let rig = try makeRig()
-        XCTAssertTrue(rig.model.showsOverlayTip)
-
-        rig.model.toggleOverlayPreview()
-        XCTAssertFalse(rig.model.showsOverlayTip)
-        rig.model.toggleOverlayPreview()
         XCTAssertTrue(rig.model.showsOverlayTip)
 
         rig.model.handleOverlayTextTap()
@@ -350,22 +321,33 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         wait(for: [settled], timeout: 2)
     }
 
-    // MARK: - 10: the shutter still saves the clean original
+    // MARK: - 10, 712-3, 712-7: what the shutter saves
 
-    /// 10: with the preview on and the sheet opened and edited, the saved
-    /// image is the camera's, unchanged — same as with the preview off.
-    func test_656_10_savedImageIsTheCleanOriginal() throws {
-        let original = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 16)).image { context in
-            UIColor.systemTeal.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 12, height: 16))
+    /// A 3:4 portrait photo of `size` points, one color, at the screen scale.
+    private func photo(_ size: CGSize = CGSize(width: 12, height: 16), color: UIColor = .systemTeal) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { context in
+            color.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
         }
+    }
+
+    private func waitForSave(_ saves: SaveRecorder, count: Int = 1) {
+        let deadline = Date().addingTimeInterval(3)
+        while saves.images.count < count && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+    }
+
+    /// 10／712-3: after the sheet was opened and edited, the saved 3:4 image
+    /// is the camera's, unchanged — no overlay baked in and not cropped.
+    func test_656_10_savedImageIsTheCleanOriginal() throws {
+        let original = photo()
         let originalData = try XCTUnwrap(original.pngData())
 
-        func shoot(previewOn: Bool, editFirst: Bool) throws -> Data {
+        func shoot(editFirst: Bool) throws -> Data {
             let saves = SaveRecorder()
             let rig = try makeRig(save: saves.save,
                                   captureImage: { _, completion in completion(.success(original)) })
-            if !previewOn { rig.model.toggleOverlayPreview() }
             if editFirst {
                 rig.model.handleOverlayTextTap()
                 rig.model.panelModel.overlayDragHandler?.overlayDragEnded(center: CGPoint(x: 90, y: 120),
@@ -373,15 +355,88 @@ final class CameraScreenModelOverlayTests: XCTestCase {
                 rig.model.closeStylePanel()
             }
             rig.model.beginCapture()
-            let deadline = Date().addingTimeInterval(3)
-            while saves.images.isEmpty && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            waitForSave(saves)
             let saved = try XCTUnwrap(saves.images.first, "656-10 a photo was saved")
             return try XCTUnwrap(saved.pngData())
         }
 
-        let withPreview = try shoot(previewOn: true, editFirst: true)
-        let withoutPreview = try shoot(previewOn: false, editFirst: false)
-        XCTAssertEqual(withPreview, withoutPreview, "656-10 preview on or off, the same image")
-        XCTAssertEqual(withPreview, originalData, "656-10 no overlay baked in")
+        let edited = try shoot(editFirst: true)
+        let untouched = try shoot(editFirst: false)
+        XCTAssertEqual(edited, untouched, "656-10 editing the style changes nothing saved")
+        XCTAssertEqual(edited, originalData, "656-10／712-3 no overlay baked in, 3:4 not cropped")
+    }
+
+    /// 712-3: at 1:1 and 9:16 the saved photo has the ratio's shape, cut from
+    /// the middle, with the camera's own pixels (no overlay); a landscape
+    /// photo stays landscape, as in 1.3.0.
+    func test_712_3_savedPhotoIsCroppedToTheRatio() throws {
+        let cases: [(CaptureAspectRatio, CGSize, CGFloat)] = [
+            (.oneByOne, CGSize(width: 30, height: 40), 1),
+            (.nineBySixteen, CGSize(width: 36, height: 48), 9.0 / 16),
+            (.oneByOne, CGSize(width: 40, height: 30), 1),
+            (.nineBySixteen, CGSize(width: 48, height: 36), 16.0 / 9),
+        ]
+        for (ratio, size, aspect) in cases {
+            let original = photo(size)
+            let saves = SaveRecorder()
+            let rig = try makeRig(save: saves.save,
+                                  captureImage: { _, completion in completion(.success(original)) })
+            while rig.model.captureAspectRatio != ratio { rig.model.cycleAspectRatio() }
+            rig.model.beginCapture()
+            waitForSave(saves)
+            let saved = try XCTUnwrap(saves.images.first, "\(ratio) \(size) saved")
+            let cgImage = try XCTUnwrap(saved.cgImage)
+            XCTAssertEqual(CGFloat(cgImage.width) / CGFloat(cgImage.height), aspect, accuracy: 0.02, "\(ratio) \(size)")
+            XCTAssertEqual(saved.imageOrientation, .up)
+            let cropped = try XCTUnwrap(CameraScreenModel.cropped(original, to: ratio)?.pngData())
+            XCTAssertEqual(try XCTUnwrap(saved.pngData()), cropped, "712-3 only cropped, nothing drawn")
+        }
+    }
+
+    /// 712-3: the crop window is the centered `ImageCropper` window, in
+    /// pixels, and 3:4 hands the same image back.
+    func test_712_3_cropUsesTheCenteredWindow() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400), format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        }
+        XCTAssertTrue(CameraScreenModel.cropped(image, to: .threeByFour) === image, "712-3 3:4 is not cropped")
+        let square = try XCTUnwrap(CameraScreenModel.cropped(image, to: .oneByOne)?.cgImage)
+        XCTAssertEqual(square.width, 300)
+        XCTAssertEqual(square.height, 300)
+        let tall = try XCTUnwrap(CameraScreenModel.cropped(image, to: .nineBySixteen)?.cgImage)
+        XCTAssertEqual(CGSize(width: tall.width, height: tall.height),
+                       ImageCropper.cropRect(forPixelSize: CGSize(width: 300, height: 400), ratio: .nineBySixteen).size)
+    }
+
+    /// 712-7: a photo still on its way keeps the ratio and the record of the
+    /// moment the shutter was pressed, whatever is switched before it is
+    /// saved.
+    func test_712_7_photoKeepsTheRatioAndRecordOfTheShutterPress() throws {
+        let store = makeStore()
+        let first = try addRecord(to: store, name: "甲", start: DateFixture.components(2026, 1, 1))
+        let second = try addRecord(to: store, name: "乙", start: DateFixture.components(2026, 1, 1))
+        let original = photo(CGSize(width: 30, height: 40))
+        var pending: ((Result<UIImage, CameraCaptureError>) -> Void)?
+        let saves = SaveRecorder()
+        let rig = try makeRig(store: store, record: first, save: saves.save,
+                              captureImage: { _, completion in pending = completion })
+        rig.model.cycleAspectRatio()
+        XCTAssertEqual(rig.model.captureAspectRatio, .oneByOne)
+        rig.model.beginCapture()
+        let deliver = try XCTUnwrap(pending, "the shutter fired")
+
+        rig.model.cycleAspectRatio()
+        rig.model.selectRecord(second.id)
+        XCTAssertEqual(rig.model.captureAspectRatio, .nineBySixteen)
+        XCTAssertEqual(rig.model.selectedProfileID, second.id)
+        deliver(.success(original))
+        waitForSave(saves)
+
+        let saved = try XCTUnwrap(saves.images.first?.cgImage)
+        XCTAssertEqual(saved.width, saved.height, "712-7 cropped at the pressed 1:1")
+        XCTAssertEqual(saves.albumTitles, ["甲"], "712-7 saved for the pressed record")
     }
 }
