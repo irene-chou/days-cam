@@ -69,24 +69,28 @@ final class FixedAngleLevelSource: LevelSource {
 /// What the indicator shows right now.
 enum LevelDisplay: Equatable {
     case hidden
-    /// Within 10° of level, `angle` degrees clockwise.
+    /// Within 5° of level, `angle` degrees clockwise.
     case visible(angle: Double)
     /// Within 1° of level.
     case level
 }
 
-/// When the level shows (#687-3): within 10° of level it shows the tilt,
+/// When the level shows (#687-3, #711): within 5° of level it shows the tilt,
 /// within 1° it is level and stays for `holdDuration` before fading, beyond
-/// 10° (or without an angle) it hides at once. After the hold it stays
+/// 5° (or without an angle) it hides at once. Once showing, it keeps showing
+/// out to 6° so it does not flicker at the edge. After the hold it stays
 /// hidden until the phone leaves the 1° band again.
 struct LevelDisplayState {
-    static let visibleLimit = 10.0
+    static let visibleLimit = 5.0
+    /// The wider limit while already in range, against flicker at the edge.
+    static let hiddenLimit = 6.0
     static let levelLimit = 1.0
 
     var holdDuration: TimeInterval
     private var angle: Double?
     private var levelSince: TimeInterval?
     private var isExpired = false
+    private var isInRange = false
 
     init(holdDuration: TimeInterval = 1) {
         self.holdDuration = holdDuration
@@ -108,6 +112,7 @@ struct LevelDisplayState {
         angle = nil
         levelSince = nil
         isExpired = false
+        isInRange = false
     }
 
     /// Seconds from `now` until the hold ends, while level is showing.
@@ -117,11 +122,14 @@ struct LevelDisplayState {
     }
 
     private mutating func evaluate(now: TimeInterval) -> LevelDisplay {
-        guard let angle, abs(angle) <= Self.visibleLimit else {
+        let limit = isInRange ? Self.hiddenLimit : Self.visibleLimit
+        guard let angle, abs(angle) <= limit else {
             levelSince = nil
             isExpired = false
+            isInRange = false
             return .hidden
         }
+        isInRange = true
         guard abs(angle) <= Self.levelLimit else {
             levelSince = nil
             isExpired = false
@@ -166,7 +174,12 @@ final class ViewfinderLevelModel: ObservableObject {
     private let now: () -> TimeInterval
     private var state: LevelDisplayState
     private var filtered: LevelGravity?
+    private var isUpright = false
     private var expiryTask: Task<Void, Never>?
+
+    /// How far the phone may lean front or back from upright and still show
+    /// the level, in degrees (#711-1).
+    nonisolated static let uprightLimit = 25.0
 
     /// Low-pass weight of a new reading at 30 Hz, about a 0.2 s time constant.
     private static let smoothing = (1.0 / 30) / (0.2 + 1.0 / 30)
@@ -181,9 +194,12 @@ final class ViewfinderLevelModel: ObservableObject {
 
     /// The tilt, in degrees clockwise, of the viewfinder's horizon: gravity is
     /// first turned into the viewfinder's axes by `rotation`, then the roll
-    /// is taken. `nil` when the phone points more than 70° up or down.
-    nonisolated static func angle(gravity: LevelGravity, rotation: ViewfinderRotation) -> Double? {
-        guard abs(gravity.z) <= sin(70 * Double.pi / 180) else { return nil }
+    /// is taken. `nil` when the phone is more than `uprightLimit` (`wasUpright`:
+    /// `uprightLimit` + 1°, against flicker) from upright, front to back.
+    nonisolated static func angle(gravity: LevelGravity, rotation: ViewfinderRotation,
+                                  wasUpright: Bool = false) -> Double? {
+        let limit = uprightLimit + (wasUpright ? 1 : 0)
+        guard abs(gravity.z) <= sin(limit * Double.pi / 180) else { return nil }
         let radians = rotation.degrees * .pi / 180
         let x = gravity.x * cos(radians) - gravity.y * sin(radians)
         let y = gravity.x * sin(radians) + gravity.y * cos(radians)
@@ -205,6 +221,7 @@ final class ViewfinderLevelModel: ObservableObject {
             expiryTask?.cancel()
             state.reset()
             filtered = nil
+            isUpright = false
             display = .hidden
         }
     }
@@ -222,7 +239,9 @@ final class ViewfinderLevelModel: ObservableObject {
             smoothed = gravity
         }
         filtered = smoothed
-        apply(state.update(angle: Self.angle(gravity: smoothed, rotation: rotation), now: now()))
+        let angle = Self.angle(gravity: smoothed, rotation: rotation, wasUpright: isUpright)
+        isUpright = angle != nil
+        apply(state.update(angle: angle, now: now()))
     }
 
     /// Re-evaluates at the current time; called when the level hold may have

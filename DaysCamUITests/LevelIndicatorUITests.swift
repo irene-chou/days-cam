@@ -86,14 +86,14 @@ final class LevelIndicatorUITests: XCTestCase {
         shot("2_level")
     }
 
-    /// 5: beyond 10° nothing shows, and turning the switch off hides it.
+    /// 5: beyond 5° nothing shows, and turning the switch off hides it.
     func test_687_5_farFromLevelShowsNothing_andOffHides() {
-        launchCamera(angle: "15")
+        launchCamera(angle: "8")
         openTools()
         levelToggle.tap()
         XCTAssertEqual(levelToggle.value as? String, "開")
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertFalse(indicator.exists, "687-5 15° is beyond the limit")
+        XCTAssertFalse(indicator.exists, "687-5 8° is beyond the limit")
     }
 
     // MARK: - 6: the tools capsule

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The level's line in the middle of the viewfinder (#687-4): three short
 /// segments, the middle one tilting with the phone, which join into one
-/// `accent` line when level. Draws only; `ViewfinderLevelModel` decides what
+/// `focusYellow` line when level. Draws only; `ViewfinderLevelModel` decides what
 /// shows. Takes no touches.
 struct LevelIndicatorView: View {
     let display: LevelDisplay
@@ -14,6 +14,9 @@ struct LevelIndicatorView: View {
     static let middleLength: CGFloat = 96
     static let gap: CGFloat = 8
     static let levelLength = sideLength * 2 + middleLength + gap * 2
+    /// Fade durations in seconds: in when it appears, out when it goes (#714).
+    static let fadeInDuration = 0.3
+    static let fadeOutDuration = 0.5
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -25,7 +28,8 @@ struct LevelIndicatorView: View {
                     .transition(.opacity)
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: display == .hidden)
+        .animation(reduceMotion ? nil : .easeInOut(duration: display == .hidden ? Self.fadeOutDuration : Self.fadeInDuration),
+                   value: display == .hidden)
         .allowsHitTesting(false)
     }
 
@@ -45,7 +49,7 @@ struct LevelIndicatorView: View {
                 }
             }
         }
-        .foregroundColor(isLevel ? CameraTheme.accent : .white.opacity(0.8))
+        .foregroundColor(isLevel ? CameraTheme.focusYellow : .white.opacity(0.8))
         .shadow(color: .black.opacity(0.35), radius: 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("水平儀")

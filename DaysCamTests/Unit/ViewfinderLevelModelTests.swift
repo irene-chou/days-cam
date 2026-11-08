@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import DaysCam
 
@@ -32,6 +33,26 @@ final class ViewfinderLevelModelTests: XCTestCase {
         let left = try XCTUnwrap(ViewfinderLevelModel.angle(gravity: gravity(tilt: -3), rotation: .portrait))
         XCTAssertEqual(right, 3, accuracy: 0.001)
         XCTAssertEqual(left, -3, accuracy: 0.001)
+    }
+
+    /// #711-1: front-back lean beyond 25° from upright hides it.
+    func test_711_1_pitchLimit() throws {
+        func lean(_ degrees: Double) -> LevelGravity {
+            let radians = degrees * .pi / 180
+            return LevelGravity(x: 0, y: -cos(radians), z: sin(radians))
+        }
+        XCTAssertNotNil(ViewfinderLevelModel.angle(gravity: lean(20), rotation: .portrait))
+        XCTAssertNil(ViewfinderLevelModel.angle(gravity: lean(30), rotation: .portrait))
+        XCTAssertNil(ViewfinderLevelModel.angle(gravity: lean(-30), rotation: .portrait))
+        // Landscape held upright leans the same way.
+        let landscape = LevelGravity(x: -cos(20 * Double.pi / 180), y: 0, z: sin(20 * Double.pi / 180))
+        XCTAssertNotNil(ViewfinderLevelModel.angle(gravity: landscape, rotation: .landscapeTopLeft))
+        let landscapeFar = LevelGravity(x: -cos(30 * Double.pi / 180), y: 0, z: sin(30 * Double.pi / 180))
+        XCTAssertNil(ViewfinderLevelModel.angle(gravity: landscapeFar, rotation: .landscapeTopLeft))
+        // Hysteresis: 25.5° passes only when it was already upright.
+        XCTAssertNil(ViewfinderLevelModel.angle(gravity: lean(25.5), rotation: .portrait))
+        XCTAssertNotNil(ViewfinderLevelModel.angle(gravity: lean(25.5), rotation: .portrait, wasUpright: true))
+        XCTAssertNil(ViewfinderLevelModel.angle(gravity: lean(26.5), rotation: .portrait, wasUpright: true))
     }
 
     func test_687_1_pointingDownOrUp_isNil() {
@@ -70,8 +91,8 @@ final class ViewfinderLevelModelTests: XCTestCase {
 
     func test_687_2_displayStateMachine() {
         var state = LevelDisplayState(holdDuration: 1)
-        XCTAssertEqual(state.update(angle: 12, now: 0), .hidden)
-        XCTAssertEqual(state.update(angle: 8, now: 0.1), .visible(angle: 8))
+        XCTAssertEqual(state.update(angle: 8, now: 0), .hidden)
+        XCTAssertEqual(state.update(angle: 4, now: 0.1), .visible(angle: 4))
         XCTAssertEqual(state.update(angle: 0.5, now: 0.2), .level)
         XCTAssertEqual(state.update(angle: 0.5, now: 1.1), .level, "still within the hold")
         XCTAssertEqual(state.refresh(now: 1.2), .hidden, "hold over")
@@ -80,11 +101,34 @@ final class ViewfinderLevelModelTests: XCTestCase {
         XCTAssertEqual(state.update(angle: 0.2, now: 1.5), .level)
     }
 
-    func test_687_2_levelThenBeyondTenHidesAtOnce() {
+    func test_687_2_levelThenBeyondLimitHidesAtOnce() {
         var state = LevelDisplayState(holdDuration: 1)
         XCTAssertEqual(state.update(angle: 0, now: 0), .level)
-        XCTAssertEqual(state.update(angle: 12, now: 0.1), .hidden)
+        XCTAssertEqual(state.update(angle: 8, now: 0.1), .hidden)
         XCTAssertEqual(state.update(angle: nil, now: 0.2), .hidden)
+    }
+
+    /// #711-2: 4° shows, 7° hides; once showing, 5.5° stays and 6.5° hides.
+    func test_711_2_rollLimitAndHysteresis() {
+        var state = LevelDisplayState(holdDuration: 1)
+        XCTAssertEqual(state.update(angle: 4, now: 0), .visible(angle: 4))
+        XCTAssertEqual(state.update(angle: 7, now: 0.1), .hidden)
+
+        XCTAssertEqual(state.update(angle: 5.5, now: 0.2), .hidden, "not showing: 5° limit")
+        XCTAssertEqual(state.update(angle: 4.5, now: 0.3), .visible(angle: 4.5))
+        XCTAssertEqual(state.update(angle: 5.5, now: 0.4), .visible(angle: 5.5), "showing: 6° limit")
+        XCTAssertEqual(state.update(angle: 6.5, now: 0.5), .hidden)
+        XCTAssertEqual(state.update(angle: 5.5, now: 0.6), .hidden, "back to the 5° limit")
+    }
+
+    func test_714_fadeDurations() {
+        XCTAssertEqual(LevelIndicatorView.fadeInDuration, 0.3)
+        XCTAssertEqual(LevelIndicatorView.fadeOutDuration, 0.5)
+    }
+
+    /// #711-3: the level line and the focus frame share one yellow.
+    func test_711_3_focusYellowValue() {
+        XCTAssertEqual(CameraTheme.focusYellow, Color(red: 1, green: 0.84, blue: 0.04))
     }
 
     func test_687_2_modelShowsAndHoldsWithInjectedClock() {
@@ -92,9 +136,9 @@ final class ViewfinderLevelModelTests: XCTestCase {
         let source = FakeSource()
         let model = ViewfinderLevelModel(source: source, now: { time })
         model.setConditions(LevelConditions(isSwitchOn: true))
-        source.handler?(gravity(tilt: 8))
+        source.handler?(gravity(tilt: 4))
         guard case .visible(let angle) = model.display else { return XCTFail("\(model.display)") }
-        XCTAssertEqual(angle, 8, accuracy: 0.01)
+        XCTAssertEqual(angle, 4, accuracy: 0.01)
 
         model.rotation = .portrait
         source.handler?(gravity(tilt: 0))
