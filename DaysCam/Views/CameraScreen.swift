@@ -576,6 +576,10 @@ struct CameraScreen: View {
                 thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
                 styleButton(isOnPhoto: isOnPhoto)
+                    // Outside the button, so the hint is its own element.
+                    .overlay {
+                        if model.showsOverlayTip { styleKeyTip }
+                    }
             }
             .padding(.horizontal, sideInset)
         }
@@ -640,9 +644,6 @@ struct CameraScreen: View {
                 .contentShape(Rectangle())
                 .legibleOverPhoto(isOnPhoto)
                 .rotatedChrome(model.viewfinderRotation)
-        }
-        .overlay {
-            if model.showsOverlayTip { styleKeyTip }
         }
         .disabled(!model.showsOverlay)
         .accessibilityLabel("文字樣式")
