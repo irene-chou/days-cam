@@ -14,6 +14,9 @@ struct LevelIndicatorView: View {
     static let middleLength: CGFloat = 96
     static let gap: CGFloat = 8
     static let levelLength = sideLength * 2 + middleLength + gap * 2
+    /// Fade durations in seconds: in when it appears, out when it goes (#714).
+    static let fadeInDuration = 0.3
+    static let fadeOutDuration = 0.5
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -25,7 +28,8 @@ struct LevelIndicatorView: View {
                     .transition(.opacity)
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: display == .hidden)
+        .animation(reduceMotion ? nil : .easeInOut(duration: display == .hidden ? Self.fadeOutDuration : Self.fadeInDuration),
+                   value: display == .hidden)
         .allowsHitTesting(false)
     }
 

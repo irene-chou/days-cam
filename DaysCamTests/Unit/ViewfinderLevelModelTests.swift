@@ -121,6 +121,11 @@ final class ViewfinderLevelModelTests: XCTestCase {
         XCTAssertEqual(state.update(angle: 5.5, now: 0.6), .hidden, "back to the 5° limit")
     }
 
+    func test_714_fadeDurations() {
+        XCTAssertEqual(LevelIndicatorView.fadeInDuration, 0.3)
+        XCTAssertEqual(LevelIndicatorView.fadeOutDuration, 0.5)
+    }
+
     /// #711-3: the level line and the focus frame share one yellow.
     func test_711_3_focusYellowValue() {
         XCTAssertEqual(CameraTheme.focusYellow, Color(red: 1, green: 0.84, blue: 0.04))
