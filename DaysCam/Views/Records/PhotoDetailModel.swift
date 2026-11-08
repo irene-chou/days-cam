@@ -5,10 +5,9 @@ import UIKit
 /// Drives the photo viewer of one record (PRD 2.0 FR-18, D-7 screen 3).
 ///
 /// The photos come in the wall's order. Each page shows the screen-sized
-/// image with the record's overlay baked in by `OverlayRenderer.bake`, the
-/// same function the export uses, so the preview and the result differ only
-/// in resolution. The text is made from the photo's own `creationDate`
-/// (§6.1); nothing is written to a photo.
+/// original with no overlay (#699); the overlay only appears in the export
+/// sheet's preview, the wall's marks and the camera. The day count comes from
+/// the photo's own `creationDate` (§6.1); nothing is written to a photo.
 @MainActor
 final class PhotoDetailModel: ObservableObject {
     /// `OverlayRenderer.bake`, injectable for tests. Runs off the main thread.
@@ -29,8 +28,6 @@ final class PhotoDetailModel: ObservableObject {
     @Published private(set) var export: BatchExportModel?
     /// The "已匯出" toast while it shows.
     @Published private(set) var toastState: ToastState?
-    /// The pointer bubble was dismissed (or the viewer left) in this session.
-    @Published private(set) var coachDismissed = false
 
     /// What VoiceOver hears, and the toast shows, after a successful export.
     static let exportedMessage = "已匯出"
@@ -46,11 +43,7 @@ final class PhotoDetailModel: ObservableObject {
     private let store: ProfileStore
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
-    private let renderer: TemplateRenderer
-    private let bake: Bake
-    private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
     private let makeExport: (([RecordPhoto]) -> BatchExportModel)?
-    private let tips: FirstRunTips
     private let scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
@@ -60,28 +53,17 @@ final class PhotoDetailModel: ObservableObject {
          store: ProfileStore,
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
-         renderer: TemplateRenderer = TemplateRenderer(),
-         bake: @escaping Bake = { image, text, style, placement, font, cropRect, filmDate, tone in
-             OverlayRenderer().bake(image: image, text: text, style: style, placement: placement,
-                                    font: font, cropRect: cropRect, filmDate: filmDate, tone: tone)
-         },
-         resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
          makeExport: (([RecordPhoto]) -> BatchExportModel)? = nil,
-         tips: FirstRunTips = .shared,
          scheduleAfter: @escaping (TimeInterval, @escaping () -> Void) -> Void = { delay, action in
              DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
          }) {
         self.makeExport = makeExport
-        self.tips = tips
         self.scheduleAfter = scheduleAfter
         self.profileID = profileID
         self.selectedID = photoID
         self.store = store
         self.library = library
         self.calendar = calendar
-        self.renderer = renderer
-        self.bake = bake
-        self.resolveFont = resolveFont
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
             .dropFirst()
@@ -147,13 +129,6 @@ final class PhotoDetailModel: ObservableObject {
                       parts.hour ?? 0, parts.minute ?? 0)
     }
 
-    /// The overlay text of the photo's own moment (FR-18.3), `nil` when the
-    /// photo has no date and so nothing is drawn.
-    func overlayText(for photo: RecordPhoto) -> String? {
-        guard let profile, let date = photo.creationDate else { return nil }
-        return renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
-    }
-
     /// Whether `photo` can be exported: only with a `creationDate`, since the
     /// day count comes from it (§6.1.3, FR-18.5).
     func canExport(_ photo: RecordPhoto) -> Bool {
@@ -171,20 +146,15 @@ final class PhotoDetailModel: ObservableObject {
 
     // MARK: - Page image
 
-    /// The screen-sized image of `photo` with the overlay baked in
-    /// (FR-18.2, FR-18.3, FR-18.7). Falls back to the plain image when the
-    /// photo has no date or baking fails; `nil` when the image cannot load.
+    /// The screen-sized original of `photo`, with no overlay (FR-18.7, #699);
+    /// `nil` when the image cannot load.
     func pageImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
-        guard let source = await library.displayImage(id: photo.id, targetSize: targetSize) else { return nil }
-        guard let profile else { return source }
-        // Resolved here on the main actor; the background bake never reads the library.
-        return await Self.markedImage(source, photo: photo, profile: profile, calendar: calendar,
-                                      renderer: renderer, font: resolveFont(profile.style), bake: bake)
+        await library.displayImage(id: photo.id, targetSize: targetSize)
     }
 
     /// `source` with `profile`'s overlay for `photo`'s own moment baked in,
-    /// the way the viewer and the batch preview show it; `source` itself
-    /// when the photo has no date or baking fails.
+    /// the way the batch preview shows it; `source` itself when the photo
+    /// has no date or baking fails.
     /// With `hidesText` (隱藏文字, #679) only the film date stamp is drawn.
     static func markedImage(_ source: UIImage, photo: RecordPhoto, profile: CameraProfile, calendar: Calendar,
                             renderer: TemplateRenderer, font: ResolvedOverlayFont, hidesText: Bool = false,
@@ -236,34 +206,6 @@ final class PhotoDetailModel: ObservableObject {
         case .cancelled, .keptFailures:
             break
         }
-    }
-
-    // MARK: - Pointer bubble (FR-18.8)
-
-    /// Whether the first-visit bubble shows: not seen yet, and the photo on
-    /// screen has overlay text to point at.
-    var showsCoach: Bool {
-        guard !tips.viewerCoachSeen, !coachDismissed, let photo = currentPhoto else { return false }
-        return overlayText(for: photo)?.isEmpty == false
-    }
-
-    /// 知道了: never shows again.
-    func dismissCoach() {
-        tips.markViewerCoachSeen()
-        coachDismissed = true
-    }
-
-    /// Where the overlay's block sits when `photo`'s image is drawn at
-    /// `imageSize`, laid out the way the bake does (FR-18.8); `nil` without text.
-    func overlayFrame(for photo: RecordPhoto, imageSize: CGSize) -> CGRect? {
-        guard let profile, let text = overlayText(for: photo), !text.isEmpty,
-              imageSize.width > 0, imageSize.height > 0 else { return nil }
-        let font = resolveFont(profile.style)
-        let fontSize = OverlayRenderer.fittedFontSize(for: text, style: profile.style, frameSize: imageSize, font: font)
-        guard let block = OverlayRenderer().renderText(text, style: profile.style, fontSize: fontSize,
-                                                       displayScale: 1, font: font)?.blockSize else { return nil }
-        let origin = OverlayMetrics.origin(forBlockSize: block, in: imageSize, placement: profile.position)
-        return CGRect(origin: origin, size: block)
     }
 
     // MARK: - Removing and deleting (FR-18.6)

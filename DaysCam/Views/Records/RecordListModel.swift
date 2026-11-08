@@ -325,7 +325,7 @@ final class RecordListModel: ObservableObject {
     func photoDetailModel(for id: UUID, startingAt photoID: String,
                           resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoDetailModel {
         PhotoDetailModel(profileID: id, startingAt: photoID, store: store, library: library,
-                         calendar: calendar, renderer: renderer, resolveFont: resolveFont,
+                         calendar: calendar,
                          makeExport: exportSheetFactory(for: id, resolveFont: resolveFont))
     }
 
