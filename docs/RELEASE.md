@@ -51,6 +51,7 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | R-12 | 水平儀、疊字預覽開關 | 水平儀細長、水平時連成一線；疊字預覽可開關 |
 | R-13 | 來電／切到背景再回來 | 預覽恢復，可繼續拍 |
 | R-14 | iOS「設定」→ DaysCam →「字型授權」 | 看得到各字型版權與授權全文 |
+| R-15 | 飛航模式套用需下載字型的樣式 | 顯示失敗可重試；內建字型照常可用 |
 
 ## 要填的資料（App Store Connect）
 
