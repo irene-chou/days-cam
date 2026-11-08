@@ -117,7 +117,7 @@ final class CameraOverlayPreviewUITests: XCTestCase {
         assertOnScreen(overlayText, "656-6 the text is drawn")
         let tip = element("overlayTip")
         XCTAssertTrue(tip.waitForExistence(timeout: 5), "656-9 the hint shows first")
-        XCTAssertEqual(tip.label, "點這裡的文字可以改樣式")
+        XCTAssertEqual(tip.label, "點這裡改文字樣式")
         assertOnScreen(tip, "712 the hint is on screen")
         XCTAssertLessThan(tip.frame.maxY, styleButton.frame.minY, "712 the hint sits above the key")
         XCTAssertEqual(tip.frame.maxX, styleButton.frame.maxX, accuracy: 8, "712 the hint hangs over the key")

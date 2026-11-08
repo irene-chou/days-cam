@@ -420,7 +420,7 @@ struct CameraScreen: View {
 
     /// The first-run hint (FR-20.10, #712): a rounded frame around the
     /// 文字樣式 key (accent stroke, faint accent fill) with
-    /// 「點這裡的文字可以改樣式」 above it, its tail pointing down at the
+    /// 「點這裡改文字樣式」 above it, its tail pointing down at the
     /// key and its right edge on the frame's. Never takes touches.
     private var styleKeyTip: some View {
         let side = Self.footerButtonSize + 2 * Self.highlightPadding
@@ -431,7 +431,7 @@ struct CameraScreen: View {
             .frame(width: side, height: side)
             .overlay(alignment: .bottomTrailing) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text("點這裡的文字可以改樣式")
+                    Text("點這裡改文字樣式")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(1)

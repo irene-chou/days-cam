@@ -35,7 +35,7 @@ final class FirstRunTips {
         #endif
     }
 
-    /// The camera's 「點這裡的文字可以改樣式」 hint has been shown and the text
+    /// The camera's 「點這裡改文字樣式」 hint has been shown and the text
     /// tapped, i.e. the style sheet was opened once (PRD 2.0 FR-20.10).
     var overlayTapSeen: Bool { seen(Self.overlayTapKey) }
 

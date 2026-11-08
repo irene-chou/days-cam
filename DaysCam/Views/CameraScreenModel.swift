@@ -207,7 +207,7 @@ final class CameraScreenModel: ObservableObject {
     /// Reads the sensor and decides what the level shows.
     let levelModel: ViewfinderLevelModel
 
-    /// Whether 「點這裡的文字可以改樣式」 has been dealt with (FR-20.10):
+    /// Whether 「點這裡改文字樣式」 has been dealt with (FR-20.10):
     /// the style sheet was opened once, in this or an earlier launch.
     @Published private(set) var overlayTapSeen: Bool
     private let tips: FirstRunTips
@@ -1214,7 +1214,7 @@ extension CameraScreenModel {
         profile?.position ?? .default
     }
 
-    /// Whether the hint 「點這裡的文字可以改樣式」 shows: the overlay is drawn
+    /// Whether the hint 「點這裡改文字樣式」 shows: the overlay is drawn
     /// and the sheet was never opened (FR-20.10).
     var showsOverlayTip: Bool {
         showsOverlay && !overlayTapSeen && !panelModel.isOpen
