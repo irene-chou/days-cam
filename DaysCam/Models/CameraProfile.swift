@@ -14,12 +14,6 @@ enum CameraProfileValidationError: Error, Equatable {
     /// `startDate` names a day that does not exist, such as `2026-02-30`
     /// or `month: 13` (invariant 2).
     case startDateNotARealDate
-    /// Both `showDayCount` and `showDate` are off (invariant 3).
-    ///
-    /// Not reachable through `validatedForPersistence(calendar:)`:
-    /// `normalized()` repairs that one case by turning `showDayCount` on
-    /// (TASK-107, #426), so no profile is dropped for it.
-    case displaySwitchesAllOff
     /// `displayUnits` is empty (PRD 0.2 §4.1, replacing 0.1 invariant 4).
     case displayUnitsEmpty
     /// `style.sizeScale` is outside 70...160 or not a multiple of 5 (PRD 0.2 §4.1).
@@ -159,11 +153,9 @@ extension CameraProfile {
     /// `calendar` and the rest — are dropped. Values that are simply wrong, such
     /// as `month: 13`, are left alone for `validate(calendar:)` to reject.
     ///
-    /// Turns `showDayCount` on only when both it and `showDate` are off
-    /// (invariant 3): such a record should not exist, but it is repaired
-    /// rather than rejected, so no profile is lost (107.7). A date-only
-    /// profile (`showDayCount == false`, `showDate == true`) is kept as it is
-    /// — TASK-107 (#426) reverses TASK-47's forcing of the day count on.
+    /// Leaves `showDayCount`, `showDate` and `showName` alone: all three may be
+    /// off, and the overlay is then empty (#713, human ruling 2026-11-08,
+    /// replacing the old invariant 3).
     ///
     /// Rounds the style colors to 8 bits per component, alpha included
     /// (TASK-69), and `style.autoOutlineOpacity` to the same 8-bit steps
@@ -172,9 +164,6 @@ extension CameraProfile {
     func normalized() -> CameraProfile {
         var copy = self
         copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !showDayCount && !showDate {
-            copy.showDayCount = true
-        }
         var stripped = DateComponents()
         stripped.year = startDate.year
         stripped.month = startDate.month
@@ -225,10 +214,6 @@ extension CameraProfile {
               roundTripped.month == month,
               roundTripped.day == day else {
             throw CameraProfileValidationError.startDateNotARealDate
-        }
-
-        if !showDayCount && !showDate {
-            throw CameraProfileValidationError.displaySwitchesAllOff
         }
 
         if displayUnits.isEmpty {

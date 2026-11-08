@@ -20,17 +20,15 @@ final class DisplaySettingsModel: ObservableObject {
     @Published private(set) var profile: CameraProfile
 
     /// A change the model refused because it would leave nothing to show
-    /// (TASK-108, #422): the last checked unit, or the last of 天數／日期.
-    /// The view answers each one with a bounce, a light haptic and a hint
-    /// (FR-11.2／FR-11.3); `serial` makes a repeated refusal a new event.
+    /// (TASK-108, #422): the last checked unit. The view answers it with a
+    /// bounce, a light haptic and a hint (FR-11.3); `serial` makes a repeated
+    /// refusal a new event. 天數／日期／名稱 may all be off (#713).
     /// TASK-141 (#485) dropped 108.8's 先打開天數: with the day count off
     /// the unit section is not shown at all.
     struct Rejection: Equatable {
         enum Kind: Equatable {
             case lastUnit(DisplayUnit)
-            case lastContentSwitch(ContentSwitch)
         }
-        enum ContentSwitch: Equatable { case dayCount, date }
         let kind: Kind
         let serial: Int
 
@@ -38,7 +36,6 @@ final class DisplaySettingsModel: ObservableObject {
         var hint: String {
             switch kind {
             case .lastUnit: return "至少保留一個單位"
-            case .lastContentSwitch: return "至少顯示天數或日期"
             }
         }
     }
@@ -135,38 +132,20 @@ final class DisplaySettingsModel: ObservableObject {
 // MARK: - Display content (天數、日期、名稱; TASK-107 restores the day-count switch)
 
 extension DisplaySettingsModel {
-    /// Sets `showDayCount` (TASK-107, #426; FR-11.1). Turning it off while
-    /// the date is off too is refused — the two may not both be off (PRD
-    /// §4.1 invariant 3) — and the view's switch springs back (107.3).
+    /// Sets `showDayCount` (TASK-107, #426; FR-11.1). Any of 天數／日期／名稱
+    /// may be turned off, all three included (#713).
     func setShowDayCount(_ newValue: Bool) {
         dismissHint()
         guard newValue != profile.showDayCount else { return }
-        guard newValue || profile.showDate else {
-            reject(.lastContentSwitch(.dayCount))
-            return
-        }
         mutate { $0.showDayCount = newValue }
     }
 
-    /// Sets `showDate`; symmetric with `setShowDayCount` — turning it off
-    /// while the day count is off is refused (107.3).
+    /// Sets `showDate`; symmetric with `setShowDayCount`.
     func setShowDate(_ newValue: Bool) {
         dismissHint()
         guard newValue != profile.showDate else { return }
-        guard newValue || profile.showDayCount else {
-            reject(.lastContentSwitch(.date))
-            return
-        }
         mutate { $0.showDate = newValue }
     }
-
-    /// Whether the day-count switch is the last of 天數／日期 still on, so
-    /// turning it off would be refused (107.3; TASK-108 reads this for its
-    /// bounce-and-hint feedback).
-    var isDayCountTheLastContentSwitch: Bool { profile.showDayCount && !profile.showDate }
-
-    /// Whether the date switch is the last of 天數／日期 still on.
-    var isDateTheLastContentSwitch: Bool { profile.showDate && !profile.showDayCount }
 
     /// Whether the 天數單位 controls are inert: the day count is off, so the
     /// units have nothing to format. The view collapses the section then

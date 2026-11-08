@@ -324,21 +324,22 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.last?.showDayCount, false, "persisted")
     }
 
-    /// 107.3: the last of 天數／日期 refuses to turn off, both ways.
-    func testTheLastOfDayCountAndDateRefusesToTurnOff() throws {
+    /// #713-1: 天數／日期／名稱 may all be off; each write is persisted.
+    func testAllThreeContentSwitchesCanBeTurnedOff() throws {
         let spy = Spy()
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isDayCountTheLastContentSwitch)
+        model.setShowName(false)
         model.setShowDayCount(false)
-        XCTAssertTrue(model.profile.showDayCount, "107.3 springs back")
-        XCTAssertTrue(spy.updated.isEmpty, "107.3 nothing written")
+        XCTAssertFalse(model.profile.showDayCount, "#713-1 last switch turns off")
+        XCTAssertEqual(spy.updated.last?.showDayCount, false, "#713-1 persisted")
+        XCTAssertEqual(model.overlayPreviewText, "", "#713-3 nothing to print")
+        XCTAssertNil(model.lastRejection, "#713-4 no refusal")
+        XCTAssertNil(model.visibleHint, "#713-4 no hint")
 
         model.setShowDate(true)
-        model.setShowDayCount(false)
-        XCTAssertTrue(model.isDateTheLastContentSwitch)
         model.setShowDate(false)
-        XCTAssertTrue(model.profile.showDate, "107.3 the date springs back too")
-        XCTAssertFalse(model.profile.showDayCount)
+        XCTAssertFalse(model.profile.showDate)
+        XCTAssertNil(model.lastRejection, "#713-4 the date either")
     }
 
     /// 107.4: with the day count off the unit controls refuse every tap and
@@ -386,19 +387,6 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.lastRejection?.kind, .lastUnit(.day))
     }
 
-    /// 108.4: refusing to turn off the last of 天數／日期 is reported too.
-    func testTurningOffTheLastContentSwitchIsReportedAsARejection() throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.setShowDayCount(false)
-        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.dayCount), "108.4")
-        XCTAssertEqual(model.lastRejection?.hint, "至少顯示天數或日期")
-        model.setShowDate(true)
-        model.setShowDayCount(false)
-        model.setShowDate(false)
-        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.date), "108.4 the other way")
-        XCTAssertTrue(model.profile.showDate)
-    }
-
     /// 108.8 → TASK-141 (#485): with the day count off the section is
     /// hidden; a stray call changes nothing and raises no 先打開天數 hint
     /// any more. After turning the day count on the same calls work.
@@ -418,19 +406,6 @@ final class DisplaySettingsModelTests: XCTestCase {
     }
 
     // MARK: - TASK-141 (#485) hints stay until the next tap
-
-    /// 141.3: the content-switch hint has no timer; it stays until the next
-    /// switch is tapped (here 名稱).
-    func testContentSwitchHintStaysUntilTheNextSwitchTap() async throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.setShowDayCount(false)
-        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "141.3 shown")
-        XCTAssertTrue(model.profile.showDayCount, "141.3 springs back")
-        try await Task.sleep(for: .seconds(2))
-        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount), "141.3 still there, no 1.5 s fade")
-        model.setShowName(true)
-        XCTAssertNil(model.visibleHint, "141.3 cleared by the 名稱 switch")
-    }
 
     /// 141.4: the unit hint stays until any checkbox is tapped, or the tab
     /// goes away (`dismissHint()`).
@@ -453,9 +428,9 @@ final class DisplaySettingsModelTests: XCTestCase {
     /// hint: the repeat clears and then restores it.
     func testRepeatedRefusalKeepsTheHint() throws {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.setShowDayCount(false)
-        model.setShowDayCount(false)
-        XCTAssertEqual(model.visibleHint?.kind, .lastContentSwitch(.dayCount))
+        model.toggleUnit(.day)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day))
     }
 
     // MARK: - #521 底片日期 (152.3–152.5)
@@ -474,7 +449,7 @@ final class DisplaySettingsModelTests: XCTestCase {
 
     func testFilmDateSwitchIsIndependentOfDateAndDayCount() throws {
         for dayCount in [true, false] {
-            for date in [true, false] where dayCount || date {
+            for date in [true, false] {
                 let spy = Spy()
                 let model = makeModel(profile: baselineProfile(showDayCount: dayCount, showDate: date),
                                       now: try fixedNow(), spy: spy)
@@ -491,16 +466,19 @@ final class DisplaySettingsModelTests: XCTestCase {
         }
     }
 
-    func testFilmDateDoesNotCountTowardTheLastContentSwitchRule() throws {
+    /// #713: the film date has no bearing on the content switches; with it on,
+    /// the last of 天數／日期／名稱 still turns off.
+    func testFilmDateDoesNotKeepTheContentSwitchesOn() throws {
         let spy = Spy()
         let profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1),
-                                    showDayCount: true, showDate: false, showName: true,
+                                    showDayCount: true, showDate: false, showName: false,
                                     showFilmDate: true)
         let model = makeModel(profile: profile, now: try fixedNow(), spy: spy)
         model.setShowDayCount(false)
-        XCTAssertTrue(model.profile.showDayCount, "152.5 still refused")
-        XCTAssertEqual(model.lastRejection?.kind, .lastContentSwitch(.dayCount))
-        XCTAssertTrue(spy.updated.isEmpty)
+        XCTAssertFalse(model.profile.showDayCount)
+        XCTAssertTrue(model.profile.showFilmDate, "film date untouched")
+        XCTAssertNil(model.lastRejection)
+        XCTAssertEqual(spy.updated.last?.showDayCount, false)
     }
 
     // MARK: - #583 寫法

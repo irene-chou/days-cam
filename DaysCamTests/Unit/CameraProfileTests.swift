@@ -214,16 +214,20 @@ final class CameraProfileTests: XCTestCase {
 
     // MARK: - Invariant 3: display switches (TASK-107 brings the day-count switch back)
 
-    /// 107.7: both off should not exist; persistence turns the day count on
-    /// instead of dropping the profile.
-    func testBothSwitchesOffIsRepairedByTurningTheDayCountOn() throws {
-        let stored = try profile(showDayCount: false, showDate: false)
-            .validatedForPersistence(calendar: DateFixture.taipei)
-        XCTAssertTrue(stored.showDayCount, "107.7")
-        XCTAssertFalse(stored.showDate, "107.7: showDate untouched")
-        XCTAssertThrowsError(try profile(showDayCount: false, showDate: false).validate(calendar: DateFixture.taipei)) {
-            XCTAssertEqual($0 as? CameraProfileValidationError, .displaySwitchesAllOff, "invariant 3 itself still holds")
-        }
+    /// #713-1／#713-2: both off is legal; persistence and `normalized()` keep it.
+    func testBothSwitchesOffIsStoredAsItIs() throws {
+        let subject = profile(showDayCount: false, showDate: false)
+        let stored = try subject.validatedForPersistence(calendar: DateFixture.taipei)
+        XCTAssertFalse(stored.showDayCount, "#713-2 not turned back on")
+        XCTAssertFalse(stored.showDate)
+        XCTAssertEqual(subject.normalized(), subject, "#713-2 nothing changes")
+        XCTAssertNoThrow(try subject.validate(calendar: DateFixture.taipei))
+
+        var nameOff = subject
+        nameOff.showName = false
+        XCTAssertNoThrow(try nameOff.validatedForPersistence(calendar: DateFixture.taipei), "all three off")
+        let data = try JSONEncoder().encode(nameOff)
+        XCTAssertEqual(try JSONDecoder().decode(CameraProfile.self, from: data), nameOff, "#713-1 survives a reload")
     }
 
     /// 107.2: a date-only profile is stored as it is — TASK-107 (#426)
@@ -957,18 +961,18 @@ final class CameraProfileDayCountMigrationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "107.7: no write-back")
     }
 
-    /// 107.7: a hand-made record with both switches off has the day count
-    /// turned on, is written back, and the profile is kept.
-    func testBothOffRecordIsRepairedAndKept() throws {
+    /// #713-2: a stored record with both switches off is read in as it is,
+    /// kept, and not written back.
+    func testBothOffRecordIsKeptAsItIs() throws {
         try writeFixture([record(id: Self.dateOnlyID, name: "都關", showDayCount: false, showDate: false),
                           record(id: Self.countingID, name: "小寶", showDayCount: true)])
         let before = try rawProfiles()
+        let bytesBefore = try Data(contentsOf: fileURL)
         let loaded = try makeStore().load()
-        XCTAssertEqual(loaded.count, 2, "107.7: no profile lost")
-        var expected = before
-        expected[0].showDayCount = true
-        XCTAssertEqual(loaded, expected, "107.7: only showDayCount changes")
-        XCTAssertEqual(try rawProfiles(), expected, "107.7: written back")
+        XCTAssertEqual(loaded.count, 2, "no profile lost")
+        XCTAssertEqual(loaded, before, "#713-2 nothing changes")
+        XCTAssertFalse(loaded[0].showDayCount)
+        XCTAssertEqual(try Data(contentsOf: fileURL), bytesBefore, "#713-2 no write-back")
     }
 
     /// 47.2: a file where every record already shows the day count is left

@@ -968,4 +968,15 @@ extension PhotoWallModelTests {
         XCTAssertFalse(model.isSyncingAlbum)
         XCTAssertEqual(storedFallback(store, profile), ["p7", "gone"])
     }
+
+    /// #713-5: the wall and photo-page day marks do not read the overlay
+    /// switches, so a record with 天數／日期／名稱 all off still reads 第 N 天.
+    func testDayMarkIgnoresTheOverlaySwitches() throws {
+        let profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1),
+                                    showDayCount: false, showDate: false, showName: false)
+        let photoDate = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 12))
+        let mark = PhotoWallModel.dayMark(creationDate: photoDate, profile: profile, calendar: DateFixture.taipei)
+        XCTAssertEqual(mark.text, "第 10 天")
+        XCTAssertFalse(mark.isBeforeStart)
+    }
 }

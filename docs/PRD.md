@@ -119,7 +119,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 | FR-2.1 | `showDayCount`（**預設開啟**）決定是否顯示經過量 |
 | FR-2.2 | `showDate`（**預設關閉**）決定是否顯示拍攝當天的日期，格式 `{yyyy}.{MM}.{dd}` |
 | FR-2.3 | `showName`（**預設關閉**；全新安裝的首個設定檔例外為開啟）決定是否顯示設定檔名稱 |
-| FR-2.4 | **`showDayCount` 與 `showDate` 不得同時關閉**（`showName` 不算數）。UI 行為見 PRD-0.2 FR-11.2 |
+| FR-2.4 | ~~`showDayCount` 與 `showDate` 不得同時關閉~~ **作廢**（2026-11-08 人類裁定，#713）：天數、日期、名稱可同時關，疊字為空字串，取景窗、文字樣式預覽、匯出都不畫字與底框 |
 | FR-2.5 | 並列順序固定為**名稱 → 日期 → 天數**。名稱後接**一個半形空格**；日期與天數之間用**全形空白 U+3000** |
 | FR-2.6 | 名稱前綴只能是設定檔名稱，**不提供**自由文字輸入框（Phase 4） |
 
@@ -294,7 +294,7 @@ DaysCam 是一款 iOS 相機 App：拍照時把**天數**（從某個起始日�
 
 1. `name` trim 後長度介於 1 與 20 之間
 2. `startDate` **恰好只含 `year`、`month`、`day`** 且三者非 nil。其餘欄位**全部為 nil**，包含但不限於 `hour`、`minute`、`second`、`nanosecond`、**`timeZone`**、**`calendar`**、`era`、`weekday`、`weekOfMonth`、`weekOfYear`、`yearForWeekOfYear`、`quarter`。且 `(year, month, day)` 必須是真實存在的日期（`month: 13`、`2026-02-30` 皆非法）
-3. `showDayCount` 與 `showDate` **不得同時為 `false`**（FR-2.4）
+3. ~~`showDayCount` 與 `showDate` 不得同時為 `false`（FR-2.4）~~ **作廢**（2026-11-08 人類裁定，#713）：兩者可同時為 `false`，`normalized()` 不再改寫；舊檔讀入保持原值
 4. `smallestUnit` 必須落在 `largestUnit` 的軌道上且不大於它（FR-2.8）。合法組合恰為 8 種：`(年,年)`、`(年,月)`、`(年,天)`、`(月,月)`、`(月,天)`、`(週,週)`、`(週,天)`、`(天,天)`
 5. `useAgeWording == true` 時 `largestUnit` 必須是 `.year`（FR-2.9）
 
