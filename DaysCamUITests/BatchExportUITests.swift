@@ -4,6 +4,9 @@ import XCTest
 /// `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′ screenshots
 /// are also written there for the PR.
 final class BatchExportUITests: XCTestCase {
+    /// 44pt rows; the sheet reports its frames about 4% smaller (a sheet scale in the simulator).
+    private static let minTapHeight: CGFloat = 42
+
     private var app: XCUIApplication!
 
     override func setUp() {
@@ -86,10 +89,14 @@ final class BatchExportUITests: XCTestCase {
         let hide = element("exportHideTextButton")
         XCTAssertEqual(hide.label, "隱藏文字", "#679-8 the sheet opens showing the text")
         XCTAssertLessThan(hide.frame.midY, element("batchExportStyleLink").frame.midY)
+        let style = element("batchExportStyleLink")
+        XCTAssertGreaterThanOrEqual(hide.frame.height, Self.minTapHeight, "#698-1 隱藏文字 hit area")
+        XCTAssertGreaterThanOrEqual(style.frame.height, Self.minTapHeight, "#698-1 調整文字樣式 hit area")
+        XCTAssertLessThanOrEqual(hide.frame.maxY, style.frame.minY + 0.5, "#698-1 no overlap")
         sleep(1)
         // #679: the whole preview fits, on an iPhone SE too.
         let sheet = element("batchExportSheet").frame
-        for id in ["batchExportTitle", "batchExportStartButton", "batchExportCancelButton"] {
+        for id in ["batchExportTitle", "exportHideTextButton", "batchExportStyleLink", "batchExportStartButton", "batchExportCancelButton"] {
             XCTAssertTrue(sheet.contains(element(id).frame), "\(id) \(element(id).frame) in \(sheet)")
         }
         XCTAssertGreaterThan(element("batchExportTitle").frame.minY, sheet.minY + 10, "below the grabber")
