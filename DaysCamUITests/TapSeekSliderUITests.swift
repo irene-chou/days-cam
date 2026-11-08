@@ -107,16 +107,17 @@ final class TapSeekSliderUITests: XCTestCase {
         // drag to the end would stop a step or two short of it.
         let thumb = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: 100), dy: 0.5))
         let middle = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
-        thumb.press(forDuration: 0.2, thenDragTo: middle)
+        thumb.press(forDuration: 0.2, thenDragTo: middle, withVelocity: .slow, thenHoldForDuration: 0.3)
         let first = Int(sizePercent.replacingOccurrences(of: "字級 ", with: "").replacingOccurrences(of: "%", with: "")) ?? 0
         XCTAssertGreaterThan(first, 120, "551 dragging right raises the value: \(sizePercent)")
 
         // Past the end, as a finger would: a press a point or two beside the
         // thumb's centre keeps that offset, so stopping right on the edge can
-        // land a step short (#708: 155% on CI and 1 in 4 on rinclaw).
+        // land a step short (#708: 155% on CI and 1 in 4 on rinclaw). Both
+        // drags are slow so the system slider tracks every step.
         let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.5)).withOffset(CGVector(dx: 20, dy: 0))
         let thumbNow = slider.coordinate(withNormalizedOffset: CGVector(dx: thumbFraction(of: slider, percent: first), dy: 0.5))
-        thumbNow.press(forDuration: 0.2, thenDragTo: end)
+        thumbNow.press(forDuration: 0.2, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
         XCTAssertEqual(sizePercent, "字級 160%", "551 dragging to the end gives the maximum")
         attach("551_size-drag")
     }
