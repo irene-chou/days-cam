@@ -472,6 +472,10 @@ private struct LayerPage<Content: View>: View {
 /// The top row's left key on a pushed page (#718): `chevron.left` and the
 /// root's title, back to the layer list. Both hosts draw it.
 struct PanelBackButton: View {
+    /// Room a centered title keeps clear on each side of a header that may
+    /// hold this key: ‹ plus 文字樣式 at 15pt and its padding.
+    static let reservedWidth: CGFloat = 96
+
     var action: () -> Void
 
     var body: some View {

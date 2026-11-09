@@ -124,6 +124,9 @@ struct ExportView: View {
                     .foregroundColor(CameraTheme.inkTertiary)
             }
             .lineLimit(1)
+            // Clear of the keys on both sides, and never takes their taps.
+            .padding(.horizontal, PanelBackButton.reservedWidth)
+            .allowsHitTesting(false)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("exportTitle")
         }
