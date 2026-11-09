@@ -52,6 +52,11 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
     /// open and has nothing to collapse to (#620).
     var showsCollapseButton = true
 
+    /// Whether the panel draws its own rounded, shadowed surface. The camera's
+    /// sheet already draws one under its title row, so the panel sits on it
+    /// flat — one surface, as in the design (#718 option A).
+    var drawsSurface = true
+
     /// What every tab keeps clear under its last row.
     private var bottomContentInset: CGFloat {
         OverlayPanelLayout.bottomContentInset(bottomSafeAreaInset: bottomSafeAreaInset)
@@ -77,7 +82,7 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
         // Same-color surface with an upward shadow along its top edge
         // (restored on PR #451 at the user's request); it runs off the
         // bottom of the screen.
-        .background(panelBackground)
+        .background { if drawsSurface { panelBackground } }
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }

@@ -462,26 +462,25 @@ struct CameraScreen: View {
     private func stylePanel(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.panelModel.isOpen {
             let chrome = CameraScreenLayoutMetrics.panelTopPadding + metrics.panelTabBarHeight
+            // The note is the layer list's foot only; a layer's page takes its
+            // room (#718 option A ②③).
+            let showsNote = model.panelModel.route == .root
+            let contentHeight = metrics.styleSheetContentHeight
+                + (showsNote ? 0 : CameraScreenLayoutMetrics.styleSheetNoteHeight)
             VStack(spacing: 0) {
                 stylePanelHeader
                     .background(CameraTheme.background)
                     .zIndex(1)
                 OverlayPanelView(model: model,
-                                 contentHeight: metrics.styleSheetContentHeight,
+                                 contentHeight: contentHeight,
                                  tabBarHeight: metrics.panelTabBarHeight,
                                  bottomSafeAreaInset: 0,
-                                 showsCollapseButton: false)
-                    .frame(height: metrics.styleSheetContentHeight + chrome)
-                Text(model.stylePanelNote)
-                    .font(.system(size: 11.5))
-                    .foregroundColor(CameraTheme.inkTertiary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: CameraScreenLayoutMetrics.styleSheetNoteHeight)
-                    .accessibilityIdentifier("stylePanelNote")
+                                 showsCollapseButton: false,
+                                 drawsSurface: false)
+                    .frame(height: contentHeight + chrome)
+                if showsNote {
+                    stylePanelNote
+                }
                 Spacer(minLength: 0)
             }
             .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
@@ -491,6 +490,20 @@ struct CameraScreen: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("stylePanel")
         }
+    }
+
+    /// Where the sheet's changes are saved, under the layer list.
+    private var stylePanelNote: some View {
+        Text(model.stylePanelNote)
+            .font(.system(size: 11.5))
+            .foregroundColor(CameraTheme.inkTertiary)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: CameraScreenLayoutMetrics.styleSheetNoteHeight)
+            .accessibilityIdentifier("stylePanelNote")
     }
 
     /// The sheet's surface: the camera background, top corners rounded, a soft
