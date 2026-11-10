@@ -455,97 +455,20 @@ struct CameraScreen: View {
 
     // MARK: - Style sheet (FR-20.10)
 
-    /// The 文字樣式 sheet from the bottom, about 4/10 of the screen: the title
-    /// and the checkmark, the shared layer panel (#718), and where changes are
-    /// saved. The viewfinder yields the room above it.
+    /// The 文字樣式 sheet from the bottom, about 4/10 of the screen (the
+    /// shared `StylePanelSheet`, #718). The viewfinder yields the room above it.
     @ViewBuilder
     private func stylePanel(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.panelModel.isOpen {
-            let chrome = CameraScreenLayoutMetrics.panelTopPadding + metrics.panelTabBarHeight
-            // The note is the layer list's foot only; a layer's page takes its
-            // room (#718 option A ②③).
-            let showsNote = model.panelModel.route == .root
-            let contentHeight = metrics.styleSheetContentHeight
-                + (showsNote ? 0 : CameraScreenLayoutMetrics.styleSheetNoteHeight)
-            VStack(spacing: 0) {
-                stylePanelHeader
-                    .background(CameraTheme.background)
-                    .zIndex(1)
-                OverlayPanelView(model: model,
-                                 contentHeight: contentHeight,
-                                 tabBarHeight: metrics.panelTabBarHeight,
-                                 bottomSafeAreaInset: 0,
-                                 showsCollapseButton: false,
-                                 drawsSurface: false)
-                    .frame(height: contentHeight + chrome)
-                if showsNote {
-                    stylePanelNote
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
-            .background(stylePanelBackground)
-            .offset(x: 0, y: metrics.styleSheetTop)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("stylePanel")
+            StylePanelSheet(model: model,
+                            contentHeight: metrics.styleSheetContentHeight,
+                            tabBarHeight: metrics.panelTabBarHeight,
+                            note: model.stylePanelNote,
+                            onDone: model.closeStylePanel)
+                .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
+                .offset(x: 0, y: metrics.styleSheetTop)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-    }
-
-    /// Where the sheet's changes are saved, under the layer list.
-    private var stylePanelNote: some View {
-        Text(model.stylePanelNote)
-            .font(.system(size: 11.5))
-            .foregroundColor(CameraTheme.inkTertiary)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.8)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
-            .frame(height: CameraScreenLayoutMetrics.styleSheetNoteHeight)
-            .accessibilityIdentifier("stylePanelNote")
-    }
-
-    /// The sheet's surface: the camera background, top corners rounded, a soft
-    /// shadow along the top edge.
-    private var stylePanelBackground: some View {
-        let radius = CameraScreenLayoutMetrics.panelTopCornerRadius
-        return UnevenRoundedRectangle(topLeadingRadius: radius, bottomLeadingRadius: 0,
-                                      bottomTrailingRadius: 0, topTrailingRadius: radius, style: .continuous)
-            .fill(CameraTheme.background)
-            .shadow(color: CameraTheme.popoverShadow, radius: CameraScreenLayoutMetrics.panelShadowRadius,
-                    x: 0, y: CameraScreenLayoutMetrics.panelShadowYOffset)
-    }
-
-    private var stylePanelHeader: some View {
-        ZStack {
-            Text(model.panelModel.route.title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(CameraTheme.ink)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("stylePanelTitle")
-            HStack {
-                // A pushed layer page goes back to the layer list (#718).
-                if model.panelModel.route != .root {
-                    PanelBackButton { model.panelModel.goBack() }
-                }
-                Spacer()
-                Button {
-                    model.closeStylePanel()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(CameraTheme.active)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("完成")
-                .accessibilityIdentifier("stylePanelDoneButton")
-            }
-            .padding(.horizontal, 8)
-        }
-        .frame(height: CameraScreenLayoutMetrics.styleSheetHeaderHeight)
     }
 
     // MARK: - Zoom presets (issue #279)

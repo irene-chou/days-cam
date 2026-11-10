@@ -116,7 +116,7 @@ final class BatchExportUITests: XCTestCase {
 
         element("batchExportStyleLink").tap()
         XCTAssertTrue(element("exportView").waitForExistence(timeout: 5), "4")
-        element("exportConfirmButton").tap()
+        element("stylePanelDoneButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "4 back on the sheet")
         waitForLabel("batchExportTitle", containing: "匯出 4 張新照片")
 
@@ -169,7 +169,7 @@ final class BatchExportUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "0")
-        element("exportConfirmButton").tap()
+        element("stylePanelDoneButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "back on the sheet")
 
         waitForLabel("exportHideTextButton", containing: "顯示文字")
@@ -182,7 +182,7 @@ final class BatchExportUITests: XCTestCase {
         XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
         XCTAssertTrue(app.switches["layerToggleOverlay"].waitForExistence(timeout: 5))
         app.switches["layerToggleOverlay"].tap()
-        element("exportConfirmButton").tap()
+        element("stylePanelDoneButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
         waitForLabel("exportHideTextButton", containing: "隱藏文字")
         XCTAssertTrue(element("exportHideTextButton").isEnabled)

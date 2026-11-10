@@ -469,28 +469,22 @@ private struct LayerPage<Content: View>: View {
     }
 }
 
-/// The top row's left key on a pushed page (#718): `chevron.left` and the
-/// root's title, back to the layer list. Both hosts draw it.
+/// The top row's left key on a pushed page (#718): `chevron.left` alone,
+/// back to the layer list.
 struct PanelBackButton: View {
     /// Room a centered title keeps clear on each side of a header that may
-    /// hold this key: ‹ plus 文字樣式 at 15pt and its padding.
-    static let reservedWidth: CGFloat = 96
+    /// hold this key: its 44pt target and the row's 8pt padding.
+    static let reservedWidth: CGFloat = 52
 
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                Text(OverlayPanelModel.Route.root.title)
-                    .font(.system(size: 15))
-                    .lineLimit(1)
-            }
-            .foregroundColor(CameraTheme.active)
-            .padding(.horizontal, 6)
-            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(CameraTheme.active)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("返回文字樣式")

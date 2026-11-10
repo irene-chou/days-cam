@@ -3,11 +3,11 @@ import SwiftUI
 /// The 文字樣式 page of one photo (PRD 2.0 FR-19, D8 ④): the page that used
 /// to be the export page, now only styling; nothing is exported here.
 ///
-/// Top bar `xmark`｜文字樣式 + 紀錄名｜`checkmark` (both just go back; on a layer's
-/// page the left key is 返回 to the layer list, #718); a preview about 52% of the
-/// width at the photo's own aspect ratio, with the record's overlay drawn by
-/// the same `OverlayTextView`／`FilmDateStampView` the bake matches; the
-/// overlay panel (the layer list, #718) below it, always open; one line at the bottom.
+/// Top bar `xmark`｜紀錄名 (back to where the page opened from); a preview
+/// about 52% of the width at the photo's own aspect ratio, with the record's
+/// overlay drawn by the same `OverlayTextView`／`FilmDateStampView` the bake
+/// matches; below it the camera's 文字樣式 sheet (`StylePanelSheet`, #718),
+/// always open, whose checkmark also goes back.
 /// The output-form switch (疊字／拍立得) is not drawn in the first phase: there
 /// is only one form (§2.4).
 struct ExportView: View {
@@ -25,7 +25,8 @@ struct ExportView: View {
     /// the top padding); taller tab content scrolls, as it does there.
     static let maxPanelContentHeight: CGFloat = 260
     static let headerHeight: CGFloat = 44
-    static let noteHeight: CGFloat = 34
+    /// Where the sheet says changes are saved (FR-19.8).
+    static let note = "改動直接存到這個紀錄，回檢視頁再匯出"
     /// Space above and below the preview (`.pv{padding:4px 0 6px}`).
     static let previewTopPadding: CGFloat = 4
     static let previewBottomPadding: CGFloat = 6
@@ -38,26 +39,26 @@ struct ExportView: View {
     var body: some View {
         GeometryReader { proxy in
             let previewSize = Self.previewSize(in: proxy.size, imageSize: previewImage?.size)
-            let panelChrome = CameraScreenLayoutMetrics.panelTopPadding + CameraScreenLayoutMetrics.defaultPanelTabBarHeight
+            let tabBarHeight = CameraScreenLayoutMetrics.defaultPanelTabBarHeight
+            let sheetChrome = StylePanelSheet<ExportModel>.chromeHeight(tabBarHeight: tabBarHeight)
             let room = proxy.size.height - Self.headerHeight - previewSize.height
-                - Self.previewTopPadding - Self.previewBottomPadding - Self.noteHeight
-            let contentHeight = max(0, min(room - panelChrome, Self.maxPanelContentHeight))
+                - Self.previewTopPadding - Self.previewBottomPadding - sheetChrome
+            let contentHeight = max(0, min(room, Self.maxPanelContentHeight))
             VStack(spacing: 0) {
                 header
-                // Space the panel does not need goes around the preview, so
+                // Space the sheet does not need goes around the preview, so
                 // the panel keeps the camera's height (the 樣式 tab centers
                 // its pages in it).
                 preview(size: previewSize)
                     .padding(.top, Self.previewTopPadding)
                     .padding(.bottom, Self.previewBottomPadding)
                     .frame(maxHeight: .infinity)
-                OverlayPanelView(model: model,
-                                 contentHeight: contentHeight,
-                                 tabBarHeight: CameraScreenLayoutMetrics.defaultPanelTabBarHeight,
-                                 bottomSafeAreaInset: 0,
-                                 showsCollapseButton: false)
-                    .frame(height: contentHeight + panelChrome)
-                note
+                StylePanelSheet(model: model,
+                                contentHeight: contentHeight,
+                                tabBarHeight: tabBarHeight,
+                                note: Self.note,
+                                onDone: { dismiss() })
+                    .frame(height: contentHeight + sheetChrome)
             }
         }
         .background(CameraTheme.background.ignoresSafeArea())
@@ -91,63 +92,36 @@ struct ExportView: View {
 
     // MARK: - Header (FR-19.1)
 
+    /// `xmark` and the record's name; 文字樣式 and the checkmark are the
+    /// sheet's (#718).
     private var header: some View {
         HStack {
-            // A pushed layer page goes back to the layer list instead (#718).
-            if model.panelModel.route == .root {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(CameraTheme.ink)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("取消")
-                .accessibilityIdentifier("exportCancelButton")
-            } else {
-                PanelBackButton { model.panelModel.goBack() }
-            }
-            Spacer()
-            confirmButton
-        }
-        // The title stays centered whatever the left key's width.
-        .overlay {
-            VStack(spacing: 1) {
-                Text(model.panelModel.route.title)
-                    .font(.system(size: 15, weight: .semibold))
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(CameraTheme.ink)
-                Text(model.subtitle)
-                    .font(.system(size: 11.5).monospacedDigit())
-                    .foregroundColor(CameraTheme.inkTertiary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .lineLimit(1)
-            // Clear of the keys on both sides, and never takes their taps.
-            .padding(.horizontal, PanelBackButton.reservedWidth)
-            .allowsHitTesting(false)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("exportTitle")
+            .buttonStyle(.plain)
+            .accessibilityLabel("取消")
+            .accessibilityIdentifier("exportCancelButton")
+            Spacer()
+        }
+        // The name stays centered, clear of the key, and never takes its taps.
+        .overlay {
+            Text(model.subtitle)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundColor(CameraTheme.inkSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, PanelBackButton.reservedWidth)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("exportSubtitle")
         }
         .padding(.horizontal, 8)
         .frame(height: Self.headerHeight)
-    }
-
-    /// The checkmark: done, back to the viewer. Nothing is exported.
-    private var confirmButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            Image(systemName: "checkmark")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(CameraTheme.active)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("完成")
-        .accessibilityIdentifier("exportConfirmButton")
     }
 
     // MARK: - Preview (FR-19.2, FR-19.3)
@@ -186,20 +160,5 @@ struct ExportView: View {
         .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("exportPreview")
-    }
-
-    // MARK: - Bottom (FR-19.8)
-
-    private var note: some View {
-        Text("改動直接存到這個紀錄，回檢視頁再匯出")
-            .font(.system(size: 11.5))
-            .foregroundColor(CameraTheme.inkTertiary)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.8)
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.noteHeight)
-            .accessibilityIdentifier("exportNote")
     }
 }
