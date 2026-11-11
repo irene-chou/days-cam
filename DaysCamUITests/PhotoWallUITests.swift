@@ -290,4 +290,36 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(notice.waitForNonExistence(timeout: 5), "3")
         XCTAssertEqual(dayLabels().count, 5, "#680-8")
     }
+
+    // MARK: - #722 unit text on the wall
+
+    private func newestDayLabel() -> XCUIElement {
+        let labels = app.descendants(matching: .any).matching(identifier: "photoDayLabel")
+        return labels.element(boundBy: labels.count - 1)
+    }
+
+    /// #722-5, 7: month + day record, start 2025-10-05, newest photo 2026-01-10:
+    /// the cell prints the full "N 個月又 M 天" and VoiceOver reads it whole,
+    /// with "，已選取" while selecting.
+    func testWallPrintsMonthsAndDays() {
+        launchWall(photos: 5, startDate: "2025-10-05", arguments: ["-UITestDisplayUnits", "month,day"])
+        XCTAssertTrue(element("photoWall").waitForExistence(timeout: 10))
+        let label = dayLabels().last ?? ""
+        XCTAssertTrue(label.contains("3 個月又"), "5 \(label)")
+        shot("wall-months-days")
+        enterSelection()
+        cell(4).tap()
+        XCTAssertEqual(cell(4).label, "\(label)，已選取", "7")
+        shot("wall-months-days-selecting")
+    }
+
+    /// #722-6: year, month, week, day on near day 400 steps down to a shorter text.
+    func testWallShortensDayFourHundred() {
+        launchWall(photos: 5, startDate: "2024-12-02",
+                   arguments: ["-UITestDisplayUnits", "year,month,week,day"])
+        XCTAssertTrue(element("photoWall").waitForExistence(timeout: 10))
+        let label = dayLabels().last ?? ""
+        XCTAssertTrue(label.hasPrefix("1 年"), "6 \(label)")
+        shot("wall-day-400")
+    }
 }

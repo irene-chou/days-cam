@@ -145,6 +145,7 @@ struct DaysCamApp: App {
         applyUITestSecondRecord(to: profileStore)
         applyUITestOverlay(to: profileStore)
         applyUITestFilmDate(to: profileStore)
+        applyUITestDisplayUnits(to: profileStore)
         applyUITestCustomStyle(to: profileStore)
         return profileStore
     }
@@ -291,6 +292,23 @@ struct DaysCamApp: App {
         for var profile in profileStore.profiles {
             profile.showFilmDate = true
             profile.filmDateCorner = corner
+            _ = try? profileStore.update(profile)
+        }
+        #endif
+    }
+
+    /// UI tests pass `-UITestDisplayUnits <csv>` (`DisplayUnit` raw values such
+    /// as `month,day`) to check those units for every saved profile, the
+    /// stand-in for the panel's unit switches (#722). Debug builds only.
+    private static func applyUITestDisplayUnits(to profileStore: ProfileStore) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-UITestDisplayUnits"),
+              arguments.indices.contains(flag + 1) else { return }
+        let units = Set(arguments[flag + 1].split(separator: ",").compactMap { DisplayUnit(rawValue: String($0)) })
+        guard !units.isEmpty else { return }
+        for var profile in profileStore.profiles {
+            profile.displayUnits = units
             _ = try? profileStore.update(profile)
         }
         #endif

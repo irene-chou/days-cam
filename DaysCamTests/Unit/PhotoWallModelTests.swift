@@ -88,7 +88,7 @@ final class PhotoWallModelTests: XCTestCase {
     }
 
     private func texts(_ model: PhotoWallModel) -> [String] {
-        model.sections.flatMap(\.cells).map(\.dayText)
+        model.sections.flatMap(\.cells).map { $0.dayTexts[0] }
     }
 
     private func fiveJanuaryPhotos() -> FakeRecordAlbumLibrary {
@@ -113,7 +113,7 @@ final class PhotoWallModelTests: XCTestCase {
         let (store, profile) = try makeStore(start: DateFixture.components(2026, 1, 8), albumIdentifier: "album")
         let model = makeModel(store: store, profile: profile, library: fiveJanuaryPhotos())
         let cells = model.sections.flatMap(\.cells)
-        XCTAssertEqual(cells.map(\.dayText), ["前 2 天", "前 1 天", "第 1 天", "第 2 天", "第 3 天"])
+        XCTAssertEqual(cells.map { $0.dayTexts[0] }, ["前 2 天", "前 1 天", "第 1 天", "第 2 天", "第 3 天"])
         XCTAssertEqual(cells.map(\.isBeforeStart), [true, true, false, false, false])
     }
 
@@ -975,8 +975,55 @@ extension PhotoWallModelTests {
         let profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1),
                                     showDayCount: false, showDate: false, showName: false)
         let photoDate = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 12))
-        let mark = PhotoWallModel.dayMark(creationDate: photoDate, profile: profile, calendar: DateFixture.taipei)
-        XCTAssertEqual(mark.text, "第 10 天")
+        let mark = PhotoWallModel.dayMarkTexts(creationDate: photoDate, profile: profile, calendar: DateFixture.taipei)
+        XCTAssertEqual(mark.texts, ["第 10 天"])
         XCTAssertFalse(mark.isBeforeStart)
+    }
+
+    private func marks(start: DateComponents, units: Set<DisplayUnit>, ageWording: Bool = false,
+                       format: DayCountFormat = .ordinal, photo: Date?) -> (texts: [String], isBeforeStart: Bool) {
+        let profile = CameraProfile(name: "小寶", startDate: start, displayUnits: units,
+                                    useAgeWording: ageWording, dayCountFormat: format)
+        return PhotoWallModel.dayMarkTexts(creationDate: photo, profile: profile, calendar: DateFixture.taipei)
+    }
+
+    /// #722-1: day only has one candidate, in the record's wording.
+    func testDayOnlyHasOneCandidatePerWording() throws {
+        let photo = DateFixture.date(2026, 1, 10, hour: 12)
+        let start = DateFixture.components(2026, 1, 1)
+        XCTAssertEqual(marks(start: start, units: [.day], format: .ordinal, photo: photo).texts, ["第 10 天"])
+        XCTAssertEqual(marks(start: start, units: [.day], format: .plain, photo: photo).texts, ["10 天"])
+        XCTAssertEqual(marks(start: start, units: [.day], format: .dayN, photo: photo).texts, ["Day 10"])
+        XCTAssertEqual(marks(start: start, units: [.day], format: .dDay, photo: photo).texts, ["D+9"])
+    }
+
+    /// #722-2: month + day drops the day for the second candidate.
+    func testMonthAndDayDropsTheDay() {
+        let mark = marks(start: DateFixture.components(2026, 8, 5), units: [.month, .day],
+                         photo: DateFixture.date(2026, 11, 11, hour: 12))
+        XCTAssertEqual(mark.texts, ["3 個月又 6 天", "3 個月"])
+    }
+
+    /// #722-3: year, month, week, day shortens one unit at a time down to the year.
+    func testAllUnitsShortenDownToTheYear() {
+        let all: Set<DisplayUnit> = [.year, .month, .week, .day]
+        let photo = DateFixture.date(2026, 2, 14, hour: 12)
+        let mark = marks(start: DateFixture.components(2025, 1, 1), units: all, photo: photo)
+        XCTAssertEqual(mark.texts.count, 4, "\(mark.texts)")
+        XCTAssertEqual(mark.texts.last, "1 年")
+        XCTAssertEqual(mark.texts[2], "1 年 1 個月")
+        let age = marks(start: DateFixture.components(2025, 1, 1), units: all, ageWording: true, photo: photo)
+        XCTAssertEqual(age.texts.last, "1 歲")
+    }
+
+    /// #722-4: before the start date and no date are single candidates.
+    func testBeforeStartAndUnknownDateAreSingle() {
+        let before = marks(start: DateFixture.components(2026, 1, 12), units: [.month, .day],
+                           photo: DateFixture.date(2026, 1, 10, hour: 12))
+        XCTAssertEqual(before.texts, ["前 2 天"])
+        XCTAssertTrue(before.isBeforeStart)
+        let unknown = marks(start: DateFixture.components(2026, 1, 12), units: [.month, .day], photo: nil)
+        XCTAssertEqual(unknown.texts, ["日期不明"])
+        XCTAssertFalse(unknown.isBeforeStart)
     }
 }
