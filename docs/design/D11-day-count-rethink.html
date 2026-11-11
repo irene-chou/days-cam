@@ -1,0 +1,428 @@
+<title>DaysCam 天數三題 D-11</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: one column; each 題 has 現況 → 方案 → 手機示意 → 規則表. Page chrome follows CameraTheme (暖白底、墨色字、杏桃主題色); phone mocks are the App itself and stay light. */
+:root{
+  --bg:#F7F3EE; --card:#FFFFFF; --ink:#2A2622; --ink2:rgba(42,38,34,.62); --ink3:rgba(42,38,34,.38);
+  --fill:rgba(42,38,34,.07); --line:rgba(42,38,34,.12); --accent:#FFC27A; --active:#C9772A; --ok:#3E7C4B; --warn:#B4452B;
+  --p-bg:#F7F3EE; --p-card:#FFFFFF; --p-ink:#2A2622; --p-ink2:rgba(42,38,34,.62); --p-ink3:rgba(42,38,34,.38);
+  --p-fill:rgba(42,38,34,.07); --p-line:rgba(42,38,34,.10); --p-active:#C9772A; --p-accent:#FFC27A;
+  --sans:"Noto Sans TC","PingFang TC","Helvetica Neue",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#1E1C1A; --card:#2A2622; --ink:#F1EBE3; --ink2:rgba(241,235,227,.66); --ink3:rgba(241,235,227,.4); --fill:rgba(241,235,227,.08); --line:rgba(241,235,227,.14); --active:#E8A563; --ok:#8CC79A; --warn:#E08A72; color-scheme:dark } }
+:root[data-theme="dark"]{ --bg:#1E1C1A; --card:#2A2622; --ink:#F1EBE3; --ink2:rgba(241,235,227,.66); --ink3:rgba(241,235,227,.4); --fill:rgba(241,235,227,.08); --line:rgba(241,235,227,.14); --active:#E8A563; --ok:#8CC79A; --warn:#E08A72; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 64px}
+main{max-width:900px;margin:0 auto;display:grid;gap:44px}
+h1{font-size:26px;line-height:1.25;margin:0 0 6px;text-wrap:balance;font-weight:700}
+h2{font-size:20px;margin:0 0 2px;font-weight:700;text-wrap:balance}
+h3{font-size:15px;margin:0 0 4px;font-weight:700}
+p{margin:0 0 8px;max-width:64ch}
+ul{margin:0 0 8px;padding-left:1.2em;max-width:64ch}
+li{margin:2px 0}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--ink2);text-transform:uppercase}
+.muted{color:var(--ink2)}
+.small{font-size:13px}
+section{display:grid;gap:14px}
+.note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px}
+.note b{color:var(--active)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--card)}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:700;background:var(--fill);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:var(--fill);color:var(--ink2);white-space:nowrap}
+.pill.rec{background:var(--accent);color:#2A1A08}
+.pill.warn{background:rgba(180,69,43,.12);color:var(--warn)}
+.pill.ok{background:rgba(62,124,75,.12);color:var(--ok)}
+.options{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.opt{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:6px;align-content:start;min-width:0}
+.opt.rec{border-color:var(--active);box-shadow:0 0 0 2px rgba(201,119,42,.18)}
+.opt h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.opt .pc{display:grid;gap:2px;font-size:13px}
+.opt .pc span::before{content:"＋ ";color:var(--ok);font-weight:700}
+.opt .pc span.m::before{content:"－ ";color:var(--warn)}
+.facts{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.fact{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13.5px;min-width:0}
+.fact b{display:block;font-size:14px;margin-bottom:2px}
+
+/* ---- phone mocks, 300pt wide (縮小的 375), always light ---- */
+.phones{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.phonecol{display:grid;gap:8px;width:100%;max-width:300px}
+.phonecol>figcaption{font-size:13px;color:var(--ink2);line-height:1.45}
+.phone{width:100%;background:var(--p-bg);border-radius:24px;border:1px solid var(--line);overflow:hidden;color:var(--p-ink);font-family:var(--sans);box-shadow:0 10px 30px rgba(42,38,34,.12);font-size:12px}
+.hd{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px;min-height:44px}
+.hd .ttl{text-align:center;line-height:1.2}
+.hd .ttl b{display:block;font-size:13px}
+.hd .ttl small{font-size:10px;color:var(--p-ink3)}
+.hd .ib{width:28px;height:28px;border-radius:50%;background:var(--p-fill);display:inline-grid;place-items:center;font-size:12px;color:var(--p-ink2)}
+.hd .tb{padding:3px 9px;border-radius:999px;background:var(--p-fill);font-size:11px;font-weight:600}
+.hd .r{display:flex;gap:6px;align-items:center}
+.mon{font-size:10.5px;font-weight:700;color:var(--p-ink2);padding:8px 10px 4px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.cell{aspect-ratio:1;position:relative;overflow:hidden;max-width:100%}
+.cell .ph{position:absolute;inset:0}
+.cell .day{position:absolute;left:4px;bottom:3px;right:4px;font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+.bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px 14px}
+.bar .ib{width:34px;height:34px;border-radius:50%;background:var(--p-fill);display:grid;place-items:center;font-size:14px}
+.bar .cap{background:var(--p-accent);color:#2A1A08;border-radius:999px;padding:8px 16px;font-weight:700;font-size:12.5px}
+/* banner (對比圖) */
+.cbanner{display:flex;align-items:center;gap:10px;margin:0 10px 6px;padding:8px 10px;background:var(--p-card);border:1px solid var(--p-line);border-radius:14px}
+.cbanner .pair{display:flex;gap:2px;flex:none}
+.cbanner .pair i{display:block;width:44px;height:44px;position:relative;overflow:hidden}
+.cbanner .pair i:first-child{border-radius:8px 0 0 8px}
+.cbanner .pair i:last-child{border-radius:0 8px 8px 0}
+.cbanner .pair i::after{content:attr(data-d);position:absolute;left:3px;bottom:2px;font-size:7.5px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+.cbanner .tx{flex:1;min-width:0;line-height:1.3}
+.cbanner .tx b{display:block;font-size:12.5px}
+.cbanner .tx small{font-size:10.5px;color:var(--p-ink2)}
+.cbanner .chev{color:var(--p-ink3);font-size:14px}
+.cbanner.compact{padding:6px 10px}
+.cbanner.compact .pair i{width:28px;height:28px}
+.cbanner.compact .pair i::after{display:none}
+/* record editor rows */
+.form{padding:6px 12px 14px;display:grid;gap:12px}
+.card{background:var(--p-card);border-radius:12px;padding:0 12px}
+.row{display:flex;justify-content:space-between;align-items:center;min-height:38px;border-bottom:1px solid var(--p-line);font-size:12.5px;gap:8px}
+.row:last-child{border-bottom:0}
+.row .lab{color:var(--p-ink)}
+.row .val{color:var(--p-ink2);font-variant-numeric:tabular-nums}
+.row .val.act{color:var(--p-active);font-weight:600}
+.row .chev{color:var(--p-ink3)}
+.sub{font-size:10.5px;color:var(--p-ink2);font-weight:700;padding:0 2px}
+.units{display:flex;justify-content:space-around;padding:8px 0}
+.units span{display:grid;justify-items:center;gap:3px;font-size:11.5px}
+.units i{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--p-ink3);display:grid;place-items:center;font-size:11px;color:#fff;font-style:normal}
+.units i.on{background:var(--p-active);border-color:var(--p-active)}
+.seg2{display:flex;background:var(--p-fill);border-radius:9px;padding:2px;margin:6px 0}
+.seg2 span{flex:1;text-align:center;padding:4px 0;border-radius:7px;font-size:11.5px;color:var(--p-ink2)}
+.seg2 span.on{background:var(--p-card);color:var(--p-ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.preview{border:1px solid var(--p-line);background:var(--p-fill);border-radius:10px;padding:8px 10px;font-size:11.5px;display:grid;gap:3px}
+.preview div{display:flex;justify-content:space-between}
+.toggle{width:30px;height:18px;border-radius:9px;background:var(--p-active);position:relative;flex:none}
+.toggle::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.toggle.off{background:rgba(42,38,34,.2)}
+.toggle.off::after{right:auto;left:2px}
+/* camera */
+.cam{background:#111;color:#fff;display:grid;gap:0}
+.cam .top{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;height:50px}
+.cam .cbtn{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:12px}
+.cam .cbtn.on{background:var(--p-accent);color:#2A1A08}
+.cam .caps{font-size:12.5px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.cam .vf{position:relative;aspect-ratio:3/4;max-width:100%;overflow:hidden;background:
+  radial-gradient(ellipse at 60% 35%,#f1d9c3 0,#d9a98a 22%,transparent 23%),
+  radial-gradient(ellipse at 60% 60%,#f6e6c8 0,#eacb9a 30%,transparent 31%),
+  linear-gradient(180deg,#6f8f7a 0,#4b6b58 45%,#2e4237 100%)}
+.cam .ov{position:absolute;right:12px;bottom:14px;font-size:17px;line-height:1.3;text-align:right;text-shadow:0 1px 3px rgba(0,0,0,.55)}
+.cam .ov.serif{font-weight:900}
+.cam .hud{position:absolute;left:10px;bottom:10px;font-size:13px;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.65);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.cam .hud small{display:block;font-size:10px;font-weight:600;opacity:.85}
+.cam .tag{position:absolute;right:12px;bottom:60px;font-size:9px;background:rgba(0,0,0,.45);padding:1px 6px;border-radius:999px;border:1px dashed rgba(255,255,255,.6)}
+.cam .zoom{display:flex;gap:10px;justify-content:center;padding:6px;font-size:10px;color:rgba(255,255,255,.7)}
+.cam .zoom b{color:#fff;background:rgba(255,255,255,.18);padding:0 6px;border-radius:999px}
+.cam .bot{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:8px 14px 16px}
+.cam .thumb{width:36px;height:36px;border-radius:7px;background:linear-gradient(140deg,#c98f6a,#5c7a68);display:grid;align-items:end;justify-items:center;font-size:8px;padding-bottom:2px;position:relative}
+.cam .thumb+small{display:block;font-size:9px;color:rgba(255,255,255,.8);margin-top:2px}
+.cam .shut{width:56px;height:56px;border-radius:50%;border:3px solid #fff;background:rgba(255,255,255,.15);justify-self:center}
+.cam .toast{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(0,0,0,.6);padding:4px 10px;border-radius:999px;font-size:10px;white-space:nowrap}
+.cam .drawer{position:absolute;right:12px;top:6px;display:grid;gap:6px;background:rgba(0,0,0,.4);padding:6px;border-radius:999px}
+.cam .drawer span{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.15);display:grid;place-items:center;font-size:10px}
+.cam .drawer span.on{background:var(--p-accent);color:#2A1A08}
+/* sheet */
+.sheet{background:var(--p-bg);border-radius:18px 18px 0 0;padding:10px 14px 14px;display:grid;gap:10px}
+.sheet .grab{width:36px;height:4px;border-radius:2px;background:var(--p-ink3);margin:0 auto}
+.sheet h4{margin:0;font-size:15px;text-align:center}
+.sheet .two{display:grid;grid-template-columns:1fr 1fr;gap:3px;border-radius:10px;overflow:hidden}
+.sheet .two i{display:block;aspect-ratio:1;position:relative;max-width:100%}
+.sheet .two i::after{content:attr(data-d);position:absolute;right:8px;bottom:6px;font-size:12px;font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.sheet .hint{font-size:10.5px;color:var(--p-ink2);text-align:center}
+.sheet .btn{border-radius:12px;padding:10px;text-align:center;font-weight:700;background:var(--p-fill);font-size:13px}
+.sheet .btn.pri{background:var(--p-accent);color:#2A1A08}
+.dim{background:rgba(42,38,34,.35);padding-top:70px}
+.pA{background:linear-gradient(150deg,#e8c7a8,#a86b4a)}.pB{background:linear-gradient(150deg,#b8c9b0,#5f7d6a)}.pC{background:linear-gradient(150deg,#f1d7c3,#c88a6b)}
+.pD{background:linear-gradient(150deg,#cfd8e3,#6e7f93)}.pE{background:linear-gradient(150deg,#f0dfa8,#b89a52)}.pF{background:linear-gradient(150deg,#d9c3e8,#7c5f93)}
+.pG{background:linear-gradient(150deg,#f3c9b8,#c06a55)}.pH{background:linear-gradient(150deg,#bfd9d6,#4f8a85)}.pI{background:linear-gradient(150deg,#e6d5c5,#8c7059)}
+@media (max-width:420px){.phonecol{max-width:100%}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">DaysCam · 設計稿 D-11 · 2026-11-11 · 草稿，待人類裁定</div>
+  <h1>天數三題：單位、相機預覽、對比圖</h1>
+  <p class="muted">人類 2026-11-11 提出三個感覺：牆上的天數要不要能改單位、相機「看得到疊字卻存原圖」很怪、想在相簿看到自動生成的對比圖。這份稿先把現況講清楚，每題給方案與推薦，最後是要裁定的問題。</p>
+</header>
+
+<!-- ============ 0 現況 ============ -->
+<section>
+  <h2>0. 現況：三件事在程式裡的樣子</h2>
+  <div class="facts">
+    <div class="fact"><b>單位介面其實已經有</b>在「文字樣式 › 內容」分頁最下面：「天數單位」年／月／週／天任選、「年」改成「歲」、「寫法」。它套用在<b>大圖與匯出</b>；照片牆刻意只印「第 N 天」（PRD-2.0 FR-17.5「縮圖太小」）。所以問題不是缺介面，是<b>放在「樣式」底下不容易想到，而且牆不跟著單位</b>。</div>
+    <div class="fact"><b>相機是 11-01 D9 定的</b>取景窗畫出紀錄的完整疊字（字型、顏色、位置都一樣），點字可開樣式面板，但快門存乾淨原圖（FR-20.2／20.4，#655、#656 已合併）。1.x 的「觀景窗＝成品」在這裡斷掉：看得到的字不會出現在拍下的照片上。</div>
+    <div class="fact"><b>對比圖是 PRD-2.0 第二期</b>§2.2 列在第二期、§2.3 第一期不做；多選匯出已被 D8 提前，對比圖沒有。目前沒有任何資料結構或接縫，牆頂端唯一的 banner 是限制取用提示列（§7.3），位置與樣式可以沿用。</div>
+  </div>
+</section>
+
+<!-- ============ 1 單位 ============ -->
+<section>
+  <div>
+    <div class="eyebrow">第一題</div>
+    <h2>1. 天數單位：不加介面，搬家＋讓牆跟著</h2>
+    <p>孩子成長紀錄的使用者想看到「3 個月又 5 天」而不是「第 97 天」。這在 App 裡已經做得到，只是要先知道「文字樣式」裡藏著單位。單位是「這個數字代表什麼」，和字型顏色不是同一類事；起算（第 1 天／第 0 天）已經在紀錄編輯頁，單位理應在它旁邊。</p>
+  </div>
+
+  <div class="options">
+    <div class="opt rec">
+      <h3>乙 搬到紀錄編輯頁，牆跟著單位 <span class="pill rec">推薦</span></h3>
+      <p class="small">紀錄編輯頁的「起算」下面加「單位」列（年月週天四格勾選＋「年」改成「歲」），天數預覽即時反映。「文字樣式 › 內容」拿掉「天數單位」卡，只留「寫法」。照片牆的角標改印紀錄的單位文字（截短規則見下表）。</p>
+      <div class="pc"><span>介面總量不變，只是換位置；新使用者在建紀錄時就會看到單位</span><span>牆、大圖、匯出三處文字一致，不再有「牆印天、大圖印月」</span><span class="m">動到 ui-panel 與 ui-shell 兩邊；0.2 FR-11.3、2.0 FR-17.5、FR-21.1 要改</span></div>
+    </div>
+    <div class="opt">
+      <h3>甲 原地不動，只讓牆跟著單位</h3>
+      <p class="small">單位仍在「文字樣式 › 內容」，只改 FR-17.5：牆上角標印單位文字。</p>
+      <div class="pc"><span>改動最小（只有 PhotoWallModel 的文字來源）</span><span class="m">單位還是藏在「樣式」底下，使用者仍然找不到</span></div>
+    </div>
+    <div class="opt">
+      <h3>丙 建紀錄時選情境預設 <span class="pill">第二期再想</span></h3>
+      <p class="small">新增紀錄第一步選「寶寶成長／紀念日／倒數／專案」，各自帶一組單位與寫法；之後仍可在編輯頁改。</p>
+      <div class="pc"><span>最不用懂「單位」這個概念</span><span class="m">多一個步驤、多一個概念；寶寶要「滿一歲前月＋天、之後歲＋月」這種自動切換是新規則，先不碰</span></div>
+    </div>
+  </div>
+
+  <div class="phones">
+    <figure class="phonecol">
+      <div class="phone">
+        <div class="hd"><span class="ib">‹</span><div class="ttl"><b>小芽</b></div><span style="width:28px"></span></div>
+        <div class="form">
+          <div class="card">
+            <div class="row"><span class="lab">名稱</span><span class="val" style="color:var(--p-ink);font-weight:600">小芽</span></div>
+            <div class="row"><span class="lab">日期</span><span class="val">2026/8/5 ▾</span><span class="val act">3 個月又 6 天</span></div>
+            <div class="row" style="display:block;padding:6px 0"><span class="lab">起算</span><div class="seg2"><span class="on">當天算第 1 天</span><span>第 0 天</span></div></div>
+            <div class="row" style="display:block;padding:6px 0 2px"><span class="lab">單位</span>
+              <div class="units"><span><i>✓</i>年</span><span><i class="on">✓</i>月</span><span><i>✓</i>週</span><span><i class="on">✓</i>天</span></div></div>
+            <div class="row"><span class="lab">「年」改成「歲」</span><span class="toggle off"></span></div>
+          </div>
+          <div class="sub">天數預覽</div>
+          <div class="preview"><div><span>今天</span><b>小芽 3 個月又 6 天</b></div></div>
+          <div class="card"><div class="row"><span class="lab">相簿</span><span class="val">小芽 <span class="chev">›</span></span></div></div>
+        </div>
+      </div>
+      <figcaption><b>乙：紀錄編輯頁</b>。「單位」列沿用 0.2 FR-11.3 的四格勾選（含「至少保留一個單位」規則），「歲」列跟著搬。預覽即時顯示結果。</figcaption>
+    </figure>
+
+    <figure class="phonecol">
+      <div class="phone">
+        <div class="hd"><span class="ib">‹</span><div class="ttl"><b>小芽</b><small>2026/8/5 起</small></div><div class="r"><span class="tb">選取</span><span class="ib">⋯</span></div></div>
+        <div class="mon">2026 年 8 月</div>
+        <div class="grid">
+          <div class="cell"><div class="ph pA"></div><span class="day">第 1 天</span></div>
+          <div class="cell"><div class="ph pB"></div><span class="day">第 3 天</span></div>
+          <div class="cell"><div class="ph pC"></div><span class="day">1 週又 2 天</span></div>
+          <div class="cell"><div class="ph pD"></div><span class="day">2 週又 4 天</span></div>
+          <div class="cell"><div class="ph pE"></div><span class="day">3 週又 6 天</span></div>
+          <div class="cell"><div class="ph pF"></div><span class="day">1 個月</span></div>
+        </div>
+        <div class="mon">2026 年 11 月</div>
+        <div class="grid">
+          <div class="cell"><div class="ph pG"></div><span class="day">3 個月</span></div>
+          <div class="cell"><div class="ph pH"></div><span class="day">3 個月又 4 天</span></div>
+          <div class="cell"><div class="ph pI"></div><span class="day">3 個月又 6 天</span></div>
+        </div>
+        <div class="bar"><span class="ib">＋</span><span class="cap">📷 拍照</span></div>
+      </div>
+      <figcaption><b>牆跟著單位</b>（勾月＋天）。第一個月內沒有「月」可印，依 U-5 全部算成天；這裡示意的是勾「週＋天」時的樣子，實際以該紀錄勾選為準。11pt 一行放得下 8 個字。</figcaption>
+    </figure>
+  </div>
+
+  <div class="tablewrap"><table>
+    <tr><th>牆上角標規則</th><th>內容</th></tr>
+    <tr><td>文字來源</td><td>與大圖、匯出同一段天數文字（`TemplateRenderer` 只取天數節，不含名稱與日期），沿用 0.2 §4.5 U-1～U-10；只勾「天」時維持現行「第 N 天」（寫法照設定）。「前 N 天」、「日期不明」不變</td></tr>
+    <tr><td>放不下時</td><td>字級固定 11pt、單行；寬度超過格寬減 10pt 時，從最小單位開始整節去掉（「1 年 2 個月 3 週 2 天」→「1 年 2 個月 3 週」→「1 年 2 個月」），至少保留最大的非零單位；不縮字、不省略號</td></tr>
+    <tr><td>VoiceOver</td><td>念完整文字（不截短）</td></tr>
+    <tr><td>選取模式</td><td>勾選記號在右下、文字在左下，和現在一樣；文字截短後仍不與記號重疊（文字右界＝格寬－30pt）</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ 2 相機 ============ -->
+<section>
+  <div>
+    <div class="eyebrow">第二題</div>
+    <h2>2. 相機：天數是相機告訴你的資訊，不是照片上的字</h2>
+    <p>人類要的兩件事其實不衝突：「拍的時候看到天數配眼前畫面」與「檔案乾淨」。衝突的是 D9 的做法：取景窗畫的是<b>成品的樣子</b>，拍下來卻不是成品。所見不等於所得，才會怪。三條路：把預覽改成明顯是介面的 HUD（甲）、讓所見真的所得（乙）、保留 D9 只加標示（丙）。</p>
+  </div>
+
+  <div class="options">
+    <div class="opt rec">
+      <h3>甲 天數 HUD <span class="pill rec">推薦</span></h3>
+      <p class="small">取景窗左下角印「第 128 天」（或單位文字），白字、semibold、陰影，和照片牆角標同一語言、放大到 15pt；下方一行小字紀錄名稱。不套紀錄字型顏色位置，不可點，沒有樣式面板。左上「疊字預覽」鍵拿掉（HUD 常駐）。</p>
+      <div class="pc"><span>牆的角標＝相機 HUD＝介面；檢視頁＝成品。三個畫面各說一件事，不再有所見≠所得</span><span>保留 #655 的全部（版面、紀錄膠囊、返回圖庫）；只退掉 #656 的疊字預覽、開關、點字開面板、首次提示</span><span class="m">失去「在相機裡看自己的樣式搭配畫面」；想調樣式要去檢視頁</span></div>
+    </div>
+    <div class="opt">
+      <h3>乙 所見即所得：拍照同時匯出</h3>
+      <p class="small">維持 D9 的疊字預覽；快門存原圖進紀錄相簿之外，再走 FR-22.1 管線烘焙一張存到「最近項目」。收合列加「同時匯出」開關（預設關），開著時取景窗才畫疊字，關著時同甲的 HUD。</p>
+      <div class="pc"><span>要立刻傳給家人的人，拍完就有成品</span><span>原圖仍乾淨，沒有違反「不改照片」</span><span class="m">每拍一張多一個檔案，圖庫兩倍；2.0「烘焙只在匯出」要改寫；存檔並行、失敗回報都要兩套</span><span class="m">本質上是甲再加一個選項，可以之後再加</span></div>
+    </div>
+    <div class="opt">
+      <h3>丙 保留 D9，標示「預覽」</h3>
+      <p class="small">疊字上方常駐一顆虛線小膠囊「預覽」；第一次拍照後 toast「已存原圖，匯出時才印上天數」。</p>
+      <div class="pc"><span>成本最低，不退任何已合併的工</span><span class="m">治標：使用者仍看到成品卻拿不到；多一顆常駐標籤讓取景窗更雜</span></div>
+    </div>
+  </div>
+
+  <div class="phones">
+    <figure class="phonecol">
+      <div class="phone cam">
+        <div class="top"><span style="width:30px"></span><span class="caps">小芽 ⌄</span><span style="display:flex;gap:8px"><span class="cbtn">⌃</span><span class="cbtn">↻</span></span></div>
+        <div class="vf"><div class="hud">第 128 天<small>小芽</small></div></div>
+        <div class="zoom"><span>.5</span><b>1×</b><span>2</span></div>
+        <div class="bot"><div><div class="thumb"></div><small>返回圖庫</small></div><div class="shut"></div><span></span></div>
+      </div>
+      <figcaption><b>甲 HUD</b>。左上「疊字預覽」鍵拿掉。HUD 在取景框左下、距邊 12pt；文字依紀錄單位（勾月＋天時「3 個月又 6 天」），橫拿時跟 #572 的圖示一起旋轉。</figcaption>
+    </figure>
+    <figure class="phonecol">
+      <div class="phone cam">
+        <div class="top"><span class="cbtn on">T</span><span class="caps">小芽 ⌄</span><span style="display:flex;gap:8px"><span class="cbtn on">⌃</span><span class="cbtn">↻</span></span></div>
+        <div class="vf">
+          <div class="drawer"><span>⚡</span><span>⏱</span><span>▦</span><span class="on">⇪</span></div>
+          <div class="ov serif">小芽<br>第 128 天</div>
+          <div class="toast">已存原圖，並匯出 1 張</div>
+        </div>
+        <div class="zoom"><span>.5</span><b>1×</b><span>2</span></div>
+        <div class="bot"><div><div class="thumb"></div><small>返回圖庫</small></div><div class="shut"></div><span></span></div>
+      </div>
+      <figcaption><b>乙 同時匯出</b>。收合列第四顆「同時匯出」開著時才畫疊字；快門後 toast 說兩件事。縮圖仍是原圖（相簿裡那張）。</figcaption>
+    </figure>
+    <figure class="phonecol">
+      <div class="phone cam">
+        <div class="top"><span class="cbtn on">T</span><span class="caps">小芽 ⌄</span><span style="display:flex;gap:8px"><span class="cbtn">⌃</span><span class="cbtn">↻</span></span></div>
+        <div class="vf"><span class="tag">預覽 · 不印在照片上</span><div class="ov serif">小芽<br>第 128 天</div></div>
+        <div class="zoom"><span>.5</span><b>1×</b><span>2</span></div>
+        <div class="bot"><div><div class="thumb"></div><small>返回圖庫</small></div><div class="shut"></div><span></span></div>
+      </div>
+      <figcaption><b>丙 標示預覽</b>。現狀加一顆虛線標籤。</figcaption>
+    </figure>
+  </div>
+
+  <div class="note"><b>為什麼推薦甲。</b>2.0 的主要情境是「平常內建相機拍、之後再整理」（PRD-2.0 §0），DaysCam 相機的工作是「拍進紀錄」，不是「拍出成品」。照片牆已經用「介面角標」而不是成品疊字來標天數（FR-17.5），相機用同一套語言最一致。想看成品去檢視頁，那裡本來就是「大圖＝成品」（FR-18.3）。乙的「同時匯出」開關是甲之上的加法，若之後有人要「拍完立刻傳」再開卡，不需要現在決定。</div>
+
+  <div class="tablewrap"><table>
+    <tr><th>甲的規則</th><th>內容</th></tr>
+    <tr><td>HUD 文字</td><td>與牆角標同來源（第一題的天數節文字），以 `capturedAt = now`、「照片」時刻產生（起始日在未來印「前 N 天」，FR-20.6 不變）；第二行紀錄名稱 11pt。跨午夜更新沿用 0.1 §6.4</td></tr>
+    <tr><td>外觀</td><td>15pt semibold 白字、陰影 `legibleOverPhoto`、tabular；取景框左下距邊 12pt；不跟紀錄樣式、不可點、沒有 highlight 提示</td></tr>
+    <tr><td>切換紀錄</td><td>膠囊換紀錄時 HUD 立刻換成該紀錄的文字（FR-20.8 的「取景窗預覽改用它的樣式」改成「HUD 改用它的天數」）</td></tr>
+    <tr><td>退掉的</td><td>FR-20.9 疊字預覽開關與 toast、FR-20.10 點字開面板與首次 highlight、`OverlayPreviewSetting`、CameraScreen 裡的面板掛載（面板本體與 FR-19 共用，不動）</td></tr>
+    <tr><td>橫拿</td><td>HUD 照 #571 隨取景框轉（和原本疊字預覽的規則一樣）</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ 3 對比圖 ============ -->
+<section>
+  <div>
+    <div class="eyebrow">第三題</div>
+    <h2>3. 對比圖：牆頂端一張自動準備好的卡</h2>
+    <p>對比圖＝把兩張（或四張）相隔一段時間的照片並排、各印天數、匯出成一張新照片。「自動生成」在 2.0 的脈絡裡是「<b>自動挑好、即時預覽、匯出才產生檔案</b>」，不在背景偷偷寫檔，和「照片不動」一致。</p>
+  </div>
+
+  <div class="options">
+    <div class="opt rec">
+      <h3>甲 牆頂端固定卡 <span class="pill rec">推薦</span></h3>
+      <p class="small">在導覽列下方、和限制取用提示列同一個位置，不隨牆捲動。左邊兩張 44pt 縮圖並排（各自角標天數），中間「第 1 天 → 第 128 天」＋副標，右邊 chevron。點了開對比圖表單。</p>
+      <div class="pc"><span>牆打開是捲到底的，頂端固定才看得到</span><span>有現成的位置與 model 旗標可沿用</span><span class="m">吃掉約 64pt 牆高度；需要可收合</span></div>
+    </div>
+    <div class="opt">
+      <h3>乙 牆最底一張大卡</h3>
+      <p class="small">放在最新月份之後、三欄格子的下面，打開牆就在眼前。</p>
+      <div class="pc"><span>第一眼就看到、不佔常駐空間</span><span class="m">和格子混在同一捲動區，選取模式、滑動選取都要繞開它；新照片進來會把它往下推</span></div>
+    </div>
+    <div class="opt">
+      <h3>丙 放在紀錄列表每一列</h3>
+      <p class="small">紀錄列表每列右側加一顆小對比縮圖。</p>
+      <div class="pc"><span>進 App 第一頁就看到成長</span><span class="m">FR-16.2 刻意不放縮圖；每列要載兩張圖，列表變重</span></div>
+    </div>
+  </div>
+
+  <div class="phones">
+    <figure class="phonecol">
+      <div class="phone">
+        <div class="hd"><span class="ib">‹</span><div class="ttl"><b>小芽</b><small>2026/8/5 起</small></div><div class="r"><span class="tb">選取</span><span class="ib">⋯</span></div></div>
+        <div class="cbanner"><div class="pair"><i class="pA" data-d="第 1 天"></i><i class="pI" data-d="第 98 天"></i></div><div class="tx"><b>第 1 天 → 第 98 天</b><small>對比圖已準備好，點開預覽與匯出</small></div><span class="chev">›</span></div>
+        <div class="mon">2026 年 10 月</div>
+        <div class="grid">
+          <div class="cell"><div class="ph pD"></div><span class="day">第 71 天</span></div>
+          <div class="cell"><div class="ph pE"></div><span class="day">第 75 天</span></div>
+          <div class="cell"><div class="ph pF"></div><span class="day">第 82 天</span></div>
+        </div>
+        <div class="mon">2026 年 11 月</div>
+        <div class="grid">
+          <div class="cell"><div class="ph pG"></div><span class="day">第 92 天</span></div>
+          <div class="cell"><div class="ph pH"></div><span class="day">第 95 天</span></div>
+          <div class="cell"><div class="ph pI"></div><span class="day">第 98 天</span></div>
+        </div>
+        <div class="bar"><span class="ib">＋</span><span class="cap">📷 拍照</span></div>
+      </div>
+      <figcaption><b>甲：牆頂端固定卡</b>。白底卡、圓角 14、左右 10pt 邊距，和限制取用提示列同一個槽位（兩者同時出現時提示列在上）。滿 100 天那天副標改成「滿 100 天了」。</figcaption>
+    </figure>
+
+    <figure class="phonecol">
+      <div class="phone">
+        <div class="hd"><span class="ib">‹</span><div class="ttl"><b>小芽</b><small>2026/8/5 起</small></div><div class="r"><span class="tb">選取</span><span class="ib">⋯</span></div></div>
+        <div class="cbanner compact"><div class="pair"><i class="pA"></i><i class="pI"></i></div><div class="tx"><b style="font-size:12px">對比圖</b></div><span class="chev">⌄</span></div>
+        <div class="mon">2026 年 11 月</div>
+        <div class="grid">
+          <div class="cell"><div class="ph pG"></div><span class="day">第 92 天</span></div>
+          <div class="cell"><div class="ph pH"></div><span class="day">第 95 天</span></div>
+          <div class="cell"><div class="ph pI"></div><span class="day">第 98 天</span></div>
+        </div>
+        <div class="bar"><span class="ib">＋</span><span class="cap">📷 拍照</span></div>
+      </div>
+      <figcaption><b>收合狀態</b>：點右側 chevron 收成一列（40pt），App 層級記住；有新的里程碑時自動展開一次。</figcaption>
+    </figure>
+
+    <figure class="phonecol">
+      <div class="phone dim">
+        <div class="sheet">
+          <div class="grab"></div>
+          <h4>對比圖</h4>
+          <div class="two"><i class="pA" data-d="第 1 天"></i><i class="pI" data-d="第 98 天"></i></div>
+          <div class="seg2"><span class="on">左右</span><span>上下</span><span>四格</span></div>
+          <div class="hint">點任一張可換成牆上別的照片 · 天數字樣用這個紀錄的文字樣式</div>
+          <div class="btn pri">匯出</div>
+          <div class="btn">取消</div>
+        </div>
+      </div>
+      <figcaption><b>對比圖表單</b>。預覽即成品：每格正方形置中裁切，各自以紀錄的文字樣式印天數（同 FR-18.3 的畫法）。「匯出」走 FR-22.1 存到「最近項目」，toast「已匯出」。</figcaption>
+    </figure>
+  </div>
+
+  <div class="tablewrap"><table>
+    <tr><th>自動挑選規則</th><th>內容</th></tr>
+    <tr><td>出現條件</td><td>紀錄有 ≥ 2 張有日期的照片，且最早與最新相差 ≥ 7 個日曆日；不足時不顯示卡（不顯示空卡）。日期不明、「前 N 天」的照片不參與</td></tr>
+    <tr><td>預設組合</td><td>最早一張 × 最新一張；相簿變動（FR-17.8）時重算，純即時、不存檔</td></tr>
+    <tr><td>里程碑</td><td>最新一張的天數剛跨過整百天（100、200…）、整年、或紀錄勾「月」時的整月時，副標改「滿 100 天了」「滿 1 歲了」「滿 3 個月了」；文字依紀錄單位與「歲」設定。只是文案，組合不變</td></tr>
+    <tr><td>四格</td><td>需要 ≥ 4 張：最早、最新，以及中間等分天數最接近的兩張；不足 4 張時「四格」停用</td></tr>
+    <tr><td>換照片</td><td>點格子開牆的挑選器（單選、沿用 FR-17 格子樣式），換掉該格；換過的組合只在表單內存在，關掉就回預設</td></tr>
+    <tr><td>成品</td><td>每格以該張 `creationDate` 與紀錄目前樣式經 `OverlayRenderer.bake` 印天數（置中裁切為正方形、長邊 1080），再鋪到畫布上並排（間距 0、無邊框、無名稱帶）；這是 §2.4「在 bake 之外先鋪畫布」的接縫第一次被用到。輸出一張新照片到「最近項目」，不加進紀錄相簿</td></tr>
+    <tr><td>選取模式</td><td>卡隱藏（和底部列一樣換成動作列的脈絡）</td></tr>
+    <tr><td>權限</td><td>限制取用時照常（照片來自 `fallbackAssetIDs`）；提示列與對比卡同時存在時提示列在上、對比卡預設收合</td></tr>
+  </table></div>
+</section>
+
+<!-- ============ 4 決定 ============ -->
+<section>
+  <h2>4. 要人類裁定的事</h2>
+  <div class="tablewrap"><table>
+    <tr><th>#</th><th>問題</th><th>Lead 建議</th></tr>
+    <tr><td>Q1</td><td>單位：乙（搬到紀錄編輯頁＋牆跟單位）？還是甲（只改牆）？</td><td>乙。牆的截短規則照上表</td></tr>
+    <tr><td>Q2</td><td>「寫法」（第 N 天／Day N／D+N）留在「文字樣式 › 內容」還是一起搬？</td><td>留著。它是字樣，不是語意；而且只在只勾「天」時有效</td></tr>
+    <tr><td>Q3</td><td>相機：甲 HUD？乙 同時匯出？丙 標示？</td><td>甲。乙的開關留作之後的加法</td></tr>
+    <tr><td>Q4</td><td>若選甲，退掉 #656 的疊字預覽與點字開面板，是否接受？（版面、膠囊、返回圖庫都保留）</td><td>接受。D9 的「取景窗畫完整疊字」一條標作廢</td></tr>
+    <tr><td>Q5</td><td>對比圖：提前到第一期？位置甲（牆頂端固定卡）？</td><td>提前；甲。先做左右兩格，上下與四格同卡做或拆卡由 Lead 看工量</td></tr>
+    <tr><td>Q6</td><td>對比圖要不要「分享」鈕（直接開系統分享表）？</td><td>先不要，只有「匯出」，和單張匯出一致</td></tr>
+  </table></div>
+
+  <div class="note"><b>裁定後 Lead 要改的規格。</b>PRD-0.2 FR-11.1／FR-11.3／FR-11.4（天數單位卡搬走）、PRD-2.0 FR-17.5（牆印單位文字）、FR-21.1（編輯頁加單位列）、FR-20.2／20.7／20.9／20.10（HUD 取代疊字預覽）、§2.2／§2.3（對比圖提前）、新 FR-23 對比圖；D9「取景窗疊字預覽」段標作廢；CONVENTIONS 易誤判處加「相機 HUD 不是疊字、牆角標印單位不是回歸」。再依檔案所有權拆卡：core-style（天數節文字與截短、對比圖合成）、ui-shell（相機 HUD、編輯頁單位列、對比卡與表單）、ui-panel（內容分頁拿掉單位卡）。</div>
+</section>
+</main>
