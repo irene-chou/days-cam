@@ -1,6 +1,6 @@
 import XCTest
 
-/// #583: the 寫法 row at the bottom of the 天數單位 card on the 內容 tab.
+/// #583: the 寫法 row under 位置 on the 內容 tab (moved out of the 天數單位 card, #721).
 /// With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
 /// screenshots are also written there for the PR.
 final class DayCountFormatPanelUITests: XCTestCase {
@@ -11,9 +11,21 @@ final class DayCountFormatPanelUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch(extraArguments: [String] = []) {
+    /// `withWeek` first checks 週 on the record editor (#721 moved the units
+    /// there), then relaunches on the export page with the same profiles.
+    private func launch(extraArguments: [String] = [], withWeek: Bool = false) {
+        let profiles = UUID().uuidString
+        if withWeek {
+            let editing = XCUIApplication()
+            XCTAssertTrue(editing.launchOnRecordEditor(profiles: profiles), "the record editor is up")
+            let week = editing.buttons["rulesUnit_week"]
+            XCTAssertTrue(week.waitForExistence(timeout: 5))
+            week.tap()
+            XCTAssertTrue(week.isSelected)
+            editing.terminate()
+        }
         app = XCUIApplication()
-        XCTAssertTrue(app.launchOnExportPage(extraArguments: extraArguments), "the export page is up")
+        XCTAssertTrue(app.launchOnExportPage(profiles: profiles, extraArguments: extraArguments), "the export page is up")
         let content = contentTab
         XCTAssertTrue(content.waitForExistence(timeout: 10))
         content.tap()
@@ -79,15 +91,15 @@ final class DayCountFormatPanelUITests: XCTestCase {
                       file: file, line: line)
     }
 
-    /// 583.1–583.4: the row, its options, writing back and the dimmed state.
-    func testRowExpandsSelectsAndDimsWithOtherUnits() {
+    /// 583.1–583.3: the row, its options and writing back.
+    func testRowExpandsAndSelects() {
         launch()
         app.revealInPanel(row)
-        // 583.1: last row of the card, under 「年」改成「歲」, ≥ 44pt, collapsed.
+        // 583.1: under 位置, ≥ 44pt, collapsed.
         XCTAssertEqual(row.label, "寫法，第 N 天")
         XCTAssertEqual(row.value as? String, "已收起")
         XCTAssertGreaterThanOrEqual(row.frame.height, 43.5)
-        XCTAssertGreaterThan(row.frame.minY, app.switches["「年」改成「歲」"].frame.maxY, "583.1 under 歲")
+        XCTAssertGreaterThan(row.frame.minY, app.buttons["positionRow"].frame.maxY - 1, "583.1 under 位置")
         XCTAssertFalse(expanded.exists)
         shot("PR_583.1_collapsed")
 
@@ -115,22 +127,23 @@ final class DayCountFormatPanelUITests: XCTestCase {
         // The fresh profile also prints its name ahead of the count.
         XCTAssertTrue(overlayText.label.hasSuffix(" D-Day") || overlayText.label == "D-Day", "583.3 \(overlayText.label)")
 
-        // 583.4: with 週 checked the note appears and the wording no longer applies.
-        app.revealInPanel(app.buttons["週"])
-        app.buttons["週"].tap()
-        expand()
-        XCTAssertTrue(note.exists, "583.4 note")
-        XCTAssertFalse(overlayText.label.contains("D"), "583.4 \(overlayText.label)")
-        shot("PR_583.4_expanded_withWeek")
-        // Still changeable.
-        option("dayN").tap()
-        XCTAssertEqual(row.label, "寫法，Day N")
-
         // 583.2: collapses on a second tap.
         app.revealInPanel(row)
         row.tap()
         XCTAssertEqual(row.value as? String, "已收起")
         XCTAssertFalse(expanded.exists)
+    }
+
+    /// 583.4: with 週 checked (on the record editor, #721) the note appears
+    /// and the wording no longer applies; the wording is still changeable.
+    func testNoteAppearsWithOtherUnitsAndWordingStaysChangeable() {
+        launch(withWeek: true)
+        expand()
+        XCTAssertTrue(note.exists, "583.4 note")
+        XCTAssertFalse(overlayText.label.contains("D"), "583.4 \(overlayText.label)")
+        shot("PR_583.4_expanded_withWeek")
+        option("dayN").tap()
+        XCTAssertEqual(row.label, "寫法，Day N")
     }
 
     /// 583.2: switching tabs and back shows the row collapsed again.

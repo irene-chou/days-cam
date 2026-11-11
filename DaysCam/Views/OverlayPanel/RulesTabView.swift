@@ -7,7 +7,7 @@ import SwiftUI
 /// (today the panel's 內容 tab, from TASK-44 the profile edit page) builds a
 /// `RulesTabModel` from the active profile and drops this view in.
 ///
-/// Three rows in an iOS grouped-list block (名稱｜日期｜起算), each with its
+/// Five rows in an iOS grouped-list block (名稱｜日期｜起算｜單位｜「年」改成「歲」), each with its
 /// label above its value, then a 天數預覽 block. The counting-rule choice is
 /// a hand-drawn segmented control rather than a native `Picker(.segmented)` —
 /// the native one clipped the longer "當天算第 1 天" label at narrow widths
@@ -17,6 +17,8 @@ struct RulesTabView: View {
     @FocusState private var isNameFieldFocused: Bool
     @State private var nameSelection: TextSelection?
     @State private var didSelectName = false
+    /// The unit whose checkbox is bouncing right now (#721).
+    @State private var bouncingUnit: DisplayUnit?
 
     /// Whether this view adds its own `.tabbody` inset (12 vertical, 14
     /// horizontal). `ContentTabView` turns it off and applies the same inset
@@ -44,6 +46,10 @@ struct RulesTabView: View {
                 startDateRow
                 rowDivider
                 countingRuleRow
+                rowDivider
+                unitRow
+                rowDivider
+                ageWordingRow
             }
             .background(
                 RoundedRectangle(cornerRadius: Self.blockCornerRadius, style: .continuous)
@@ -62,6 +68,15 @@ struct RulesTabView: View {
                 isNameFieldFocused = true
             }
         }
+        // A refused last-unit uncheck bounces the checkbox and taps the
+        // haptic engine (absent on the simulator); the hint stays until the
+        // next unit tap or until the page goes away (#721, FR-11.3).
+        .onChange(of: model.lastUnitRejectionSerial) { _, _ in
+            guard let unit = model.lastUnitRejection else { return }
+            bounce(unit)
+        }
+        .sensoryFeedback(.warning, trigger: model.lastUnitRejectionSerial)
+        .onDisappear { model.dismissHint() }
         .onChange(of: isNameFieldFocused) { _, isFocused in
             if isFocused {
                 selectNameOnFirstFocus()
@@ -190,6 +205,102 @@ struct RulesTabView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    // MARK: - 單位與「歲」 (#721)
+
+    private var unitRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                rowLabel("單位")
+                Spacer(minLength: 0)
+                // Always laid out at the same height, so the hint coming and
+                // going never moves a row below it.
+                Text(model.visibleHint ?? " ")
+                    .font(.footnote)
+                    .foregroundColor(CameraTheme.inkSecondary)
+                    .lineLimit(1)
+                    .opacity(model.visibleHint == nil ? 0 : 1)
+                    .animation(.easeOut(duration: 0.2), value: model.visibleHint)
+                    .accessibilityHidden(model.visibleHint == nil)
+                    .accessibilityIdentifier("rulesUnitHint")
+            }
+            // Four equal columns, each checkbox centered in its own.
+            HStack(spacing: 0) {
+                ForEach(DisplayUnit.allCases, id: \.self) { unit in
+                    unitCheckbox(unit).frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.rowMinHeight, alignment: .leading)
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.vertical, Self.rowVerticalPadding)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("rulesUnitRow")
+    }
+
+    private func unitCheckbox(_ unit: DisplayUnit) -> some View {
+        let isChecked = model.profile.displayUnits.contains(unit)
+        // The last checked unit looks like the others: tapping it is refused
+        // by the model and answered with a bounce, a haptic and a hint.
+        return Button {
+            model.toggleUnit(unit)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 20))
+                    .foregroundColor(isChecked ? CameraTheme.active : CameraTheme.inkTertiary)
+                    .scaleEffect(bouncingUnit == unit ? 1.3 : 1)
+                Text(unitName(unit)).font(.subheadline).foregroundColor(CameraTheme.ink)
+            }
+            .frame(minHeight: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isChecked ? [.isSelected] : [])
+        .accessibilityIdentifier("rulesUnit_\(unit.rawValue)")
+    }
+
+    /// The checkbox label; the year reads 歲 while `useAgeWording` is on,
+    /// checked or not (TASK-139 #486).
+    private func unitName(_ unit: DisplayUnit) -> String {
+        switch unit {
+        case .year: return model.profile.useAgeWording ? "歲" : "年"
+        case .month: return "月"
+        case .week: return "週"
+        case .day: return "天"
+        }
+    }
+
+    private func bounce(_ unit: DisplayUnit) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.35)) { bouncingUnit = unit }
+        UIAccessibility.post(notification: .announcement, argument: RulesTabModel.lastUnitHint)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            withAnimation(.easeOut(duration: 0.15)) { bouncingUnit = nil }
+        }
+    }
+
+    /// Always enabled, whatever is checked: it renames the year checkbox
+    /// instead (TASK-139 #486).
+    private var ageWordingRow: some View {
+        HStack(spacing: 8) {
+            // The switch carries the label for VoiceOver.
+            Text("「年」改成「歲」")
+                .font(.subheadline)
+                .foregroundColor(CameraTheme.ink)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+            Toggle("「年」改成「歲」", isOn: Binding(
+                get: { model.profile.useAgeWording },
+                set: { model.setUseAgeWording($0) }
+            ))
+            .tint(CameraTheme.accentControl)
+            .labelsHidden()
+            .accessibilityIdentifier("rulesAgeWordingToggle")
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.rowMinHeight, alignment: .leading)
+        .padding(.horizontal, Self.rowHorizontalPadding)
+        .padding(.vertical, Self.rowVerticalPadding)
     }
 
     // MARK: - 天數預覽 (FR-13.7, TASK-155)

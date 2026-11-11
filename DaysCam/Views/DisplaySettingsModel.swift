@@ -19,63 +19,6 @@ final class DisplaySettingsModel: ObservableObject {
     /// invariants stay enforced and every change is persisted.
     @Published private(set) var profile: CameraProfile
 
-    /// A change the model refused because it would leave nothing to show
-    /// (TASK-108, #422): the last checked unit. The view answers it with a
-    /// bounce, a light haptic and a hint (FR-11.3); `serial` makes a repeated
-    /// refusal a new event. 天數／日期／名稱 may all be off (#713).
-    /// TASK-141 (#485) dropped 108.8's 先打開天數: with the day count off
-    /// the unit section is not shown at all.
-    struct Rejection: Equatable {
-        enum Kind: Equatable {
-            case lastUnit(DisplayUnit)
-        }
-        let kind: Kind
-        let serial: Int
-
-        /// The hint the view floats for this refusal (D-7 proposal 3 wording).
-        var hint: String {
-            switch kind {
-            case .lastUnit: return "至少保留一個單位"
-            }
-        }
-    }
-    /// The most recent refusal; `nil` until one happens.
-    @Published private(set) var lastRejection: Rejection?
-    /// The refusal whose hint is on screen right now: set by `reject` and
-    /// kept until the next tap on any switch or checkbox here, or until
-    /// `dismissHint()` (leaving the tab) — no timer (TASK-141 #485,
-    /// replacing TASK-108's 1.5 s fade). Owned here, not by the view, so the
-    /// hint's lifetime does not depend on view identity or re-renders.
-    @Published private(set) var visibleHint: Rejection?
-
-    /// Refusals of the same kind closer together than this are one event:
-    /// a switch that springs back can report its refusal more than once,
-    /// and the feedback (haptic, bounce, hint) should play once per tap.
-    static let rejectionDebounce: TimeInterval = 0.3
-    private var lastRejectionTime: Date?
-
-    private func reject(_ kind: Rejection.Kind) {
-        let now = Date()
-        if let last = lastRejection, last.kind == kind,
-           let lastTime = lastRejectionTime, now.timeIntervalSince(lastTime) < Self.rejectionDebounce {
-            // The same tap again: the setter's `dismissHint()` must not
-            // take the hint it just raised away.
-            visibleHint = last
-            return
-        }
-        lastRejectionTime = now
-        let rejection = Rejection(kind: kind, serial: (lastRejection?.serial ?? 0) + 1)
-        lastRejection = rejection
-        visibleHint = rejection
-    }
-
-    /// Clears the hint; called by every setter before it acts (a tap on any
-    /// switch or checkbox) and by the view when the tab goes away (141.3,
-    /// 141.4).
-    func dismissHint() {
-        guard visibleHint != nil else { return }
-        visibleHint = nil
-    }
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
@@ -135,26 +78,22 @@ extension DisplaySettingsModel {
     /// Sets `showDayCount` (TASK-107, #426; FR-11.1). Any of 天數／日期／名稱
     /// may be turned off, all three included (#713).
     func setShowDayCount(_ newValue: Bool) {
-        dismissHint()
         guard newValue != profile.showDayCount else { return }
         mutate { $0.showDayCount = newValue }
     }
 
     /// Sets `showDate`; symmetric with `setShowDayCount`.
     func setShowDate(_ newValue: Bool) {
-        dismissHint()
         guard newValue != profile.showDate else { return }
         mutate { $0.showDate = newValue }
     }
 
-    /// Whether the 天數單位 controls are inert: the day count is off, so the
-    /// units have nothing to format. The view collapses the section then
-    /// (FR-11.5 as revised by TASK-141 #485); `toggleUnit`／`setUseAgeWording`
-    /// still ignore a call as a backstop (107.4).
+    /// Whether the day count is off, so the 寫法 has nothing to format. The
+    /// view hides the 寫法 row then; `setDayCountFormat` ignores a call as a
+    /// backstop (107.4). The units themselves live on `RulesTabModel` (#721).
     var areUnitsInert: Bool { !profile.showDayCount }
 
     func setShowName(_ newValue: Bool) {
-        dismissHint()
         guard newValue != profile.showName else { return }
         mutate { $0.showName = newValue }
     }
@@ -162,7 +101,6 @@ extension DisplaySettingsModel {
     /// Sets `showOverlay` (#718): the whole text layer. The switches under it,
     /// the style and the position are kept as they are.
     func setShowOverlay(_ newValue: Bool) {
-        dismissHint()
         guard newValue != profile.showOverlay else { return }
         mutate { $0.showOverlay = newValue }
     }
@@ -170,7 +108,6 @@ extension DisplaySettingsModel {
     /// Sets `showFilmDate` (#521). Independent of 天數／日期 — never refused,
     /// and not counted in the "at least one of 天數／日期" rule.
     func setShowFilmDate(_ newValue: Bool) {
-        dismissHint()
         guard newValue != profile.showFilmDate else { return }
         mutate { $0.showFilmDate = newValue }
     }
@@ -178,7 +115,6 @@ extension DisplaySettingsModel {
     /// Sets `filmDateCorner` (#521). Kept while the switch is off, so turning
     /// it back on returns to the same corner.
     func setFilmDateCorner(_ newValue: FilmDateCorner) {
-        dismissHint()
         guard newValue != profile.filmDateCorner else { return }
         mutate { $0.filmDateCorner = newValue }
     }
@@ -187,49 +123,9 @@ extension DisplaySettingsModel {
 // MARK: - Day-count format (FR-2.7–FR-2.10)
 
 extension DisplaySettingsModel {
-    /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, TASK-27).
-    ///
-    /// Unchecking the last remaining unit is refused (`lastRejection`,
-    /// TASK-108): `displayUnits` may never be empty. `useAgeWording` is left
-    /// alone either way (FR-11.4 as amended by TASK-139 #486).
-    func toggleUnit(_ unit: DisplayUnit) {
-        dismissHint()
-        // With the day count off the units have nothing to format: the call
-        // changes nothing (107.4). The section is hidden then (TASK-141).
-        guard !areUnitsInert else { return }
-        if profile.displayUnits.contains(unit) {
-            guard profile.displayUnits.count > 1 else {
-                reject(.lastUnit(unit))
-                return
-            }
-            mutate { $0.displayUnits.remove(unit) }
-        } else {
-            mutate { $0.displayUnits.insert(unit) }
-        }
-    }
-
-    /// Whether `unit` is the last unit still checked, so unchecking it is
-    /// refused (FR-11.3) — mirrors `toggleUnit`'s guard. Since TASK-108 the
-    /// checkbox is not disabled or dimmed for it; the refusal is answered
-    /// with feedback instead (was `isUnitToggleDisabled`).
-    func isLastCheckedUnit(_ unit: DisplayUnit) -> Bool {
-        profile.displayUnits.contains(unit) && profile.displayUnits.count == 1
-    }
-
-    /// Sets `useAgeWording`, whether or not the year is checked: the switch
-    /// only renames the year unit 年 → 歲 (FR-11.4 as amended by TASK-139
-    /// #486; it used to need the year checked).
-    func setUseAgeWording(_ newValue: Bool) {
-        dismissHint()
-        guard newValue != profile.useAgeWording else { return }
-        guard !areUnitsInert else { return }
-        mutate { $0.useAgeWording = newValue }
-    }
-
     /// Sets how a day-only count is written (#583). Allowed with other units
     /// checked too: the wording is kept and applies once only 天 is checked.
     func setDayCountFormat(_ newValue: DayCountFormat) {
-        dismissHint()
         guard newValue != profile.dayCountFormat else { return }
         guard !areUnitsInert else { return }
         mutate { $0.dayCountFormat = newValue }

@@ -54,21 +54,23 @@ extension XCUIApplication {
     }
 
     /// Height of what sits under the panel body on the export page: the 34pt
-    /// note plus the home-indicator band, which swallows taps (a 4.7-inch
-    /// screen has no indicator).
+    /// note plus, on a screen with one, the 34pt home-indicator area, which
+    /// swallows taps. The 內容 tab is short since #721 and does not scroll
+    /// on iPhone SE, so its last row rests right above the note.
     var panelBottomBand: CGFloat {
-        frame.height >= 812 ? 84 : 42
+        frame.height >= 812 ? 68 : 34
     }
 }
 
 extension XCUIApplication {
     /// Launches on the 紀錄 list and opens the first record's editor through
     /// its swipe action (#617): the shared rules form (name, start date,
-    /// counting rule) that replaced the camera's profile sheet in #621.
+    /// counting rule, units) that replaced the camera's profile sheet in #621.
     /// Returns whether the editor appeared.
     @discardableResult
-    func launchOnRecordEditor(extraArguments: [String] = [], timeout: TimeInterval = 15) -> Bool {
-        launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", UUID().uuidString,
+    func launchOnRecordEditor(profiles: String = UUID().uuidString,
+                              extraArguments: [String] = [], timeout: TimeInterval = 15) -> Bool {
+        launchArguments += ["-UITestSkipOnboarding", "-UITestFreshProfiles", profiles,
                             "-UITestRecordPhotos", "0"] + extraArguments
         launch()
         let row = descendants(matching: .any).matching(identifier: "recordRow").firstMatch

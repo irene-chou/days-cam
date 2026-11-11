@@ -10,12 +10,12 @@ import SwiftUI
 ///
 /// TASK-38 (0.3): the old second layer (顯示內容｜天數格式) is gone — both
 /// sections now sit on one page. #558: one card per thing on the photo —
-/// 文字內容 (天數、日期、名稱) and 天數單位 (units, 「年」改成「歲」); the
-/// 戳記 card (底片日期 and its corner) moved to its own layer page,
-/// `FilmDateDetailView` (#718). With the day count off the 天數單位 card is
-/// not shown; the switches above it stay put. #567: with a
-/// `positionTabModel` the 文字內容 card ends in a 位置 row that opens the
-/// nine-point grid in place.
+/// 文字內容 (天數、日期、名稱, 位置, 寫法); the 戳記 card (底片日期 and its
+/// corner) moved to its own layer page, `FilmDateDetailView` (#718). The
+/// day-count units and 「年」改成「歲」 moved to the record edit page (#721).
+/// With the day count off the 寫法 row is not shown. #567: with a
+/// `positionTabModel` the card has a 位置 row that opens the nine-point
+/// grid in place.
 /// `ContentTabView` hosts this view as its whole page.
 struct FormatTabView: View {
     @ObservedObject var model: FormatTabModel
@@ -29,113 +29,39 @@ struct FormatTabView: View {
     /// `nil` leaves the row out.
     var positionTabModel: PositionTabModel?
 
-    /// Minimum height of every content row (display toggles, unit
-    /// checkboxes, age-wording toggle), the same 44pt tap target the rules
+    /// Minimum height of every content row (display toggles, 位置, 寫法), the same 44pt tap target the rules
     /// tab uses (#116, Z.8).
     static let rowMinHeight: CGFloat = 44
-    /// Height of a card's heading line. The refusal hint shows at its
-    /// trailing end (#558), so the line keeps this height whether or not the
-    /// hint is up and showing it never moves a row (108.2).
-    static let headingHeight: CGFloat = 20
-
     /// Card background (#558). Kept here rather than in `CameraTheme`, which
     /// has no card token yet.
     private static let cardBackground = Color.white
     /// Hairline between rows inside a card.
     private static let rowSeparator = CameraTheme.ink.opacity(0.1)
 
-    /// The unit whose checkbox is bouncing right now (TASK-108).
-    @State private var bouncingUnit: DisplayUnit?
-    /// The refusal whose hint is showing under the unit row, if any (the
-    /// model owns the hint's lifetime; see `DisplaySettingsModel.visibleHint`).
-    private var unitHint: DisplaySettingsModel.Rejection? {
-        guard let hint = model.displaySettings.visibleHint else { return nil }
-        if case .lastUnit = hint.kind { return hint }
-        return nil
-    }
-
     var body: some View {
-        // One card per thing on the photo (#558): 文字內容 and 天數單位,
-        // each a heading over a white card whose rows all put the words
-        // on the left and the control on the right.
+        // One card for the words on the photo (#558): heading over a white
+        // card whose rows all put the words on the left and the control on
+        // the right.
         VStack(alignment: .leading, spacing: 0) {
-            heading("文字內容", topPadding: 0)
+            heading("文字內容")
             contentCard
-            // Collapsed, heading and all, while the day count is off
-            // (TASK-141 #485): the switch that brings it back sits above, so
-            // nothing jumps under the finger. The checked units are kept in
-            // the profile meanwhile.
-            if model.displaySettings.profile.showDayCount {
-                VStack(alignment: .leading, spacing: 0) {
-                    heading("天數單位", hint: unitHint, hintIdentifier: "unitHint")
-                    dayCountUnitsCard
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("dayCountUnits")
-            }
         }
         // This tab's own `.tabbody` outer inset (`.tabbody{padding:12px 14px}`,
         // #106 R2): each tab owns its own padding rather than a generic one.
         .padding(.vertical, appliesOuterPadding ? 12 : 0)
         .padding(.horizontal, appliesOuterPadding ? 14 : 0)
-        // A refused change (the last unit) bounces
-        // the control, taps the haptic engine and shows a hint until the
-        // next tap here (TASK-108 #422, TASK-141 #485; FR-11.3). On
-        // the simulator the haptic is simply absent (108.6).
-        .onChange(of: model.displaySettings.lastRejection) { _, rejection in
-            guard let rejection else { return }
-            react(to: rejection)
-        }
-        .sensoryFeedback(.warning, trigger: model.displaySettings.lastRejection)
-        // Switching to another tab (or closing the panel) ends the hint
-        // too (141.4).
-        .onDisappear { model.displaySettings.dismissHint() }
-    }
-
-    /// Bounce, hint and VoiceOver announcement for one refusal (TASK-108).
-    private func react(to rejection: DisplaySettingsModel.Rejection) {
-        let bounce = Animation.spring(response: 0.3, dampingFraction: 0.35)
-        switch rejection.kind {
-        case .lastUnit(let unit):
-            withAnimation(bounce) { bouncingUnit = unit }
-        }
-        UIAccessibility.post(notification: .announcement, argument: rejection.hint)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            withAnimation(.easeOut(duration: 0.15)) {
-                bouncingUnit = nil
-            }
-        }
     }
 
     // MARK: - Cards
 
-    /// A card's heading (13pt, secondary ink) with room for a refusal hint
-    /// at its trailing end. The line is always `headingHeight` tall, so the
-    /// hint coming and going never moves a row (108.2).
-    private func heading(_ title: String,
-                         hint: DisplaySettingsModel.Rejection? = nil,
-                         hintIdentifier: String? = nil,
-                         topPadding: CGFloat = 12) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.system(size: 13))
-                .foregroundColor(CameraTheme.inkSecondary)
-            Spacer(minLength: 0)
-            if let hintIdentifier {
-                Text(hint?.hint ?? " ")
-                    .font(.system(size: 13))
-                    .foregroundColor(CameraTheme.active)
-                    .lineLimit(1)
-                    .opacity(hint == nil ? 0 : 1)
-                    .animation(.easeOut(duration: hint == nil ? 0.3 : 0.2), value: hint?.serial)
-                    .accessibilityHidden(hint == nil)
-                    .accessibilityIdentifier(hintIdentifier)
-            }
-        }
-        .frame(height: Self.headingHeight)
-        .padding(.horizontal, 4)
-        .padding(.top, topPadding)
-        .padding(.bottom, 5)
+    /// A card's heading (13pt, secondary ink).
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13))
+            .foregroundColor(CameraTheme.inkSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.bottom, 5)
     }
 
     /// White rounded card holding `rows`, separated by hairlines.
@@ -176,6 +102,12 @@ struct FormatTabView: View {
                 rowDivider
                 PositionRows(model: positionTabModel)
             }
+            // Hidden while the day count is off: the wording has nothing to
+            // format then (was the 天數單位 card's collapse, FR-11.5).
+            if model.displaySettings.profile.showDayCount {
+                rowDivider
+                DayCountFormatRows(model: model.displaySettings)
+            }
         }
     }
 
@@ -198,66 +130,6 @@ struct FormatTabView: View {
                 .labelsHidden()
         }
         .frame(minHeight: Self.rowMinHeight)
-    }
-
-    // MARK: - 天數單位 (FR-11.3–FR-11.5)
-
-    private var dayCountUnitsCard: some View {
-        card(identifier: "dayCountUnitsCard") {
-            // Four equal columns, each checkbox centered in its own.
-            HStack(spacing: 0) {
-                ForEach(DisplayUnit.allCases, id: \.self) { unit in
-                    unitCheckbox(unit).frame(maxWidth: .infinity)
-                }
-            }
-            .frame(minHeight: Self.rowMinHeight)
-            rowDivider
-            // Always enabled, never dimmed, whatever is checked: it renames
-            // the year checkbox instead (TASK-139 #486).
-            switchRow("「年」改成「歲」", isOn: model.displaySettings.profile.useAgeWording) {
-                model.displaySettings.setUseAgeWording($0)
-            }
-            rowDivider
-            DayCountFormatRows(model: model.displaySettings)
-        }
-    }
-
-    private func unitCheckbox(_ unit: DisplayUnit) -> some View {
-        let isChecked = model.displaySettings.profile.displayUnits.contains(unit)
-        // The last checked unit looks exactly like the others (TASK-108,
-        // #422): tapping it is refused by the model and answered with a
-        // bounce, a haptic and a hint, instead of a dimmed, dead checkbox.
-        return Button {
-            model.displaySettings.toggleUnit(unit)
-        } label: {
-            // Checkbox icon/label size and gap: #116 方案②（20pt icon, 15pt
-            // `.subheadline` label, 8pt gap — was unset-size (inherited
-            // ~17pt body), `.footnote`, 6pt gap, #106's own guess).
-            HStack(spacing: 8) {
-                // Checked uses #F0A64A, the switch/checkbox "on" token, not
-                // `active` — that's a darker orange reserved for selection
-                // highlights elsewhere (PRD FR-14, #114).
-                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20))
-                    .foregroundColor(isChecked ? CameraTheme.accentControl : CameraTheme.inkTertiary)
-                    .scaleEffect(bouncingUnit == unit ? 1.3 : 1)
-                Text(unitName(unit)).font(.subheadline).foregroundColor(CameraTheme.ink)
-            }
-            .frame(minHeight: Self.rowMinHeight)
-            .contentShape(Rectangle())
-        }
-        .accessibilityAddTraits(isChecked ? [.isSelected] : [])
-    }
-
-    /// The checkbox label; the year reads 歲 while `useAgeWording` is on,
-    /// checked or not (TASK-139 #486).
-    private func unitName(_ unit: DisplayUnit) -> String {
-        switch unit {
-        case .year: return model.displaySettings.profile.useAgeWording ? "歲" : "年"
-        case .month: return "月"
-        case .week: return "週"
-        case .day: return "天"
-        }
     }
 }
 
@@ -329,7 +201,7 @@ private struct PositionRows: View {
 
 // MARK: - 寫法 (#583)
 
-/// The 天數單位 card's 寫法 row: the current wording and a chevron, opening
+/// The 文字內容 card's 寫法 row: the current wording and a chevron, opening
 /// the four wordings right under it. Built like `PositionRows`.
 private struct DayCountFormatRows: View {
     @ObservedObject var model: DisplaySettingsModel

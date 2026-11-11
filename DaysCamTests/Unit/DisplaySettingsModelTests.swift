@@ -114,18 +114,13 @@ final class DisplaySettingsModelTests: XCTestCase {
 
     func testWeekAndDayReadsWeekAndDay() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.toggleUnit(.week)
-        XCTAssertEqual(model.profile.displayUnits, [.week, .day])
+        let model = makeModel(profile: baselineProfile(displayUnits: [.week, .day]), now: try fixedNow(), spy: spy)
         XCTAssertEqual(model.overlayPreviewText, "1 週又 3 天")
     }
 
     func testWeekOnlyOmitsTheDayRemainder() throws {
         let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.toggleUnit(.week)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.profile.displayUnits, [.week])
+        let model = makeModel(profile: baselineProfile(displayUnits: [.week]), now: try fixedNow(), spy: spy)
         XCTAssertEqual(model.overlayPreviewText, "1 週")
     }
 
@@ -148,111 +143,6 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertEqual(model.overlayPreviewText, "0 年", "93.15")
     }
 
-    // MARK: - toggleUnit (0.2 FR-11.3, TASK-27; replaces 0.1 11.21–11.27)
-
-    func testTogglingTheOnlyCheckedUnitIsANoOp() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.profile.displayUnits, [.day], "27.13")
-        XCTAssertTrue(spy.updated.isEmpty, "27.13")
-    }
-
-    func testToggleAddsAndRemovesAnyUnit() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.toggleUnit(.year)
-        model.toggleUnit(.week)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day])
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .week])
-        XCTAssertEqual(spy.updated.count, 3)
-    }
-
-    // MARK: - isLastCheckedUnit (24.2 → 108.7: the last unit cannot be unchecked; not disabled)
-
-    func testOnlyTheLastCheckedUnitCannotBeUnchecked() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(displayUnits: [.day]), now: try fixedNow(), spy: spy)
-        XCTAssertTrue(model.isLastCheckedUnit(.day), "108.7: 只剩天，天不可取消")
-        XCTAssertFalse(model.isLastCheckedUnit(.year), "108.7: 未勾的年可以勾")
-        XCTAssertFalse(model.isLastCheckedUnit(.month))
-        XCTAssertFalse(model.isLastCheckedUnit(.week))
-    }
-
-    func testAnyUnitCanBeUncheckedOnceMoreThanOneIsChecked() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: spy)
-        XCTAssertFalse(model.isLastCheckedUnit(.year))
-        XCTAssertFalse(model.isLastCheckedUnit(.day))
-    }
-
-    // MARK: - A-5 歲措辭 (11.28–11.31)
-
-    func testCheckingYearLeavesAgeWordingOff() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.toggleUnit(.year)
-        XCTAssertFalse(model.profile.useAgeWording)
-    }
-
-    func testAgeWordingOnYearOnlyPrintsSui() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 1, 1),
-                                                        displayUnits: [.year]),
-                              now: try fixedNow(), spy: spy)
-        model.setUseAgeWording(true)
-        XCTAssertEqual(model.overlayPreviewText, "1 歲")
-    }
-
-    // MARK: - TASK-139 (#486) 年改成歲 independent of the year checkbox
-
-    /// 奶茶, 2023-08-05, photographed 2026-10-12.
-    private func milkTeaModel(displayUnits: Set<DisplayUnit>, useAgeWording: Bool = false,
-                              spy: Spy) throws -> DisplaySettingsModel {
-        makeModel(profile: baselineProfile(name: "奶茶", startDate: DateFixture.components(2023, 8, 5),
-                                           displayUnits: displayUnits, useAgeWording: useAgeWording),
-                  now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10)), spy: spy)
-    }
-
-    /// 139.1／139.2: day only, the switch turns on and the overlay is
-    /// unchanged; checking the year then reads 歲.
-    func testAgeWordingTurnsOnWithoutYearAndAppliesOnceYearIsChecked() throws {
-        let spy = Spy()
-        let model = try milkTeaModel(displayUnits: [.day], spy: spy)
-        let before = model.overlayPreviewText
-        model.setUseAgeWording(true)
-        XCTAssertTrue(model.profile.useAgeWording, "139.1")
-        XCTAssertEqual(spy.updated.last?.useAgeWording, true, "139.1 saved")
-        XCTAssertEqual(model.overlayPreviewText, before, "139.1 overlay unchanged")
-        XCTAssertEqual(model.overlayPreviewText, "第 1165 天", "139.1")
-
-        model.toggleUnit(.year)
-        XCTAssertEqual(model.overlayPreviewText, "3 歲 68 天", "139.2")
-    }
-
-    /// 139.3: unchecking and re-checking the year never touches the switch.
-    func testUncheckingAndRecheckingYearKeepsAgeWording() throws {
-        let spy = Spy()
-        let model = try milkTeaModel(displayUnits: [.year, .month], useAgeWording: true, spy: spy)
-        XCTAssertEqual(model.overlayPreviewText, "3 歲 2 個月", "139.3")
-        model.toggleUnit(.year)
-        XCTAssertTrue(model.profile.useAgeWording, "139.3 kept while unchecked")
-        XCTAssertEqual(spy.updated.last?.useAgeWording, true, "139.3 saved as on")
-        model.toggleUnit(.year)
-        XCTAssertTrue(model.profile.useAgeWording, "139.3 kept when re-checked")
-        XCTAssertEqual(model.overlayPreviewText, "3 歲 2 個月", "139.3")
-    }
-
-    /// 139.4: turning the switch off reads 年 again.
-    func testTurningAgeWordingOffReadsYearAgain() throws {
-        let spy = Spy()
-        let model = try milkTeaModel(displayUnits: [.year, .month], useAgeWording: true, spy: spy)
-        model.setUseAgeWording(false)
-        XCTAssertFalse(model.profile.useAgeWording, "139.4")
-        XCTAssertEqual(model.overlayPreviewText, "3 年 2 個月", "139.4")
-    }
-
     // MARK: - A-6 持久化 (11.32–11.33)
 
     func testEveryMutationForwardsTheUpdatedProfileToUpdateProfile() throws {
@@ -260,11 +150,10 @@ final class DisplaySettingsModelTests: XCTestCase {
         let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
         model.setShowName(true)
         model.setShowDate(!model.profile.showDate)
-        model.toggleUnit(.week)
+        model.setDayCountFormat(.plain)
         XCTAssertEqual(spy.updated.count, 3)
-        XCTAssertEqual(spy.updated.last?.showName, true)
         XCTAssertEqual(spy.updated.last?.showDate, model.profile.showDate)
-        XCTAssertEqual(spy.updated.last?.displayUnits, model.profile.displayUnits)
+        XCTAssertEqual(spy.updated.last?.dayCountFormat, .plain)
     }
 
     func testDistinctModelsForDifferentProfilesDoNotShareState() throws {
@@ -333,104 +222,10 @@ final class DisplaySettingsModelTests: XCTestCase {
         XCTAssertFalse(model.profile.showDayCount, "#713-1 last switch turns off")
         XCTAssertEqual(spy.updated.last?.showDayCount, false, "#713-1 persisted")
         XCTAssertEqual(model.overlayPreviewText, "", "#713-3 nothing to print")
-        XCTAssertNil(model.lastRejection, "#713-4 no refusal")
-        XCTAssertNil(model.visibleHint, "#713-4 no hint")
 
         model.setShowDate(true)
         model.setShowDate(false)
         XCTAssertFalse(model.profile.showDate)
-        XCTAssertNil(model.lastRejection, "#713-4 the date either")
-    }
-
-    /// 107.4: with the day count off the unit controls refuse every tap and
-    /// keep their ticks; turning it on restores them.
-    func testUnitsAreInertWhileTheDayCountIsOff() throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.toggleUnit(.year)
-        model.toggleUnit(.week)
-        model.setShowDate(true)
-        model.setShowDayCount(false)
-        XCTAssertTrue(model.areUnitsInert, "107.4")
-        model.toggleUnit(.month)
-        model.toggleUnit(.day)
-        model.setUseAgeWording(true)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "107.4 taps change nothing")
-        XCTAssertFalse(model.profile.useAgeWording, "107.4 age wording refused too")
-        model.setShowDayCount(true)
-        XCTAssertFalse(model.areUnitsInert)
-        model.setUseAgeWording(true)
-        XCTAssertTrue(model.profile.useAgeWording, "107.4 live again")
-        XCTAssertTrue(model.overlayPreviewText.contains("週"), "107.4 the units are back in use: \(model.overlayPreviewText)")
-    }
-
-    // MARK: - TASK-108 (#422) refusals are reported for feedback
-
-    /// 108.1／108.3: unchecking the last unit is refused and reported; a
-    /// later uncheck that is allowed reports nothing new.
-    func testUncheckingTheLastUnitIsReportedAsARejection() throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        XCTAssertNil(model.lastRejection)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.lastRejection?.kind, .lastUnit(.day), "108.1")
-        XCTAssertEqual(model.lastRejection?.hint, "至少保留一個單位")
-        XCTAssertEqual(model.profile.displayUnits, [.day])
-        let serial = model.lastRejection?.serial
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.lastRejection?.serial, serial, "a refusal repeated within 0.3 s is the same event")
-        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
-        model.toggleUnit(.day)
-        XCTAssertNotEqual(model.lastRejection?.serial, serial, "a later repeated refusal is a new event")
-        model.toggleUnit(.week)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.profile.displayUnits, [.week], "108.3 allowed")
-        XCTAssertEqual(model.lastRejection?.serial, (serial ?? 0) + 1, "108.3 no new rejection")
-        XCTAssertEqual(model.lastRejection?.kind, .lastUnit(.day))
-    }
-
-    /// 108.8 → TASK-141 (#485): with the day count off the section is
-    /// hidden; a stray call changes nothing and raises no 先打開天數 hint
-    /// any more. After turning the day count on the same calls work.
-    func testCallsWhileTheDayCountIsOffChangeNothingAndReportNothing() throws {
-        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day]), now: try fixedNow(), spy: Spy())
-        model.setShowDate(true)
-        model.setShowDayCount(false)
-        model.toggleUnit(.week)
-        model.setUseAgeWording(true)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .day])
-        XCTAssertFalse(model.profile.useAgeWording)
-        XCTAssertNil(model.lastRejection, "141 no 先打開天數")
-        XCTAssertNil(model.visibleHint)
-        model.setShowDayCount(true)
-        model.toggleUnit(.week)
-        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day], "live again")
-    }
-
-    // MARK: - TASK-141 (#485) hints stay until the next tap
-
-    /// 141.4: the unit hint stays until any checkbox is tapped, or the tab
-    /// goes away (`dismissHint()`).
-    func testUnitHintStaysUntilACheckboxTapOrLeavingTheTab() throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day), "141.4 shown")
-        model.toggleUnit(.month)
-        XCTAssertNil(model.visibleHint, "141.4 cleared by another checkbox")
-
-        model.toggleUnit(.month)
-        Thread.sleep(forTimeInterval: DisplaySettingsModel.rejectionDebounce + 0.05)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day))
-        model.dismissHint()
-        XCTAssertNil(model.visibleHint, "141.4 cleared by switching tabs")
-    }
-
-    /// A refused tap reported twice by a springing-back control keeps its
-    /// hint: the repeat clears and then restores it.
-    func testRepeatedRefusalKeepsTheHint() throws {
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
-        model.toggleUnit(.day)
-        model.toggleUnit(.day)
-        XCTAssertEqual(model.visibleHint?.kind, .lastUnit(.day))
     }
 
     // MARK: - #521 底片日期 (152.3–152.5)
@@ -457,11 +252,9 @@ final class DisplaySettingsModelTests: XCTestCase {
                 XCTAssertTrue(model.profile.showFilmDate)
                 XCTAssertEqual(model.profile.showDayCount, dayCount, "152.4")
                 XCTAssertEqual(model.profile.showDate, date, "152.4")
-                XCTAssertNil(model.lastRejection, "152.4 no hint")
                 model.setShowFilmDate(false)
                 XCTAssertEqual(model.profile.showDayCount, dayCount)
                 XCTAssertEqual(model.profile.showDate, date)
-                XCTAssertNil(model.lastRejection)
             }
         }
     }
@@ -477,7 +270,6 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setShowDayCount(false)
         XCTAssertFalse(model.profile.showDayCount)
         XCTAssertTrue(model.profile.showFilmDate, "film date untouched")
-        XCTAssertNil(model.lastRejection)
         XCTAssertEqual(spy.updated.last?.showDayCount, false)
     }
 
@@ -519,7 +311,19 @@ final class DisplaySettingsModelTests: XCTestCase {
         model.setDayCountFormat(.dayN)
         XCTAssertEqual(spy.updated.last?.dayCountFormat, .dayN)
         XCTAssertEqual(model.overlayPreviewText, before, "not applied while 週 is checked")
-        model.toggleUnit(.week)
-        XCTAssertEqual(model.overlayPreviewText, "Day 13", "applied once only 天 is left")
+    }
+}
+
+// MARK: - 107.4 寫法 inert while the day count is off (units moved to RulesTabModel, #721)
+
+extension DisplaySettingsModelTests {
+    func testAreUnitsInertTracksTheDayCountSwitch() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        XCTAssertFalse(model.areUnitsInert)
+        model.setShowDate(true)
+        model.setShowDayCount(false)
+        XCTAssertTrue(model.areUnitsInert, "107.4")
+        model.setShowDayCount(true)
+        XCTAssertFalse(model.areUnitsInert)
     }
 }

@@ -1,8 +1,9 @@
 import XCTest
 
-/// #558: the content tab is two cards, 文字內容 → 天數單位 (the 戳記 card moved
-/// to the 底片日期 page, #718), every row words-left, control-right; with the day count off 天數單位 collapses
-/// and the switches above stay put (TASK-141 #485). With
+/// #558: the content tab is one card, 文字內容 (the 戳記 card moved to the
+/// 底片日期 page, #718; the units moved to the record editor, #721), every row
+/// words-left, control-right; with the day count off the 寫法 row goes and the
+/// switches above stay put. With
 /// `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
 /// screenshots are also written there for the PR.
 final class FormatTabReorderUITests: XCTestCase {
@@ -31,7 +32,7 @@ final class FormatTabReorderUITests: XCTestCase {
         let content = app.buttons["內容"]
         XCTAssertTrue(content.waitForExistence(timeout: 5))
         content.tap()
-        XCTAssertTrue(app.buttons["天"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
     }
 
     private func shot(_ name: String) {
@@ -56,11 +57,6 @@ final class FormatTabReorderUITests: XCTestCase {
     private func isOn(_ element: XCUIElement) -> Bool { (element.value as? String) == "1" }
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-    private let ageWording = "「年」改成「歲」"
-    /// The countdown note under the age-wording switch was dropped (PR #497).
-    private var countdownNote: XCUIElement {
-        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "倒數時寫作")).firstMatch
     }
     /// Taps a switch until it reads `on`: right after a drag the panel can
     /// take the first tap as the end of its scroll.
@@ -125,8 +121,6 @@ final class FormatTabReorderUITests: XCTestCase {
     func testCardsReadTopToBottomWithOneRightEdge() {
         launch(startDay: "2023-08-05")
         XCTAssertFalse(element("formatDivider").exists, "#558.6 no divider")
-        // 年 checked too, for shot (a); the tap may scroll a short screen.
-        app.buttons["年"].tap()
         scrollToTop()
         let rightEdge = toggle("名稱").frame.maxX
         for name in ["天數", "日期"] {
@@ -134,9 +128,13 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertLessThan(app.staticTexts["文字內容"].frame.maxX, app.frame.width / 2, "#558.2 heading on the left")
         assertTopToBottom(pairs: [app.staticTexts["文字內容"], toggle("天數"), toggle("日期"), toggle("名稱"),
-                                  app.buttons["positionRow"], app.staticTexts["天數單位"], app.buttons["天"], toggle(ageWording)],
-                          "#558.1")
-        XCTAssertEqual(toggle(ageWording).frame.maxX, rightEdge, accuracy: 1, "#558.2 \(ageWording)")
+                                  app.buttons["positionRow"], app.buttons["dayCountFormatRow"]],
+                          "#558.1 #721.6 寫法 under 位置")
+        XCTAssertFalse(app.staticTexts["天數單位"].exists, "#721.6 no 天數單位 heading")
+        XCTAssertFalse(app.buttons["天"].exists || app.buttons["週"].exists, "#721.6 no unit checkboxes")
+        XCTAssertFalse(toggle("「年」改成「歲」").exists, "#721.6 no 歲 switch")
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier IN %@",
+            ["contentCard"])).count, 1, "#721.6 one card")
         XCTAssertFalse(app.staticTexts["戳記"].exists, "#718 the 戳記 card moved to the 底片日期 page")
         XCTAssertFalse(toggle("底片日期").exists, "#718 no 底片日期 switch here")
         XCTAssertFalse(element("stampCard").exists, "#718 no stamp card here")
@@ -153,33 +151,27 @@ final class FormatTabReorderUITests: XCTestCase {
     func testAllOnShots() {
         launch(startDay: "2023-08-05")
         toggle("日期").tap()
-        app.buttons["年"].tap()
         scrollToTop()
         XCTAssertTrue(isOn(toggle("天數")) && isOn(toggle("日期")) && isOn(toggle("名稱")), "all text on")
         shot("558.12a_all_on_1_text")
-        scrollTo(toggle(ageWording))
-        XCTAssertTrue(isOnScreen(app.buttons["年"]), "units card in the shot")
-        shot("558.12a_all_on_2_units")
+        scrollTo(app.buttons["dayCountFormatRow"])
+        XCTAssertTrue(isOnScreen(app.buttons["dayCountFormatRow"]), "寫法 row in the shot")
+        shot("558.12a_all_on_2_format")
     }
 
-    /// #558.3 on a past start date: with the day count off the 天數單位 card
-    /// and heading go, the switches stay put, ticks are kept; B′ shot (b).
+    /// #558.3, #721.6 on a past start date: with the day count off the 寫法
+    /// row goes, the switches stay put; B′ shot (b).
     func testOrderAndCollapseOnAPastStartDate() {
         launch(startDay: "2023-08-05")
-        scrollTo(app.buttons["週"])
-        app.buttons["週"].tap()
-        // A tap low on a short screen scrolls the panel, and collapsing a
-        // scrolled panel pulls everything down as it clamps; measure from
-        // the top, where a collapse below cannot move the switches.
+        XCTAssertTrue(app.buttons["dayCountFormatRow"].exists, "寫法 row while the day count is on")
+        // Measure from the top, where a collapse below cannot move the switches.
         scrollToTop()
         let framesAfterTap = ["天數", "日期", "名稱"].map { toggle($0).frame }
 
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
-        XCTAssertFalse(app.staticTexts["天數單位"].exists, "#558.3 heading collapsed")
-        XCTAssertFalse(element("dayCountUnitsCard").exists, "#558.3 card collapsed")
-        XCTAssertFalse(app.buttons["週"].exists, "#558.3 collapsed")
+        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "#721.6 寫法 row hidden")
         // Sub-point x jitter from re-layout is not a move; compare to 1pt.
         for (name, before) in zip(["天數", "日期", "名稱"], framesAfterTap) {
             let after = toggle(name).frame
@@ -191,8 +183,8 @@ final class FormatTabReorderUITests: XCTestCase {
 
         toggle("天數").tap()
         Thread.sleep(forTimeInterval: 0.5)
-        scrollTo(app.buttons["週"])
-        XCTAssertTrue(app.buttons["週"].isSelected && app.buttons["天"].isSelected, "#558.3 ticks kept")
+        scrollTo(app.buttons["dayCountFormatRow"])
+        XCTAssertTrue(app.buttons["dayCountFormatRow"].exists, "#721.6 寫法 row back")
     }
 
     /// #713-6 shot: 天數／日期／名稱 all off, the viewfinder prints nothing.
@@ -207,17 +199,5 @@ final class FormatTabReorderUITests: XCTestCase {
         XCTAssertTrue(!overlay.exists || overlay.label.isEmpty, "#713-3 viewfinder draws nothing")
         XCTAssertFalse(app.staticTexts["至少顯示天數或日期"].exists, "#713-4 no hint")
         shot("713.6_content_all_off")
-    }
-
-    /// A future start date with 歲 on: no countdown note under the
-    /// age-wording switch (141.5 dropped, PR #497).
-    func testNoCountdownNoteOnAFutureStartDate() {
-        launch(startDay: "2027-01-16")
-        scrollTo(toggle(ageWording))
-        toggle(ageWording).tap()
-        XCTAssertTrue(isOn(toggle(ageWording)))
-        XCTAssertTrue(app.buttons["歲"].exists, "#558.9 the year reads 歲")
-        app.buttons["月"].tap()
-        XCTAssertFalse(countdownNote.exists, "no countdown note")
     }
 }
