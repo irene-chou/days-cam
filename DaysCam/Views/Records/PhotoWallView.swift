@@ -618,15 +618,27 @@ private struct PhotoWallCell: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .accessibilityIdentifier("photoCell")
 
-            Text(cell.dayText)
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundColor(cell.isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto)
-                .shadow(color: .black.opacity(0.6), radius: 2)
-                .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
-                .padding(.leading, 6 + inset)
-                .padding(.bottom, 5 + inset)
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("photoDayLabel")
+            // The longest text that fits: each next one drops the smallest unit,
+            // the type never shrinks (#722). The tick circle (22 + 5 pt) takes
+            // its share of the width while selecting.
+            ViewThatFits(in: .horizontal) {
+                ForEach(Array(cell.dayTexts.enumerated()), id: \.offset) { _, text in
+                    Text(text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .foregroundColor(cell.isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto)
+            .shadow(color: .black.opacity(0.6), radius: 2)
+            .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
+            .frame(maxWidth: side - 12 - (isSelecting ? 27 : 0), alignment: .leading)
+            .padding(.leading, 6 + inset)
+            .padding(.bottom, 5 + inset)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(cell.dayTexts[0])
+            .accessibilityIdentifier("photoDayLabel")
 
             if isSelecting { checkmark }
         }
@@ -639,10 +651,10 @@ private struct PhotoWallCell: View {
         }
     }
 
-    /// "照片" normally; "第 N 天" or "第 N 天，已選取" while selecting (FR-17.12).
+    /// "照片" normally; the full day text, with "，已選取" when ticked, while selecting (FR-17.12).
     private var accessibilityLabel: String {
         guard isSelecting else { return "照片" }
-        return isSelected ? "\(cell.dayText)，已選取" : cell.dayText
+        return isSelected ? "\(cell.dayTexts[0])，已選取" : cell.dayTexts[0]
     }
 
     /// How far a ticked photo's edges move in (its 0.9 scale): the day mark

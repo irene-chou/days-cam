@@ -89,8 +89,20 @@ final class PhotoDetailModelTests: XCTestCase {
         let model = makeModel(store: store, profile: profile, library: library())
         let photo = try XCTUnwrap(model.currentPhoto)
         XCTAssertEqual(model.title(for: photo), "前 2 天")
-        let wall = PhotoWallModel.dayMark(creationDate: photo.creationDate, profile: profile, calendar: calendar)
-        XCTAssertEqual(model.title(for: photo), wall.text)
+        let wall = PhotoWallModel.dayMarkTexts(creationDate: photo.creationDate, profile: profile, calendar: calendar)
+        XCTAssertEqual(model.title(for: photo), wall.texts[0])
+    }
+
+    /// #722-8: the header's first line is the wall's first candidate, in full.
+    func testTitleIsTheWallsFullText() throws {
+        let (store, profile) = try makeStore(start: DateFixture.components(2025, 12, 1))
+        var unitProfile = profile
+        unitProfile.displayUnits = [.month, .day]
+        try store.updateAndWait(unitProfile)
+        let model = makeModel(store: store, profile: unitProfile, library: library())
+        let photo = try XCTUnwrap(model.currentPhoto)
+        let wall = PhotoWallModel.dayMarkTexts(creationDate: photo.creationDate, profile: unitProfile, calendar: calendar)
+        XCTAssertEqual(model.title(for: photo), wall.texts[0])
     }
 
     /// 4: no `creationDate` means 日期不明; the plain photo is still shown.

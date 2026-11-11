@@ -115,10 +115,12 @@ final class PhotoDetailModel: ObservableObject {
 
     // MARK: - Header and caption
 
-    /// "第 N 天", "前 N 天" or "日期不明" (FR-18.1, §6.1.3).
+    /// The full day-count text, the same as the wall's first candidate:
+    /// "3 個月又 6 天", "第 N 天", "前 N 天" or "日期不明" (FR-18.1, §6.1.3).
     func title(for photo: RecordPhoto) -> String {
         guard let profile else { return "" }
-        return PhotoWallModel.dayMark(creationDate: photo.creationDate, profile: profile, calendar: calendar).text
+        return PhotoWallModel.dayMarkTexts(creationDate: photo.creationDate, profile: profile,
+                                           calendar: calendar).texts[0]
     }
 
     /// "YYYY/M/D HH:mm" of the photo's `creationDate`; `nil` without one.

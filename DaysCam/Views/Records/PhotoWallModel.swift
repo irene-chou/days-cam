@@ -15,8 +15,10 @@ final class PhotoWallModel: ObservableObject {
     struct Cell: Identifiable, Equatable {
         /// `PHAsset.localIdentifier`.
         let id: String
-        /// "第 N 天", "前 N 天" or "日期不明" (FR-17.4, §6.1.3, §6.2).
-        let dayText: String
+        /// The mark's candidate texts, longest first, at least one: the
+        /// record's unit text with the smallest unit dropped step by step,
+        /// "前 N 天" or "日期不明" (FR-17.4, §6.1.3, §6.2).
+        let dayTexts: [String]
         /// The photo was taken before the start date: the mark uses the
         /// warm `inkOnPhotoBeforeStart` color.
         let isBeforeStart: Bool
@@ -650,20 +652,41 @@ final class PhotoWallModel: ObservableObject {
 
     // MARK: - Marks and months
 
-    /// The mark for a photo taken at `creationDate` (FR-17.4, §6.1.3, §6.2).
+    /// The day-count texts for a photo taken at `creationDate`, longest first
+    /// (FR-17.4, §6.1.3, §6.2). Shared by the wall, the photo page, the camera
+    /// HUD and the comparison image.
     ///
-    /// Only the day count is shown, in the "第 N 天" wording whatever the
-    /// record's format and units. The clock is the photo's own date, so the
-    /// calculator never sees the current time.
-    static func dayMark(creationDate: Date?, profile: CameraProfile, calendar: Calendar) -> (text: String, isBeforeStart: Bool) {
-        guard let creationDate else { return (TemplateRenderer.unknownDateText, false) }
+    /// The first text is the record's full unit text, as the export prints
+    /// it ("3 個月又 6 天"; day only follows the record's wording). Each next
+    /// text drops the smallest remaining unit (day, week, month) until one
+    /// unit is left, so a narrow slot can pick the longest that fits without
+    /// shrinking type. Consecutive duplicates are removed. A photo before the
+    /// start date gives one "前 N 天"; no date gives one "日期不明". The clock
+    /// is the photo's own date, never the current time.
+    static func dayMarkTexts(creationDate: Date?, profile: CameraProfile,
+                             calendar: Calendar) -> (texts: [String], isBeforeStart: Bool) {
+        guard let creationDate else { return ([TemplateRenderer.unknownDateText], false) }
         let calculator = DayCountCalculator(calendar: calendar, now: { creationDate })
         let raw = calculator.rawDayDifference(from: profile.startDate)
         if raw < 0 {
-            return (TemplateRenderer.daysBeforeStartText(days: -raw), true)
+            return ([TemplateRenderer.daysBeforeStartText(days: -raw)], true)
         }
-        let count = calculator.dayCount(from: profile.startDate, rule: profile.countingRule)
-        return (DayCountFormat.ordinal.elapsedText(count: count), false)
+        var trimmed = profile
+        trimmed.showDayCount = true
+        trimmed.showDate = false
+        trimmed.showName = false
+        let renderer = TemplateRenderer()
+        var texts: [String] = []
+        // Smallest unit last, so `removeLast` drops it first.
+        var units = DisplayUnit.allCases.filter(profile.displayUnits.contains)
+        while !units.isEmpty {
+            trimmed.displayUnits = Set(units)
+            let text = renderer.render(profile: trimmed, capturedAt: creationDate,
+                                       calendar: calendar, moment: .photo)
+            if texts.last != text { texts.append(text) }
+            units.removeLast()
+        }
+        return (texts, false)
     }
 
     /// Groups `photos` (already oldest first) into months under "YYYY 年 M 月".
@@ -681,8 +704,8 @@ final class PhotoWallModel: ObservableObject {
                 key = "unknown"
                 title = unknownMonthTitle
             }
-            let mark = dayMark(creationDate: photo.creationDate, profile: profile, calendar: calendar)
-            let cell = Cell(id: photo.id, dayText: mark.text, isBeforeStart: mark.isBeforeStart)
+            let mark = dayMarkTexts(creationDate: photo.creationDate, profile: profile, calendar: calendar)
+            let cell = Cell(id: photo.id, dayTexts: mark.texts, isBeforeStart: mark.isBeforeStart)
             if let last = result.last, last.id == key {
                 result[result.count - 1] = Section(id: key, title: title, cells: last.cells + [cell])
             } else {
