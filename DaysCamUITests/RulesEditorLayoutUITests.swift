@@ -32,6 +32,27 @@ final class RulesEditorLayoutUITests: XCTestCase {
         }
     }
 
+    /// #721.1: the group block reads 名稱, 日期, 起算, 單位, 「年」改成「歲」 top
+    /// to bottom, rows ≥ 48pt, then the 天數預覽 block; B′ shot.
+    func testUnitRowsSitUnderTheCountingRule() {
+        let rule = app.buttons["第 0 天"]
+        let unitRow = app.descendants(matching: .any)["rulesUnitRow"]
+        let age = app.descendants(matching: .any)["rulesAgeWordingToggle"]
+        XCTAssertTrue(unitRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(age.exists)
+        XCTAssertGreaterThan(unitRow.frame.minY, rule.frame.maxY - 1, "721.1 單位 under 起算")
+        XCTAssertGreaterThan(age.frame.minY, unitRow.frame.maxY - 1, "721.1 歲 under 單位")
+        XCTAssertGreaterThan(preview.frame.minY, age.frame.maxY - 1, "721.1 預覽 under the block")
+        XCTAssertGreaterThanOrEqual(unitRow.frame.height, 47.5, "721.1 row height")
+        for raw in ["year", "month", "week", "day"] {
+            let cell = app.buttons["rulesUnit_\(raw)"]
+            XCTAssertTrue(cell.exists, raw)
+            XCTAssertLessThanOrEqual(cell.frame.maxX, app.frame.width, "\(raw) in view")
+        }
+        XCTAssertTrue(app.buttons["rulesUnit_day"].isSelected)
+        attach("721.1_editor_units")
+    }
+
     /// 155.1／155.3: the switch and the two old text blocks are gone.
     func testOldSwitchAndExplanationTextAreGone() {
         XCTAssertFalse(app.switches["寫在照片上"].exists, "155.1")

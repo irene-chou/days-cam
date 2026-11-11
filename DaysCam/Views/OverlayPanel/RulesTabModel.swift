@@ -38,6 +38,14 @@ final class RulesTabModel: ObservableObject {
     /// name (TASK-106): set by `beginUntitled`, cleared by the first typed
     /// name, and keeps A-5's restore from putting the automatic name back.
     private var isUntitled = false
+    /// The unit whose uncheck was refused last (#721), for the checkbox to
+    /// bounce; `nil` until one happens.
+    @Published private(set) var lastUnitRejection: DisplayUnit?
+    /// Counts refusals, so a repeated refusal of the same unit is a new event
+    /// for the view's haptic and bounce.
+    @Published private(set) var lastUnitRejectionSerial = 0
+    /// The hint on screen until the next unit tap or `dismissHint()`; no timer.
+    @Published private(set) var visibleHint: String?
     /// The most recent `updateProfile` failure, if any, for the view to surface.
     @Published var lastError: Error?
 
@@ -155,6 +163,57 @@ extension RulesTabModel {
     func setCountingRule(_ newValue: CountingRule) {
         guard newValue != profile.countingRule else { return }
         mutate { $0.countingRule = newValue }
+    }
+}
+
+// MARK: - 單位與「歲」 (#721)
+
+extension RulesTabModel {
+    /// Hint floated beside the 單位 label when the last unit is refused.
+    static let lastUnitHint = "至少保留一個單位"
+
+    /// Checks or unchecks `unit` (PRD 0.2 FR-11.3, moved here by #721).
+    ///
+    /// Unchecking the last remaining unit is refused (`lastUnitRejection`):
+    /// `displayUnits` may never be empty. `useAgeWording` is left alone
+    /// either way. Not gated on the day count: the edit page's fields are
+    /// always live (FR-13.5).
+    func toggleUnit(_ unit: DisplayUnit) {
+        dismissHint()
+        if profile.displayUnits.contains(unit) {
+            guard profile.displayUnits.count > 1 else {
+                reject(unit)
+                return
+            }
+            mutate { $0.displayUnits.remove(unit) }
+        } else {
+            mutate { $0.displayUnits.insert(unit) }
+        }
+    }
+
+    /// Whether `unit` is the last unit still checked, so unchecking it is refused.
+    func isLastCheckedUnit(_ unit: DisplayUnit) -> Bool {
+        profile.displayUnits.contains(unit) && profile.displayUnits.count == 1
+    }
+
+    /// Sets `useAgeWording`, whether or not the year is checked: the switch
+    /// only renames the year unit 年 → 歲 (TASK-139 #486).
+    func setUseAgeWording(_ newValue: Bool) {
+        dismissHint()
+        guard newValue != profile.useAgeWording else { return }
+        mutate { $0.useAgeWording = newValue }
+    }
+
+    /// Clears the refusal hint; called by every unit tap and when the page goes away.
+    func dismissHint() {
+        guard visibleHint != nil else { return }
+        visibleHint = nil
+    }
+
+    private func reject(_ unit: DisplayUnit) {
+        lastUnitRejection = unit
+        lastUnitRejectionSerial += 1
+        visibleHint = Self.lastUnitHint
     }
 }
 

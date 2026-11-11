@@ -4,11 +4,9 @@ import XCTest
 
 /// Covers `FormatTabModel`'s state (PRD 0.2 FR-11), TASK-24 acceptance
 /// 24.1–24.5. Reuses `DisplaySettingsModel` directly (the format tab is a
-/// thin wrapper around it), so the interlock behavior itself — 0.1 11.8–11.14
-/// and `toggleUnit` — is already covered by `DisplaySettingsModelTests`; this
-/// file only covers the unit controls staying operable now that the day
-/// count is always shown (TASK-48, 0.4 R-13; the second layer was removed in
-/// TASK-38).
+/// thin wrapper around it). The unit checkboxes and 年改成歲 moved to the
+/// record edit page (#721; see `RulesTabModelTests`); this file only covers
+/// the forwarding of the model's changes.
 @MainActor
 final class FormatTabModelTests: XCTestCase {
     private func fixedNow() throws -> Date {
@@ -40,56 +38,6 @@ final class FormatTabModelTests: XCTestCase {
                                                    renderer: TemplateRenderer(),
                                                    updateProfile: spy.update)
         return FormatTabModel(displaySettings: displaySettings)
-    }
-
-    // MARK: - 24.2 天數格式初始（只勾天）
-
-    func testInitiallyOnlyDayIsCheckedAndDisabled() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(displayUnits: [.day]), now: try fixedNow(), spy: spy)
-        let settings = model.displaySettings
-
-        XCTAssertTrue(settings.profile.displayUnits.contains(.day), "24.2")
-        XCTAssertTrue(settings.isLastCheckedUnit(.day), "108.7: 只剩一個，天不可取消")
-        for unit: DisplayUnit in [.year, .month, .week] {
-            XCTAssertFalse(settings.profile.displayUnits.contains(unit), "24.2")
-            XCTAssertFalse(settings.isLastCheckedUnit(unit), "24.2")
-        }
-    }
-
-    // MARK: - 24.3 勾年 → 勾週，沒有格子被自動取消
-
-    func testCheckingYearThenWeekAddsBothWithoutAutoUnchecking() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(displayUnits: [.day]), now: try fixedNow(), spy: spy)
-        model.displaySettings.toggleUnit(.year)
-        model.displaySettings.toggleUnit(.week)
-        XCTAssertEqual(model.displaySettings.profile.displayUnits, [.year, .week, .day], "24.3")
-    }
-
-    // MARK: - 24.4 → TASK-139 (#486): 取消勾年不再動到「年改成歲」
-
-    func testUncheckingYearLeavesAgeWordingOn() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(displayUnits: [.year, .day], useAgeWording: true),
-                              now: try fixedNow(), spy: spy)
-
-        model.displaySettings.toggleUnit(.year)
-
-        XCTAssertTrue(model.displaySettings.profile.useAgeWording, "24.4 → 139.3")
-    }
-
-    // MARK: - 48.3 單位區永遠可操作
-
-    /// 48.3: the unit rows have no day-count-off state (0.4 R-13); toggling
-    /// units and 年改成歲 behaves as before on a default profile.
-    func testUnitControlsAlwaysOperable() throws {
-        let spy = Spy()
-        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
-        model.displaySettings.toggleUnit(.year)
-        XCTAssertTrue(model.displaySettings.profile.displayUnits.contains(.year), "48.3")
-        model.displaySettings.setUseAgeWording(true)
-        XCTAssertTrue(model.displaySettings.profile.useAgeWording, "48.3")
     }
 
     // MARK: - #583 寫法

@@ -2,7 +2,7 @@ import XCTest
 
 /// TASK-107 (#426): the content tab's 天數 switch is back; a date-only
 /// profile prints only the date, both of 天數／日期 may be off (#713), the
-/// units collapse (TASK-141). The profile list's 只顯示日期 subtitle (107.5)
+/// 寫法 row collapses (#721; the units live on the record editor now). The profile list's 只顯示日期 subtitle (107.5)
 /// went with the camera's profile sheet in #621.
 final class DayCountToggleUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -23,7 +23,7 @@ final class DayCountToggleUITests: XCTestCase {
         app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
     }
-    private var units: XCUIElement { app.descendants(matching: .any).matching(identifier: "dayCountUnits").firstMatch }
+    private var formatRow: XCUIElement { app.buttons["dayCountFormatRow"] }
 
     private func isOn(_ element: XCUIElement) -> Bool {
         (element.value as? String) == "1" || (element.value as? Int) == 1
@@ -38,15 +38,15 @@ final class DayCountToggleUITests: XCTestCase {
 
     /// 107.1／107.2／107.4: three switches, default 天數 on; turning the date
     /// on and the day count off leaves only the date on the preview and
-    /// collapses the units (TASK-141); name on adds the name after the date.
+    /// hides the 寫法 row (#721); name on adds the name after the date.
     func testDateOnlyProfilePrintsOnlyTheDate() {
         openContentTab()
         XCTAssertTrue(toggle("日期").exists && toggle("名稱").exists, "107.1 three switches")
         XCTAssertTrue(isOn(toggle("天數")), "107.1 day count on by default")
         XCTAssertFalse(isOn(toggle("日期")), "107.1 date off by default")
         XCTAssertTrue(isOn(toggle("名稱")), "107.1 name on by default (TASK-119)")
-        app.revealInPanel(app.buttons["週"])
-        XCTAssertTrue(app.buttons["週"].isEnabled, "units are live while the day count is on")
+        app.revealInPanel(formatRow)
+        XCTAssertTrue(formatRow.isEnabled, "寫法 is live while the day count is on")
         app.revealInPanel(toggle("天數"))
 
         toggle("日期").tap()
@@ -57,8 +57,7 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(overlayText.label)")
-        // TASK-141 (#485): the units are collapsed, not inert-but-visible.
-        XCTAssertFalse(app.buttons["週"].exists, "107.4 → 141.2 the units are collapsed")
+        XCTAssertFalse(formatRow.exists, "107.4 → #721.6 the 寫法 row is hidden")
 
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
@@ -66,10 +65,8 @@ final class DayCountToggleUITests: XCTestCase {
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "107.4 back on")
         Thread.sleep(forTimeInterval: 0.5)
-        app.revealInPanel(app.buttons["天"])
-        XCTAssertTrue(app.buttons["天"].isSelected, "107.4 the earlier tick is still there")
-        app.buttons["週"].tap()
-        XCTAssertTrue(app.buttons["週"].isSelected, "107.4 the units are live again")
+        app.revealInPanel(formatRow)
+        XCTAssertTrue(formatRow.exists, "107.4 the 寫法 row is back")
     }
 
     /// 107.3, replaced by #713: 天數 and 日期 may both be off, nothing springs

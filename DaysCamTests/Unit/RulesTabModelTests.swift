@@ -17,11 +17,15 @@ final class RulesTabModelTests: XCTestCase {
     private func baselineProfile(name: String = "小寶",
                                  startDate: DateComponents = DateFixture.components(2026, 1, 1),
                                  showDayCount: Bool = true,
-                                 countingRule: CountingRule = .dayOne) -> CameraProfile {
+                                 countingRule: CountingRule = .dayOne,
+                                 displayUnits: Set<DisplayUnit> = [.day],
+                                 useAgeWording: Bool = false) -> CameraProfile {
         CameraProfile(name: name,
                      startDate: startDate,
                      countingRule: countingRule,
-                     showDayCount: showDayCount)
+                     showDayCount: showDayCount,
+                     displayUnits: displayUnits,
+                     useAgeWording: useAgeWording)
     }
 
     private final class Spy {
@@ -253,6 +257,116 @@ final class RulesTabModelTests: XCTestCase {
         model.setCountingRule(.dayZero)
         XCTAssertEqual(spy.updated.count, 3)
         XCTAssertEqual(spy.updated.last?.countingRule, .dayZero)
+        model.toggleUnit(.week)
+        XCTAssertEqual(spy.updated.count, 4, "#721 unit change")
+        XCTAssertEqual(spy.updated.last?.displayUnits, [.week, .day])
+        model.setUseAgeWording(true)
+        XCTAssertEqual(spy.updated.count, 5, "#721 年改成歲")
+        XCTAssertEqual(spy.updated.last?.useAgeWording, true)
+    }
+
+    // MARK: - #721 單位與「歲」
+
+    /// 721.2: 起始日 2026-08-05, today 2026-11-11, 月＋天.
+    func testTogglingMonthChangesThePreviewFromDayNumberToMonthsAndDays() throws {
+        let spy = Spy()
+        let now = try XCTUnwrap(DateFixture.date(2026, 11, 11, hour: 8))
+        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2026, 8, 5)),
+                              now: now, spy: spy)
+        XCTAssertFalse(model.overlayPreviewText.contains("個月"), model.overlayPreviewText)
+        model.toggleUnit(.month)
+        XCTAssertTrue(model.overlayPreviewText.contains("個月"), model.overlayPreviewText)
+        XCTAssertEqual(spy.updated.last?.displayUnits, [.month, .day])
+    }
+
+    func testTogglingTheOnlyCheckedUnitIsRefusedAndReported() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        XCTAssertNil(model.lastUnitRejection)
+        XCTAssertNil(model.visibleHint)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.day], "721.3 stays checked")
+        XCTAssertTrue(spy.updated.isEmpty, "27.13")
+        XCTAssertEqual(model.lastUnitRejection, .day, "721.3 bounce target")
+        XCTAssertEqual(model.visibleHint, "至少保留一個單位", "721.3")
+        XCTAssertEqual(model.lastUnitRejectionSerial, 1)
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.lastUnitRejectionSerial, 2, "each refusal is a new event")
+        XCTAssertEqual(model.visibleHint, "至少保留一個單位", "hint kept by a repeated refusal")
+    }
+
+    func testHintGoesAwayOnTheNextUnitTapOrDismiss() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        model.toggleUnit(.day)
+        XCTAssertNotNil(model.visibleHint)
+        model.toggleUnit(.month)
+        XCTAssertNil(model.visibleHint, "721.3 cleared by another checkbox")
+        model.toggleUnit(.month)
+        model.toggleUnit(.day)
+        XCTAssertNotNil(model.visibleHint)
+        model.dismissHint()
+        XCTAssertNil(model.visibleHint, "cleared by leaving the page")
+        model.toggleUnit(.day)
+        model.setUseAgeWording(true)
+        XCTAssertNil(model.visibleHint, "cleared by the 歲 switch too")
+    }
+
+    func testToggleAddsAndRemovesAnyUnit() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.toggleUnit(.year)
+        model.toggleUnit(.week)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week, .day])
+        model.toggleUnit(.day)
+        XCTAssertEqual(model.profile.displayUnits, [.year, .week])
+        XCTAssertEqual(spy.updated.count, 3)
+    }
+
+    func testOnlyTheLastCheckedUnitIsLast() throws {
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: Spy())
+        XCTAssertTrue(model.isLastCheckedUnit(.day))
+        XCTAssertFalse(model.isLastCheckedUnit(.year), "unchecked unit")
+        model.toggleUnit(.year)
+        XCTAssertFalse(model.isLastCheckedUnit(.day))
+        XCTAssertFalse(model.isLastCheckedUnit(.year))
+    }
+
+    /// Unlike the old 內容 tab, the edit page's units work with the day count off.
+    func testUnitsAndAgeWordingWorkWhileTheDayCountIsOff() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(showDayCount: false), now: try fixedNow(), spy: spy)
+        model.toggleUnit(.week)
+        model.setUseAgeWording(true)
+        XCTAssertEqual(model.profile.displayUnits, [.week, .day])
+        XCTAssertTrue(model.profile.useAgeWording)
+        XCTAssertEqual(spy.updated.count, 2)
+    }
+
+    /// 721.4: switch on without the year checked; the overlay is unchanged
+    /// until the year is checked, then reads 歲 (奶茶, 2023-08-05 → 2026-10-12).
+    func testAgeWordingTurnsOnWithoutYearAndAppliesOnceYearIsChecked() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(name: "奶茶", startDate: DateFixture.components(2023, 8, 5)),
+                              now: try XCTUnwrap(DateFixture.date(2026, 10, 12, hour: 10)), spy: spy)
+        let before = model.overlayPreviewText
+        model.setUseAgeWording(true)
+        XCTAssertTrue(model.profile.useAgeWording, "721.4")
+        XCTAssertEqual(spy.updated.last?.useAgeWording, true)
+        XCTAssertEqual(model.overlayPreviewText, before, "overlay unchanged without 年")
+        model.toggleUnit(.year)
+        XCTAssertEqual(model.overlayPreviewText, "奶茶 3 歲 68 天")
+        model.toggleUnit(.year)
+        XCTAssertTrue(model.profile.useAgeWording, "139.3 kept when the year is unchecked")
+        model.setUseAgeWording(false)
+        model.toggleUnit(.year)
+        XCTAssertEqual(model.overlayPreviewText, "奶茶 3 年 68 天", "139.4")
+    }
+
+    func testSettingAgeWordingToTheSameValueIsNotSaved() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setUseAgeWording(false)
+        XCTAssertTrue(spy.updated.isEmpty)
     }
 
     // MARK: - 137: 時間軸預覽
