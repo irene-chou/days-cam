@@ -25,11 +25,33 @@ final class OverlayPanelModel: ObservableObject {
         }
     }
 
+    /// The page the panel shows (#718): the layer list, or one layer's settings
+    /// pushed from it. Hosts read it for their top row (title, back key).
+    enum Route: Equatable, Hashable {
+        /// The list of the two layers, 疊字 and 底片日期.
+        case root
+        /// 疊字 settings: the 樣式｜內容 tabs.
+        case overlay
+        /// 底片日期 settings: the corner picker.
+        case filmDate
+
+        /// The top row's title.
+        var title: String {
+            switch self {
+            case .root: return "文字樣式"
+            case .overlay: return "疊字"
+            case .filmDate: return "底片日期"
+            }
+        }
+    }
+
     /// Whether the panel is expanded (PRD 0.2 FR-8.1).
     @Published private(set) var isOpen = false
     /// Which tab is selected. Starts at `.style`; once changed, keeps its
     /// value across `close()`/`open()` for the rest of this launch (A-4).
     @Published var selectedTab: Tab = .style
+    /// Which page is up. `open(at:)` sets it; like `selectedTab` it is not saved.
+    @Published var route: Route = .root
 
     /// Bumps each time the panel goes from closed to open, so the viewfinder's
     /// overlay text flashes its dashed frame once as a drag hint (#599).
@@ -43,10 +65,17 @@ final class OverlayPanelModel: ObservableObject {
 
     init() {}
 
-    /// Expands the panel (PRD 0.2 FR-8.1).
-    func open() {
+    /// Expands the panel (PRD 0.2 FR-8.1) on `route`: the layer list unless
+    /// the caller means one layer (a tap on the text opens 疊字, #718).
+    func open(at route: Route = .root) {
         if !isOpen { dragHintSerial += 1 }
+        self.route = route
         isOpen = true
+    }
+
+    /// The back key of a pushed page: to the layer list.
+    func goBack() {
+        route = .root
     }
 
     /// Collapses the panel — the grabber at its top edge (tap or pull down,

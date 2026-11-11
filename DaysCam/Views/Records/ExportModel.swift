@@ -101,7 +101,7 @@ final class ExportModel: ObservableObject, OverlayPanelHosting {
     /// The overlay text of the photo's own moment; `nil` without a date.
     var overlayText: String? {
         guard let profile, let date = photo.creationDate else { return nil }
-        return renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        return renderer.overlayText(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
     }
 
     /// The film date of the photo's own day, `nil` while the record has it off.

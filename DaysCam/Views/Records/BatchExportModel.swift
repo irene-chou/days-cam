@@ -62,7 +62,14 @@ final class BatchExportModel: ObservableObject, Identifiable {
     @Published private(set) var permissionDenied = false
     /// 隱藏文字 (#679): the preview and the export leave out the day count,
     /// date and name. Lives only as long as the sheet; never written to the record.
-    @Published private(set) var hidesText = false
+    @Published private(set) var hidesTextChoice = false
+    /// Whether the text is left out now: the sheet's own 隱藏文字, or a record
+    /// whose 疊字 layer is off (#718), which reads as already hidden and cannot
+    /// be switched.
+    var hidesText: Bool { hidesTextChoice || profile?.showOverlay == false }
+    /// Whether the record itself hides the text (#718): 隱藏文字 is then on
+    /// and not tappable.
+    var recordHidesText: Bool { profile?.showOverlay == false }
 
     /// Called once when the sheet ends.
     var onFinish: (Outcome) -> Void = { _ in }
@@ -172,13 +179,13 @@ final class BatchExportModel: ObservableObject, Identifiable {
     /// while 隱藏文字 is on.
     func overlayText(for photo: RecordPhoto) -> String? {
         guard !hidesText, let profile, let date = photo.creationDate else { return nil }
-        return renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        return renderer.overlayText(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
     }
 
     /// 隱藏文字／顯示文字: only on the preview, before anything is exported.
     func toggleHidesText() {
-        guard phase == .preview else { return }
-        hidesText.toggle()
+        guard phase == .preview, !recordHidesText else { return }
+        hidesTextChoice.toggle()
     }
 
     /// The carousel image of `photo`: screen-sized, marked the way the viewer

@@ -39,6 +39,18 @@ struct TemplateRenderer {
 
     init() {}
 
+    /// The text layer as it is drawn or baked: `""` while the record has
+    /// `showOverlay` off (#718), `render` otherwise. Every preview and bake of
+    /// a photo goes through this; the panel's own previews use `render`, which
+    /// keeps showing what the switches would print.
+    func overlayText(profile: CameraProfile,
+                     capturedAt: Date,
+                     calendar: Calendar = .autoupdatingCurrent,
+                     moment: RenderMoment = .today) -> String {
+        guard profile.showOverlay else { return "" }
+        return render(profile: profile, capturedAt: capturedAt, calendar: calendar, moment: moment)
+    }
+
     /// Renders the overlay text for `profile` as of `capturedAt`.
     ///
     /// With the elapsed amount shown, the order is date, then name, then

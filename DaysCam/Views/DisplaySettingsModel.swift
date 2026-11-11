@@ -159,6 +159,14 @@ extension DisplaySettingsModel {
         mutate { $0.showName = newValue }
     }
 
+    /// Sets `showOverlay` (#718): the whole text layer. The switches under it,
+    /// the style and the position are kept as they are.
+    func setShowOverlay(_ newValue: Bool) {
+        dismissHint()
+        guard newValue != profile.showOverlay else { return }
+        mutate { $0.showOverlay = newValue }
+    }
+
     /// Sets `showFilmDate` (#521). Independent of 天數／日期 — never refused,
     /// and not counted in the "at least one of 天數／日期" rule.
     func setShowFilmDate(_ newValue: Bool) {

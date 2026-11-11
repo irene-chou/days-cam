@@ -68,10 +68,14 @@ final class ExportUITests: XCTestCase {
     /// 11: the page's parts are where D-7 screen 4 has them, on 樣式 and 內容.
     func testLayoutMatchesTheDesign() {
         launch(portrait: true)
-        let title = element("exportTitle")
+        // The camera's sheet (#718): 文字樣式 and the checkmark are its; the
+        // top bar keeps xmark and the record's name.
+        let title = element("stylePanelTitle")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertTrue(title.label.contains("文字樣式"), title.label)
-        XCTAssertTrue(title.label.contains("套用到所有照片"), title.label)
+        XCTAssertEqual(title.label, "文字樣式")
+        let subtitle = element("exportSubtitle")
+        XCTAssertTrue(subtitle.label.contains("套用到所有照片"), subtitle.label)
+        XCTAssertTrue(element("stylePanel").exists)
         let preview = element("exportPreview")
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         XCTAssertTrue(draggableText.waitForExistence(timeout: 5), "the overlay is drawn and draggable")
@@ -79,14 +83,19 @@ final class ExportUITests: XCTestCase {
         XCTAssertEqual(preview.frame.width / app.frame.width, 0.52, accuracy: 0.02, "about 52% of the width")
         XCTAssertEqual(preview.frame.height / preview.frame.width, 4.0 / 3.0, accuracy: 0.03, "the photo's 3:4")
         XCTAssertTrue(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists)
-        XCTAssertTrue(element("exportConfirmButton").isEnabled)
+        XCTAssertTrue(element("stylePanelDoneButton").isEnabled)
         XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the panel stays open here")
+
+        // The layer list is first (#718); 疊字 pushes the tabs.
+        XCTAssertTrue(app.buttons["layerRowOverlay"].exists && app.buttons["layerRowFilmDate"].exists)
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
+        XCTAssertTrue(element("stylePanelTitle").label.contains("疊字"), element("stylePanelTitle").label)
 
         // 樣式, after the open-time dashed frame (#599) has faded.
         XCTAssertTrue(app.buttons["樣式"].isSelected)
         Thread.sleep(forTimeInterval: 2)
         assertOnScreen(preview, "preview in view")
-        assertOnScreen(element("exportConfirmButton"), "checkmark in view")
+        assertOnScreen(element("stylePanelDoneButton"), "checkmark in view")
         assertOnScreen(app.buttons["內容"], "segmented row in view")
         shot("style")
 
@@ -94,7 +103,7 @@ final class ExportUITests: XCTestCase {
         XCTAssertTrue(app.buttons["內容"].isSelected)
         Thread.sleep(forTimeInterval: 1)
         assertOnScreen(preview, "preview in view")
-        assertOnScreen(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"], "note in view")
+        XCTAssertFalse(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists, "the note is the layer list's foot only")
         shot("content")
     }
 
@@ -102,7 +111,7 @@ final class ExportUITests: XCTestCase {
     /// (no toast, no alert).
     func testCheckmarkReturnsToViewerWithoutExporting() {
         launch()
-        let confirm = element("exportConfirmButton")
+        let confirm = element("stylePanelDoneButton")
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5), "back on the viewer")
@@ -229,9 +238,9 @@ final class ExportUITests: XCTestCase {
         XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
         XCTAssertFalse(element("styleButton").exists)
         openStylePageFromTheExportSheet()
-        let title = element("exportTitle")
+        let title = element("stylePanelTitle")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertTrue(title.label.contains("文字樣式"), title.label)
+        XCTAssertEqual(title.label, "文字樣式")
         element("exportCancelButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5), "back on the sheet")
     }
@@ -242,6 +251,7 @@ final class ExportUITests: XCTestCase {
     /// and the panel as they were (the font list left the panel in #678).
     func testSwipeDownOnTheStylePageKeepsThePanel() {
         launch()
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
         app.buttons["樣式"].tap()
         XCTAssertTrue(app.buttons["stylePreset_classic"].waitForExistence(timeout: 3))
         let page = app.scrollViews.containing(.button, identifier: "boxStateButton").firstMatch
@@ -254,15 +264,16 @@ final class ExportUITests: XCTestCase {
     }
 
     /// 116.8: scrolled all the way down, the style page's last control (the
-    /// size slider) ends above the note under the panel and can be used.
+    /// size slider) ends above the sheet's bottom edge and can be used (a
+    /// layer's page has no note under it, #718).
     func testStylePageLastRowScrollsAboveTheNote() {
         launch()
+        XCTAssertTrue(app.openLayer("layerRowOverlay", expecting: app.buttons["樣式"]))
         app.buttons["樣式"].tap()
         let last = app.sliders["字級"]
         XCTAssertTrue(last.waitForExistence(timeout: 3), "116.8 the page has the size slider")
-        let note = app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"]
-        XCTAssertTrue(note.exists)
-        let bottom = note.frame.minY
+        XCTAssertFalse(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists)
+        let bottom = element("stylePanel").frame.maxY
         let top = app.buttons["樣式"].frame.maxY + 70
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
         for _ in 0..<4 {
@@ -272,7 +283,7 @@ final class ExportUITests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 0.8)
         XCTAssertLessThanOrEqual(last.frame.maxY, bottom + 1,
-                                 "116.8 the last row ends above the note — last \(last.frame) note \(bottom)")
+                                 "116.8 the last row ends above the sheet's edge — last \(last.frame) edge \(bottom)")
         last.doubleTap()
         XCTAssertTrue(element("exportView").exists, "116.8 the last row can be operated without leaving the page")
         XCTAssertTrue(app.buttons["樣式"].exists)

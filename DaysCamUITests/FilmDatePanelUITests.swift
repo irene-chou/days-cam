@@ -1,8 +1,9 @@
 import XCTest
 
-/// #521 (TASK-152): the 底片日期 switch and its 位置 corner picker on the
-/// 內容 tab. With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
-/// B′ screenshots are also written there for the PR.
+/// #521 (TASK-152), #718: the 底片日期 layer — its switch on the layer list and
+/// its 位置 corner picker on its own page. With `DAYSCAM_UI_SHOT_DIR` in the
+/// test runner's environment the B′ screenshots are also written there for
+/// the PR.
 final class FilmDatePanelUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -10,12 +11,8 @@ final class FilmDatePanelUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
-        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
-        let content = app.buttons["內容"]
-        XCTAssertTrue(content.waitForExistence(timeout: 10))
-        content.tap()
-        // The 戳記 card starts below the fold on iPhone SE (#558).
-        XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.launchOnExportPage(entersOverlayDetail: false), "the export page is up")
+        XCTAssertTrue(app.buttons["layerRowFilmDate"].waitForExistence(timeout: 10))
     }
 
     private func shot(_ name: String) {
@@ -31,102 +28,66 @@ final class FilmDatePanelUITests: XCTestCase {
         }
     }
 
-    private var filmSwitch: XCUIElement { app.switches["底片日期"] }
+    private var filmSwitch: XCUIElement { app.switches["layerToggleFilmDate"] }
     private func cornerButton(_ raw: String) -> XCUIElement { app.buttons["filmDateCorner_\(raw)"] }
+    private var corners: [String] { ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] }
 
-    /// Scrolls the panel so the 底片日期 row sits just under the tab bar, then
-    /// checks the switch and, when on, every corner cell are on screen: on
-    /// iPhone SE they start below the panel's bottom edge, and a fixed drag
-    /// over- or under-shoots, so the B′ shots missed the picker.
-    private func showFilmDateBlock(file: StaticString = #filePath, line: UInt = #line) {
-        let tabBottom = app.buttons["內容"].frame.maxY
-        var trace: [String] = []
-        for _ in 0..<3 {
-            // Not in the tree yet means still below the fold.
-            let gap = filmSwitch.exists ? filmSwitch.frame.minY - tabBottom : 200
-            trace.append("\(Int(gap))")
-            // Short drags snap unpredictably, so settle for anywhere close.
-            if (4...60).contains(gap) { break }
-            let offset = gap - 24
-            let startY = (tabBottom + app.frame.height) / 2
-            let start = app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: startY))
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -offset)),
-                        withVelocity: .slow, thenHoldForDuration: 0.3)
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        XCTAssertGreaterThanOrEqual(filmSwitch.frame.minY, tabBottom, "底片日期 switch under the tab bar, tab \(Int(tabBottom)) trace \(trace)", file: file, line: line)
-        XCTAssertLessThanOrEqual(filmSwitch.frame.maxY, app.frame.height, file: file, line: line)
-        guard filmSwitch.value as? String == "1" else { return }
-        for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
-            let cell = cornerButton(raw)
-            XCTAssertTrue(cell.exists, "\(raw) cell on screen", file: file, line: line)
-            XCTAssertGreaterThanOrEqual(cell.frame.minY, tabBottom, "\(raw) cell under the tab bar", file: file, line: line)
-            XCTAssertLessThanOrEqual(cell.frame.maxY, app.frame.height, "\(raw) cell above the screen edge", file: file, line: line)
-        }
+    private func openFilmDatePage() {
+        XCTAssertTrue(app.openLayer("layerRowFilmDate", expecting: app.buttons["filmDateCorner_bottomLeading"]),
+                      "底片日期 pushes its corner picker")
     }
 
-    /// Drags the panel back down until 文字內容 is on screen again.
-    private func scrollToTop() {
-        let heading = app.staticTexts["文字內容"]
-        for _ in 0..<8 where !(heading.exists && heading.frame.minY >= app.buttons["內容"].frame.maxY) {
-            let start = app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.buttons["內容"].frame.maxY + 30))
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)),
-                        withVelocity: .slow, thenHoldForDuration: 0.3)
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-    }
-
-    func testSwitchRowLayoutCornersAndCollapse() {
-        // 152.1 in the 戳記 card below the text switches (#558 moved it;
-        // the order is FormatTabReorderUITests'), right edge under 名稱's,
-        // off by default.
-        let nameMaxX = app.switches["名稱"].frame.maxX
-        showFilmDateBlock()
-        XCTAssertEqual(filmSwitch.frame.maxX, nameMaxX, accuracy: 1)
-        XCTAssertEqual(filmSwitch.value as? String, "0")
-        XCTAssertFalse(cornerButton("bottomLeading").exists)
-        shot("PR_152.9_iPhoneSE_off")
-
-        // 152.2 on: 位置 appears, bottom-left selected.
+    /// 152.1／152.2／152.3: off by default on the list; the corner picker is
+    /// on its own page, 左下 selected, every cell 44pt and on screen.
+    func testSwitchOnTheListAndCornersOnThePage() {
+        XCTAssertEqual(filmSwitch.value as? String, "0", "off by default")
         filmSwitch.tap()
-        // The row opens below the panel's edge on a taller screen.
-        showFilmDateBlock()
-        XCTAssertTrue(cornerButton("bottomLeading").exists)
+        XCTAssertEqual(filmSwitch.value as? String, "1")
+
+        openFilmDatePage()
         XCTAssertTrue(cornerButton("bottomLeading").isSelected)
         XCTAssertFalse(cornerButton("topTrailing").isSelected)
-        for raw in ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"] {
+        let bar = app.buttons["panelBackButton"].frame.maxY
+        for raw in corners {
             let frame = cornerButton(raw).frame
             XCTAssertGreaterThanOrEqual(frame.width, 44)
             XCTAssertGreaterThanOrEqual(frame.height, 44)
             XCTAssertLessThanOrEqual(frame.maxX, app.frame.width, "no horizontal scroll needed")
+            XCTAssertGreaterThanOrEqual(frame.minY, bar, "\(raw) under the top row")
+            XCTAssertLessThanOrEqual(frame.maxY, app.frame.height, "\(raw) above the screen edge")
         }
-        showFilmDateBlock()
-        shot("PR_152.9_iPhoneSE_on_bottomLeading")
+        XCTAssertTrue(app.staticTexts["底片日期的字樣固定，不受「樣式」分頁和文字位置影響。"].exists)
+        XCTAssertFalse(app.switches["底片日期"].exists, "the switch is only on the list")
+        shot("PR718_filmdate_on_bottomLeading")
 
-        // 152.3 picking a corner, and it is kept across off/on.
         cornerButton("topTrailing").tap()
         XCTAssertTrue(cornerButton("topTrailing").isSelected)
         XCTAssertEqual(cornerButton("topTrailing").label, "底片日期位置，右上")
-        showFilmDateBlock()
-        shot("PR_152.9_iPhoneSE_on_topTrailing")
-        filmSwitch.tap()
-        XCTAssertFalse(cornerButton("topTrailing").exists, "collapsed when off")
-        filmSwitch.tap()
-        // The row opens below the panel's edge on a taller screen.
-        showFilmDateBlock()
-        XCTAssertTrue(cornerButton("topTrailing").exists)
-        XCTAssertTrue(cornerButton("topTrailing").isSelected)
+        XCTAssertTrue(app.backToLayerList())
+        let summary = app.buttons["layerRowFilmDate"].label
+        XCTAssertTrue(summary.contains("右上角"), summary)
+    }
 
-        // 152.6 day count off collapses the units, not the film date rows.
-        scrollToTop()
-        XCTAssertTrue(app.switches["日期"].exists)
-        app.switches["日期"].tap()
-        app.switches["天數"].coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
-        XCTAssertFalse(app.otherElements["dayCountUnits"].exists)
-        showFilmDateBlock()
-        XCTAssertTrue(cornerButton("topTrailing").exists, "corner row still there")
+    /// 152.3／718-6: the page is greyed and untouchable while the layer is off,
+    /// the corner is kept, and 顯示 turns the layer on.
+    func testOffPageIsGreyAndShowKeyRestoresIt() {
+        filmSwitch.tap()
+        openFilmDatePage()
+        cornerButton("topLeading").tap()
+        XCTAssertTrue(app.backToLayerList())
+        filmSwitch.tap()
+        XCTAssertEqual(filmSwitch.value as? String, "0")
+
+        openFilmDatePage()
+        XCTAssertTrue(app.descendants(matching: .any)["layerHiddenNotice"].exists)
+        XCTAssertFalse(cornerButton("topLeading").isEnabled, "greyed, no taps")
+        XCTAssertTrue(cornerButton("topLeading").isSelected, "the corner is kept")
+        shot("PR718_filmdate_hidden")
+        app.buttons["layerShowButton"].tap()
+        XCTAssertTrue(cornerButton("topLeading").isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["layerHiddenNotice"].exists)
+        XCTAssertTrue(app.backToLayerList())
+        XCTAssertEqual(filmSwitch.value as? String, "1")
     }
 
     func testLargestDynamicTypeKeepsLabelsApart() {
@@ -136,20 +97,16 @@ final class FilmDatePanelUITests: XCTestCase {
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
         XCTAssertTrue(app.waitForExportPage(), "the export page is up")
-        app.buttons["內容"].tap()
-        XCTAssertTrue(filmSwitch.waitForExistence(timeout: 5))
-        showFilmDateBlock()
-        filmSwitch.tap()
-        // The row opens below the panel's edge on a taller screen.
-        showFilmDateBlock()
-        XCTAssertTrue(cornerButton("bottomLeading").exists)
-        showFilmDateBlock()
+        XCTAssertTrue(app.buttons["layerRowFilmDate"].waitForExistence(timeout: 5))
+        if filmSwitch.value as? String != "1" { filmSwitch.tap() }
+        shot("PR718_152.8_largestText_list")
+        openFilmDatePage()
         // #558: the corners sit in one row with their names under them;
         // at this size they must still not run into each other.
-        let frames = ["topLeading", "topTrailing", "bottomLeading", "bottomTrailing"].map { cornerButton($0).frame }
+        let frames = corners.map { cornerButton($0).frame }
         for (left, right) in zip(frames, frames.dropFirst()) {
             XCTAssertLessThanOrEqual(left.maxX, right.minX + 0.5, "corners apart")
         }
-        shot("PR_152.8_iPhoneSE_largestText")
+        shot("PR718_152.8_largestText")
     }
 }

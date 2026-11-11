@@ -143,6 +143,7 @@ struct DaysCamApp: App {
         let profileStore = ProfileStore(directory: uiTestProfileDirectory)
         profileStore.load()
         applyUITestSecondRecord(to: profileStore)
+        applyUITestOverlay(to: profileStore)
         applyUITestFilmDate(to: profileStore)
         applyUITestCustomStyle(to: profileStore)
         return profileStore
@@ -255,6 +256,26 @@ struct DaysCamApp: App {
                                                             startDate: first.startDate))
             if added == nil { break }
         }
+        #endif
+    }
+
+    /// A fresh install's record starts with 疊字 off (#718), but most UI tests
+    /// look at the text, so with `-UITestFreshProfiles` the first launch on a
+    /// profile directory turns it on for what is there, unless the test passes
+    /// `-UITestOverlayOff` to see the real default. A marker file keeps a
+    /// relaunch from undoing what the test set afterwards. Debug builds only.
+    private static func applyUITestOverlay(to profileStore: ProfileStore) {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let directory = uiTestProfileDirectory, !arguments.contains("-UITestOverlayOff") else { return }
+        let marker = directory.appendingPathComponent(".uitest-overlay-applied")
+        guard !FileManager.default.fileExists(atPath: marker.path) else { return }
+        for var profile in profileStore.profiles where !profile.showOverlay {
+            profile.showOverlay = true
+            _ = try? profileStore.updateAndWait(profile)
+        }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: marker.path, contents: nil)
         #endif
     }
 

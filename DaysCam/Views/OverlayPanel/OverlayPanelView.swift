@@ -52,6 +52,11 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
     /// open and has nothing to collapse to (#620).
     var showsCollapseButton = true
 
+    /// Whether the panel draws its own rounded, shadowed surface. The camera's
+    /// sheet already draws one under its title row, so the panel sits on it
+    /// flat — one surface, as in the design (#718 option A).
+    var drawsSurface = true
+
     /// What every tab keeps clear under its last row.
     private var bottomContentInset: CGFloat {
         OverlayPanelLayout.bottomContentInset(bottomSafeAreaInset: bottomSafeAreaInset)
@@ -62,48 +67,14 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            segmentedControl
-                // Clear of the rounded top edge (PR #455).
-                .padding(.top, CameraScreenLayoutMetrics.panelTopPadding)
-            // The tab body scrolls within whatever space is left, rather
-            // than growing the panel or getting clipped, on a tab whose
-            // content is taller than the panel (#75, T.8) — e.g. the format
-            // tab on a narrow phone.
-            //
-            // No padding here (#105/#111 coordination, Lead 2026-09-27):
-            // D-2's `.tabbody{padding:12px 14px}` looked like this
-            // container's job, but each tab already applies its own
-            // D-3/D-4-specific inset (e.g. the style tab's `.tabbody{
-            // padding:4px 10px 6px}`, PR #111) — adding a second, generic
-            // one here would double it up on every tab.
-            //
-            // The tab body is `contentHeight` of usable area plus the
-            // home-indicator band (TASK-92): the scroll view spans both, so
-            // content shows through the band, under `safeAreaFade`.
-            Group {
-                if model.panelModel.selectedTab == .style, let styleTabModel = model.styleTabModel {
-                    // The style tab owns its scrolling (fixed sub-tab row above
-                    // its own scroll view, TASK-66), so it is not wrapped here;
-                    // it keeps the band clear under its last
-                    // row itself.
-                    StyleTabView(model: styleTabModel, availableHeight: contentHeight,
-                                 bottomContentInset: bottomContentInset)
-                } else {
-                    ScrollView {
-                        tabContent
-                            // Room for the last row to scroll up above the
-                            // band (116.8).
-                            .padding(.bottom, bottomContentInset)
-                    }
-                    // Fades at the edges with more content, and one flash of the
-                    // indicator per tab (TASK-58b).
-                    .scrollEdgeHint(flashTrigger: model.panelModel.selectedTab)
-                    // Every first-level tab starts at the top (TASK-66).
-                    .id(model.panelModel.selectedTab)
-                }
+            switch model.panelModel.route {
+            case .root:
+                page { layerList }
+            case .filmDate:
+                page { filmDatePage }
+            case .overlay:
+                overlayPage
             }
-            .frame(height: contentHeight + bottomSafeAreaInset)
-            .overlay(alignment: .bottom) { safeAreaFade }
         }
         // Pinned top-aligned so the segmented control's y position stays
         // identical across every tab (#75, T.7).
@@ -111,7 +82,7 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
         // Same-color surface with an upward shadow along its top edge
         // (restored on PR #451 at the user's request); it runs off the
         // bottom of the screen.
-        .background(panelBackground)
+        .background { if drawsSurface { panelBackground } }
         // The whole panel answers the escape gesture; the chevron is the
         // visible control.
         .accessibilityAction(.escape) { onCollapse() }
@@ -122,6 +93,117 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
                 PositionSaveErrorHost(model: positionTabModel)
             }
         }
+        // A failed switch, 顯示 key or corner write on any page (#718): one
+        // alert here, so the layer list and both pages show it.
+        .background {
+            if let formatTabModel = model.formatTabModel {
+                DisplaySaveErrorHost(model: formatTabModel.displaySettings)
+            }
+        }
+    }
+
+    // MARK: - Pages (#718)
+
+    /// Everything under the host's top row: the segmented row's room and the
+    /// content area, so a page without tabs fills the same space.
+    private var pageHeight: CGFloat {
+        CameraScreenLayoutMetrics.panelTopPadding + tabBarHeight + contentHeight + bottomSafeAreaInset
+    }
+
+    /// A page without tabs: scrolls inside the panel's usable area, with the
+    /// home-indicator band swallowing touches like the tab bodies.
+    private func page<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            content()
+                .padding(.bottom, bottomContentInset)
+        }
+        .scrollEdgeHint(flashTrigger: model.panelModel.route)
+        .frame(height: pageHeight)
+        .overlay(alignment: .bottom) { safeAreaFade }
+    }
+
+    /// The layer list: 疊字 and 底片日期, each with its switch.
+    @ViewBuilder
+    private var layerList: some View {
+        if let formatTabModel = model.formatTabModel, let styleTabModel = model.styleTabModel,
+           let positionTabModel = model.positionTabModel {
+            LayerListView(formatModel: formatTabModel, styleModel: styleTabModel,
+                          positionModel: positionTabModel) { model.panelModel.route = $0 }
+        } else {
+            placeholderTab(title: "文字樣式", subtitle: "尚未選取設定檔")
+        }
+    }
+
+    /// 底片日期's page; greyed with the 顯示 key while the layer is off.
+    @ViewBuilder
+    private var filmDatePage: some View {
+        if let formatTabModel = model.formatTabModel {
+            LayerPage(model: formatTabModel, isOn: { $0.showFilmDate },
+                      show: { formatTabModel.displaySettings.setShowFilmDate(true) }) { _ in
+                FilmDateDetailView(model: formatTabModel)
+            }
+        } else {
+            placeholderTab(title: "底片日期", subtitle: "尚未選取設定檔")
+        }
+    }
+
+    /// 疊字's page: the 樣式｜內容 tabs as before; greyed with the 顯示 key on
+    /// top while the layer is off, the tabs keeping what is left of the height.
+    @ViewBuilder
+    private var overlayPage: some View {
+        if let formatTabModel = model.formatTabModel {
+            LayerObserver(model: formatTabModel) { profile in
+                let hidden = !profile.showOverlay
+                // The notice and its gap take what the tab body gives up.
+                let noticeSpace = hidden ? LayerHiddenNotice.height + 6 : 0
+                VStack(spacing: 0) {
+                    if hidden {
+                        LayerHiddenNotice { formatTabModel.displaySettings.setShowOverlay(true) }
+                            .padding(.top, CameraScreenLayoutMetrics.panelTopPadding)
+                            .padding(.bottom, 6)
+                    }
+                    VStack(spacing: 0) {
+                        segmentedControl
+                            // Clear of the rounded top edge (PR #455).
+                            .padding(.top, hidden ? 0 : CameraScreenLayoutMetrics.panelTopPadding)
+                        tabBody(contentHeight: contentHeight - noticeSpace)
+                    }
+                    .opacity(hidden ? 0.4 : 1)
+                    .disabled(hidden)
+                }
+            }
+        } else {
+            placeholderTab(title: "疊字", subtitle: "尚未選取設定檔")
+        }
+    }
+
+    /// The selected tab's body: `contentHeight` of usable area plus the
+    /// home-indicator band (TASK-92), the scroll view spanning both so content
+    /// shows through the band, under `safeAreaFade`.
+    private func tabBody(contentHeight: CGFloat) -> some View {
+        Group {
+            if model.panelModel.selectedTab == .style, let styleTabModel = model.styleTabModel {
+                // The style tab owns its scrolling (fixed sub-tab row above
+                // its own scroll view, TASK-66), so it is not wrapped here;
+                // it keeps the band clear under its last row itself.
+                StyleTabView(model: styleTabModel, availableHeight: contentHeight,
+                             bottomContentInset: bottomContentInset)
+            } else {
+                ScrollView {
+                    tabContent(contentHeight: contentHeight)
+                        // Room for the last row to scroll up above the
+                        // band (116.8).
+                        .padding(.bottom, bottomContentInset)
+                }
+                // Fades at the edges with more content, and one flash of the
+                // indicator per tab (TASK-58b).
+                .scrollEdgeHint(flashTrigger: model.panelModel.selectedTab)
+                // Every first-level tab starts at the top (TASK-66).
+                .id(model.panelModel.selectedTab)
+            }
+        }
+        .frame(height: contentHeight + bottomSafeAreaInset)
+        .overlay(alignment: .bottom) { safeAreaFade }
     }
 
     // MARK: - Panel surface (FR-8.8, design option 2)
@@ -321,7 +403,7 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
     /// launched) falls back to the same plain placeholder this file used
     /// before TASK-23/24 landed.
     @ViewBuilder
-    private var tabContent: some View {
+    private func tabContent(contentHeight: CGFloat) -> some View {
         switch model.panelModel.selectedTab {
         case .style:
             if let styleTabModel = model.styleTabModel {
@@ -350,6 +432,63 @@ struct OverlayPanelView<Host: OverlayPanelHosting>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
+    }
+}
+
+/// Re-reads a layer's profile when the content tab's model changes, which the
+/// host does not forward (#718).
+private struct LayerObserver<Content: View>: View {
+    @ObservedObject var model: FormatTabModel
+    @ViewBuilder var content: (CameraProfile) -> Content
+
+    var body: some View {
+        content(model.displaySettings.profile)
+    }
+}
+
+/// A tab-less layer page (#718): `content` as it is while the layer is on;
+/// 40% opaque and untouchable under the 顯示 notice while it is off.
+private struct LayerPage<Content: View>: View {
+    @ObservedObject var model: FormatTabModel
+    var isOn: (CameraProfile) -> Bool
+    var show: () -> Void
+    @ViewBuilder var content: (CameraProfile) -> Content
+
+    var body: some View {
+        let profile = model.displaySettings.profile
+        let hidden = !isOn(profile)
+        VStack(spacing: 0) {
+            if hidden {
+                LayerHiddenNotice(onShow: show)
+                    .padding(.top, 12)
+            }
+            content(profile)
+                .opacity(hidden ? 0.4 : 1)
+                .disabled(hidden)
+        }
+    }
+}
+
+/// The top row's left key on a pushed page (#718): `chevron.left` alone,
+/// back to the layer list.
+struct PanelBackButton: View {
+    /// Room a centered title keeps clear on each side of a header that may
+    /// hold this key: its 44pt target and the row's 8pt padding.
+    static let reservedWidth: CGFloat = 52
+
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(CameraTheme.active)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("返回文字樣式")
+        .accessibilityIdentifier("panelBackButton")
     }
 }
 
@@ -393,6 +532,27 @@ struct PositionSaveErrorHost: View {
 
     /// True while there is an error to show; dismissing clears it.
     static func isPresented(for model: PositionTabModel) -> Binding<Bool> {
+        Binding(get: { model.lastError != nil },
+                set: { if !$0 { model.lastError = nil } })
+    }
+
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .alert("無法儲存", isPresented: Self.isPresented(for: model)) {
+                Button("好") { model.lastError = nil }
+            } message: {
+                Text("請再試一次。")
+            }
+    }
+}
+
+/// Presents `DisplaySettingsModel.lastError` for every page of the panel (#718).
+struct DisplaySaveErrorHost: View {
+    @ObservedObject var model: DisplaySettingsModel
+
+    /// True while there is an error to show; dismissing clears it.
+    static func isPresented(for model: DisplaySettingsModel) -> Binding<Bool> {
         Binding(get: { model.lastError != nil },
                 set: { if !$0 { model.lastError = nil } })
     }

@@ -83,7 +83,7 @@ final class PhotoExportPipeline {
                 resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont,
                 progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> Result<Void, PhotoExportError> {
         guard let date = photo.creationDate else { return .failure(.photoMissing) }
-        let text = hidesText ? "" : renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        let text = hidesText ? "" : renderer.overlayText(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
         let style = profile.style
         let placement = profile.position
         let font = resolveFont(style)

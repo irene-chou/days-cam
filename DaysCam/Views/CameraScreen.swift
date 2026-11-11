@@ -455,80 +455,20 @@ struct CameraScreen: View {
 
     // MARK: - Style sheet (FR-20.10)
 
-    /// The 文字樣式 sheet from the bottom, about 4/10 of the screen: the title
-    /// and the checkmark, the shared 樣式｜內容 panel, and where changes are
-    /// saved. The viewfinder yields the room above it.
+    /// The 文字樣式 sheet from the bottom, about 4/10 of the screen (the
+    /// shared `StylePanelSheet`, #718). The viewfinder yields the room above it.
     @ViewBuilder
     private func stylePanel(metrics: CameraScreenLayoutMetrics) -> some View {
         if model.panelModel.isOpen {
-            let chrome = CameraScreenLayoutMetrics.panelTopPadding + metrics.panelTabBarHeight
-            VStack(spacing: 0) {
-                stylePanelHeader
-                    .background(CameraTheme.background)
-                    .zIndex(1)
-                OverlayPanelView(model: model,
-                                 contentHeight: metrics.styleSheetContentHeight,
-                                 tabBarHeight: metrics.panelTabBarHeight,
-                                 bottomSafeAreaInset: 0,
-                                 showsCollapseButton: false)
-                    .frame(height: metrics.styleSheetContentHeight + chrome)
-                Text(model.stylePanelNote)
-                    .font(.system(size: 11.5))
-                    .foregroundColor(CameraTheme.inkTertiary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: CameraScreenLayoutMetrics.styleSheetNoteHeight)
-                    .accessibilityIdentifier("stylePanelNote")
-                Spacer(minLength: 0)
-            }
-            .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
-            .background(stylePanelBackground)
-            .offset(x: 0, y: metrics.styleSheetTop)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("stylePanel")
+            StylePanelSheet(model: model,
+                            contentHeight: metrics.styleSheetContentHeight,
+                            tabBarHeight: metrics.panelTabBarHeight,
+                            note: model.stylePanelNote,
+                            onDone: model.closeStylePanel)
+                .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
+                .offset(x: 0, y: metrics.styleSheetTop)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-    }
-
-    /// The sheet's surface: the camera background, top corners rounded, a soft
-    /// shadow along the top edge.
-    private var stylePanelBackground: some View {
-        let radius = CameraScreenLayoutMetrics.panelTopCornerRadius
-        return UnevenRoundedRectangle(topLeadingRadius: radius, bottomLeadingRadius: 0,
-                                      bottomTrailingRadius: 0, topTrailingRadius: radius, style: .continuous)
-            .fill(CameraTheme.background)
-            .shadow(color: CameraTheme.popoverShadow, radius: CameraScreenLayoutMetrics.panelShadowRadius,
-                    x: 0, y: CameraScreenLayoutMetrics.panelShadowYOffset)
-    }
-
-    private var stylePanelHeader: some View {
-        ZStack {
-            Text("文字樣式")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(CameraTheme.ink)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("stylePanelTitle")
-            HStack {
-                Spacer()
-                Button {
-                    model.closeStylePanel()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(CameraTheme.active)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("完成")
-                .accessibilityIdentifier("stylePanelDoneButton")
-            }
-            .padding(.horizontal, 8)
-        }
-        .frame(height: CameraScreenLayoutMetrics.styleSheetHeaderHeight)
     }
 
     // MARK: - Zoom presets (issue #279)
@@ -632,11 +572,11 @@ struct CameraScreen: View {
         .accessibilityIdentifier("cameraLatestThumbnail")
     }
 
-    /// Right key (#712): opens the 文字樣式 sheet, like a tap on the text.
+    /// Right key (#712): opens the 文字樣式 sheet on the layer list (#718).
     /// `text.below.photo` in plain ink, at the 18pt that matches the 22pt
     /// keys' visual width; the first-run hint points at it.
     private func styleButton(isOnPhoto: Bool) -> some View {
-        Button(action: model.handleOverlayTextTap) {
+        Button(action: model.handleStyleKeyTap) {
             Image(systemName: "text.below.photo")
                 .font(.system(size: Self.styleGlyphSize, weight: .medium))
                 .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)

@@ -160,7 +160,7 @@ final class PhotoDetailModel: ObservableObject {
                             renderer: TemplateRenderer, font: ResolvedOverlayFont, hidesText: Bool = false,
                             bake: @escaping Bake) async -> UIImage {
         guard let date = photo.creationDate else { return source }
-        let text = hidesText ? "" : renderer.render(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
+        let text = hidesText ? "" : renderer.overlayText(profile: profile, capturedAt: date, calendar: calendar, moment: .photo)
         let filmDate = filmDateStamp(for: profile, creationDate: date, calendar: calendar)
         let style = profile.style
         let placement = profile.position
