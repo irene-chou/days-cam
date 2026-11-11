@@ -76,20 +76,18 @@ final class ComparisonPickerTests: XCTestCase {
     }
 
     func testYearBeatsHundredDays() {
-        // dayZero: 2027-08-05 is 365 days later; use a start where both coincide.
-        let start = DateComponents(year: 2026, month: 8, day: 5)
-        let target = calendar.date(from: DateComponents(year: 2027, month: 8, day: 5, hour: 12)) ?? Date()
-        let days = DayCountCalculator(calendar: calendar, now: { target })
+        // 2000-08-05 -> 2023-08-05 is 8400 days under dayZero: both a whole year and a multiple of 100.
+        let start = DateComponents(year: 2000, month: 8, day: 5)
+        let latest = date(2023, 8, 5)
+        let days = DayCountCalculator(calendar: calendar, now: { latest })
             .dayCount(from: start, rule: .dayZero)
-        XCTAssertEqual(days, 365)
-        // Pick a start where the year anniversary lands on a multiple of 100 (leap span: 366 days).
-        let leapStart = DateComponents(year: 2023, month: 8, day: 5)
-        let leapProfile = CameraProfile(name: "x", startDate: leapStart, countingRule: .dayZero)
-        let latest = date(2024, 8, 5)
-        XCTAssertEqual(ComparisonPicker.milestoneSubtitle(latest: latest, profile: leapProfile, calendar: calendar),
-                       "滿 1 年了")
-        let hundred = ComparisonPicker.milestoneSubtitle(latest: date(2026, 11, 13),
-                                                         profile: profile(rule: .dayZero), calendar: calendar)
-        XCTAssertEqual(hundred, "滿 100 天了")
+        XCTAssertEqual(days % 100, 0)
+        let years = CameraProfile(name: "x", startDate: start, countingRule: .dayZero)
+        let age = CameraProfile(name: "x", startDate: start, countingRule: .dayZero,
+                                displayUnits: [.year], useAgeWording: true)
+        XCTAssertEqual(ComparisonPicker.milestoneSubtitle(latest: latest, profile: years, calendar: calendar),
+                       "滿 23 年了")
+        XCTAssertEqual(ComparisonPicker.milestoneSubtitle(latest: latest, profile: age, calendar: calendar),
+                       "滿 23 歲了")
     }
 }
