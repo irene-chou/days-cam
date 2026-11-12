@@ -395,9 +395,15 @@ final class CameraScreenModel: ObservableObject {
         #endif
     }
 
-    /// Forwards only `isPinching` (issue #280), and starts the next pinch at
-    /// 1× after a camera switch, which resets the zoom.
+    /// Forwards only `isPinching` (issue #280) and the quick-zoom capsule
+    /// opening (the day HUD moves above it, #724), and starts the next pinch
+    /// at 1× after a camera switch, which resets the zoom.
     private func bindToZoomModel() {
+        zoomExpansion.$isExpanded
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         zoomModel.$isPinching
             .dropFirst()
             .removeDuplicates()

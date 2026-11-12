@@ -531,6 +531,32 @@ final class CameraScreenPictureFrameMetricsTests: XCTestCase {
         CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
     }
 
+    /// #724: the day HUD sits 12pt over the picture's bottom edge, or 12pt
+    /// above 「返回圖庫」 where 9:16 runs behind the bottom bar, or 12pt above
+    /// the quick-zoom control, open or closed — whichever is highest.
+    func test_724_hudClearsTheThumbnailAndTheZoomControl() {
+        let m = metrics(CGSize(width: 402, height: 874), bottom: 34, top: 62)
+        let thumbnailTop = m.leftFooterButtonCenter.y - CameraScreenLayoutMetrics.footerButtonSize / 2
+        XCTAssertEqual(m.dayHUDBottomInset(for: .threeByFour, zoomControlHeight: 0), 12)
+        XCTAssertEqual(m.dayHUDBottomInset(for: .oneByOne, zoomControlHeight: 0), 12)
+        let tall = m.closedPictureFrame(for: .nineBySixteen)
+        XCTAssertGreaterThan(tall.maxY, thumbnailTop, "9:16 runs behind the bottom bar")
+        XCTAssertEqual(tall.maxY - m.dayHUDBottomInset(for: .nineBySixteen, zoomControlHeight: 0), thumbnailTop - 12,
+                       accuracy: 0.5)
+
+        let closed = ZoomPresetBar.visibleHeight(presetCount: 3, isExpanded: false)
+        let open = ZoomPresetBar.visibleHeight(presetCount: 3, isExpanded: true)
+        XCTAssertEqual(ZoomPresetBar.visibleHeight(presetCount: 1, isExpanded: false), 0, "one lens: no control")
+        XCTAssertEqual(closed, 32)
+        XCTAssertEqual(open, 8 + 3 * 44 + 2 * 4)
+        for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
+            XCTAssertEqual(m.dayHUDBottomInset(for: ratio, zoomControlHeight: closed), 12 + 32 + 12, "\(ratio)")
+            XCTAssertEqual(m.dayHUDBottomInset(for: ratio, zoomControlHeight: open), 12 + open + 12, "\(ratio) open")
+        }
+        XCTAssertEqual(m.dayHUDBottomInset(for: .nineBySixteen, zoomControlHeight: open), 12 + open + 12,
+                       "9:16 open: the capsule is higher than the thumbnail")
+    }
+
     /// 712-4: the picture has the chosen ratio's shape: 1:1 is the square
     /// centered in the 3:4 box, 3:4 and 9:16 (outside the SE fallback) start
     /// at the header.

@@ -182,6 +182,42 @@ final class CameraHUDUITests: XCTestCase {
         }
     }
 
+    /// #724 review: with the quick-zoom control in the same corner, the HUD
+    /// stays clear of it at every ratio, closed, and open at 3:4 and 1:1; one
+    /// screenshot of each at 3:4.
+    func test_724_6_hudClearsTheZoomControl() {
+        launchCamera(extra: ["-UITestZoomPresets"])
+        let round = element("zoomRoundButton")
+        let presets = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'zoomPreset-'"))
+        for (index, label) in ["3:4", "1:1", "9:16"].enumerated() {
+            if index > 0 { ratioButton.tap() }
+            waitForRatio(label)
+            Thread.sleep(forTimeInterval: 1)
+            assertOnScreen(hud, "\(label) the HUD is drawn")
+            assertOnScreen(round, "\(label) the zoom control is drawn")
+            XCTAssertTrue(viewfinder.frame.contains(hud.frame), "\(label) HUD \(hud.frame) in \(viewfinder.frame)")
+            XCTAssertFalse(hud.frame.intersects(round.frame), "\(label) HUD \(hud.frame) clear of \(round.frame)")
+            XCTAssertLessThanOrEqual(hud.frame.maxY, round.frame.minY, "\(label) HUD above the zoom control")
+            if index == 0 { shot("hud_3x4_zoom") }
+            // At 9:16 the bottom bar lies over the control (as before #724);
+            // the open capsule there is covered by the metrics test.
+            guard label != "9:16" else { continue }
+
+            round.tap()
+            XCTAssertTrue(presets.firstMatch.waitForExistence(timeout: 3), "\(label) the capsule opens")
+            Thread.sleep(forTimeInterval: 0.6)
+            for preset in presets.allElementsBoundByIndex {
+                XCTAssertFalse(hud.frame.intersects(preset.frame),
+                               "\(label) open: HUD \(hud.frame) clear of \(preset.identifier) \(preset.frame)")
+            }
+            XCTAssertTrue(viewfinder.frame.contains(hud.frame), "\(label) open: HUD in the picture")
+            if index == 0 { shot("hud_3x4_zoom_open") }
+            // A tap on the picture closes the capsule (#541).
+            viewfinder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            XCTAssertTrue(round.waitForExistence(timeout: 3), "\(label) the capsule closes")
+        }
+    }
+
     /// 6: held sideways, the HUD turns with the picture (#571, #572): it
     /// stays inside the picture and is drawn on its own side, not upright.
     func test_724_6_hudTurnsWhenHeldSideways() {

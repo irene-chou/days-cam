@@ -125,6 +125,28 @@ struct CameraScreenLayoutMetrics {
                 y: footerBase - Self.closedFooterButtonCenterAboveBase)
     }
 
+    /// Tap target and size of the newest-photo button (FR-20.5).
+    static let footerButtonSize: CGFloat = 44
+
+    // MARK: - Day HUD (#724)
+
+    /// The day HUD's gap to the picture's left and bottom edges, and to
+    /// whatever it is lifted above.
+    static let dayHUDInset: CGFloat = 12
+
+    /// The upright day HUD's distance from the `ratio` picture's bottom edge:
+    /// `dayHUDInset`, or `dayHUDInset` above whichever is higher of
+    /// 「返回圖庫」 (9:16 runs behind the bottom bar) and the quick-zoom
+    /// control in the same corner, `zoomControlHeight` tall over its own
+    /// `ZoomPresetBar.cornerInset` (0 while hidden).
+    func dayHUDBottomInset(for ratio: CaptureAspectRatio, zoomControlHeight: CGFloat) -> CGFloat {
+        let picture = closedPictureFrame(for: ratio)
+        let thumbnailTop = leftFooterButtonCenter.y - Self.footerButtonSize / 2
+        let footer = picture.maxY - thumbnailTop
+        let zoom = zoomControlHeight > 0 ? ZoomPresetBar.cornerInset + zoomControlHeight : 0
+        return Self.dayHUDInset + max(0, footer, zoom)
+    }
+
     /// True for iPhone SE-class heights (< 700pt).
     var isSmallScreen: Bool {
         screenSize.height < Self.smallScreenHeightThreshold

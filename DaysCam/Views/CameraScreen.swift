@@ -160,7 +160,7 @@ struct CameraScreen: View {
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let frame = viewfinderFrame(metrics: metrics)
         let size = frame.size
-        return viewfinderContent(frameSize: size, hudFooterClearance: hudFooterClearance(metrics: metrics))
+        return viewfinderContent(frameSize: size, hudBottomInset: hudBottomInset(metrics: metrics))
             .frame(width: size.width, height: size.height)
             .overlay(
                 CameraTheme.shutterFlash
@@ -273,7 +273,7 @@ struct CameraScreen: View {
     /// focus reticle, the day HUD (#724), the countdown's big number (FR-7.6),
     /// the transient status message and the permission guidance screen.
     @ViewBuilder
-    private func viewfinderContent(frameSize: CGSize, hudFooterClearance: CGFloat) -> some View {
+    private func viewfinderContent(frameSize: CGSize, hudBottomInset: CGFloat) -> some View {
         let rotation = model.viewfinderRotation
         let layerSize = rotation.frameSize(for: frameSize)
         ZStack {
@@ -299,7 +299,7 @@ struct CameraScreen: View {
 
             if let hud = model.dayHUD {
                 hudLayer(hud, layerSize: layerSize, frameSize: frameSize, rotation: rotation,
-                         footerClearance: rotation == .portrait ? hudFooterClearance : 0)
+                         bottomInset: rotation == .portrait ? hudBottomInset : CameraDayHUD.inset)
             }
 
             if let countdownRemaining = model.countdownRemaining {
@@ -361,13 +361,13 @@ struct CameraScreen: View {
     /// The day HUD in the picture's bottom-left corner. The layer lays out at
     /// the photo's own size (landscape swaps the box's sides) and turns about
     /// the box's center, so the HUD stays in the held picture's corner
-    /// (#571, #572). `footerClearance` lifts it above the bottom bar when
-    /// the picture runs behind it. Never takes touches.
+    /// (#571, #572). `bottomInset` lifts it, held upright, above what shares
+    /// the corner. Never takes touches.
     private func hudLayer(_ hud: CameraScreenModel.DayHUD, layerSize: CGSize, frameSize: CGSize,
-                          rotation: ViewfinderRotation, footerClearance: CGFloat) -> some View {
+                          rotation: ViewfinderRotation, bottomInset: CGFloat) -> some View {
         CameraDayHUD(hud: hud, nameMaxWidth: layerSize.width / 2)
             .padding(.leading, CameraDayHUD.inset)
-            .padding(.bottom, CameraDayHUD.inset + footerClearance)
+            .padding(.bottom, bottomInset)
             .frame(width: layerSize.width, height: layerSize.height, alignment: .bottomLeading)
             .rotationEffect(.degrees(rotation.degrees))
             .frame(width: frameSize.width, height: frameSize.height)
@@ -375,18 +375,17 @@ struct CameraScreen: View {
             .allowsHitTesting(false)
     }
 
-    /// How far the picture's bottom edge runs below the top of 「返回圖庫」
-    /// (9:16, which reaches behind the bottom bar), so the upright HUD sits
-    /// above the bar instead of under the thumbnail; 0 otherwise.
-    private func hudFooterClearance(metrics: CameraScreenLayoutMetrics) -> CGFloat {
-        let picture = viewfinderFrame(metrics: metrics)
-        let thumbnailTop = metrics.leftFooterButtonCenter.y - Self.footerButtonSize / 2
-        return max(0, picture.maxY - thumbnailTop)
+    /// The upright HUD's distance from the picture's bottom edge: clear of
+    /// 「返回圖庫」 and of the quick-zoom control, open or closed (#724).
+    private func hudBottomInset(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        let zoomHeight = ZoomPresetBar.visibleHeight(presetCount: model.zoomPresets.count,
+                                                     isExpanded: model.zoomExpansion.isExpanded)
+        return metrics.dayHUDBottomInset(for: model.captureAspectRatio, zoomControlHeight: zoomHeight)
     }
 
     // MARK: - Zoom presets (issue #279)
 
-    /// The quick-zoom round button in the picture's bottom-right corner;
+    /// The quick-zoom round button in the picture's bottom-left corner;
     /// hidden while the camera offers no preset.
     private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
         ZoomPresetBar(zoom: model.zoomModel,
@@ -434,7 +433,7 @@ struct CameraScreen: View {
     }
 
     /// Tap target and size of the newest-photo button (FR-20.5).
-    private static let footerButtonSize: CGFloat = 44
+    private static let footerButtonSize = CameraScreenLayoutMetrics.footerButtonSize
 
     /// Icon point size of the placeholder (issue #239).
     private static let footerIconSize: CGFloat = 24
@@ -541,7 +540,7 @@ struct CameraDayHUD: View {
     let nameMaxWidth: CGFloat
 
     /// Distance from the picture's left and bottom edges.
-    static let inset: CGFloat = 12
+    static let inset = CameraScreenLayoutMetrics.dayHUDInset
 
     /// The day line's color: the before-start tint for "前 N 天", like the
     /// photo wall's corner marks.

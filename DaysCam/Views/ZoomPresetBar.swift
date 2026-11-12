@@ -107,8 +107,7 @@ final class ZoomPresetExpansion: ObservableObject {
 
 /// The quick-zoom control in the picture's bottom-left corner (issues #279,
 /// #302): a 32pt round button showing the current zoom, which opens upward
-/// into the vertical capsule of presets, largest on top. Hidden while the
-/// panel is open. Observes the zoom model itself, so a pinch redraws only
+/// into the vertical capsule of presets, largest on top. Observes the zoom model itself, so a pinch redraws only
 /// this control (issue #280).
 struct ZoomPresetBar: View {
     @ObservedObject var zoom: ViewfinderZoomModel
@@ -124,6 +123,17 @@ struct ZoomPresetBar: View {
     private static let barWidth: CGFloat = 40
     private static let tapSize: CGFloat = 44
     static let cornerInset: CGFloat = 12
+
+    /// How far the control rises above `cornerInset` from the picture's
+    /// bottom edge: the 32pt round button, or the open capsule of
+    /// `presetCount` 44pt rows; 0 while it is hidden. The day HUD in the same
+    /// corner stays above it (#724).
+    static func visibleHeight(presetCount: Int, isExpanded: Bool) -> CGFloat {
+        guard presetCount > 1 else { return 0 }
+        guard isExpanded else { return buttonSize }
+        let rows = CGFloat(presetCount)
+        return 2 * 4 + rows * tapSize + (rows - 1) * 4
+    }
 
     var body: some View {
         let selected = ZoomPresetBarLogic.selectedIndex(requested: zoom.requestedFactor, presets: presets)
