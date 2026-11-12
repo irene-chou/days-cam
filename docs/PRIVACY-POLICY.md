@@ -1,6 +1,6 @@
 # DaysCam 隱私權政策（草稿）
 
-> 狀態：2.0 底稿（2026-11-12 改寫）。公開頁 <https://irene-chou.github.io/dayscam-privacy/privacy/>（App Store Connect 填這個網址）仍是 1.x 內容，**2.0 送審前由人類照本檔更新**。
+> 狀態：底稿。2.0 版已於 2026-11-12 發布在 <https://irene-chou.github.io/dayscam-privacy/privacy/>（App Store Connect 填這個網址；repo `irene-chou/dayscam-privacy`），文字以公開頁為準；本檔只留作日後改版時的對照。
 
 DaysCam（天數相機）是一款幫照片標出「第幾天」的 iOS App：瀏覽時即時顯示天數，匯出時才另存一張印上天數或日期的新照片，原始照片不會被修改。我們以「資料留在你的裝置上」為原則設計。
 

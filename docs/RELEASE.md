@@ -79,7 +79,7 @@ xcodebuild -exportArchive -archivePath build/DaysCam.xcarchive \
 | 宣傳文字 | 平常照樣用內建相機拍。把照片放進紀錄，DaysCam 自動標出每張是第幾天，原圖完全不動；想分享時，再匯出一張印上天數的新照片。寶寶成長、戀愛紀念、健身打卡都適用。 | 82／170 |
 | 主要類別 | 攝影與錄影 | — |
 | 次要類別 | 生活風格（新增；多一個類別榜與瀏覽入口） | — |
-| 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/>（**公開頁要照 `docs/PRIVACY-POLICY.md` 更新**，1.x 版寫的是「僅新增」與拍照烘焙） | — |
+| 隱私權政策 URL | <https://irene-chou.github.io/dayscam-privacy/privacy/>（2.0 版已於 2026-11-12 發布） | — |
 | 支援 URL | <https://irene-chou.github.io/dayscam-privacy/> | — |
 | 聯絡信箱 | irene.chou0710@gmail.com | — |
 | App 隱私 | 不收集資料（不變；讀取照片只在裝置上，與隱私清單一致） | — |
