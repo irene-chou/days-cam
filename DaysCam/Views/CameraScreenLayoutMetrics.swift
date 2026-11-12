@@ -119,9 +119,7 @@ struct CameraScreenLayoutMetrics {
 
     /// Where the closed footer's left button (the thumbnail) is centered —
     /// the landing spot for a capture flight (issue #148); the 76pt shutter
-    /// sets the row height. There is no footer row while the panel is open
-    /// (TASK-92), so a flight taken then has nowhere to land and is skipped
-    /// (`CaptureFlightView.skipsFlightWhenPanelOpen`).
+    /// sets the row height.
     var leftFooterButtonCenter: CGPoint {
         CGPoint(x: footerSideButtonCenterInset,
                 y: footerBase - Self.closedFooterButtonCenterAboveBase)
@@ -227,81 +225,23 @@ struct CameraScreenLayoutMetrics {
 
     // MARK: - Style sheet (#656, FR-20.10)
 
-    /// The 文字樣式 sheet's top row: the title and the checkmark.
+    /// The 文字樣式 sheet's top row: the title and the checkmark
+    /// (`StylePanelSheet`, the export page's since #724).
     static let styleSheetHeaderHeight: CGFloat = 44
 
     /// The line under the panel saying where changes are saved.
     static let styleSheetNoteHeight: CGFloat = 34
 
-    /// About 4/10 of the screen (FR-20.10), home-indicator band included.
-    static let styleSheetHeightRatio: CGFloat = 0.4
+    // MARK: - Picture frame (#712)
 
-    /// The panel's usable content height inside the style sheet: what is
-    /// left of `styleSheetHeightRatio` after the sheet's own rows, never
-    /// below the small-screen panel's.
-    var styleSheetContentHeight: CGFloat {
-        let chrome = Self.styleSheetHeaderHeight + Self.panelTopPadding + panelTabBarHeight + Self.styleSheetNoteHeight
-        let room = screenSize.height * Self.styleSheetHeightRatio - bottomInset - chrome
-        return max(168, min(260, room))
-    }
-
-    /// The sheet from its top edge down to `footerBase`.
-    var styleSheetHeight: CGFloat {
-        Self.styleSheetHeaderHeight + Self.panelTopPadding + panelTabBarHeight
-            + styleSheetContentHeight + Self.styleSheetNoteHeight
-    }
-
-    /// The sheet's top edge.
-    var styleSheetTop: CGFloat {
-        footerBase - styleSheetHeight
-    }
-
-    /// The sheet's visible height: `styleSheetTop` to the screen's bottom edge.
-    var styleSheetVisibleHeight: CGFloat {
-        screenSize.height - styleSheetTop
-    }
-
-    /// The area the viewfinder may use while the sheet is open: the full
-    /// width, from the header's bottom edge to the gap above the sheet.
-    var styleSheetViewfinderArea: CGRect {
-        CGRect(x: 0, y: headerBottom, width: screenSize.width,
-               height: max(styleSheetTop - panelGapAboveBox - headerBottom, 0))
-    }
-
-    /// Where a picture of `aspect` (width ÷ height) sits while the sheet is
-    /// open: fitted to `styleSheetViewfinderArea` and centered in it.
-    func styleSheetViewfinderFrame(aspect: CGFloat) -> CGRect {
-        let area = styleSheetViewfinderArea
-        guard aspect > 0 else { return .zero }
-        let width = min(area.width, area.height * aspect)
-        let height = width / aspect
-        return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
-    }
-
-    /// The `ratio` picture's own rectangle while the sheet is closed, in
-    /// screen coordinates: 3:4 and 9:16 fill their box, 1:1 is the square
-    /// centered in the 3:4 box (rule ②, #712).
+    /// The `ratio` picture's own rectangle in screen coordinates: 3:4 and
+    /// 9:16 fill their box, 1:1 is the square centered in the 3:4 box
+    /// (rule ②, #712).
     func closedPictureFrame(for ratio: CaptureAspectRatio) -> CGRect {
         let box = viewfinderFrame(for: ratio, boxWidth: screenSize.width)
         let size = viewfinderContentSize(for: ratio, boxSize: box.size, isPanelOpen: false)
         return CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2,
                       width: size.width, height: size.height)
-    }
-
-    /// The `ratio` picture is laid out at its closed size and only scaled
-    /// and moved while the sheet is open, so the camera layer scales with it
-    /// (#153). The open frame keeps the closed picture's own shape, so the
-    /// scale is the same on both axes (#712).
-    func viewfinderPlacement(for ratio: CaptureAspectRatio, isStyleSheetOpen: Bool) -> ViewfinderPlacement {
-        let closed = closedPictureFrame(for: ratio)
-        guard isStyleSheetOpen, closed.height > 0 else {
-            return ViewfinderPlacement(layoutSize: closed.size, scale: CGSize(width: 1, height: 1),
-                                       center: CGPoint(x: closed.midX, y: closed.midY))
-        }
-        let open = styleSheetViewfinderFrame(aspect: closed.width / closed.height)
-        let scale = CGSize(width: closed.width > 0 ? open.width / closed.width : 1,
-                           height: open.height / closed.height)
-        return ViewfinderPlacement(layoutSize: closed.size, scale: scale, center: CGPoint(x: open.midX, y: open.midY))
     }
 
     // MARK: - Tools capsule (issue #135)

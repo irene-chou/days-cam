@@ -147,16 +147,15 @@ struct LevelDisplayState {
 }
 
 /// The conditions under which the level reads the sensor (#687-1): the
-/// camera is on top, the switch is on, no panel or countdown, scene active.
+/// camera is on top, the switch is on, no countdown, scene active.
 struct LevelConditions: Equatable {
     var isSwitchOn = false
-    var isPanelOpen = false
     var isCountingDown = false
     var isSceneActive = true
     var isCameraVisible = true
 
     var shouldRun: Bool {
-        isSwitchOn && isCameraVisible && isSceneActive && !isPanelOpen && !isCountingDown
+        isSwitchOn && isCameraVisible && isSceneActive && !isCountingDown
     }
 }
 

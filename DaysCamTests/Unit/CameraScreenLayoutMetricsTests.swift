@@ -524,52 +524,11 @@ private func assertRectsEqual(_ lhs: CGRect, _ rhs: CGRect, file: StaticString =
     XCTAssertEqual(lhs.size.height, rhs.size.height, accuracy: 0.05, file: file, line: line)
 }
 
-// MARK: - Style sheet (#656)
+// MARK: - Picture frame (#712)
 
-final class CameraScreenStyleSheetMetricsTests: XCTestCase {
+final class CameraScreenPictureFrameMetricsTests: XCTestCase {
     private func metrics(_ size: CGSize, bottom: CGFloat, top: CGFloat) -> CameraScreenLayoutMetrics {
         CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
-    }
-
-    /// 6: about 4/10 of the screen on a large phone, and the viewfinder is
-    /// fitted between the header and the sheet without overlapping either.
-    func test_656_6_sheetIsAboutFortyPercentAndTheViewfinderYields() {
-        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
-                                    (CGSize(width: 375, height: 667), 0, 20),
-                                    (CGSize(width: 440, height: 956), 34, 62)] {
-            let m = metrics(size, bottom: bottom, top: top)
-            XCTAssertEqual(m.styleSheetVisibleHeight, m.styleSheetHeight + bottom, accuracy: 0.5)
-            XCTAssertEqual(m.styleSheetVisibleHeight / size.height, 0.4, accuracy: 0.08, "\(size)")
-            let frame = m.styleSheetViewfinderFrame(aspect: 0.75)
-            XCTAssertGreaterThanOrEqual(frame.minY, m.headerBottom - 0.5, "\(size) below the header")
-            XCTAssertLessThanOrEqual(frame.maxY, m.styleSheetTop + 0.5, "\(size) above the sheet")
-            XCTAssertEqual(frame.width / frame.height, 0.75, accuracy: 0.001, "\(size) stays 3:4")
-            XCTAssertEqual(m.styleSheetViewfinderArea.minY, m.headerBottom)
-        }
-    }
-
-    /// The placement keeps the closed layout size and only scales and moves,
-    /// at every ratio, by the same amount on both axes (#712-4).
-    func test_712_4_placementScalesAboutTheClosedLayoutAtEveryRatio() {
-        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
-                                    (CGSize(width: 375, height: 667), 0, 20)] {
-            let m = metrics(size, bottom: bottom, top: top)
-            for ratio in CaptureAspectRatio.allCases {
-                let closed = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: false)
-                let open = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: true)
-                let picture = m.closedPictureFrame(for: ratio)
-                XCTAssertEqual(closed.layoutSize, picture.size, "\(ratio)")
-                XCTAssertEqual(closed.center.x, picture.midX, accuracy: 0.5)
-                XCTAssertEqual(closed.center.y, picture.midY, accuracy: 0.5)
-                XCTAssertEqual(closed.layoutSize, open.layoutSize)
-                XCTAssertEqual(closed.scale, CGSize(width: 1, height: 1))
-                XCTAssertLessThan(open.scale.width, 1, "\(size) \(ratio)")
-                XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.0001)
-                let openHeight = closed.layoutSize.height * open.scale.height
-                XCTAssertGreaterThanOrEqual(open.center.y - openHeight / 2, m.headerBottom - 0.5, "\(ratio) below the header")
-                XCTAssertLessThanOrEqual(open.center.y + openHeight / 2, m.styleSheetTop + 0.5, "\(ratio) above the sheet")
-            }
-        }
     }
 
     /// 712-4: the picture has the chosen ratio's shape: 1:1 is the square

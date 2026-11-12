@@ -17,9 +17,6 @@ struct CaptureFlightView: View {
     /// The thumbnail button's frame; read live so a panel toggled mid-flight
     /// still lands on the right spot.
     let end: CGRect
-    /// True when there is nothing to fly to (the panel is open, so the left
-    /// button is not the thumbnail): no flight, the thumbnail just updates.
-    let skipsFlightWhenPanelOpen: Bool
     /// Reached the thumbnail button.
     let onLanded: () -> Void
     /// Failure fade-out finished; the flight can be dropped.
@@ -28,18 +25,14 @@ struct CaptureFlightView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: Phase = .resting
     @State private var isFadedOut = false
-    /// Whether to skip the flight, decided once when the flight appears.
-    @State private var skipsFlight: Bool
 
-    init(flight: CaptureFlight, start: CGRect, end: CGRect, skipsFlightWhenPanelOpen: Bool,
+    init(flight: CaptureFlight, start: CGRect, end: CGRect,
          onLanded: @escaping () -> Void, onFinished: @escaping () -> Void) {
         self.flight = flight
         self.start = start
         self.end = end
-        self.skipsFlightWhenPanelOpen = skipsFlightWhenPanelOpen
         self.onLanded = onLanded
         self.onFinished = onFinished
-        _skipsFlight = State(initialValue: skipsFlightWhenPanelOpen)
     }
 
     private static let liftDuration: TimeInterval = 0.12
@@ -62,7 +55,7 @@ struct CaptureFlightView: View {
     }
 
     private var isHidden: Bool {
-        reduceMotion || skipsFlight || isFadedOut
+        reduceMotion || isFadedOut
     }
 
     private var currentFrame: CGRect {
@@ -88,7 +81,7 @@ struct CaptureFlightView: View {
     }
 
     private func play() async {
-        guard !reduceMotion, !skipsFlight else {
+        guard !reduceMotion else {
             // No flight: the thumbnail just updates once saved (the button
             // fades itself under Reduce Motion).
             onLanded()

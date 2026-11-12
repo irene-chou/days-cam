@@ -158,9 +158,9 @@ final class StylePresetRowUITests: XCTestCase {
         shot("10_largest_text")
     }
 
-    /// 11: the camera's text (FR-20.10) and the viewer's 調整文字樣式 on its
-    /// export sheet (#679) both open this style tab.
-    func testCameraAndViewerOpenTheSameStyleTab() {
+    /// 11: the viewer's 調整文字樣式 on its export sheet (#679) opens this
+    /// style tab; the camera has no style sheet since #724.
+    func testViewerOpensTheStyleTab() {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
@@ -191,17 +191,5 @@ final class StylePresetRowUITests: XCTestCase {
         XCTAssertTrue(app.backToLayerList(), "the back key returns to the layer list")
         element("exportCancelButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))
-        app.terminate()
-
-        // The camera's text.
-        app.launch()
-        XCTAssertTrue(app.openCamera())
-        let text = element("overlayText")
-        XCTAssertTrue(text.waitForExistence(timeout: 10))
-        text.tap()
-        XCTAssertTrue(element("stylePanel").waitForExistence(timeout: 5))
-        if !preset("classic").exists { app.buttons["樣式"].tap() }
-        XCTAssertTrue(preset("classic").waitForExistence(timeout: 5), "11 camera: the row of looks")
-        XCTAssertTrue(boxButton.exists, "11 camera")
     }
 }

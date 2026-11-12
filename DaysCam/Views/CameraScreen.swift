@@ -5,10 +5,9 @@ import SwiftUI
 ///
 /// Composes the viewfinder at the chosen ratio, the permission guidance
 /// screen, the top bar with the record switcher and its menu, the shutter,
-/// the newest-photo button (「返回圖庫」), the 文字樣式 key and the failure
-/// alert (#712). The viewfinder always draws the record's overlay (FR-20.2)
-/// and a tap on it, or on the 文字樣式 key, opens the 文字樣式 sheet
-/// (FR-20.10); the photo is saved cropped to the ratio but without the
+/// the newest-photo button (「返回圖庫」) and the failure alert (#712). The
+/// viewfinder shows the day HUD in its bottom-left corner (#724), never the
+/// record's overlay; the photo is saved cropped to the ratio but without the
 /// overlay, which is added only on export (§6.3). All state and decisions
 /// live in `CameraScreenModel`; this view only lays it out.
 ///
@@ -25,10 +24,6 @@ struct CameraScreen: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-
-    /// The overlay text block's frame as `OverlayTextView` reports it, in the
-    /// turned overlay layer's coordinates (#572).
-    @State private var overlayTextLayerRect: CGRect = .null
 
     /// What the thumbnail button currently shows; follows
     /// `model.latestThumbnailImage` (see `showThumbnail`).
@@ -107,8 +102,6 @@ struct CameraScreen: View {
 
                 footer(metrics: metrics)
 
-                stylePanel(metrics: metrics)
-
                 toolsCapsule(metrics: metrics)
 
                 recordMenu(metrics: metrics)
@@ -119,7 +112,6 @@ struct CameraScreen: View {
             .offset(y: dismissDragOffset)
             .animation(CameraTheme.spring, value: model.isCameraToolsExpanded)
             .animation(CameraTheme.spring, value: model.isRecordMenuOpen)
-            .animation(CameraTheme.spring, value: model.panelModel.isOpen)
         }
     }
 
@@ -149,7 +141,6 @@ struct CameraScreen: View {
                 offset = max(0, value.translation.height)
             }
             .onEnded { value in
-                guard !model.panelModel.isOpen else { return }
                 if CameraScreenLayoutMetrics.isDismissSwipe(translation: value.translation,
                                                             predictedEndTranslation: value.predictedEndTranslation) {
                     onClose()
@@ -165,14 +156,11 @@ struct CameraScreen: View {
         metrics.closedPictureFrame(for: model.captureAspectRatio)
     }
 
-    /// Always laid out at its closed size and only scaled about its center
-    /// (and moved) while the style sheet is open, so the camera layer scales
-    /// with it instead of jumping to the final size (#153).
+    /// The viewfinder at the chosen ratio's picture frame (#712).
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
-        let placement = metrics.viewfinderPlacement(for: model.captureAspectRatio,
-                                                    isStyleSheetOpen: model.panelModel.isOpen)
-        let size = placement.layoutSize
-        return viewfinderContent(frameSize: size)
+        let frame = viewfinderFrame(metrics: metrics)
+        let size = frame.size
+        return viewfinderContent(frameSize: size, hudFooterClearance: hudFooterClearance(metrics: metrics))
             .frame(width: size.width, height: size.height)
             .overlay(
                 CameraTheme.shutterFlash
@@ -182,8 +170,7 @@ struct CameraScreen: View {
             .clipped()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("cameraViewfinder")
-            .scaleEffect(x: placement.scale.width, y: placement.scale.height, anchor: .center)
-            .offset(x: placement.center.x - size.width / 2, y: placement.center.y - size.height / 2)
+            .offset(x: frame.minX, y: frame.minY)
     }
 
     // MARK: - Header
@@ -226,7 +213,7 @@ struct CameraScreen: View {
                          width: Self.footerButtonSize, height: Self.footerButtonSize)
         return ZStack(alignment: .topLeading) {
             ForEach(model.captureFlights) { flight in
-                CaptureFlightView(flight: flight, start: start, end: end, skipsFlightWhenPanelOpen: model.panelModel.isOpen,
+                CaptureFlightView(flight: flight, start: start, end: end,
                                   onLanded: { model.flightDidLand(id: flight.id) },
                                   onFinished: { model.removeCaptureFlight(id: flight.id) })
             }
@@ -277,21 +264,16 @@ struct CameraScreen: View {
             .contentShape(Rectangle())
             .simultaneousGesture(dismissDrag)
             .offset(x: 0, y: metrics.footerRegionTop)
-            // The sheet takes the bottom; nothing here is reachable (FR-20.10).
-            .opacity(model.panelModel.isOpen ? 0 : 1)
-            .allowsHitTesting(!model.panelModel.isOpen)
-            .accessibilityHidden(model.panelModel.isOpen)
     }
 
     // MARK: - Viewfinder contents
 
     /// Everything drawn inside the viewfinder box, sized to `frameSize`: the
     /// live preview (or placeholder), the optional grid (never saved), the
-    /// focus reticle, the record's overlay text and film date (FR-20.2,
-    /// always on since #712), the countdown's big number (FR-7.6), the transient
-    /// status message and the permission guidance screen.
+    /// focus reticle, the day HUD (#724), the countdown's big number (FR-7.6),
+    /// the transient status message and the permission guidance screen.
     @ViewBuilder
-    private func viewfinderContent(frameSize: CGSize) -> some View {
+    private func viewfinderContent(frameSize: CGSize, hudFooterClearance: CGFloat) -> some View {
         let rotation = model.viewfinderRotation
         let layerSize = rotation.frameSize(for: frameSize)
         ZStack {
@@ -315,8 +297,9 @@ struct CameraScreen: View {
             ViewfinderLevelOverlay(level: model.levelModel, rotation: rotation)
                 .frame(width: frameSize.width, height: frameSize.height)
 
-            if model.showsOverlay {
-                overlayLayer(layerSize: layerSize, frameSize: frameSize, rotation: rotation)
+            if let hud = model.dayHUD {
+                hudLayer(hud, layerSize: layerSize, frameSize: frameSize, rotation: rotation,
+                         footerClearance: rotation == .portrait ? hudFooterClearance : 0)
             }
 
             if let countdownRemaining = model.countdownRemaining {
@@ -344,17 +327,7 @@ struct CameraScreen: View {
         }
         .frame(width: frameSize.width, height: frameSize.height)
         .contentShape(Rectangle())
-        .onPreferenceChange(OverlayTextBlockFrameKey.self) { rect in
-            overlayTextLayerRect = rect
-            model.overlayTextFrame = rotation.boxRect(fromRotatedRect: rect, box: frameSize)
-        }
-        // The rect above is in the turned layer's coordinates; a turn between
-        // portrait and upside down leaves it unchanged, so convert again.
-        .onChange(of: rotation) { _, newRotation in
-            model.overlayTextFrame = newRotation.boxRect(fromRotatedRect: overlayTextLayerRect, box: frameSize)
-        }
-        // A tap outside the overlay text focuses; the text claims its own
-        // taps (`OverlayTextView.onTap`), so never both.
+        // Anywhere in the viewfinder: the HUD takes no touches (#724).
         .onTapGesture {
             model.handleViewfinderTap()
         }
@@ -383,92 +356,32 @@ struct CameraScreen: View {
         )
     }
 
-    // MARK: - Overlay preview (FR-20.2, FR-20.10)
+    // MARK: - Day HUD (#724)
 
-    /// The record's overlay as the export will print it. The layer lays out
-    /// at the photo's own size (landscape swaps the box's sides) and turns
-    /// about the box's center, so it sits where the exported photo puts it
-    /// (#571, #572). The same `OverlayTextView`／`FilmDateStampView` as the
-    /// 文字樣式 page, measured by the same `OverlayMetrics` as the bake.
-    /// Draggable only while the style sheet is open.
-    private func overlayLayer(layerSize: CGSize, frameSize: CGSize, rotation: ViewfinderRotation) -> some View {
-        let isDraggable = model.panelModel.isOverlayDraggable && !model.zoomModel.isPinching
-        return ZStack {
-            OverlayTextView(text: model.overlayText,
-                            style: model.overlayStyle,
-                            placement: model.overlayPlacement,
-                            frameSize: layerSize,
-                            font: model.overlayFont,
-                            onDragChanged: isDraggable ? { center, size in
-                                model.panelModel.overlayDragHandler?.overlayDragChanged(center: center, viewfinderSize: size)
-                            } : nil,
-                            onDragEnded: isDraggable ? { center, size in
-                                model.panelModel.overlayDragHandler?.overlayDragEnded(center: center, viewfinderSize: size)
-                            } : nil,
-                            onTap: { model.handleOverlayTextTap() },
-                            dragHintSerial: model.panelModel.dragHintSerial)
-            FilmDateStampView(stamp: model.filmDateStamp, frameSize: layerSize)
-        }
-        .frame(width: layerSize.width, height: layerSize.height)
-        .rotationEffect(.degrees(rotation.degrees))
-        .frame(width: frameSize.width, height: frameSize.height)
-        .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
-    }
-
-    /// Space between the 文字樣式 key and its highlight frame.
-    private static let highlightPadding: CGFloat = 6
-
-    /// The first-run hint (FR-20.10, #712): a rounded frame around the
-    /// 文字樣式 key (accent stroke, faint accent fill) with
-    /// 「點這裡改文字樣式」 above it, its tail pointing down at the
-    /// key and its right edge on the frame's. Never takes touches.
-    private var styleKeyTip: some View {
-        let side = Self.footerButtonSize + 2 * Self.highlightPadding
-        return RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(CameraTheme.accent.opacity(0.18))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(CameraTheme.accent, lineWidth: 2))
-            .frame(width: side, height: side)
-            .overlay(alignment: .bottomTrailing) {
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text("點這裡改文字樣式")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(CameraTheme.toastBackground))
-                        .accessibilityIdentifier("overlayTip")
-                    Triangle()
-                        .fill(CameraTheme.toastBackground)
-                        .frame(width: 12, height: 6)
-                        // Centered over the key.
-                        .padding(.trailing, side / 2 - 6)
-                }
-                // Hangs 2pt clear of the frame, above it.
-                .alignmentGuide(.bottom) { $0[.bottom] + side + 2 }
-            }
+    /// The day HUD in the picture's bottom-left corner. The layer lays out at
+    /// the photo's own size (landscape swaps the box's sides) and turns about
+    /// the box's center, so the HUD stays in the held picture's corner
+    /// (#571, #572). `footerClearance` lifts it above the bottom bar when
+    /// the picture runs behind it. Never takes touches.
+    private func hudLayer(_ hud: CameraScreenModel.DayHUD, layerSize: CGSize, frameSize: CGSize,
+                          rotation: ViewfinderRotation, footerClearance: CGFloat) -> some View {
+        CameraDayHUD(hud: hud, nameMaxWidth: layerSize.width / 2)
+            .padding(.leading, CameraDayHUD.inset)
+            .padding(.bottom, CameraDayHUD.inset + footerClearance)
+            .frame(width: layerSize.width, height: layerSize.height, alignment: .bottomLeading)
+            .rotationEffect(.degrees(rotation.degrees))
+            .frame(width: frameSize.width, height: frameSize.height)
+            .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
             .allowsHitTesting(false)
     }
 
-    // MARK: - Style sheet (FR-20.10)
-
-    /// The 文字樣式 sheet from the bottom, about 4/10 of the screen (the
-    /// shared `StylePanelSheet`, #718). The viewfinder yields the room above it.
-    @ViewBuilder
-    private func stylePanel(metrics: CameraScreenLayoutMetrics) -> some View {
-        if model.panelModel.isOpen {
-            StylePanelSheet(model: model,
-                            contentHeight: metrics.styleSheetContentHeight,
-                            tabBarHeight: metrics.panelTabBarHeight,
-                            note: model.stylePanelNote,
-                            onDone: model.closeStylePanel)
-                .frame(width: metrics.screenSize.width, height: metrics.styleSheetVisibleHeight, alignment: .top)
-                .offset(x: 0, y: metrics.styleSheetTop)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
+    /// How far the picture's bottom edge runs below the top of 「返回圖庫」
+    /// (9:16, which reaches behind the bottom bar), so the upright HUD sits
+    /// above the bar instead of under the thumbnail; 0 otherwise.
+    private func hudFooterClearance(metrics: CameraScreenLayoutMetrics) -> CGFloat {
+        let picture = viewfinderFrame(metrics: metrics)
+        let thumbnailTop = metrics.leftFooterButtonCenter.y - Self.footerButtonSize / 2
+        return max(0, picture.maxY - thumbnailTop)
     }
 
     // MARK: - Zoom presets (issue #279)
@@ -479,7 +392,7 @@ struct CameraScreen: View {
         ZoomPresetBar(zoom: model.zoomModel,
                       expansion: model.zoomExpansion,
                       presets: model.zoomPresets,
-                      isVisible: !model.panelModel.isOpen && !model.zoomPresets.isEmpty,
+                      isVisible: !model.zoomPresets.isEmpty,
                       pictureFrame: viewfinderFrame(metrics: metrics),
                       rotation: model.viewfinderRotation)
     }
@@ -502,10 +415,9 @@ struct CameraScreen: View {
     // MARK: - Bottom bar (FR-20.5, FR-20.11)
 
     /// Newest photo with 「返回圖庫」 under it at the left, the shutter in the
-    /// middle, the 文字樣式 key at the right (#712). No background (PRD 0.2
-    /// FR-14.2).
+    /// middle, nothing at the right (#724). No background (PRD 0.2 FR-14.2).
     ///
-    /// The side keys' centers sit `footerSideButtonCenterInset` from their
+    /// The left key's center sits `footerSideButtonCenterInset` from its
     /// edge, level with the shutter's; the row sits 16pt above the bottom of
     /// the footer region.
     private func bottomBar(metrics: CameraScreenLayoutMetrics, isOnPhoto: Bool) -> some View {
@@ -515,11 +427,6 @@ struct CameraScreen: View {
             HStack {
                 thumbnailButton(isOnPhoto: isOnPhoto)
                 Spacer()
-                styleButton(isOnPhoto: isOnPhoto)
-                    // Outside the button, so the hint is its own element.
-                    .overlay {
-                        if model.showsOverlayTip { styleKeyTip }
-                    }
             }
             .padding(.horizontal, sideInset)
         }
@@ -571,29 +478,6 @@ struct CameraScreen: View {
         .accessibilityLabel("返回圖庫")
         .accessibilityIdentifier("cameraLatestThumbnail")
     }
-
-    /// Right key (#712): opens the 文字樣式 sheet on the layer list (#718).
-    /// `text.below.photo` in plain ink, at the 18pt that matches the 22pt
-    /// keys' visual width; the first-run hint points at it.
-    private func styleButton(isOnPhoto: Bool) -> some View {
-        Button(action: model.handleStyleKeyTap) {
-            Image(systemName: "text.below.photo")
-                .font(.system(size: Self.styleGlyphSize, weight: .medium))
-                .foregroundColor(isOnPhoto ? CameraTheme.inkOnPhoto : CameraTheme.ink)
-                .frame(width: Self.footerButtonSize, height: Self.footerButtonSize)
-                .contentShape(Rectangle())
-                .legibleOverPhoto(isOnPhoto)
-                .rotatedChrome(model.viewfinderRotation)
-        }
-        .disabled(!model.showsOverlay)
-        .accessibilityLabel("文字樣式")
-        .accessibilityIdentifier("cameraStyleButton")
-    }
-
-    /// Point size of the 文字樣式 key's glyph: `text.below.photo` is wider
-    /// and heavier than the 22pt toolbar glyphs, so 18pt matches their
-    /// visual width.
-    private static let styleGlyphSize: CGFloat = 18
 
     /// Gap between the thumbnail and 「返回圖庫」 under it (D9).
     private static let backLabelGap: CGFloat = 4
@@ -648,15 +532,44 @@ struct CameraScreen: View {
     }
 }
 
-/// A downward-pointing triangle, the tail of the first-run hint's bubble.
-private struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-            path.closeSubpath()
+/// The camera's day HUD (#724): the day text of a photo taken now over the
+/// record's name, white with the photo wall's two shadows — interface, like
+/// the wall's corner marks, not the record's overlay. One VoiceOver element.
+struct CameraDayHUD: View {
+    let hud: CameraScreenModel.DayHUD
+    /// The name line is cut with an ellipsis beyond this (half the picture).
+    let nameMaxWidth: CGFloat
+
+    /// Distance from the picture's left and bottom edges.
+    static let inset: CGFloat = 12
+
+    /// The day line's color: the before-start tint for "前 N 天", like the
+    /// photo wall's corner marks.
+    static func dayInk(isBeforeStart: Bool) -> Color {
+        isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(hud.dayText)
+                .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                .foregroundColor(Self.dayInk(isBeforeStart: hud.isBeforeStart))
+                .lineLimit(1)
+                .fixedSize()
+            Text(hud.recordName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(CameraTheme.inkOnPhoto.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: nameMaxWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .shadow(color: .black.opacity(0.6), radius: 2)
+        .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(hud.accessibilityLabel)
+        .accessibilityIdentifier("cameraDayHUD")
     }
 }
 
