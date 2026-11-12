@@ -95,30 +95,36 @@ final class CameraHUDUITests: XCTestCase {
 
     // MARK: - 1: the HUD
 
-    /// 1: 「第 10 天」 over the record's name in the viewfinder's bottom-left
-    /// corner, one VoiceOver element; no overlay text, no film date.
-    func test_724_1_hudShowsTheDayAndTheRecord() {
+    /// 1: 「第 10 天」 over today's date 「2026.01.10」 in the viewfinder's
+    /// bottom-left corner, one VoiceOver element; no name, no overlay text,
+    /// no film date.
+    func test_724_1_hudShowsTheDayAndTheDate() {
         launchCamera()
         assertOnScreen(hud, "724-1 the HUD is drawn")
-        XCTAssertEqual(hud.label, "第 10 天，我的紀錄", "724-1")
+        XCTAssertEqual(hud.label, "第 10 天，2026.01.10", "724-1 the day over today's date, no name")
         assertHUDInBottomLeft("724-1")
         XCTAssertFalse(element("overlayText").exists, "724-1 no overlay text")
         XCTAssertFalse(element("overlayTextDraggable").exists, "724-1 no overlay text")
         XCTAssertFalse(element("filmDateStamp").exists, "724-1 no film date")
     }
 
-    /// 1 (FR-20.8): switching records swaps the HUD's name at once.
-    func test_724_1_switchingRecordsSwapsTheHUD() {
+    /// 1 (FR-20.8): after switching records the HUD is still there, and the
+    /// name lives only in the switcher.
+    func test_724_1_hudStaysThroughSwitchingRecords() {
         launchCamera(extra: ["-UITestSecondRecord", "小寶"])
         assertOnScreen(hud, "the HUD is drawn")
-        XCTAssertEqual(hud.label, "第 10 天，我的紀錄")
+        XCTAssertEqual(hud.label, "第 10 天，2026.01.10")
         switcher.tap()
         XCTAssertTrue(element("cameraRecordMenu").waitForExistence(timeout: 5))
         let rows = app.descendants(matching: .any).matching(identifier: "cameraRecordMenuRow")
         let other = rows.allElementsBoundByIndex.first { !$0.isSelected }
         XCTAssertNotNil(other, "the other record is in the menu")
         other?.tap()
-        waitForHUD("第 10 天，小寶")
+        XCTAssertTrue(switcher.label.contains("小寶") || (switcher.value as? String ?? "").contains("小寶"),
+                      "switched to 小寶: \(switcher.label) \(String(describing: switcher.value))")
+        // 小寶 starts the same day, so the HUD reads the same; the text per
+        // record is covered by `CameraScreenModelOverlayTests`.
+        waitForHUD("第 10 天，2026.01.10")
     }
 
     // MARK: - 2: nothing of the overlay is left
@@ -182,36 +188,39 @@ final class CameraHUDUITests: XCTestCase {
         }
     }
 
-    /// #724 review: with the quick-zoom control in the same corner, the HUD
-    /// stays clear of it at every ratio, closed, and open at 3:4 and 1:1; one
-    /// screenshot of each at 3:4.
+    /// #724 review: the quick-zoom control sits in the picture's right half
+    /// (bottom-right corner) and never overlaps the HUD, closed or open, at
+    /// every ratio; at 9:16 it stays above the bottom bar so it still opens
+    /// (#731). One screenshot of the open capsule per ratio.
     func test_724_6_hudClearsTheZoomControl() {
         launchCamera(extra: ["-UITestZoomPresets"])
-        let round = element("zoomRoundButton")
-        let presets = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'zoomPreset-'"))
+        let round = app.buttons["zoomRoundButton"]
+        let two = app.buttons["zoomPreset-焦段 2 倍"]
+        let shutter = app.buttons["快門"]
         for (index, label) in ["3:4", "1:1", "9:16"].enumerated() {
             if index > 0 { ratioButton.tap() }
             waitForRatio(label)
             Thread.sleep(forTimeInterval: 1)
+            let picture = viewfinder.frame
             assertOnScreen(hud, "\(label) the HUD is drawn")
             assertOnScreen(round, "\(label) the zoom control is drawn")
-            XCTAssertTrue(viewfinder.frame.contains(hud.frame), "\(label) HUD \(hud.frame) in \(viewfinder.frame)")
+            XCTAssertGreaterThan(round.frame.minX, picture.midX, "\(label) zoom in the right half: \(round.frame)")
+            XCTAssertLessThan(hud.frame.maxX, picture.midX, "\(label) HUD in the left half: \(hud.frame)")
             XCTAssertFalse(hud.frame.intersects(round.frame), "\(label) HUD \(hud.frame) clear of \(round.frame)")
-            XCTAssertLessThanOrEqual(hud.frame.maxY, round.frame.minY, "\(label) HUD above the zoom control")
-            if index == 0 { shot("hud_3x4_zoom") }
-            // At 9:16 the bottom bar lies over the control (as before #724);
-            // the open capsule there is covered by the metrics test.
-            guard label != "9:16" else { continue }
+            XCTAssertLessThan(round.frame.maxY, shutter.frame.minY, "\(label) zoom above the bottom row")
 
             round.tap()
-            XCTAssertTrue(presets.firstMatch.waitForExistence(timeout: 3), "\(label) the capsule opens")
+            XCTAssertTrue(two.waitForExistence(timeout: 3), "\(label) the capsule opens")
             Thread.sleep(forTimeInterval: 0.6)
+            let presets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "zoomPreset-"))
+            XCTAssertGreaterThanOrEqual(presets.count, 2, "\(label) the presets")
             for preset in presets.allElementsBoundByIndex {
-                XCTAssertFalse(hud.frame.intersects(preset.frame),
-                               "\(label) open: HUD \(hud.frame) clear of \(preset.identifier) \(preset.frame)")
+                let frame = preset.frame
+                XCTAssertGreaterThan(frame.minX, picture.midX, "\(label) open: \(preset.identifier) in the right half")
+                XCTAssertTrue(picture.contains(frame), "\(label) open: \(preset.identifier) \(frame) in \(picture)")
+                XCTAssertFalse(hud.frame.intersects(frame), "\(label) open: HUD clear of \(preset.identifier)")
             }
-            XCTAssertTrue(viewfinder.frame.contains(hud.frame), "\(label) open: HUD in the picture")
-            if index == 0 { shot("hud_3x4_zoom_open") }
+            shot("hud_\(label.replacingOccurrences(of: ":", with: "x"))_zoom_open")
             // A tap on the picture closes the capsule (#541).
             viewfinder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
             XCTAssertTrue(round.waitForExistence(timeout: 3), "\(label) the capsule closes")

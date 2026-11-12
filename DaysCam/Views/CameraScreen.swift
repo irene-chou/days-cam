@@ -365,7 +365,7 @@ struct CameraScreen: View {
     /// the corner. Never takes touches.
     private func hudLayer(_ hud: CameraScreenModel.DayHUD, layerSize: CGSize, frameSize: CGSize,
                           rotation: ViewfinderRotation, bottomInset: CGFloat) -> some View {
-        CameraDayHUD(hud: hud, nameMaxWidth: layerSize.width / 2)
+        CameraDayHUD(hud: hud)
             .padding(.leading, CameraDayHUD.inset)
             .padding(.bottom, bottomInset)
             .frame(width: layerSize.width, height: layerSize.height, alignment: .bottomLeading)
@@ -376,16 +376,15 @@ struct CameraScreen: View {
     }
 
     /// The upright HUD's distance from the picture's bottom edge: clear of
-    /// 「返回圖庫」 and of the quick-zoom control, open or closed (#724).
+    /// 「返回圖庫」 (#724).
     private func hudBottomInset(metrics: CameraScreenLayoutMetrics) -> CGFloat {
-        let zoomHeight = ZoomPresetBar.visibleHeight(presetCount: model.zoomPresets.count,
-                                                     isExpanded: model.zoomExpansion.isExpanded)
-        return metrics.dayHUDBottomInset(for: model.captureAspectRatio, zoomControlHeight: zoomHeight)
+        metrics.dayHUDBottomInset(for: model.captureAspectRatio)
     }
 
     // MARK: - Zoom presets (issue #279)
 
-    /// The quick-zoom round button in the picture's bottom-left corner;
+    /// The quick-zoom round button in the picture's bottom-right corner,
+    /// above the bottom bar where the picture runs behind it (#724, #731);
     /// hidden while the camera offers no preset.
     private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
         ZoomPresetBar(zoom: model.zoomModel,
@@ -393,7 +392,8 @@ struct CameraScreen: View {
                       presets: model.zoomPresets,
                       isVisible: !model.zoomPresets.isEmpty,
                       pictureFrame: viewfinderFrame(metrics: metrics),
-                      rotation: model.viewfinderRotation)
+                      rotation: model.viewfinderRotation,
+                      bottomInset: metrics.zoomControlBottomInset(for: model.captureAspectRatio))
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a
@@ -531,13 +531,11 @@ struct CameraScreen: View {
     }
 }
 
-/// The camera's day HUD (#724): the day text of a photo taken now over the
-/// record's name, white with the photo wall's two shadows — interface, like
+/// The camera's day HUD (#724): the day text of a photo taken now over
+/// today's date, white with the photo wall's two shadows — interface, like
 /// the wall's corner marks, not the record's overlay. One VoiceOver element.
 struct CameraDayHUD: View {
     let hud: CameraScreenModel.DayHUD
-    /// The name line is cut with an ellipsis beyond this (half the picture).
-    let nameMaxWidth: CGFloat
 
     /// Distance from the picture's left and bottom edges.
     static let inset = CameraScreenLayoutMetrics.dayHUDInset
@@ -555,13 +553,11 @@ struct CameraDayHUD: View {
                 .foregroundColor(Self.dayInk(isBeforeStart: hud.isBeforeStart))
                 .lineLimit(1)
                 .fixedSize()
-            Text(hud.recordName)
-                .font(.system(size: 11, weight: .semibold))
+            Text(hud.dateText)
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 .foregroundColor(CameraTheme.inkOnPhoto.opacity(0.85))
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: nameMaxWidth, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize()
         }
         .shadow(color: .black.opacity(0.6), radius: 2)
         .shadow(color: .black.opacity(0.5), radius: 1, y: 1)

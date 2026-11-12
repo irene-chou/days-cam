@@ -532,29 +532,35 @@ final class CameraScreenPictureFrameMetricsTests: XCTestCase {
     }
 
     /// #724: the day HUD sits 12pt over the picture's bottom edge, or 12pt
-    /// above 「返回圖庫」 where 9:16 runs behind the bottom bar, or 12pt above
-    /// the quick-zoom control, open or closed — whichever is highest.
-    func test_724_hudClearsTheThumbnailAndTheZoomControl() {
-        let m = metrics(CGSize(width: 402, height: 874), bottom: 34, top: 62)
-        let thumbnailTop = m.leftFooterButtonCenter.y - CameraScreenLayoutMetrics.footerButtonSize / 2
-        XCTAssertEqual(m.dayHUDBottomInset(for: .threeByFour, zoomControlHeight: 0), 12)
-        XCTAssertEqual(m.dayHUDBottomInset(for: .oneByOne, zoomControlHeight: 0), 12)
-        let tall = m.closedPictureFrame(for: .nineBySixteen)
-        XCTAssertGreaterThan(tall.maxY, thumbnailTop, "9:16 runs behind the bottom bar")
-        XCTAssertEqual(tall.maxY - m.dayHUDBottomInset(for: .nineBySixteen, zoomControlHeight: 0), thumbnailTop - 12,
-                       accuracy: 0.5)
-
-        let closed = ZoomPresetBar.visibleHeight(presetCount: 3, isExpanded: false)
-        let open = ZoomPresetBar.visibleHeight(presetCount: 3, isExpanded: true)
-        XCTAssertEqual(ZoomPresetBar.visibleHeight(presetCount: 1, isExpanded: false), 0, "one lens: no control")
-        XCTAssertEqual(closed, 32)
-        XCTAssertEqual(open, 8 + 3 * 44 + 2 * 4)
-        for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
-            XCTAssertEqual(m.dayHUDBottomInset(for: ratio, zoomControlHeight: closed), 12 + 32 + 12, "\(ratio)")
-            XCTAssertEqual(m.dayHUDBottomInset(for: ratio, zoomControlHeight: open), 12 + open + 12, "\(ratio) open")
+    /// above 「返回圖庫」 where 9:16 runs behind the bottom bar; the
+    /// quick-zoom control, in the other corner, does not move it.
+    func test_724_hudClearsTheThumbnail() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            let thumbnailTop = m.leftFooterButtonCenter.y - CameraScreenLayoutMetrics.footerButtonSize / 2
+            XCTAssertEqual(m.dayHUDBottomInset(for: .threeByFour), 12, "\(size)")
+            XCTAssertEqual(m.dayHUDBottomInset(for: .oneByOne), 12, "\(size)")
+            let tall = m.closedPictureFrame(for: .nineBySixteen)
+            XCTAssertGreaterThan(tall.maxY, thumbnailTop, "\(size) 9:16 runs behind the bottom bar")
+            XCTAssertEqual(tall.maxY - m.dayHUDBottomInset(for: .nineBySixteen), thumbnailTop - 12, accuracy: 0.5,
+                           "\(size)")
         }
-        XCTAssertEqual(m.dayHUDBottomInset(for: .nineBySixteen, zoomControlHeight: open), 12 + open + 12,
-                       "9:16 open: the capsule is higher than the thumbnail")
+    }
+
+    /// #724, #731: the quick-zoom control keeps 12pt from the picture's
+    /// bottom edge unless the bottom bar lies over the picture (9:16), where
+    /// it sits 12pt above the bar's top so its taps reach it.
+    func test_724_zoomControlStaysAboveTheBottomBar() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            XCTAssertEqual(m.zoomControlBottomInset(for: .threeByFour), 12, "\(size)")
+            XCTAssertEqual(m.zoomControlBottomInset(for: .oneByOne), 12, "\(size)")
+            let tall = m.closedPictureFrame(for: .nineBySixteen)
+            XCTAssertEqual(tall.maxY - m.zoomControlBottomInset(for: .nineBySixteen), m.footerRegionTop - 12,
+                           accuracy: 0.5, "\(size)")
+        }
     }
 
     /// 712-4: the picture has the chosen ratio's shape: 1:1 is the square

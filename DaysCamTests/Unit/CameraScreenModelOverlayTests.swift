@@ -100,30 +100,34 @@ final class CameraScreenModelOverlayTests: XCTestCase {
     // MARK: - 724-1: the HUD
 
     /// 724-1: the shared scenario (小寶 from 2026-01-01, today 2026-01-10)
-    /// reads 「第 10 天」 over 「小寶」, as one VoiceOver label.
+    /// reads 「第 10 天」 over 「2026.01.10」, as one VoiceOver label; no name.
     func test_724_1_hudIsTheDayAndTheRecordName() throws {
         let store = makeStore()
         let record = try addRecord(to: store, name: "小寶", start: DateFixture.components(2026, 1, 1))
         let rig = try makeRig(store: store, record: record)
         let hud = try XCTUnwrap(rig.model.dayHUD)
         XCTAssertEqual(hud.dayText, "第 10 天")
-        XCTAssertEqual(hud.recordName, "小寶")
+        XCTAssertEqual(hud.dateText, "2026.01.10")
         XCTAssertFalse(hud.isBeforeStart)
-        XCTAssertEqual(hud.accessibilityLabel, "第 10 天，小寶")
+        XCTAssertEqual(hud.accessibilityLabel, "第 10 天，2026.01.10")
+        XCTAssertFalse(hud.accessibilityLabel.contains("小寶"), "the name is in the switcher, not the HUD")
     }
 
-    /// 724-1: the HUD is interface, not the overlay: the record's 疊字 and
-    /// 天數 switches do not hide it, and it never carries the date or name.
+    /// 724-1: the HUD is interface, not the overlay: the record's 疊字,
+    /// 天數, 日期 and 名稱 switches change neither line.
     func test_724_1_hudIgnoresTheOverlaySwitches() throws {
         let store = makeStore()
         var record = try addRecord(to: store, name: "小寶", start: DateFixture.components(2026, 1, 1))
-        record.showOverlay = false
-        record.showDayCount = false
-        record.showDate = true
-        record.showName = true
-        try store.updateAndWait(record)
-        let rig = try makeRig(store: store, record: record)
-        XCTAssertEqual(rig.model.dayHUD?.dayText, "第 10 天")
+        for (overlay, dayCount, date, name) in [(false, false, false, true), (true, true, true, true)] {
+            record.showOverlay = overlay
+            record.showDayCount = dayCount
+            record.showDate = date
+            record.showName = name
+            try store.updateAndWait(record)
+            let rig = try makeRig(store: store, record: record)
+            XCTAssertEqual(rig.model.dayHUD?.dayText, "第 10 天", "date \(date)")
+            XCTAssertEqual(rig.model.dayHUD?.dateText, "2026.01.10", "date \(date): the date even when the record prints none")
+        }
     }
 
     /// 724-1: no record, no HUD.
@@ -151,7 +155,7 @@ final class CameraScreenModelOverlayTests: XCTestCase {
 
         rig.model.selectRecord(second.id)
 
-        XCTAssertEqual(rig.model.dayHUD, CameraScreenModel.DayHUD(dayText: "3 個月又 6 天", recordName: "小芽",
+        XCTAssertEqual(rig.model.dayHUD, CameraScreenModel.DayHUD(dayText: "3 個月又 6 天", dateText: "2026.01.10",
                                                                  isBeforeStart: false))
     }
 
@@ -177,6 +181,7 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         let rig = try makeRig(store: store, record: record)
         let hud = try XCTUnwrap(rig.model.dayHUD)
         XCTAssertEqual(hud.dayText, "前 22 天")
+        XCTAssertEqual(hud.dateText, "2026.01.10", "today's date, not the start date")
         XCTAssertTrue(hud.isBeforeStart)
         XCTAssertEqual(CameraDayHUD.dayInk(isBeforeStart: hud.isBeforeStart), CameraTheme.inkOnPhotoBeforeStart)
         XCTAssertEqual(CameraDayHUD.dayInk(isBeforeStart: false), CameraTheme.inkOnPhoto)
@@ -191,6 +196,7 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         let rig = try makeRig(store: store, record: record,
                               calculator: DayCountCalculator(calendar: DateFixture.taipei, now: clock.read))
         XCTAssertEqual(rig.model.dayHUD?.dayText, "第 10 天")
+        XCTAssertEqual(rig.model.dayHUD?.dateText, "2026.01.10")
         var changes = 0
         let watch = rig.model.objectWillChange.sink { changes += 1 }
         defer { watch.cancel() }
@@ -202,6 +208,7 @@ final class CameraScreenModelOverlayTests: XCTestCase {
         XCTAssertEqual(rig.model.refreshTick, tick + 1)
         XCTAssertGreaterThan(changes, 0, "the view redraws")
         XCTAssertEqual(rig.model.dayHUD?.dayText, "第 11 天")
+        XCTAssertEqual(rig.model.dayHUD?.dateText, "2026.01.11", "the date follows midnight too")
     }
 
     private final class ClockBox {

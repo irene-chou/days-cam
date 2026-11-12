@@ -395,15 +395,9 @@ final class CameraScreenModel: ObservableObject {
         #endif
     }
 
-    /// Forwards only `isPinching` (issue #280) and the quick-zoom capsule
-    /// opening (the day HUD moves above it, #724), and starts the next pinch
-    /// at 1× after a camera switch, which resets the zoom.
+    /// Forwards only `isPinching` (issue #280), and starts the next pinch at
+    /// 1× after a camera switch, which resets the zoom.
     private func bindToZoomModel() {
-        zoomExpansion.$isExpanded
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
         zoomModel.$isPinching
             .dropFirst()
             .removeDuplicates()
@@ -1141,27 +1135,35 @@ extension CameraScreenModel {
         /// The longest day text of a photo taken now ("第 10 天",
         /// "3 個月又 6 天", "前 N 天"); no date, no name.
         let dayText: String
-        /// The selected record's name, the second line.
-        let recordName: String
+        /// Today's date as the record's text prints it ("2026.01.10"), the
+        /// second line; the name is in the switcher above.
+        let dateText: String
         /// The photo would fall before the start date ("前 N 天"), drawn in
         /// `CameraTheme.inkOnPhotoBeforeStart`.
         let isBeforeStart: Bool
 
-        /// One VoiceOver element: 「<天數文字>，<紀錄名>」.
+        /// One VoiceOver element: 「<天數文字>，<日期>」.
         var accessibilityLabel: String {
-            "\(dayText)，\(recordName)"
+            "\(dayText)，\(dateText)"
         }
     }
 
     /// The HUD of the selected record for a photo taken right now (the
-    /// 「照片」 moment, FR-20.6), with the photo wall's own text
-    /// (`PhotoWallModel.dayMarkTexts`). `nil` once the record is gone.
-    /// Re-read on every access, so it follows midnight through
-    /// `refreshTick` and the switcher at once.
+    /// 「照片」 moment, FR-20.6): the photo wall's own day text
+    /// (`PhotoWallModel.dayMarkTexts`) and the date part of the record's text
+    /// (`TemplateRenderer`), shown even while the record prints no date.
+    /// `nil` once the record is gone. Re-read on every access, so it follows
+    /// midnight through `refreshTick` and the switcher at once.
     var dayHUD: DayHUD? {
         guard let profile else { return nil }
-        let marks = PhotoWallModel.dayMarkTexts(creationDate: calculator.now(), profile: profile, calendar: calendar)
-        return DayHUD(dayText: marks.texts.first ?? "", recordName: profile.name, isBeforeStart: marks.isBeforeStart)
+        let now = calculator.now()
+        let marks = PhotoWallModel.dayMarkTexts(creationDate: now, profile: profile, calendar: calendar)
+        var dateOnly = profile
+        dateOnly.showDate = true
+        dateOnly.showName = false
+        dateOnly.showDayCount = false
+        let dateText = renderer.render(profile: dateOnly, capturedAt: now, calendar: calendar, moment: .photo)
+        return DayHUD(dayText: marks.texts.first ?? "", dateText: dateText, isBeforeStart: marks.isBeforeStart)
     }
 }
 

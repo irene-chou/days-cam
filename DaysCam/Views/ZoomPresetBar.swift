@@ -105,10 +105,13 @@ final class ZoomPresetExpansion: ObservableObject {
     }
 }
 
-/// The quick-zoom control in the picture's bottom-left corner (issues #279,
-/// #302): a 32pt round button showing the current zoom, which opens upward
-/// into the vertical capsule of presets, largest on top. Observes the zoom model itself, so a pinch redraws only
-/// this control (issue #280).
+/// The quick-zoom control in the picture's bottom-right corner (issues #279,
+/// #302; moved from the left for the day HUD, #724): a 32pt round button
+/// showing the current zoom, which opens upward into the vertical capsule of
+/// presets, largest on top, inside the picture. It keeps the screen's corner
+/// when the phone turns; only the button's text turns upright (#572).
+/// Observes the zoom model itself, so a pinch redraws only this control
+/// (issue #280).
 struct ZoomPresetBar: View {
     @ObservedObject var zoom: ViewfinderZoomModel
     @ObservedObject var expansion: ZoomPresetExpansion
@@ -118,22 +121,14 @@ struct ZoomPresetBar: View {
     let pictureFrame: CGRect
     /// How the phone is held; the round button's text turns upright (#572).
     var rotation: ViewfinderRotation = .portrait
+    /// Gap between the round button and the picture's bottom edge: more than
+    /// `cornerInset` where the bottom bar lies over the picture (9:16, #731).
+    var bottomInset: CGFloat = ZoomPresetBar.cornerInset
 
     private static let buttonSize: CGFloat = 32
     private static let barWidth: CGFloat = 40
     private static let tapSize: CGFloat = 44
     static let cornerInset: CGFloat = 12
-
-    /// How far the control rises above `cornerInset` from the picture's
-    /// bottom edge: the 32pt round button, or the open capsule of
-    /// `presetCount` 44pt rows; 0 while it is hidden. The day HUD in the same
-    /// corner stays above it (#724).
-    static func visibleHeight(presetCount: Int, isExpanded: Bool) -> CGFloat {
-        guard presetCount > 1 else { return 0 }
-        guard isExpanded else { return buttonSize }
-        let rows = CGFloat(presetCount)
-        return 2 * 4 + rows * tapSize + (rows - 1) * 4
-    }
 
     var body: some View {
         let selected = ZoomPresetBarLogic.selectedIndex(requested: zoom.requestedFactor, presets: presets)
@@ -142,7 +137,7 @@ struct ZoomPresetBar: View {
             // Out of the tree while hidden, so it is gone for VoiceOver and
             // takes no touches either.
             if shown {
-                ZStack(alignment: .bottomLeading) {
+                ZStack(alignment: .bottomTrailing) {
                     if expansion.isExpanded {
                         capsule(selected: selected)
                             .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
@@ -151,9 +146,9 @@ struct ZoomPresetBar: View {
                             .transition(.opacity)
                     }
                 }
-                .padding(.leading, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2)
-                .padding(.bottom, Self.cornerInset)
-                .frame(width: pictureFrame.width, height: pictureFrame.height, alignment: .bottomLeading)
+                .padding(.trailing, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2)
+                .padding(.bottom, bottomInset)
+                .frame(width: pictureFrame.width, height: pictureFrame.height, alignment: .bottomTrailing)
                 .position(x: pictureFrame.midX, y: pictureFrame.midY)
             }
         }

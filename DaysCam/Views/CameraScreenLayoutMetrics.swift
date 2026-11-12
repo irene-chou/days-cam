@@ -135,16 +135,22 @@ struct CameraScreenLayoutMetrics {
     static let dayHUDInset: CGFloat = 12
 
     /// The upright day HUD's distance from the `ratio` picture's bottom edge:
-    /// `dayHUDInset`, or `dayHUDInset` above whichever is higher of
-    /// 「返回圖庫」 (9:16 runs behind the bottom bar) and the quick-zoom
-    /// control in the same corner, `zoomControlHeight` tall over its own
-    /// `ZoomPresetBar.cornerInset` (0 while hidden).
-    func dayHUDBottomInset(for ratio: CaptureAspectRatio, zoomControlHeight: CGFloat) -> CGFloat {
+    /// `dayHUDInset`, or `dayHUDInset` above 「返回圖庫」 where the picture
+    /// runs behind the bottom bar (9:16). The quick-zoom control is in the
+    /// other corner (#724).
+    func dayHUDBottomInset(for ratio: CaptureAspectRatio) -> CGFloat {
         let picture = closedPictureFrame(for: ratio)
         let thumbnailTop = leftFooterButtonCenter.y - Self.footerButtonSize / 2
-        let footer = picture.maxY - thumbnailTop
-        let zoom = zoomControlHeight > 0 ? ZoomPresetBar.cornerInset + zoomControlHeight : 0
-        return Self.dayHUDInset + max(0, footer, zoom)
+        return Self.dayHUDInset + max(0, picture.maxY - thumbnailTop)
+    }
+
+    /// The quick-zoom control's distance from the `ratio` picture's bottom
+    /// edge: `ZoomPresetBar.cornerInset`, or that much above the bottom bar's
+    /// top where the picture runs behind it (9:16), since the bar takes the
+    /// touches there (#731).
+    func zoomControlBottomInset(for ratio: CaptureAspectRatio) -> CGFloat {
+        let picture = closedPictureFrame(for: ratio)
+        return ZoomPresetBar.cornerInset + max(0, picture.maxY - footerRegionTop)
     }
 
     /// True for iPhone SE-class heights (< 700pt).
