@@ -1,7 +1,7 @@
 import XCTest
 
 /// #712: the ratio key (acceptance 2) and the viewfinder at each ratio with
-/// the overlay inside it (4). With `DAYSCAM_UI_SHOT_DIR` in the test runner's
+/// the day HUD inside it (4, #724). With `DAYSCAM_UI_SHOT_DIR` in the test runner's
 /// environment the B′ screenshots (8) are also written there for the PR.
 final class CameraRatioUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -40,7 +40,7 @@ final class CameraRatioUITests: XCTestCase {
 
     private var ratioButton: XCUIElement { element("cameraRatioButton") }
     private var viewfinder: XCUIElement { element("cameraViewfinder") }
-    private var overlayText: XCUIElement { element("overlayText") }
+    private var hud: XCUIElement { element("cameraDayHUD") }
 
     private func shot(_ name: String) {
         let screenshot = app.screenshot()
@@ -93,9 +93,9 @@ final class CameraRatioUITests: XCTestCase {
 
     // MARK: - 4, 8: the viewfinder at each ratio
 
-    /// 4: the viewfinder has the chosen ratio's shape and the overlay text and
-    /// film date sit inside it; 8: one screenshot per ratio, plus the tools
-    /// capsule open.
+    /// 4: the viewfinder has the chosen ratio's shape and the day HUD sits
+    /// inside it (#724); 8: one screenshot per ratio, plus the tools capsule
+    /// open.
     func test_712_4_viewfinderFollowsTheRatio() {
         launchCamera()
         let expected: [(String, CGFloat)] = [("3:4", 3.0 / 4), ("1:1", 1), ("9:16", 9.0 / 16)]
@@ -107,14 +107,10 @@ final class CameraRatioUITests: XCTestCase {
             let frame = viewfinder.frame
             XCTAssertEqual(frame.width / frame.height, aspect, accuracy: 0.01, "712-4 \(label): \(frame)")
             XCTAssertEqual(frame.width, app.frame.width, accuracy: 1, "712-4 \(label) full width")
-            assertOnScreen(overlayText, "712-4 \(label) the text is drawn")
-            XCTAssertTrue(frame.contains(overlayText.frame), "712-4 \(label) text \(overlayText.frame) in \(frame)")
-            let stamp = element("filmDateStamp")
-            XCTAssertTrue(stamp.exists, "712-4 \(label) film date")
-            XCTAssertTrue(frame.contains(stamp.frame), "712-4 \(label) film date \(stamp.frame) in \(frame)")
+            assertOnScreen(hud, "724 \(label) the HUD is drawn")
+            XCTAssertTrue(frame.contains(hud.frame), "724 \(label) HUD \(hud.frame) in \(frame)")
             assertOnScreen(ratioButton, "\(label) ratio key")
             assertOnScreen(app.buttons["快門"], "\(label) shutter")
-            assertOnScreen(element("cameraStyleButton"), "\(label) 文字樣式 key")
             shot("ratio_\(label.replacingOccurrences(of: ":", with: "x"))")
         }
 

@@ -524,51 +524,56 @@ private func assertRectsEqual(_ lhs: CGRect, _ rhs: CGRect, file: StaticString =
     XCTAssertEqual(lhs.size.height, rhs.size.height, accuracy: 0.05, file: file, line: line)
 }
 
-// MARK: - Style sheet (#656)
+// MARK: - Picture frame (#712)
 
-final class CameraScreenStyleSheetMetricsTests: XCTestCase {
+final class CameraScreenPictureFrameMetricsTests: XCTestCase {
     private func metrics(_ size: CGSize, bottom: CGFloat, top: CGFloat) -> CameraScreenLayoutMetrics {
         CameraScreenLayoutMetrics(screenSize: size, safeAreaInsets: EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
     }
 
-    /// 6: about 4/10 of the screen on a large phone, and the viewfinder is
-    /// fitted between the header and the sheet without overlapping either.
-    func test_656_6_sheetIsAboutFortyPercentAndTheViewfinderYields() {
-        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
-                                    (CGSize(width: 375, height: 667), 0, 20),
-                                    (CGSize(width: 440, height: 956), 34, 62)] {
-            let m = metrics(size, bottom: bottom, top: top)
-            XCTAssertEqual(m.styleSheetVisibleHeight, m.styleSheetHeight + bottom, accuracy: 0.5)
-            XCTAssertEqual(m.styleSheetVisibleHeight / size.height, 0.4, accuracy: 0.08, "\(size)")
-            let frame = m.styleSheetViewfinderFrame(aspect: 0.75)
-            XCTAssertGreaterThanOrEqual(frame.minY, m.headerBottom - 0.5, "\(size) below the header")
-            XCTAssertLessThanOrEqual(frame.maxY, m.styleSheetTop + 0.5, "\(size) above the sheet")
-            XCTAssertEqual(frame.width / frame.height, 0.75, accuracy: 0.001, "\(size) stays 3:4")
-            XCTAssertEqual(m.styleSheetViewfinderArea.minY, m.headerBottom)
-        }
-    }
-
-    /// The placement keeps the closed layout size and only scales and moves,
-    /// at every ratio, by the same amount on both axes (#712-4).
-    func test_712_4_placementScalesAboutTheClosedLayoutAtEveryRatio() {
+    /// #724: the day HUD sits 12pt over the picture's bottom edge, or 12pt
+    /// above 「返回圖庫」 where 9:16 runs behind the bottom bar; the
+    /// quick-zoom control, in the other corner, does not move it.
+    func test_724_hudClearsTheThumbnail() {
         for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
                                     (CGSize(width: 375, height: 667), 0, 20)] {
             let m = metrics(size, bottom: bottom, top: top)
-            for ratio in CaptureAspectRatio.allCases {
-                let closed = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: false)
-                let open = m.viewfinderPlacement(for: ratio, isStyleSheetOpen: true)
-                let picture = m.closedPictureFrame(for: ratio)
-                XCTAssertEqual(closed.layoutSize, picture.size, "\(ratio)")
-                XCTAssertEqual(closed.center.x, picture.midX, accuracy: 0.5)
-                XCTAssertEqual(closed.center.y, picture.midY, accuracy: 0.5)
-                XCTAssertEqual(closed.layoutSize, open.layoutSize)
-                XCTAssertEqual(closed.scale, CGSize(width: 1, height: 1))
-                XCTAssertLessThan(open.scale.width, 1, "\(size) \(ratio)")
-                XCTAssertEqual(open.scale.width, open.scale.height, accuracy: 0.0001)
-                let openHeight = closed.layoutSize.height * open.scale.height
-                XCTAssertGreaterThanOrEqual(open.center.y - openHeight / 2, m.headerBottom - 0.5, "\(ratio) below the header")
-                XCTAssertLessThanOrEqual(open.center.y + openHeight / 2, m.styleSheetTop + 0.5, "\(ratio) above the sheet")
+            let thumbnailTop = m.leftFooterButtonCenter.y - CameraScreenLayoutMetrics.footerButtonSize / 2
+            XCTAssertEqual(m.dayHUDBottomInset(for: .threeByFour), 12, "\(size)")
+            XCTAssertEqual(m.dayHUDBottomInset(for: .oneByOne), 12, "\(size)")
+            let tall = m.closedPictureFrame(for: .nineBySixteen)
+            XCTAssertGreaterThan(tall.maxY, thumbnailTop, "\(size) 9:16 runs behind the bottom bar")
+            XCTAssertEqual(tall.maxY - m.dayHUDBottomInset(for: .nineBySixteen), thumbnailTop - 12, accuracy: 0.5,
+                           "\(size)")
+        }
+    }
+
+    /// #724, #731: the quick-zoom control moves in from the held edge that
+    /// lies on a bar — the bottom bar over 9:16, and SE's top bar over its
+    /// full-bleed 9:16 — and nowhere else.
+    func test_724_zoomControlClearsTheBarsInEveryOrientation() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            let rotations: [ViewfinderRotation] = [.portrait, .landscapeTopLeft, .landscapeTopRight, .upsideDown]
+            for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
+                for rotation in rotations {
+                    let clearance = m.zoomControlClearance(for: ratio, rotation: rotation)
+                    XCTAssertEqual(clearance.bottom, 0, "\(size) \(ratio) \(rotation)")
+                    XCTAssertEqual(clearance.trailing, 0, "\(size) \(ratio) \(rotation)")
+                }
             }
+            let tall = m.closedPictureFrame(for: .nineBySixteen)
+            let underFooter = tall.maxY - m.footerRegionTop
+            let underHeader = max(0, m.headerBottom - tall.minY)
+            XCTAssertGreaterThan(underFooter, 0, "\(size) 9:16 runs behind the bottom bar")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .portrait).bottom, underFooter, accuracy: 0.5)
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .landscapeTopLeft).trailing, underFooter,
+                           accuracy: 0.5, "\(size) held right edge = screen bottom")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .landscapeTopRight).trailing, underHeader,
+                           accuracy: 0.5, "\(size) held right edge = screen top")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .upsideDown).bottom, underHeader,
+                           accuracy: 0.5, "\(size) held bottom = screen top")
         }
     }
 

@@ -15,7 +15,7 @@ final class PhotoDetailUITests: XCTestCase {
 
     /// Seeds one record starting 2026-01-01, then launches on 2026-01-10 with
     /// five photos, one per day ending that day, and opens the record.
-    private func launchWall(mixedAspects: Bool = false, showTips: Bool = false, filmDate: Bool = false) {
+    private func launchWall(mixedAspects: Bool = false, filmDate: Bool = false) {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
@@ -28,7 +28,6 @@ final class PhotoDetailUITests: XCTestCase {
         app.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles,
                                 "-UITestRecordPhotos", "5", "-UITestBindAlbum"]
         if mixedAspects { app.launchArguments.append("-UITestMixedAspects") }
-        if showTips { app.launchArguments.append("-UITestShowTips") }
         if filmDate { app.launchArguments += ["-UITestFilmDate", "bottomTrailing"] }
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
         app.launch()
@@ -181,10 +180,10 @@ final class PhotoDetailUITests: XCTestCase {
                        "label was \(target.label)", file: file, line: line)
     }
 
-    /// #699-2, #699-3: the top bar still reads 第 N 天, and even on a first
-    /// visit (`-UITestShowTips`) no pointer bubble appears.
+    /// #699-2, #699-3: the top bar still reads 第 N 天, and no pointer bubble
+    /// appears.
     func testNoCoachAndHeaderStillShowsDay() {
-        launchWall(mixedAspects: true, showTips: true)
+        launchWall(mixedAspects: true)
         openViewer(cell: 4)
         waitForTitle(containing: "第 10 天")
         XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))

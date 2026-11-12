@@ -163,28 +163,23 @@ final class ViewfinderLevelModelTests: XCTestCase {
         XCTAssertEqual(source.starts, 1)
         XCTAssertTrue(model.isRunning)
 
-        model.setConditions(LevelConditions(isSwitchOn: true, isPanelOpen: true))
-        XCTAssertEqual(source.stops, 1, "panel open")
-        model.setConditions(LevelConditions(isSwitchOn: true))
-        XCTAssertEqual(source.starts, 2, "panel closed")
-
         model.setConditions(LevelConditions(isSwitchOn: true, isCountingDown: true))
-        XCTAssertEqual(source.stops, 2, "countdown")
+        XCTAssertEqual(source.stops, 1, "countdown")
+        model.setConditions(LevelConditions(isSwitchOn: true))
+        XCTAssertEqual(source.starts, 2)
+
+        model.setConditions(LevelConditions(isSwitchOn: true, isSceneActive: false))
+        XCTAssertEqual(source.stops, 2, "scene inactive")
         model.setConditions(LevelConditions(isSwitchOn: true))
         XCTAssertEqual(source.starts, 3)
 
-        model.setConditions(LevelConditions(isSwitchOn: true, isSceneActive: false))
-        XCTAssertEqual(source.stops, 3, "scene inactive")
-        model.setConditions(LevelConditions(isSwitchOn: true))
-        XCTAssertEqual(source.starts, 4)
-
         model.setConditions(LevelConditions(isSwitchOn: true, isCameraVisible: false))
-        XCTAssertEqual(source.stops, 4, "camera gone")
+        XCTAssertEqual(source.stops, 3, "camera gone")
         XCTAssertEqual(model.display, .hidden)
 
         model.setConditions(LevelConditions(isSwitchOn: true))
         model.setConditions(LevelConditions(isSwitchOn: false))
-        XCTAssertEqual(source.stops, 5, "switch off again")
+        XCTAssertEqual(source.stops, 4, "switch off again")
     }
 
     func test_687_3_sameConditionsDoNotRestart() {

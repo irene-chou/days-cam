@@ -105,11 +105,14 @@ final class ZoomPresetExpansion: ObservableObject {
     }
 }
 
-/// The quick-zoom control in the picture's bottom-left corner (issues #279,
-/// #302): a 32pt round button showing the current zoom, which opens upward
-/// into the vertical capsule of presets, largest on top. Hidden while the
-/// panel is open. Observes the zoom model itself, so a pinch redraws only
-/// this control (issue #280).
+/// The quick-zoom control in the held picture's bottom-right corner (issues
+/// #279, #302; moved from the left for the day HUD, #724): a 32pt round
+/// button showing the current zoom, which opens upward into the vertical
+/// capsule of presets, largest on top, inside the picture. Like the HUD it
+/// lays out at the photo's own size and turns with the phone (#571, #572),
+/// so the two never share a corner and the capsule opens toward the held
+/// top. Observes the zoom model itself, so a pinch redraws only this
+/// control (issue #280).
 struct ZoomPresetBar: View {
     @ObservedObject var zoom: ViewfinderZoomModel
     @ObservedObject var expansion: ZoomPresetExpansion
@@ -117,8 +120,13 @@ struct ZoomPresetBar: View {
     let isVisible: Bool
     /// The picture's rectangle in screen coordinates.
     let pictureFrame: CGRect
-    /// How the phone is held; the round button's text turns upright (#572).
+    /// How the phone is held; the control turns with it (#572).
     var rotation: ViewfinderRotation = .portrait
+    /// Extra room from the held bottom and right edges where a bar lies over
+    /// the picture (`CameraScreenLayoutMetrics.zoomControlClearance`, #731).
+    var clearance: (bottom: CGFloat, trailing: CGFloat) = (0, 0)
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let buttonSize: CGFloat = 32
     private static let barWidth: CGFloat = 40
@@ -128,11 +136,12 @@ struct ZoomPresetBar: View {
     var body: some View {
         let selected = ZoomPresetBarLogic.selectedIndex(requested: zoom.requestedFactor, presets: presets)
         let shown = isVisible && ZoomPresetBarLogic.isShown(presets: presets)
+        let layerSize = rotation.frameSize(for: pictureFrame.size)
         ZStack {
             // Out of the tree while hidden, so it is gone for VoiceOver and
             // takes no touches either.
             if shown {
-                ZStack(alignment: .bottomLeading) {
+                ZStack(alignment: .bottomTrailing) {
                     if expansion.isExpanded {
                         capsule(selected: selected)
                             .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
@@ -141,9 +150,12 @@ struct ZoomPresetBar: View {
                             .transition(.opacity)
                     }
                 }
-                .padding(.leading, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2)
-                .padding(.bottom, Self.cornerInset)
-                .frame(width: pictureFrame.width, height: pictureFrame.height, alignment: .bottomLeading)
+                .padding(.trailing, Self.cornerInset + Self.buttonSize / 2 - Self.barWidth / 2 + clearance.trailing)
+                .padding(.bottom, Self.cornerInset + clearance.bottom)
+                .frame(width: layerSize.width, height: layerSize.height, alignment: .bottomTrailing)
+                .rotationEffect(.degrees(rotation.degrees))
+                .frame(width: pictureFrame.width, height: pictureFrame.height)
+                .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
                 .position(x: pictureFrame.midX, y: pictureFrame.midY)
             }
         }
@@ -163,7 +175,6 @@ struct ZoomPresetBar: View {
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
                 .foregroundColor(.white)
-                .rotatedChrome(rotation)
                 .frame(width: Self.buttonSize, height: Self.buttonSize)
                 .background(Circle().fill(Color.black.opacity(0.45)))
                 .frame(width: Self.barWidth, height: Self.tapSize)

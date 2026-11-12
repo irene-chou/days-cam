@@ -15,7 +15,7 @@ final class ExportUITests: XCTestCase {
     /// Seeds one record starting 2026-01-01, then launches on 2026-01-10 with
     /// five photos, one per day ending that day; with `opensExport` the newest
     /// one's export page is up at launch.
-    private func launch(opensExport: Bool = true, portrait: Bool = false, showTips: Bool = false) {
+    private func launch(opensExport: Bool = true, portrait: Bool = false) {
         let profiles = UUID().uuidString
         let seeding = XCUIApplication()
         seeding.launchArguments += ["-UITestSkipOnboarding", "-UITestOpenFirstRecord", "-UITestFreshProfiles", profiles]
@@ -30,7 +30,6 @@ final class ExportUITests: XCTestCase {
         if opensExport { app.launchArguments.append("-UITestOpenExport") }
         // The newest photo is then 3:4 portrait, as on D-7 screen 4.
         if portrait { app.launchArguments.append("-UITestMixedAspects") }
-        if showTips { app.launchArguments.append("-UITestShowTips") }
         app.launchEnvironment["DAYSCAM_FAKE_TODAY"] = "2026-01-10"
         app.launch()
         if opensExport {
@@ -153,7 +152,7 @@ final class ExportUITests: XCTestCase {
     /// #679-10: even on a first run, 匯出 goes straight to the export sheet;
     /// the old comparison sheet is gone.
     func testFirstExportHasNoComparison() {
-        launch(opensExport: false, portrait: true, showTips: true)
+        launch(opensExport: false, portrait: true)
         openNewestViewer()
         element("photoDetailExportButton").tap()
         XCTAssertTrue(element("batchExportSheet").waitForExistence(timeout: 5))

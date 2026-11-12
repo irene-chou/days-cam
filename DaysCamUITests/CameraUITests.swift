@@ -94,12 +94,13 @@ final class CameraUITests: XCTestCase {
         return name
     }
 
-    /// 6 (#655-1): no 「第 N 天」 HUD ever (the overlay itself is always
-    /// drawn since #712, `CameraOverlayPreviewUITests`).
-    func test_621_6_viewfinderShowsNoHUD() {
+    /// 6 (#724): the 「第 N 天」 HUD is back in place of the overlay
+    /// (`CameraHUDUITests`); #655-1's "no HUD" is overruled by D-11.
+    func test_621_6_viewfinderShowsTheHUD() {
         launchCamera()
         XCTAssertTrue(switcher.waitForExistence(timeout: 5))
-        XCTAssertFalse(element("cameraDayHUD").exists, "655-1 no HUD")
+        XCTAssertTrue(element("cameraDayHUD").waitForExistence(timeout: 5), "724 the HUD")
+        XCTAssertFalse(element("overlayText").exists, "724 no overlay text")
     }
 
     /// 7: no tone, profile menu or old panel entry, in the bar or the tools
@@ -136,16 +137,16 @@ final class CameraUITests: XCTestCase {
 
     /// 712-1 (with 655-1, 655-2, 655-12): the tools toggle at the top left,
     /// the switcher centered, the ratio key and flip at the top right with
-    /// flip outermost; 「返回圖庫」, the shutter and the 文字樣式 key along the
-    /// bottom; the capsule's four keys open under the toggle.
+    /// flip outermost; 「返回圖庫」 and the shutter along the bottom, nothing
+    /// right of the shutter (#724); the capsule's four keys open under the
+    /// toggle.
     func test_712_1_layoutIsBackTo1x() {
         launchCamera()
         let tools = app.buttons["相機設定"]
         let ratio = element("cameraRatioButton")
         let flip = app.buttons["翻轉鏡頭"]
         let shutter = app.buttons["快門"]
-        let style = element("cameraStyleButton")
-        for item in [switcher, tools, ratio, flip, thumbnail, shutter, style] {
+        for item in [switcher, tools, ratio, flip, thumbnail, shutter] {
             XCTAssertTrue(item.waitForExistence(timeout: 5), "\(item)")
         }
         XCTAssertEqual(switcher.label, "切換紀錄")
@@ -165,10 +166,16 @@ final class CameraUITests: XCTestCase {
 
         XCTAssertEqual(thumbnail.label, "返回圖庫", "655-2")
         XCTAssertLessThan(thumbnail.frame.maxX, shutter.frame.minX, "655-2 thumbnail left of the shutter")
-        XCTAssertGreaterThan(style.frame.minX, shutter.frame.maxX, "712-1 the 文字樣式 key right of the shutter")
-        XCTAssertEqual(style.frame.midY, shutter.frame.midY, accuracy: 2, "712-1 one bottom row")
-        XCTAssertEqual(app.frame.maxX - style.frame.midX, thumbnail.frame.midX, accuracy: 2,
-                       "712-1 the side keys mirror each other")
+        XCTAssertEqual(shutter.frame.midX, app.frame.midX, accuracy: 2, "712-1 the shutter centered")
+        XCTAssertFalse(element("cameraStyleButton").exists, "724-2 no 文字樣式 key")
+        XCTAssertFalse(app.buttons["文字樣式"].exists, "724-2 no 文字樣式 key")
+        // The photo wall stays under the camera; its own keys (`wall…`) are not
+        // the camera's bottom row.
+        let rightOfShutter = app.buttons.allElementsBoundByIndex.filter {
+            !$0.identifier.hasPrefix("wall")
+                && $0.frame.minX > shutter.frame.maxX && abs($0.frame.midY - shutter.frame.midY) < 30
+        }
+        XCTAssertTrue(rightOfShutter.isEmpty, "724-2 nothing right of the shutter: \(rightOfShutter)")
 
         tools.tap()
         let flash = app.buttons["閃光燈"]
