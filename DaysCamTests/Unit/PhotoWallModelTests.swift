@@ -1027,3 +1027,139 @@ extension PhotoWallModelTests {
         XCTAssertFalse(unknown.isBeforeStart)
     }
 }
+
+// MARK: - #725 comparison card
+
+extension PhotoWallModelTests {
+    /// Ten photos, 2026-01-01 … 2026-01-10, in one album.
+    private func tenJanuaryPhotos() -> FakeRecordAlbumLibrary {
+        let assets = (1...10).map { asset("p\($0)", 1, $0) }
+        return FakeRecordAlbumLibrary(assets: assets, albums: [.init(id: "album", title: "小寶", assetIDs: assets.map(\.id))])
+    }
+
+    private func comparisonModel(_ library: any RecordAlbumLibrary, store: ProfileStore,
+                                 profile: CameraProfile) -> PhotoWallModel {
+        PhotoWallModel(profileID: profile.id, store: store, library: library, calendar: calendar,
+                       todayText: { _ in "" }, defaults: defaults, scheduleAfter: { _, _ in })
+    }
+
+    /// 1: ten photos nine days apart, only days counted → 第 1 天 → 第 10 天.
+    func testComparisonPairsEarliestAndLatest() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let model = comparisonModel(tenJanuaryPhotos(), store: store, profile: profile)
+        let comparison = try XCTUnwrap(model.comparison, "1")
+        XCTAssertEqual(comparison.earliestID, "p1")
+        XCTAssertEqual(comparison.latestID, "p10")
+        XCTAssertEqual(comparison.title, "第 1 天 → 第 10 天", "1")
+        XCTAssertEqual(comparison.subtitle, "對比圖已準備好，點開預覽與匯出")
+        XCTAssertTrue(model.showsComparison)
+    }
+
+    /// 1: one photo, or photos fewer than seven days apart → no card.
+    func testComparisonNeedsTwoPhotosAWeekApart() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let one = FakeRecordAlbumLibrary(assets: [asset("p1", 1, 1)],
+                                         albums: [.init(id: "album", title: "小寶", assetIDs: ["p1"])])
+        XCTAssertNil(comparisonModel(one, store: store, profile: profile).comparison, "1 one photo")
+        let close = (1...7).map { asset("p\($0)", 1, $0) }
+        let six = FakeRecordAlbumLibrary(assets: close,
+                                         albums: [.init(id: "album", title: "小寶", assetIDs: close.map(\.id))])
+        let model = comparisonModel(six, store: store, profile: profile)
+        XCTAssertNil(model.comparison, "1 six days apart")
+        XCTAssertFalse(model.showsComparison)
+    }
+
+    /// 1: photos before the start date and undated ones take no part.
+    func testComparisonSkipsPhotosBeforeStartAndUndated() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let assets = [asset("early", 12, 20, year: 2025), FakeRecordAlbumLibrary.Asset(id: "undated", creationDate: nil),
+                      asset("p1", 1, 2), asset("p2", 1, 10)]
+        let library = FakeRecordAlbumLibrary(assets: assets,
+                                             albums: [.init(id: "album", title: "小寶", assetIDs: assets.map(\.id))])
+        let comparison = try XCTUnwrap(comparisonModel(library, store: store, profile: profile).comparison)
+        XCTAssertEqual(comparison.title, "第 2 天 → 第 10 天")
+    }
+
+    /// 2: the card hides while selecting and comes back after.
+    func testComparisonHidesWhileSelecting() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let model = comparisonModel(tenJanuaryPhotos(), store: store, profile: profile)
+        model.beginSelecting()
+        XCTAssertFalse(model.showsComparison, "2")
+        model.endSelecting()
+        XCTAssertTrue(model.showsComparison, "2")
+    }
+
+    /// 3: the chevron collapses the card for every record and a new model
+    /// (a relaunch) starts collapsed.
+    func testComparisonCollapseIsRemembered() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = tenJanuaryPhotos()
+        let model = comparisonModel(library, store: store, profile: profile)
+        XCTAssertFalse(model.isComparisonCollapsed)
+        model.toggleComparisonCollapsed()
+        XCTAssertTrue(model.isComparisonCollapsed, "3")
+        XCTAssertTrue(defaults.bool(forKey: PhotoWallModel.comparisonCollapsedKey))
+        XCTAssertTrue(comparisonModel(library, store: store, profile: profile).isComparisonCollapsed, "3 relaunch")
+        model.toggleComparisonCollapsed()
+        XCTAssertFalse(comparisonModel(library, store: store, profile: profile).isComparisonCollapsed, "3")
+    }
+
+    /// 3: a new milestone expands a collapsed card once; the same milestone
+    /// later leaves it collapsed.
+    func testNewMilestoneExpandsTheCardOnce() throws {
+        let (store, profile) = try makeStore(start: DateFixture.components(2025, 1, 10), albumIdentifier: "album")
+        // 2026-01-10 is one year after the start: "滿 1 年了".
+        let library = tenJanuaryPhotos()
+        defaults.set(true, forKey: PhotoWallModel.comparisonCollapsedKey)
+        let model = comparisonModel(library, store: store, profile: profile)
+        XCTAssertEqual(model.comparison?.subtitle, "滿 1 年了")
+        XCTAssertFalse(model.isComparisonCollapsed, "3 expanded on a new milestone")
+        XCTAssertFalse(defaults.bool(forKey: PhotoWallModel.comparisonCollapsedKey))
+        XCTAssertEqual(defaults.string(forKey: PhotoWallModel.comparisonMilestoneKey(profile.id)), "滿 1 年了")
+
+        model.toggleComparisonCollapsed()
+        model.reload()
+        XCTAssertTrue(model.isComparisonCollapsed, "3 same milestone stays collapsed")
+        XCTAssertTrue(comparisonModel(library, store: store, profile: profile).isComparisonCollapsed, "3")
+    }
+
+    /// 1: a library change recomputes the pair.
+    func testComparisonFollowsTheWall() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = tenJanuaryPhotos()
+        let model = comparisonModel(library, store: store, profile: profile)
+        library.removeFromLibrary("p10")
+        library.removeFromLibrary("p9")
+        library.removeFromLibrary("p8")
+        model.reload()
+        XCTAssertNil(model.comparison, "six days apart now")
+    }
+
+    /// 7: an export toasts and speaks 已匯出; 取消 does neither.
+    func testComparisonExportToastsOnTheWall() async throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let library = tenJanuaryPhotos()
+        let model = comparisonModel(library, store: store, profile: profile)
+        var announced: [String] = []
+        model.announce = { announced.append($0) }
+        var saves = 0
+
+        model.openComparison(resolveFont: { _ in .pingFang },
+                             compose: { _, _, _, _, _, _ in UIImage() },
+                             save: { _, completion in saves += 1; completion(.success("new")) })
+        let sheet = try XCTUnwrap(model.comparisonSheet)
+        sheet.cancel()
+        XCTAssertNil(model.comparisonSheet)
+        XCTAssertNil(model.toastState)
+
+        model.openComparison(resolveFont: { _ in .pingFang },
+                             compose: { _, _, _, _, _, _ in UIImage() },
+                             save: { _, completion in saves += 1; completion(.success("new")) })
+        await model.comparisonSheet?.export()
+        XCTAssertEqual(saves, 1, "7")
+        XCTAssertNil(model.comparisonSheet, "7 closed")
+        XCTAssertEqual(model.toastState?.message, "已匯出", "7")
+        XCTAssertEqual(announced, ["已匯出"], "7")
+    }
+}
