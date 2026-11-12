@@ -44,6 +44,25 @@ final class PhotoWallModel: ObservableObject {
         case photos
     }
 
+    /// The comparison card over the wall (#725): the earliest and latest
+    /// photos from on the start date, and the card's two lines.
+    struct Comparison: Equatable {
+        /// `PHAsset.localIdentifier` of the earliest photo.
+        let earliestID: String
+        /// `PHAsset.localIdentifier` of the latest photo.
+        let latestID: String
+        /// The earliest photo's day texts, longest first (`dayMarkTexts`).
+        let earliestTexts: [String]
+        /// The latest photo's day texts, longest first.
+        let latestTexts: [String]
+        /// "<earliest> → <latest>".
+        let title: String
+        /// The milestone line, or "對比圖已準備好，點開預覽與匯出".
+        let subtitle: String
+        /// The milestone line alone, `nil` without one.
+        let milestone: String?
+    }
+
     /// Heading of the photos that have no `creationDate`.
     static let unknownMonthTitle = "日期不明"
 
@@ -65,6 +84,13 @@ final class PhotoWallModel: ObservableObject {
     private var undatedIDs: Set<String> = []
     /// The batch export sheet while it is up (FR-22.4).
     @Published private(set) var batchExport: BatchExportModel?
+    /// The comparison card's pair, recomputed with the wall; `nil` hides
+    /// the card (#725).
+    @Published private(set) var comparison: Comparison?
+    /// The card shows as a 40pt row. App-wide, remembered across launches.
+    @Published private(set) var isComparisonCollapsed: Bool
+    /// The comparison sheet while it is up.
+    @Published private(set) var comparisonSheet: ComparisonModel?
 
     /// Selection mode is on (FR-17.11).
     @Published private(set) var isSelecting = false
@@ -109,6 +135,13 @@ final class PhotoWallModel: ObservableObject {
     /// again (#642).
     static let noticeDismissedKey = "limitedNoticeDismissed"
     @Published private(set) var noticeDismissed: Bool
+    /// App-wide flag behind a collapsed comparison card (#725).
+    static let comparisonCollapsedKey = "dayscam.comparison.collapsed"
+    /// The milestone line last seen on `profileID`'s card; a different one
+    /// expands the card once (#725).
+    static func comparisonMilestoneKey(_ profileID: UUID) -> String {
+        "dayscam.comparison.lastMilestone.\(profileID.uuidString)"
+    }
     private var subscription: AnyCancellable?
     private var changesTask: Task<Void, Never>?
 
@@ -155,6 +188,7 @@ final class PhotoWallModel: ObservableObject {
         self.defaults = defaults
         self.scheduleAfter = scheduleAfter
         self.noticeDismissed = defaults.bool(forKey: Self.noticeDismissedKey)
+        self.isComparisonCollapsed = defaults.bool(forKey: Self.comparisonCollapsedKey)
         self.status = library.authorizationStatus()
         self.profile = store.profiles.first { $0.id == profileID }
         subscription = store.$profiles
@@ -259,6 +293,7 @@ final class PhotoWallModel: ObservableObject {
             undatedIDs = []
             sections = []
             albumSyncIDs = []
+            comparison = nil
             pruneSelection()
             return
         }
@@ -268,6 +303,7 @@ final class PhotoWallModel: ObservableObject {
         undatedIDs = Set(photos.filter { $0.creationDate == nil }.map(\.id))
         sections = Self.sections(for: photos, profile: profile, calendar: calendar)
         albumSyncIDs = idsMissingFromAlbum(profile)
+        updateComparison(profile)
         pruneSelection()
     }
 
@@ -393,6 +429,75 @@ final class PhotoWallModel: ObservableObject {
             selectedIDs = Set(failedIDs).intersection(photoIDs)
         }
     }
+
+    // MARK: - Comparison card (#725)
+
+    /// The card shows: a pair exists, the wall has photos and is not selecting.
+    var showsComparison: Bool { comparison != nil && content == .photos && !isSelecting }
+
+    /// The chevron at the card's right: collapses or expands it, for every
+    /// record and across launches.
+    func toggleComparisonCollapsed() {
+        isComparisonCollapsed.toggle()
+        defaults.set(isComparisonCollapsed, forKey: Self.comparisonCollapsedKey)
+    }
+
+    /// Opens the comparison sheet on the card's pair. `resolveFont` is the
+    /// record's font path; `compose` and `save` default to
+    /// `ComparisonRenderer` and `PhotoSaver.saveToRecentsOnly`.
+    func openComparison(resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
+                        compose: @escaping ComparisonModel.Compose = ComparisonModel.renderCompose,
+                        save: @escaping PhotoExportPipeline.Save = { image, completion in
+                            PhotoSaver().saveToRecentsOnly(image, completion: completion)
+                        }) {
+        guard comparisonSheet == nil, let comparison, let profile else { return }
+        let sheet = ComparisonModel(profile: profile, photos: photos, leftID: comparison.earliestID,
+                                    rightID: comparison.latestID, library: library, calendar: calendar,
+                                    resolveFont: resolveFont, compose: compose, save: save,
+                                    openSettings: openSettings)
+        sheet.onFinish = { [weak self] outcome in self?.finishComparison(outcome) }
+        comparisonSheet = sheet
+    }
+
+    /// The sheet ended: an export toasts and speaks "已匯出"; 取消 does nothing.
+    func finishComparison(_ outcome: ComparisonModel.Outcome) {
+        comparisonSheet = nil
+        if outcome == .exported { showToast("已匯出") }
+    }
+
+    /// Recomputes the pair from the dated photos (§6.1) and, on a milestone
+    /// line not seen before on this record, expands the card once.
+    private func updateComparison(_ profile: CameraProfile) {
+        let candidates = photos.compactMap { photo in
+            photo.creationDate.map { ComparisonPicker.Candidate(id: photo.id, creationDate: $0) }
+        }
+        guard let pair = ComparisonPicker.defaultPair(candidates, profile: profile, calendar: calendar) else {
+            comparison = nil
+            return
+        }
+        let earliest = Self.dayMarkTexts(creationDate: pair.earliest.creationDate, profile: profile,
+                                         calendar: calendar).texts
+        let latest = Self.dayMarkTexts(creationDate: pair.latest.creationDate, profile: profile,
+                                       calendar: calendar).texts
+        let milestone = ComparisonPicker.milestoneSubtitle(latest: pair.latest.creationDate, profile: profile,
+                                                           calendar: calendar)
+        comparison = Comparison(earliestID: pair.earliest.id, latestID: pair.latest.id,
+                                earliestTexts: earliest, latestTexts: latest,
+                                title: "\(earliest[0]) → \(latest[0])",
+                                subtitle: milestone ?? Self.comparisonReadySubtitle,
+                                milestone: milestone)
+        let key = Self.comparisonMilestoneKey(profileID)
+        if let milestone, defaults.string(forKey: key) != milestone {
+            defaults.set(milestone, forKey: key)
+            if isComparisonCollapsed {
+                isComparisonCollapsed = false
+                defaults.set(false, forKey: Self.comparisonCollapsedKey)
+            }
+        }
+    }
+
+    /// The card's second line without a milestone.
+    static let comparisonReadySubtitle = "對比圖已準備好，點開預覽與匯出"
 
     // MARK: - Removing and deleting the selection (FR-17.14, FR-17.15)
 

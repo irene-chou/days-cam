@@ -118,6 +118,9 @@ struct PhotoWallView: View {
                 listModel.exportModel(for: profileID, photo: photo, styleCenter: styleCenter)
             }
         }
+        .sheet(item: comparisonBinding) { sheet in
+            ComparisonSheet(model: sheet, library: listModel.library)
+        }
         .onChange(of: model.photoIDs) { _, _ in openNewestIfRequested() }
         .alert(model.errorTitle, isPresented: errorBinding) {
             Button("好") { model.errorMessage = nil }
@@ -279,6 +282,18 @@ struct PhotoWallView: View {
                     })
                 }
                 .defaultScrollAnchor(.bottom)
+                // The comparison card sits in the top inset, not above the
+                // scroll view, so the wall still opens on the newest photo.
+                // While selecting it is hidden but keeps its slot: a changing
+                // inset would move the wall away from where it was (#725).
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if model.content == .photos, let comparison = model.comparison {
+                        comparisonBanner(comparison)
+                            .background(CameraTheme.background)
+                            .opacity(model.showsComparison ? 1 : 0)
+                            .allowsHitTesting(model.showsComparison)
+                    }
+                }
                 // A slide owns the finger: the wall moves only by the edge
                 // auto-scroll until it ends.
                 .scrollDisabled(isSliding)
@@ -451,6 +466,118 @@ struct PhotoWallView: View {
         .accessibilityIdentifier("wallAlbumSyncNotice")
     }
 
+    // MARK: - Comparison card (#725)
+
+    /// The earliest × latest pair over the wall, not scrolling with it:
+    /// expanded, two 44pt thumbnails with their day texts and two lines;
+    /// collapsed, a 40pt row. The text area opens the sheet, the chevron
+    /// at the right collapses or expands.
+    private func comparisonBanner(_ comparison: PhotoWallModel.Comparison) -> some View {
+        let collapsed = model.isComparisonCollapsed
+        return HStack(spacing: 0) {
+            Button { openComparison() } label: {
+                HStack(spacing: 10) {
+                    comparisonPair(comparison, side: collapsed ? 28 : 44, showsText: !collapsed)
+                    if collapsed {
+                        Text("對比圖")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(CameraTheme.ink)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(comparison.title)
+                                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                                .foregroundColor(CameraTheme.ink)
+                                .lineLimit(1)
+                            Text(comparison.subtitle)
+                                .font(.system(size: 11))
+                                .foregroundColor(CameraTheme.inkSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if !collapsed {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(CameraTheme.inkTertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("對比圖，\(comparison.title)，\(comparison.subtitle)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("comparisonBannerOpen")
+            .accessibilityHidden(!model.showsComparison)
+            Button { model.toggleComparisonCollapsed() } label: {
+                Image(systemName: collapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(CameraTheme.inkTertiary)
+                    .frame(width: 44, height: collapsed ? 40 : 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(collapsed ? "展開對比圖" : "收合對比圖")
+            .accessibilityIdentifier("comparisonBannerToggle")
+            .accessibilityHidden(!model.showsComparison)
+        }
+        .padding(.leading, 10)
+        .padding(.vertical, collapsed ? 0 : 8)
+        .frame(height: collapsed ? 40 : nil)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.systemBackground)))
+        .padding(.horizontal, 10)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("comparisonBanner")
+    }
+
+    /// The two thumbnails side by side, 2pt apart, rounded on their outer
+    /// sides; expanded, each with its day text like a wall cell, smaller.
+    private func comparisonPair(_ comparison: PhotoWallModel.Comparison, side: CGFloat, showsText: Bool) -> some View {
+        HStack(spacing: 2) {
+            comparisonThumbnail(comparison.earliestID, texts: comparison.earliestTexts, side: side,
+                                showsText: showsText,
+                                corners: .init(topLeading: 8, bottomLeading: 8))
+            comparisonThumbnail(comparison.latestID, texts: comparison.latestTexts, side: side,
+                                showsText: showsText,
+                                corners: .init(bottomTrailing: 8, topTrailing: 8))
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func comparisonThumbnail(_ id: String, texts: [String], side: CGFloat, showsText: Bool,
+                                     corners: RectangleCornerRadii) -> some View {
+        ComparisonThumbnail(photoID: id, side: side, library: listModel.library, corners: corners)
+            .overlay(alignment: .bottomLeading) {
+                if showsText {
+                    ViewThatFits(in: .horizontal) {
+                        ForEach(Array(texts.enumerated()), id: \.offset) { _, text in
+                            Text(text).lineLimit(1)
+                        }
+                    }
+                    .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                    .foregroundColor(CameraTheme.inkOnPhoto)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
+                    .frame(maxWidth: side - 6, alignment: .leading)
+                    .padding(.leading, 3)
+                    .padding(.bottom, 2)
+                }
+            }
+    }
+
+    private func openComparison() {
+        model.openComparison(resolveFont: { [styleCenter] style in
+            OverlayMetrics.resolvedFont(for: style, availability: styleCenter.fontLibrary)
+        })
+    }
+
+    /// Swiping the sheet away is 取消; it cannot be swiped while exporting.
+    private var comparisonBinding: Binding<ComparisonModel?> {
+        Binding(get: { model.comparisonSheet }, set: { if $0 == nil { model.comparisonSheet?.cancel() } })
+    }
+
     private var emptyState: some View {
         VStack(spacing: 6) {
             Text("還沒有照片")
@@ -581,13 +708,16 @@ private struct CameraSession: Identifiable {
 }
 
 /// One square of the wall: the photo's thumbnail, aspect-filled, with its day
-/// mark at the lower left (FR-17.3, FR-17.4).
-private struct PhotoWallCell: View {
+/// mark at the lower left (FR-17.3, FR-17.4). The comparison picker reuses it
+/// outside selection mode, ticking only the current photo (#725).
+struct PhotoWallCell: View {
     let cell: PhotoWallModel.Cell
     let side: CGFloat
     let library: any RecordAlbumLibrary
     var isSelecting = false
     var isSelected = false
+    /// VoiceOver reads the day text outside selection mode too (the picker).
+    var labelsDayText = false
     var onSelect: () -> Void
 
     @State private var thumbnail: UIImage?
@@ -632,7 +762,7 @@ private struct PhotoWallCell: View {
             .foregroundColor(cell.isBeforeStart ? CameraTheme.inkOnPhotoBeforeStart : CameraTheme.inkOnPhoto)
             .shadow(color: .black.opacity(0.6), radius: 2)
             .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
-            .frame(maxWidth: side - 12 - (isSelecting ? 27 : 0), alignment: .leading)
+            .frame(maxWidth: side - 12 - (isSelecting || isSelected ? 27 : 0), alignment: .leading)
             .padding(.leading, 6 + inset)
             .padding(.bottom, 5 + inset)
             .allowsHitTesting(false)
@@ -640,7 +770,7 @@ private struct PhotoWallCell: View {
             .accessibilityLabel(cell.dayTexts[0])
             .accessibilityIdentifier("photoDayLabel")
 
-            if isSelecting { checkmark }
+            if isSelecting || isSelected { checkmark }
         }
         .frame(width: side, height: side)
         .animation(.easeOut(duration: 0.15), value: isSelected)
@@ -653,7 +783,7 @@ private struct PhotoWallCell: View {
 
     /// "照片" normally; the full day text, with "，已選取" when ticked, while selecting (FR-17.12).
     private var accessibilityLabel: String {
-        guard isSelecting else { return "照片" }
+        guard isSelecting || labelsDayText else { return "照片" }
         return isSelected ? "\(cell.dayTexts[0])，已選取" : cell.dayTexts[0]
     }
 

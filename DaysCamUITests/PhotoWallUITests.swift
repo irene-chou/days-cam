@@ -59,6 +59,7 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertTrue(element("photoWall").waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "photoCell").element(boundBy: 4).waitForExistence(timeout: 5))
         XCTAssertEqual(dayLabels(), ["第 6 天", "第 7 天", "第 8 天", "第 9 天", "第 10 天"], "1")
+        XCTAssertFalse(element("comparisonBannerOpen").exists, "#725-1 four days apart, no card")
         XCTAssertTrue(element("addPhotosButton").exists)
         XCTAssertEqual(app.buttons["addPhotosButton"].label, "加入照片", "1")
         XCTAssertTrue(app.buttons["wallCameraButton"].label.contains("拍照"), "1")
@@ -321,5 +322,110 @@ final class PhotoWallUITests: XCTestCase {
         let label = dayLabels().last ?? ""
         XCTAssertTrue(label.hasPrefix("1 年"), "6 \(label)")
         shot("wall-day-400")
+    }
+
+    // MARK: - #725 comparison card
+
+    /// The card starts expanded whatever an earlier test left in the app's defaults.
+    private func launchComparisonWall(arguments: [String] = []) {
+        launchWall(photos: 10, arguments: ["-dayscam.comparison.collapsed", "NO"] + arguments)
+    }
+
+    private var comparisonOpen: XCUIElement { element("comparisonBannerOpen") }
+
+    /// #725-1, 2: ten photos nine days apart show 第 1 天 → 第 10 天 over the
+    /// wall; selection hides the card and 取消 brings it back.
+    func testComparisonCardShowsAndHidesWhileSelecting() {
+        launchComparisonWall()
+        XCTAssertTrue(comparisonOpen.waitForExistence(timeout: 10), "1")
+        XCTAssertEqual(comparisonOpen.label, "對比圖，第 1 天 → 第 10 天，對比圖已準備好，點開預覽與匯出", "1")
+        XCTAssertEqual(dayLabels().count, 10, "the card's thumbnails are not wall cells")
+        XCTAssertLessThan(comparisonOpen.frame.maxY, cell(0).frame.minY, "over the wall")
+
+        // A hidden element can still be queried by XCUITest, so check
+        // behavior: while selecting, a tap where the card was opens nothing.
+        let cardCenter = comparisonOpen.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        enterSelection()
+        cardCenter.tap()
+        XCTAssertFalse(element("comparisonSheet").waitForExistence(timeout: 2), "2 hidden while selecting")
+        waitForTitle(containing: "選取照片")
+        element("wallCancelSelectionButton").tap()
+        XCTAssertTrue(element("wallSelectButton").waitForExistence(timeout: 5))
+        comparisonOpen.tap()
+        XCTAssertTrue(element("comparisonSheet").waitForExistence(timeout: 5), "2 back after 取消")
+    }
+
+    /// #725-6: the left half opens the picker; choosing 第 4 天 brings it back
+    /// to the preview; closing and reopening returns to 第 1 天.
+    func testComparisonSwapsALeftPhotoUntilClosed() {
+        launchComparisonWall()
+        XCTAssertTrue(comparisonOpen.waitForExistence(timeout: 10))
+        comparisonOpen.tap()
+        let left = element("comparisonLeftTile")
+        XCTAssertTrue(left.waitForExistence(timeout: 5))
+        XCTAssertEqual(left.label, "左邊照片，第 1 天，點兩下換照片")
+        XCTAssertEqual(element("comparisonRightTile").label, "右邊照片，第 10 天，點兩下換照片")
+        left.tap()
+
+        let picker = element("comparisonPicker")
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "6")
+        let fourth = picker.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'photoCell' AND label == '第 4 天'")).firstMatch
+        XCTAssertTrue(fourth.waitForExistence(timeout: 5), "6")
+        let current = picker.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'photoCell' AND label == '第 1 天，已選取'")).firstMatch
+        XCTAssertTrue(current.exists, "6 the current photo is ticked")
+        fourth.tap()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "6 back to the preview")
+        let swapped = NSPredicate(format: "label == '左邊照片，第 4 天，點兩下換照片'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: swapped, object: left)], timeout: 5),
+                       .completed, "6 \(left.label)")
+
+        element("comparisonCancelButton").tap()
+        XCTAssertTrue(element("comparisonSheet").waitForNonExistence(timeout: 5))
+        comparisonOpen.tap()
+        XCTAssertTrue(left.waitForExistence(timeout: 5))
+        XCTAssertEqual(left.label, "左邊照片，第 1 天，點兩下換照片", "6 back to the default pair")
+    }
+
+    /// #725-4 B′: expanded, the sheet, collapsed; then limited access with
+    /// the notice above the card.
+    func testComparisonScreens() {
+        launchComparisonWall()
+        let banner = comparisonOpen
+        XCTAssertTrue(banner.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(banner.frame))
+        XCTAssertTrue(cell(9).waitForExistence(timeout: 5))
+        shot("comparison-expanded")
+
+        comparisonOpen.tap()
+        let preview = element("comparisonPreview")
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("comparisonExportButton").isHittable)
+        XCTAssertTrue(element("comparisonCancelButton").isHittable)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(preview.frame))
+        // The preview is composed off the main thread; wait for its spinner to go.
+        XCTAssertTrue(app.activityIndicators["對比圖產生中"].waitForNonExistence(timeout: 10))
+        shot("comparison-sheet")
+        element("comparisonCancelButton").tap()
+        XCTAssertTrue(element("comparisonSheet").waitForNonExistence(timeout: 5))
+
+        let toggle = element("comparisonBannerToggle")
+        XCTAssertEqual(toggle.label, "收合對比圖")
+        toggle.tap()
+        let expand = NSPredicate(format: "label == '展開對比圖'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: expand, object: toggle)], timeout: 5),
+                       .completed, "3")
+        XCTAssertLessThanOrEqual(toggle.frame.height, 41, "collapsed to 40pt")
+        shot("comparison-collapsed")
+        toggle.tap()
+        app.terminate()
+
+        launchComparisonWall(arguments: ["-UITestPhotoAccess", "limited"])
+        let notice = element("limitedAccessBanner")
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(notice.frame.maxY, banner.frame.minY + 1, "4 the notice above the card")
+        shot("comparison-limited")
     }
 }
