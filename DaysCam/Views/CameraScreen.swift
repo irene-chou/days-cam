@@ -383,9 +383,10 @@ struct CameraScreen: View {
 
     // MARK: - Zoom presets (issue #279)
 
-    /// The quick-zoom round button in the picture's bottom-right corner,
-    /// above the bottom bar where the picture runs behind it (#724, #731);
-    /// hidden while the camera offers no preset.
+    /// The quick-zoom control in the held picture's bottom-right corner,
+    /// diagonal to the HUD in every orientation and clear of the bars where
+    /// the picture runs behind them (#724, #731); hidden while the camera
+    /// offers no preset.
     private func zoomPresetBar(metrics: CameraScreenLayoutMetrics) -> some View {
         ZoomPresetBar(zoom: model.zoomModel,
                       expansion: model.zoomExpansion,
@@ -393,7 +394,8 @@ struct CameraScreen: View {
                       isVisible: !model.zoomPresets.isEmpty,
                       pictureFrame: viewfinderFrame(metrics: metrics),
                       rotation: model.viewfinderRotation,
-                      bottomInset: metrics.zoomControlBottomInset(for: model.captureAspectRatio))
+                      clearance: metrics.zoomControlClearance(for: model.captureAspectRatio,
+                                                              rotation: model.viewfinderRotation))
     }
 
     /// The simulator/placeholder background (PRD §2.4): a solid color plus a

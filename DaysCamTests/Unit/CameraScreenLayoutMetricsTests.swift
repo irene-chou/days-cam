@@ -548,18 +548,32 @@ final class CameraScreenPictureFrameMetricsTests: XCTestCase {
         }
     }
 
-    /// #724, #731: the quick-zoom control keeps 12pt from the picture's
-    /// bottom edge unless the bottom bar lies over the picture (9:16), where
-    /// it sits 12pt above the bar's top so its taps reach it.
-    func test_724_zoomControlStaysAboveTheBottomBar() {
+    /// #724, #731: the quick-zoom control moves in from the held edge that
+    /// lies on a bar — the bottom bar over 9:16, and SE's top bar over its
+    /// full-bleed 9:16 — and nowhere else.
+    func test_724_zoomControlClearsTheBarsInEveryOrientation() {
         for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
                                     (CGSize(width: 375, height: 667), 0, 20)] {
             let m = metrics(size, bottom: bottom, top: top)
-            XCTAssertEqual(m.zoomControlBottomInset(for: .threeByFour), 12, "\(size)")
-            XCTAssertEqual(m.zoomControlBottomInset(for: .oneByOne), 12, "\(size)")
+            let rotations: [ViewfinderRotation] = [.portrait, .landscapeTopLeft, .landscapeTopRight, .upsideDown]
+            for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
+                for rotation in rotations {
+                    let clearance = m.zoomControlClearance(for: ratio, rotation: rotation)
+                    XCTAssertEqual(clearance.bottom, 0, "\(size) \(ratio) \(rotation)")
+                    XCTAssertEqual(clearance.trailing, 0, "\(size) \(ratio) \(rotation)")
+                }
+            }
             let tall = m.closedPictureFrame(for: .nineBySixteen)
-            XCTAssertEqual(tall.maxY - m.zoomControlBottomInset(for: .nineBySixteen), m.footerRegionTop - 12,
-                           accuracy: 0.5, "\(size)")
+            let underFooter = tall.maxY - m.footerRegionTop
+            let underHeader = max(0, m.headerBottom - tall.minY)
+            XCTAssertGreaterThan(underFooter, 0, "\(size) 9:16 runs behind the bottom bar")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .portrait).bottom, underFooter, accuracy: 0.5)
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .landscapeTopLeft).trailing, underFooter,
+                           accuracy: 0.5, "\(size) held right edge = screen bottom")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .landscapeTopRight).trailing, underHeader,
+                           accuracy: 0.5, "\(size) held right edge = screen top")
+            XCTAssertEqual(m.zoomControlClearance(for: .nineBySixteen, rotation: .upsideDown).bottom, underHeader,
+                           accuracy: 0.5, "\(size) held bottom = screen top")
         }
     }
 

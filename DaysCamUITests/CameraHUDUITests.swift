@@ -227,6 +227,50 @@ final class CameraHUDUITests: XCTestCase {
         }
     }
 
+    /// #724 review: held any of the four ways, the quick-zoom control turns
+    /// with the picture into the held bottom-right corner, never overlaps
+    /// the HUD, and its open capsule stays inside the picture; at 3:4 and
+    /// 9:16. One screenshot of the open capsule held sideways each way.
+    func test_724_6_zoomControlAndHUDNeverShareACorner() {
+        let cases: [(String, String)] = [("90", "portrait"), ("0", "landscape_top_left"),
+                                         ("180", "landscape_top_right"), ("270", "upside_down")]
+        for (angle, name) in cases {
+            launchCamera(extra: ["-UITestZoomPresets", "-UITestCaptureRotationAngle", angle])
+            let round = app.buttons["zoomRoundButton"]
+            let two = app.buttons["zoomPreset-焦段 2 倍"]
+            for (index, label) in ["3:4", "9:16"].enumerated() {
+                if index > 0 {
+                    ratioButton.tap()
+                    waitForRatio("1:1")
+                    ratioButton.tap()
+                }
+                waitForRatio(label)
+                Thread.sleep(forTimeInterval: 1)
+                let picture = viewfinder.frame
+                assertOnScreen(hud, "\(name) \(label) the HUD is drawn")
+                assertOnScreen(round, "\(name) \(label) the zoom control is drawn")
+                XCTAssertTrue(picture.contains(round.frame), "\(name) \(label) zoom \(round.frame) in \(picture)")
+                XCTAssertFalse(hud.frame.intersects(round.frame),
+                               "\(name) \(label) HUD \(hud.frame) clear of zoom \(round.frame)")
+
+                round.tap()
+                XCTAssertTrue(two.waitForExistence(timeout: 3), "\(name) \(label) the capsule opens")
+                Thread.sleep(forTimeInterval: 0.6)
+                let presets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "zoomPreset-"))
+                XCTAssertGreaterThanOrEqual(presets.count, 2, "\(name) \(label) the presets")
+                for preset in presets.allElementsBoundByIndex {
+                    let frame = preset.frame
+                    XCTAssertTrue(picture.contains(frame), "\(name) \(label) open: \(preset.identifier) \(frame) in \(picture)")
+                    XCTAssertFalse(hud.frame.intersects(frame), "\(name) \(label) open: HUD clear of \(preset.identifier)")
+                }
+                if label == "3:4" && name.hasPrefix("landscape") { shot("hud_3x4_zoom_open_\(name)") }
+                viewfinder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+                XCTAssertTrue(round.waitForExistence(timeout: 3), "\(name) \(label) the capsule closes")
+            }
+            app.terminate()
+        }
+    }
+
     /// 6: held sideways, the HUD turns with the picture (#571, #572): it
     /// stays inside the picture and is drawn on its own side, not upright.
     func test_724_6_hudTurnsWhenHeldSideways() {

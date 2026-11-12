@@ -144,13 +144,25 @@ struct CameraScreenLayoutMetrics {
         return Self.dayHUDInset + max(0, picture.maxY - thumbnailTop)
     }
 
-    /// The quick-zoom control's distance from the `ratio` picture's bottom
-    /// edge: `ZoomPresetBar.cornerInset`, or that much above the bottom bar's
-    /// top where the picture runs behind it (9:16), since the bar takes the
-    /// touches there (#731).
-    func zoomControlBottomInset(for ratio: CaptureAspectRatio) -> CGFloat {
+    /// How far the quick-zoom control, in the held picture's bottom-right
+    /// corner, moves in from that picture's bottom and right edges beyond
+    /// `ZoomPresetBar.cornerInset`: by the band of the `ratio` picture that
+    /// the bottom bar (9:16) or the top bar (SE's full-bleed 9:16) lies over
+    /// and takes the touches of (#731), on whichever held edge that screen
+    /// edge is for `rotation`.
+    func zoomControlClearance(for ratio: CaptureAspectRatio,
+                              rotation: ViewfinderRotation) -> (bottom: CGFloat, trailing: CGFloat) {
         let picture = closedPictureFrame(for: ratio)
-        return ZoomPresetBar.cornerInset + max(0, picture.maxY - footerRegionTop)
+        let underFooter = max(0, picture.maxY - footerRegionTop)
+        let underHeader = max(0, headerBottom - picture.minY)
+        switch rotation {
+        case .portrait: return (underFooter, 0)
+        case .upsideDown: return (underHeader, 0)
+        // The held right edge is the screen's bottom (top left) or top
+        // (top right).
+        case .landscapeTopLeft: return (0, underFooter)
+        case .landscapeTopRight: return (0, underHeader)
+        }
     }
 
     /// True for iPhone SE-class heights (< 700pt).
