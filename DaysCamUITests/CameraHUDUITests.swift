@@ -282,4 +282,32 @@ final class CameraHUDUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shot("hud_landscape")
     }
+
+    // MARK: - 733: SE's full-bleed 9:16 under the top bar
+
+    /// #733: on SE the 9:16 picture runs behind the header, so held with the
+    /// held bottom-left on the screen's top (top left, upside down) the HUD
+    /// moves out from under the header bar and its toolbar buttons. One
+    /// screenshot each way (B′).
+    func test_733_1_hudClearsTheHeaderOnSE() {
+        let cases: [(String, String)] = [("0", "landscape_top_left"), ("270", "upside_down")]
+        for (angle, name) in cases {
+            launchCamera(extra: ["-UITestCaptureRotationAngle", angle])
+            ratioButton.tap()
+            waitForRatio("1:1")
+            ratioButton.tap()
+            waitForRatio("9:16")
+            Thread.sleep(forTimeInterval: 1)
+            assertOnScreen(hud, "733-1 \(name) the HUD is drawn")
+            let screen = app.windows.firstMatch.frame
+            let headerBottom: CGFloat = 66
+            let header = CGRect(x: 0, y: 0, width: screen.width, height: headerBottom)
+            XCTAssertFalse(hud.frame.intersects(header), "733-1 \(name) HUD \(hud.frame) clear of header \(header)")
+            XCTAssertFalse(hud.frame.intersects(ratioButton.frame), "733-1 \(name) clear of the ratio button")
+            XCTAssertFalse(hud.frame.intersects(switcher.frame), "733-1 \(name) clear of the record switcher")
+            XCTAssertTrue(viewfinder.frame.contains(hud.frame), "733-1 \(name) HUD in the picture")
+            shot("hud_se_9x16_\(name)")
+            app.terminate()
+        }
+    }
 }

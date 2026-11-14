@@ -144,6 +144,26 @@ struct CameraScreenLayoutMetrics {
         return Self.dayHUDInset + max(0, picture.maxY - thumbnailTop)
     }
 
+    /// How far the day HUD, in the held picture's bottom-left corner, moves
+    /// in from that picture's bottom and left edges beyond `dayHUDInset`:
+    /// by the band the bottom bar (9:16, up to 「返回圖庫」) or the top bar
+    /// (SE's full-bleed 9:16) lies over, on whichever held edge that screen
+    /// edge is for `rotation` (#733). Mirrors `zoomControlClearance`.
+    func dayHUDClearance(for ratio: CaptureAspectRatio,
+                         rotation: ViewfinderRotation) -> (bottom: CGFloat, leading: CGFloat) {
+        let picture = closedPictureFrame(for: ratio)
+        let underFooter = dayHUDBottomInset(for: ratio) - Self.dayHUDInset
+        let underHeader = max(0, headerBottom - picture.minY)
+        switch rotation {
+        case .portrait: return (underFooter, 0)
+        case .upsideDown: return (underHeader, 0)
+        // The held left edge is the screen's top (top left) or bottom
+        // (top right).
+        case .landscapeTopLeft: return (0, underHeader)
+        case .landscapeTopRight: return (0, underFooter)
+        }
+    }
+
     /// How far the quick-zoom control, in the held picture's bottom-right
     /// corner, moves in from that picture's bottom and right edges beyond
     /// `ZoomPresetBar.cornerInset`: by the band of the `ratio` picture that
