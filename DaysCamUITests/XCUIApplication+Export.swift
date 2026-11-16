@@ -53,12 +53,12 @@ extension XCUIApplication {
         buttons["樣式"].frame.maxY
     }
 
-    /// Height of what sits under the panel body on the export page: the 34pt
-    /// note plus, on a screen with one, the 34pt home-indicator area, which
-    /// swallows taps. The 內容 tab is short since #721 and does not scroll
-    /// on iPhone SE, so its last row rests right above the note.
+    /// Height of what sits under the panel body on the export page: only the
+    /// 34pt home-indicator area on a screen with one, which swallows taps.
+    /// The 34pt note under the panel is gone (D8, FR-18.4), so a 4.7-inch
+    /// screen has no band at all.
     var panelBottomBand: CGFloat {
-        frame.height >= 812 ? 68 : 34
+        frame.height >= 812 ? 34 : 0
     }
 }
 
