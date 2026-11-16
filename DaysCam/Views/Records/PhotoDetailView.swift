@@ -95,7 +95,8 @@ struct PhotoDetailView: View {
     /// a date (§6.1.3); 刪除 asks remove-or-delete, its popover pointing at it.
     private var actionBar: some View {
         SelectionActionBar {
-            SelectionActionButton(title: "疊字", systemImage: "textformat",
+            SelectionActionButton(title: "疊字",
+                                  systemImage: model.showsOverlay ? "text.below.photo.fill" : "text.below.photo",
                                   color: model.showsOverlay ? CameraTheme.active : CameraTheme.ink) {
                 model.toggleOverlay()
             }
