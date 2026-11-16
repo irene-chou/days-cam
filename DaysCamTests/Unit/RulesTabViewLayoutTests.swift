@@ -4,7 +4,7 @@ import XCTest
 @testable import DaysCam
 
 /// View-level size check for `RulesTabView` (#156, reshaped by #226 R-8／R-9,
-/// TASK-43): the grouped block is three rows of at least 48pt, the preview
+/// TASK-43, #721): the grouped block is five rows of at least 48pt, the preview
 /// sentence sits below it.
 @MainActor
 final class RulesTabViewLayoutTests: XCTestCase {
@@ -17,17 +17,19 @@ final class RulesTabViewLayoutTests: XCTestCase {
         return hosting.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude))
     }
 
-    /// 43.7／155: at 375pt the three label-above-value rows and the 天數預覽
-    /// block are never truncated, so the page is at least three stacked rows
-    /// (label 16 + value 22 + 2×10 inset) plus the preview title and its
-    /// single 今天 row, and stays under a ceiling that catches a runaway layout.
-    func testPageHoldsThreeStackedRowsAndThePreview() {
+    /// 43.7／155／721: at 375pt the three label-above-value rows, the 單位 and
+    /// 「年」改成「歲」 rows (#721) and the 天數預覽 block are never truncated, so the
+    /// page is at least three stacked rows (label 16 + value 22 + 2×10 inset),
+    /// the unit row (label 16 + 6 + checkbox 36 + 2×10), the age-wording row
+    /// (48 + 2×10) plus the preview title and its single 今天 row, and stays
+    /// under a ceiling that catches a runaway layout.
+    func testPageHoldsFiveRowsAndThePreview() {
         let height = contentSize().height
-        // 12 + 58×3 + 16 + 16 + 40 + 12; a literal because Xcode 26.3 times out type-checking the sum.
-        let floor: CGFloat = 270
-        XCTAssertGreaterThanOrEqual(height, floor, "155 three rows and the preview")
-        // Measured 317.7 at 375pt (TASK-155: stacked rows + preview block).
-        XCTAssertLessThanOrEqual(height, 340, "整頁高度過高，量到 \(height)")
+        // 12 + 58×3 + 78 + 68 + 16 + 16 + 40 + 12; a literal because Xcode 26.3 times out type-checking the sum.
+        let floor: CGFloat = 416
+        XCTAssertGreaterThanOrEqual(height, floor, "155／721 five rows and the preview")
+        // Measured 464.0 at 375pt (#721: 317.7 + unit row 78 + age-wording row 68 + dividers).
+        XCTAssertLessThanOrEqual(height, 486, "整頁高度過高，量到 \(height)")
     }
 
     /// 25.6／155.5: each of the two equal 起算 cells fits its label at 375pt (and
