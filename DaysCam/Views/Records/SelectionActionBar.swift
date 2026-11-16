@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The bottom bar of icon-over-title actions (PRD 2.0 FR-17.13, D8): the
-/// wall's selection bar and the viewer's 匯出｜刪除 (#679), so both look the
+/// wall's selection bar and the viewer's 疊字｜匯出｜刪除 (#679, #738), so both look the
 /// same. Each action takes an equal share of the width.
 struct SelectionActionBar<Content: View>: View {
     @ViewBuilder var content: Content

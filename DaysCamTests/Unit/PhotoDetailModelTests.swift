@@ -49,8 +49,67 @@ final class PhotoDetailModelTests: XCTestCase {
     }
 
     private func makeModel(store: ProfileStore, profile: CameraProfile, library: FakeRecordAlbumLibrary,
-                           startingAt id: String = "p5") -> PhotoDetailModel {
-        PhotoDetailModel(profileID: profile.id, startingAt: id, store: store, library: library, calendar: calendar)
+                           startingAt id: String = "p5",
+                           bake: ExportBakeRecorder = ExportBakeRecorder()) -> PhotoDetailModel {
+        PhotoDetailModel(profileID: profile.id, startingAt: id, store: store, library: library, calendar: calendar,
+                         defaults: defaults, bake: { bake.bake($0, $1, $2, $3, $4, $5, $6, $7) })
+    }
+
+    // MARK: 疊字 toggle (#738)
+
+    private let size = CGSize(width: 200, height: 300)
+
+    /// #738-2: off by default; the page is the original and nothing is baked.
+    func testOverlayIsOffByDefaultAndBakesNothing() async throws {
+        let (store, profile) = try makeStore()
+        let recorder = ExportBakeRecorder()
+        let model = makeModel(store: store, profile: profile, library: library(), bake: recorder)
+        XCTAssertFalse(model.showsOverlay)
+        let photo = try XCTUnwrap(model.currentPhoto)
+        _ = await model.pageImage(for: photo, targetSize: size)
+        XCTAssertTrue(recorder.calls.isEmpty, "2 \(recorder.calls.count) bakes")
+    }
+
+    /// #738-3: on, the page on screen and the next one are each baked with
+    /// their own day.
+    func testOverlayOnBakesEachPageWithItsOwnDay() async throws {
+        let (store, profile) = try makeStore()
+        let recorder = ExportBakeRecorder()
+        let model = makeModel(store: store, profile: profile, library: library(), startingAt: "p4", bake: recorder)
+        model.toggleOverlay()
+        let first = try XCTUnwrap(model.currentPhoto)
+        _ = await model.pageImage(for: first, targetSize: size)
+        model.selectedID = "p5"
+        let next = try XCTUnwrap(model.currentPhoto)
+        _ = await model.pageImage(for: next, targetSize: size)
+        let texts = recorder.calls.map(\.text)
+        XCTAssertEqual(texts.count, 2, "3 \(texts)")
+        XCTAssertTrue(texts[0].contains("第 9 天"), "3 \(texts)")
+        XCTAssertTrue(texts[1].contains("第 10 天"), "3 \(texts)")
+    }
+
+    /// #738-4: a photo without a date stays plain with the toggle on.
+    func testOverlayOnLeavesAnUndatedPhotoPlain() async throws {
+        let (store, profile) = try makeStore()
+        let recorder = ExportBakeRecorder()
+        let model = makeModel(store: store, profile: profile, library: library(dates: [nil, 7]),
+                              startingAt: "p1", bake: recorder)
+        model.toggleOverlay()
+        let photo = try XCTUnwrap(model.currentPhoto)
+        let image = await model.pageImage(for: photo, targetSize: size)
+        XCTAssertNotNil(image)
+        XCTAssertTrue(recorder.calls.isEmpty, "4 \(recorder.calls.count) bakes")
+    }
+
+    /// #738-5: the state is kept for the next viewer; a fresh store is off.
+    func testOverlayStateIsRemembered() throws {
+        let (store, profile) = try makeStore()
+        let model = makeModel(store: store, profile: profile, library: library())
+        model.toggleOverlay()
+        let reopened = makeModel(store: store, profile: profile, library: library())
+        XCTAssertTrue(reopened.showsOverlay, "5 kept")
+        reopened.toggleOverlay()
+        XCTAssertFalse(makeModel(store: store, profile: profile, library: library()).showsOverlay, "5 off again")
     }
 
     // MARK: Header and overlay (1, 2, 3, 4)
