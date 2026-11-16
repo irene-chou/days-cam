@@ -69,8 +69,16 @@ final class PhotoDetailModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] profiles in
                 guard let self else { return }
-                self.profile = profiles.first { $0.id == self.profileID }
-                self.reload()
+                let updated = profiles.first { $0.id == self.profileID }
+                let previous = self.profile
+                guard updated != previous else { return }
+                self.profile = updated
+                // Only a new album or fallback list changes which photos
+                // show; other edits keep the list already read (#739).
+                if updated == nil || updated?.albumIdentifier != previous?.albumIdentifier
+                    || updated?.fallbackAssetIDs != previous?.fallbackAssetIDs {
+                    self.reload()
+                }
             }
         reload()
     }

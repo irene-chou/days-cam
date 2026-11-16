@@ -17,10 +17,19 @@ private final class ChangingLibrary: RecordAlbumLibrary {
 
     func fireChange() { continuation.yield() }
 
+    /// How many times the wall re-read the photos / the album's ids (#739).
+    private(set) var photosCalls = 0
+    private(set) var assetIDsCalls = 0
+    func assetIDs(inAlbum albumIdentifier: String) -> Set<String> {
+        assetIDsCalls += 1
+        return base.assetIDs(inAlbum: albumIdentifier)
+    }
+
     func authorizationStatus() -> PHAuthorizationStatus { base.authorizationStatus() }
     func requestReadWriteAccess() async -> PHAuthorizationStatus { await base.requestReadWriteAccess() }
     func photos(albumIdentifier: String?, fallbackIDs: [String]) -> [RecordPhoto] {
-        base.photos(albumIdentifier: albumIdentifier, fallbackIDs: fallbackIDs)
+        photosCalls += 1
+        return base.photos(albumIdentifier: albumIdentifier, fallbackIDs: fallbackIDs)
     }
     func photoCount(albumIdentifier: String?, fallbackIDs: [String]) -> Int? {
         base.photoCount(albumIdentifier: albumIdentifier, fallbackIDs: fallbackIDs)
@@ -1161,5 +1170,78 @@ extension PhotoWallModelTests {
         XCTAssertNil(model.comparisonSheet, "7 closed")
         XCTAssertEqual(model.toastState?.message, "已匯出", "7")
         XCTAssertEqual(announced, ["已匯出"], "7")
+    }
+
+    // MARK: Settings changes do not re-read the library (#739)
+
+    private func bigLibrary(count: Int) -> (FakeRecordAlbumLibrary, [FakeRecordAlbumLibrary.Asset]) {
+        let assets = (0..<count).map { index -> FakeRecordAlbumLibrary.Asset in
+            let date = DateFixture.date(2026, 1 + index % 9, 1 + index % 27, hour: 15)
+            return FakeRecordAlbumLibrary.Asset(id: String(format: "p%04d", index), creationDate: date)
+        }
+        let album = FakeRecordAlbumLibrary.Album(id: "album", title: "小寶", assetIDs: assets.map(\.id))
+        return (FakeRecordAlbumLibrary(assets: assets, albums: [album]), assets)
+    }
+
+    /// 1, 4: a display-only edit re-marks 500 photos without touching the library.
+    func testDisplayFieldChangeRemarksWithoutReadingLibrary() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let (base, _) = bigLibrary(count: 500)
+        let library = ChangingLibrary(base: base)
+        let model = makeModel(store: store, profile: profile, library: library)
+        let readsAfterInit = (library.photosCalls, library.assetIDsCalls)
+        let before = texts(model)
+
+        var edited = profile
+        edited.displayUnits = [.year, .month, .day]
+        edited.startDate = DateFixture.components(2025, 12, 1)
+        try store.updateAndWait(edited)
+
+        XCTAssertEqual(library.photosCalls, readsAfterInit.0, "1: photos not re-read")
+        XCTAssertEqual(library.assetIDsCalls, readsAfterInit.1, "1: album ids not re-read")
+        XCTAssertEqual(model.sections.flatMap(\.cells).count, 500)
+        XCTAssertNotEqual(texts(model), before, "1: marks follow the edit")
+        let expected = PhotoWallModel.sections(for: base.photos(albumIdentifier: "album", fallbackIDs: []),
+                                               profile: edited, calendar: calendar)
+        XCTAssertEqual(model.sections, expected, "4")
+    }
+
+    /// 2: a new album or fallback list still re-reads the photos.
+    func testAlbumOrFallbackChangeStillRereads() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let (base, _) = bigLibrary(count: 5)
+        let library = ChangingLibrary(base: base)
+        let model = makeModel(store: store, profile: profile, library: library)
+        let baseline = library.photosCalls
+
+        var edited = profile
+        edited.fallbackAssetIDs = ["p0001"]
+        try store.updateAndWait(edited)
+        XCTAssertEqual(library.photosCalls, baseline + 1, "2: fallback")
+        edited.albumIdentifier = nil
+        try store.updateAndWait(edited)
+        XCTAssertEqual(library.photosCalls, baseline + 2, "2: album")
+        XCTAssertEqual(model.sections.flatMap(\.cells).map(\.id), ["p0001"], "2")
+    }
+
+    /// 3: another record's change does nothing here.
+    func testOtherRecordChangeDoesNothing() throws {
+        let (store, profile) = try makeStore(albumIdentifier: "album")
+        let other = try store.add(CameraProfile(name: "別人", startDate: DateFixture.components(2026, 1, 1),
+                                                countingRule: .dayOne))
+        let (base, _) = bigLibrary(count: 5)
+        let library = ChangingLibrary(base: base)
+        let model = makeModel(store: store, profile: profile, library: library)
+        let baseline = (library.photosCalls, library.assetIDsCalls)
+        let sectionsBefore = model.sections
+
+        var edited = other
+        edited.displayUnits = [.day]
+        edited.fallbackAssetIDs = ["p0001"]
+        try store.updateAndWait(edited)
+
+        XCTAssertEqual(library.photosCalls, baseline.0, "3")
+        XCTAssertEqual(library.assetIDsCalls, baseline.1, "3")
+        XCTAssertEqual(model.sections, sectionsBefore, "3")
     }
 }
