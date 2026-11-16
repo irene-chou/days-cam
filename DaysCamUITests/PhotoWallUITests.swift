@@ -428,4 +428,115 @@ final class PhotoWallUITests: XCTestCase {
         XCTAssertLessThanOrEqual(notice.frame.maxY, banner.frame.minY + 1, "4 the notice above the card")
         shot("comparison-limited")
     }
+
+    // MARK: - #740 comparison export
+
+    /// Waits for the preview to be composed and returns the two tiles' frames.
+    private func comparisonTileFrames() -> (first: CGRect, second: CGRect) {
+        XCTAssertTrue(element("comparisonLeftTile").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.activityIndicators["對比圖產生中"].waitForNonExistence(timeout: 10))
+        return (element("comparisonLeftTile").frame, element("comparisonRightTile").frame)
+    }
+
+    /// #740-8, 9: the sheet has 隱藏文字 and 調整文字樣式 like the export panel;
+    /// hiding turns the style link off; the style page opens, and a change there
+    /// comes back to the sheet with the record's 疊字 off, so 顯示文字 is not tappable.
+    func testComparisonTextOptionsAndStylePage() {
+        launchComparisonWall()
+        XCTAssertTrue(comparisonOpen.waitForExistence(timeout: 10))
+        comparisonOpen.tap()
+        let hide = element("comparisonHideTextButton")
+        let style = element("comparisonStyleLink")
+        XCTAssertTrue(hide.waitForExistence(timeout: 5), "8")
+        XCTAssertEqual(hide.label, "隱藏文字", "8")
+        XCTAssertEqual(style.label, "調整文字樣式", "8")
+        XCTAssertTrue(style.isEnabled)
+        XCTAssertLessThan(hide.frame.midY, style.frame.midY)
+        let sheet = element("comparisonSheet").frame
+        for id in ["comparisonPreview", "comparisonHideTextButton", "comparisonStyleLink",
+                   "comparisonExportButton", "comparisonCancelButton"] {
+            XCTAssertTrue(sheet.contains(element(id).frame), "\(id) \(element(id).frame) in \(sheet)")
+        }
+        hide.tap()
+        let shown = NSPredicate(format: "label == '顯示文字'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: hide)], timeout: 5),
+                       .completed, "8")
+        XCTAssertFalse(style.isEnabled, "8 the style page is off while the text is hidden")
+        XCTAssertTrue(app.activityIndicators["對比圖產生中"].waitForNonExistence(timeout: 10))
+        shot("comparison-hidden-text")
+        hide.tap()
+        let hiding = NSPredicate(format: "label == '隱藏文字'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hiding, object: hide)], timeout: 5),
+                       .completed)
+
+        style.tap()
+        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5), "9")
+        let toggle = app.switches["layerToggleOverlay"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        element("stylePanelDoneButton").tap()
+        XCTAssertTrue(element("comparisonSheet").waitForExistence(timeout: 5), "9 back on the sheet")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: hide)], timeout: 5),
+                       .completed, "9 the record now hides the text")
+        XCTAssertFalse(hide.isEnabled, "9")
+    }
+
+    /// #740-10: two landscape photos stack, and each half opens its own picker.
+    func testComparisonStackedHalvesSwapSeparately() {
+        launchComparisonWall(arguments: ["-UITestAspects", "1.3333"])
+        XCTAssertTrue(comparisonOpen.waitForExistence(timeout: 10))
+        comparisonOpen.tap()
+        let frames = comparisonTileFrames()
+        XCTAssertEqual(element("comparisonLeftTile").label, "上面照片，第 1 天，點兩下換照片", "10")
+        XCTAssertEqual(element("comparisonRightTile").label, "下面照片，第 10 天，點兩下換照片", "10")
+        XCTAssertLessThanOrEqual(frames.first.maxY, frames.second.minY + 1, "10 top over bottom")
+        XCTAssertEqual(frames.first.minX, frames.second.minX, accuracy: 1)
+        XCTAssertEqual(frames.first.width / frames.first.height, 4.0 / 3, accuracy: 0.05, "10")
+
+        element("comparisonRightTile").tap()
+        let picker = element("comparisonPicker")
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "10")
+        let fourth = picker.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'photoCell' AND label == '第 4 天'")).firstMatch
+        XCTAssertTrue(fourth.waitForExistence(timeout: 5))
+        fourth.tap()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
+        let swapped = NSPredicate(format: "label == '下面照片，第 4 天，點兩下換照片'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: swapped,
+                                                                      object: element("comparisonRightTile"))],
+                                      timeout: 5), .completed, "10")
+        XCTAssertEqual(element("comparisonLeftTile").label, "上面照片，第 1 天，點兩下換照片", "10 the top is unchanged")
+
+        element("comparisonLeftTile").tap()
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "10 the top half opens its own picker")
+    }
+
+    /// #740-12 B′: each layout's sheet, and the tile shapes it gives.
+    func testComparisonLayoutScreens() {
+        let cases: [(aspects: String, name: String, ratio: CGFloat, stacked: Bool)] = [
+            ("0.75", "comparison-same-portrait", 0.75, false),
+            ("0.75,0.5625", "comparison-portrait-cut", 0.75, false),
+            ("1.3333,1.7778", "comparison-landscape-stacked", 4.0 / 3, true),
+            ("0.75,1.3333", "comparison-mixed-square", 1, false)
+        ]
+        for (index, item) in cases.enumerated() {
+            if index > 0 { app.terminate() }
+            launchComparisonWall(arguments: ["-UITestAspects", item.aspects])
+            XCTAssertTrue(comparisonOpen.waitForExistence(timeout: 10), item.name)
+            comparisonOpen.tap()
+            let frames = comparisonTileFrames()
+            let window = app.windows.firstMatch.frame
+            XCTAssertTrue(window.contains(frames.first) && window.contains(frames.second), item.name)
+            XCTAssertEqual(frames.first.width / frames.first.height, item.ratio, accuracy: 0.05, item.name)
+            if item.stacked {
+                XCTAssertLessThanOrEqual(frames.first.maxY, frames.second.minY + 1, item.name)
+            } else {
+                XCTAssertLessThanOrEqual(frames.first.maxX, frames.second.minX + 1, item.name)
+            }
+            XCTAssertTrue(element("comparisonExportButton").exists)
+            sleep(1)
+            shot(item.name)
+        }
+    }
 }

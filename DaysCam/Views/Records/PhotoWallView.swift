@@ -119,7 +119,9 @@ struct PhotoWallView: View {
             }
         }
         .sheet(item: comparisonBinding) { sheet in
-            ComparisonSheet(model: sheet, library: listModel.library)
+            ComparisonSheet(model: sheet, library: listModel.library) { [listModel, styleCenter, profileID = model.profileID] photo in
+                listModel.exportModel(for: profileID, photo: photo, styleCenter: styleCenter)
+            }
         }
         .onChange(of: model.photoIDs) { _, _ in openNewestIfRequested() }
         .alert(model.errorTitle, isPresented: errorBinding) {

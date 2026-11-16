@@ -145,34 +145,11 @@ struct BatchExportSheet: View {
         let scale: CGFloat
     }
 
-    /// 隱藏文字 over 調整文字樣式 (#679): plain text buttons alike. While the
-    /// text is hidden by the sheet the first reads 顯示文字 and the style page is off.
     private var textOptions: some View {
-        VStack(spacing: 4) {
-            textButton(model.hidesText ? "顯示文字" : "隱藏文字", identifier: "exportHideTextButton") {
-                model.toggleHidesText()
-            }
-            // A record whose 疊字 is off reads as already hidden and cannot be
-            // switched here (#718); 調整文字樣式 stays up, it is the way to turn it on.
-            .disabled(model.recordHidesText)
-            .opacity(model.recordHidesText ? 0.4 : 1)
-            textButton("調整文字樣式", identifier: "batchExportStyleLink") { stylingPhoto = model.previewPhoto }
-                .disabled(model.hidesTextChoice)
-                .opacity(model.hidesTextChoice ? 0.4 : 1)
-        }
-    }
-
-    private func textButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(CameraTheme.active)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(identifier)
+        ExportTextOptions(hidesText: model.hidesText, recordHidesText: model.recordHidesText,
+                          hidesTextChoice: model.hidesTextChoice,
+                          hideIdentifier: "exportHideTextButton", styleIdentifier: "batchExportStyleLink",
+                          onToggle: { model.toggleHidesText() }, onStyle: { stylingPhoto = model.previewPhoto })
     }
 
     private func navButton(_ systemImage: String, label: String, identifier: String,
@@ -237,28 +214,10 @@ struct BatchExportSheet: View {
     // MARK: - Buttons
 
     private func primaryButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 15, weight: .heavy))
-                .foregroundColor(CameraTheme.inkOnAccent)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(CameraTheme.accent))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        ExportPrimaryButton(title: title, identifier: identifier, action: action)
     }
 
     private func secondaryButton(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(CameraTheme.ink)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(CameraTheme.fill))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        ExportSecondaryButton(title: title, identifier: identifier, action: action)
     }
 }

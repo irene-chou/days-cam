@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 import XCTest
 @testable import DaysCam
@@ -40,21 +41,27 @@ final class ComparisonModelTests: XCTestCase {
     }
 
     /// p0 before the start, u undated, p1 … p10 on 2026-01-01 … 01-10.
-    private func makeLibrary() -> FakeRecordAlbumLibrary {
+    private func makeLibrary(aspect: CGFloat? = nil) -> FakeRecordAlbumLibrary {
         let assets = [photo("p0", 12, 25, year: 2025), FakeRecordAlbumLibrary.Asset(id: "u", creationDate: nil)]
-            + (1...10).map { photo("p\($0)", 1, $0) }
+            + (1...10).map { id -> FakeRecordAlbumLibrary.Asset in
+                var asset = photo("p\(id)", 1, id)
+                asset.aspectRatio = aspect
+                return asset
+            }
         return FakeRecordAlbumLibrary(assets: assets, albums: [.init(id: "album", title: "小寶", assetIDs: assets.map(\.id))])
     }
 
     private func makeModel(library: FakeRecordAlbumLibrary,
                            profile: CameraProfile? = nil,
                            log: ComposeLog = ComposeLog(),
+                           profileChanges: AnyPublisher<CameraProfile?, Never> = Empty().eraseToAnyPublisher(),
                            composeResult: Bool = true,
                            save: @escaping PhotoExportPipeline.Save = { _, completion in completion(.success("new")) },
                            openSettings: @escaping (URL) -> Void = { _ in }) -> ComparisonModel {
         let photos = library.photos(albumIdentifier: "album", fallbackIDs: [])
         return ComparisonModel(profile: profile ?? self.profile(), photos: photos, leftID: "p1", rightID: "p10",
-                               library: library, calendar: calendar, resolveFont: { _ in .pingFang },
+                               library: library, calendar: calendar, profileChanges: profileChanges,
+                               resolveFont: { _ in .pingFang },
                                compose: { left, right, _, _, _, side in
                                    log.record(left, right, side: side)
                                    return composeResult ? UIImage() : nil
@@ -63,7 +70,7 @@ final class ComparisonModelTests: XCTestCase {
     }
 
     /// 5: the preview puts the earliest on the left and the latest on the
-    /// right, each with its own day count, composed at 540 off the main thread.
+    /// right, each with its own day count, composed within 1080 off the main thread.
     func testPreviewHasEarliestLeftAndLatestRight() async {
         let log = ComposeLog()
         let model = makeModel(library: makeLibrary(), log: log)
@@ -72,7 +79,7 @@ final class ComparisonModelTests: XCTestCase {
         let call = log.all.first
         XCTAssertEqual(call?.left, "第 1 天", "5")
         XCTAssertEqual(call?.right, "第 10 天", "5")
-        XCTAssertEqual(call?.side, 540)
+        XCTAssertEqual(call?.side, 1080)
         XCTAssertEqual(call?.leftSize, CGSize(width: 1080, height: 1080), "screen-size source")
         XCTAssertEqual(call?.onMain, false, "composed off the main thread")
         XCTAssertEqual(call?.filmDate, false, "film date only when the record shows it")
@@ -86,6 +93,58 @@ final class ComparisonModelTests: XCTestCase {
         let model = makeModel(library: makeLibrary(), profile: profile(showFilmDate: true), log: log)
         await model.makePreview()
         XCTAssertEqual(log.all.first?.filmDate, true)
+    }
+
+    /// #740-8: 隱藏文字 prints no day count on either tile; a record with 疊字
+    /// off already reads as hidden and the sheet cannot switch it.
+    func testHidingTextBlanksBothTiles() async {
+        let log = ComposeLog()
+        let model = makeModel(library: makeLibrary(), log: log)
+        let key = model.previewKey
+        model.toggleHidesText()
+        XCTAssertTrue(model.hidesText, "8")
+        XCTAssertNotEqual(model.previewKey, key, "8 the preview is remade")
+        await model.makePreview()
+        XCTAssertEqual(log.all.last?.left, "", "8")
+        XCTAssertEqual(log.all.last?.right, "", "8")
+        model.toggleHidesText()
+        XCTAssertFalse(model.hidesText)
+
+        var off = profile()
+        off.showOverlay = false
+        let hidden = makeModel(library: makeLibrary(), profile: off)
+        XCTAssertTrue(hidden.hidesText)
+        XCTAssertTrue(hidden.recordHidesText)
+        hidden.toggleHidesText()
+        XCTAssertFalse(hidden.hidesTextChoice, "8 the record's setting is not the sheet's to change")
+    }
+
+    /// #740-9: a record change from the style page redraws the preview.
+    func testProfileChangeRemakesThePreview() async {
+        let log = ComposeLog()
+        let changes = PassthroughSubject<CameraProfile?, Never>()
+        let model = makeModel(library: makeLibrary(), log: log, profileChanges: changes.eraseToAnyPublisher())
+        let key = model.previewKey
+        var changed = profile()
+        changed.showFilmDate = true
+        changes.send(changed)
+        XCTAssertEqual(model.profile, changed, "9")
+        XCTAssertNotEqual(model.previewKey, key, "9")
+        await model.makePreview()
+        XCTAssertEqual(log.all.last?.filmDate, true, "9 the new style is used")
+        changes.send(nil)
+        XCTAssertEqual(model.profile, changed, "9 a vanished record keeps the last one")
+    }
+
+    /// #740-10: two landscape photos stack, and the halves are called 上面／下面.
+    func testLandscapePairIsStacked() async {
+        let model = makeModel(library: makeLibrary(aspect: 4.0 / 3))
+        XCTAssertEqual(model.arrangement, .sideBySide, "before the preview is made")
+        await model.makePreview()
+        XCTAssertEqual(model.arrangement, .stacked, "10")
+        XCTAssertEqual(model.tileAccessibilityLabel(.left), "上面照片，第 1 天，點兩下換照片", "10")
+        XCTAssertEqual(model.tileAccessibilityLabel(.right), "下面照片，第 10 天，點兩下換照片", "10")
+        XCTAssertEqual(model.name(of: .left), "上面")
     }
 
     /// 6: the picker lists dated photos from the start date on; choosing one
@@ -108,7 +167,7 @@ final class ComparisonModelTests: XCTestCase {
         XCTAssertEqual(model.rightID, "p10", "not offered")
     }
 
-    /// 7: 匯出 composes at 1080 from the originals, saves once and finishes.
+    /// 7: 匯出 composes within 2160 from the originals, saves once and finishes.
     func testExportSavesOnceAndFinishes() async {
         let log = ComposeLog()
         var saved = 0
@@ -121,7 +180,7 @@ final class ComparisonModelTests: XCTestCase {
         await model.export()
         XCTAssertEqual(saved, 1, "7")
         XCTAssertEqual(outcomes, [.exported], "7")
-        XCTAssertEqual(log.all.last?.side, 1080)
+        XCTAssertEqual(log.all.last?.side, 2160)
         XCTAssertEqual(log.all.last?.left, "第 1 天")
         XCTAssertEqual(log.all.last?.right, "第 10 天")
         XCTAssertEqual(log.all.last?.onMain, false)

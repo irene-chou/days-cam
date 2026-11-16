@@ -453,6 +453,9 @@ final class PhotoWallModel: ObservableObject {
         guard comparisonSheet == nil, let comparison, let profile else { return }
         let sheet = ComparisonModel(profile: profile, photos: photos, leftID: comparison.earliestID,
                                     rightID: comparison.latestID, library: library, calendar: calendar,
+                                    profileChanges: store.$profiles.dropFirst()
+                                        .map { [profileID] profiles in profiles.first { $0.id == profileID } }
+                                        .eraseToAnyPublisher(),
                                     resolveFont: resolveFont, compose: compose, save: save,
                                     openSettings: openSettings)
         sheet.onFinish = { [weak self] outcome in self?.finishComparison(outcome) }

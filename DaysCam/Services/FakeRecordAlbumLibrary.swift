@@ -199,14 +199,17 @@ extension FakeRecordAlbumLibrary {
     ///
     /// With `mixedAspects` the photos alternate portrait (3:4) and landscape
     /// (3:2), the first being portrait.
+    /// With `aspects` the photos take those width-over-height ratios in turn
+    /// (`-UITestAspects 0.75,0.5625`), taking over from `mixedAspects`.
     static func generatedPhotos(count: Int, today: Date, calendar: Calendar = .autoupdatingCurrent,
-                                mixedAspects: Bool = false) -> [Asset] {
+                                mixedAspects: Bool = false, aspects: [CGFloat] = []) -> [Asset] {
         guard count > 0 else { return [] }
         return (0..<count).map { offset in
             let daysAgo = count - 1 - offset
             return Asset(id: "uitest-photo-\(offset + 1)",
                          creationDate: calendar.date(byAdding: .day, value: -daysAgo, to: today),
-                         aspectRatio: mixedAspects ? (offset % 2 == 0 ? 0.75 : 1.5) : nil)
+                         aspectRatio: aspects.isEmpty ? (mixedAspects ? (offset % 2 == 0 ? 0.75 : 1.5) : nil)
+                                                      : aspects[offset % aspects.count])
         }
     }
 
@@ -215,7 +218,8 @@ extension FakeRecordAlbumLibrary {
     /// (or the real today). `nil` without the argument, so the caller uses
     /// the real library. `-UITestPhotoAccess` picks the status (default full;
     /// `notDetermined` is undecided until asked, then grants full access);
-    /// `-UITestMixedAspects` alternates portrait and landscape photos.
+    /// `-UITestMixedAspects` alternates portrait and landscape photos;
+    /// `-UITestAspects a,b,…` gives them those ratios in turn.
     static func forUITests(arguments: [String] = ProcessInfo.processInfo.arguments,
                            environment: [String: String] = ProcessInfo.processInfo.environment,
                            calendar: Calendar = .autoupdatingCurrent) -> FakeRecordAlbumLibrary? {
@@ -233,8 +237,13 @@ extension FakeRecordAlbumLibrary {
             default: break
             }
         }
+        var aspects: [CGFloat] = []
+        if let aspectsIndex = arguments.firstIndex(of: "-UITestAspects"), arguments.indices.contains(aspectsIndex + 1) {
+            aspects = arguments[aspectsIndex + 1].split(separator: ",").compactMap { Double($0) }.map { CGFloat($0) }
+        }
         return FakeRecordAlbumLibrary(status: status, assets: generatedPhotos(count: count, today: today, calendar: calendar,
-                                                                        mixedAspects: arguments.contains("-UITestMixedAspects")))
+                                                                        mixedAspects: arguments.contains("-UITestMixedAspects"),
+                                                                        aspects: aspects))
     }
 }
 #endif
