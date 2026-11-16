@@ -577,6 +577,34 @@ final class CameraScreenPictureFrameMetricsTests: XCTestCase {
         }
     }
 
+    /// #733: the day HUD, in the held bottom-left corner, moves in from the
+    /// held edge that lies on a bar, mirroring the quick-zoom control.
+    func test_733_hudClearsTheBarsInEveryOrientation() {
+        for (size, bottom, top) in [(CGSize(width: 402, height: 874), CGFloat(34), CGFloat(62)),
+                                    (CGSize(width: 375, height: 667), 0, 20)] {
+            let m = metrics(size, bottom: bottom, top: top)
+            let rotations: [ViewfinderRotation] = [.portrait, .landscapeTopLeft, .landscapeTopRight, .upsideDown]
+            for ratio in [CaptureAspectRatio.threeByFour, .oneByOne] {
+                for rotation in rotations {
+                    let clearance = m.dayHUDClearance(for: ratio, rotation: rotation)
+                    XCTAssertEqual(clearance.bottom, 0, "\(size) \(ratio) \(rotation)")
+                    XCTAssertEqual(clearance.leading, 0, "\(size) \(ratio) \(rotation)")
+                }
+            }
+            let tall = m.closedPictureFrame(for: .nineBySixteen)
+            let underFooter = m.dayHUDBottomInset(for: .nineBySixteen) - CameraScreenLayoutMetrics.dayHUDInset
+            let underHeader = max(0, m.headerBottom - tall.minY)
+            XCTAssertGreaterThan(underFooter, 0, "\(size)")
+            XCTAssertEqual(m.dayHUDClearance(for: .nineBySixteen, rotation: .portrait).bottom, underFooter, accuracy: 0.5)
+            XCTAssertEqual(m.dayHUDClearance(for: .nineBySixteen, rotation: .landscapeTopLeft).leading, underHeader,
+                           accuracy: 0.5, "\(size) held left edge = screen top")
+            XCTAssertEqual(m.dayHUDClearance(for: .nineBySixteen, rotation: .landscapeTopRight).leading, underFooter,
+                           accuracy: 0.5, "\(size) held left edge = screen bottom")
+            XCTAssertEqual(m.dayHUDClearance(for: .nineBySixteen, rotation: .upsideDown).bottom, underHeader,
+                           accuracy: 0.5, "\(size) held bottom = screen top")
+        }
+    }
+
     /// 712-4: the picture has the chosen ratio's shape: 1:1 is the square
     /// centered in the 3:4 box, 3:4 and 9:16 (outside the SE fallback) start
     /// at the header.

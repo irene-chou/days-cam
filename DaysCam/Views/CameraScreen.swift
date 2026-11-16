@@ -160,7 +160,9 @@ struct CameraScreen: View {
     private func viewfinderBox(metrics: CameraScreenLayoutMetrics) -> some View {
         let frame = viewfinderFrame(metrics: metrics)
         let size = frame.size
-        return viewfinderContent(frameSize: size, hudBottomInset: hudBottomInset(metrics: metrics))
+        let hudClearance = metrics.dayHUDClearance(for: model.captureAspectRatio,
+                                                   rotation: model.viewfinderRotation)
+        return viewfinderContent(frameSize: size, hudClearance: hudClearance)
             .frame(width: size.width, height: size.height)
             .overlay(
                 CameraTheme.shutterFlash
@@ -273,7 +275,7 @@ struct CameraScreen: View {
     /// focus reticle, the day HUD (#724), the countdown's big number (FR-7.6),
     /// the transient status message and the permission guidance screen.
     @ViewBuilder
-    private func viewfinderContent(frameSize: CGSize, hudBottomInset: CGFloat) -> some View {
+    private func viewfinderContent(frameSize: CGSize, hudClearance: (bottom: CGFloat, leading: CGFloat)) -> some View {
         let rotation = model.viewfinderRotation
         let layerSize = rotation.frameSize(for: frameSize)
         ZStack {
@@ -299,7 +301,7 @@ struct CameraScreen: View {
 
             if let hud = model.dayHUD {
                 hudLayer(hud, layerSize: layerSize, frameSize: frameSize, rotation: rotation,
-                         bottomInset: rotation == .portrait ? hudBottomInset : CameraDayHUD.inset)
+                         clearance: hudClearance)
             }
 
             if let countdownRemaining = model.countdownRemaining {
@@ -361,24 +363,18 @@ struct CameraScreen: View {
     /// The day HUD in the picture's bottom-left corner. The layer lays out at
     /// the photo's own size (landscape swaps the box's sides) and turns about
     /// the box's center, so the HUD stays in the held picture's corner
-    /// (#571, #572). `bottomInset` lifts it, held upright, above what shares
-    /// the corner. Never takes touches.
+    /// (#571, #572). `clearance` moves it in from the held edges that a bar
+    /// lies over (#724, #733). Never takes touches.
     private func hudLayer(_ hud: CameraScreenModel.DayHUD, layerSize: CGSize, frameSize: CGSize,
-                          rotation: ViewfinderRotation, bottomInset: CGFloat) -> some View {
+                          rotation: ViewfinderRotation, clearance: (bottom: CGFloat, leading: CGFloat)) -> some View {
         CameraDayHUD(hud: hud)
-            .padding(.leading, CameraDayHUD.inset)
-            .padding(.bottom, bottomInset)
+            .padding(.leading, CameraDayHUD.inset + clearance.leading)
+            .padding(.bottom, CameraDayHUD.inset + clearance.bottom)
             .frame(width: layerSize.width, height: layerSize.height, alignment: .bottomLeading)
             .rotationEffect(.degrees(rotation.degrees))
             .frame(width: frameSize.width, height: frameSize.height)
             .animation(reduceMotion ? nil : CameraTheme.spring, value: rotation)
             .allowsHitTesting(false)
-    }
-
-    /// The upright HUD's distance from the picture's bottom edge: clear of
-    /// 「返回圖庫」 (#724).
-    private func hudBottomInset(metrics: CameraScreenLayoutMetrics) -> CGFloat {
-        metrics.dayHUDBottomInset(for: model.captureAspectRatio)
     }
 
     // MARK: - Zoom presets (issue #279)
