@@ -1,8 +1,9 @@
+import Combine
 import Foundation
 import UIKit
 
-/// Drives the comparison sheet (#725): the two photos side by side, each with
-/// its own day count, a preview made off the main thread, swapping either
+/// Drives the comparison sheet (#725, #740): the two photos side by side or
+/// stacked (`ComparisonLayout`), each with its own day count, a preview made off the main thread, swapping either
 /// photo for another on the wall, and 匯出 as one new photo to 「最近項目」.
 ///
 /// The swapped pair lives only here; closing the sheet goes back to the
@@ -17,15 +18,24 @@ final class ComparisonModel: ObservableObject, Identifiable {
     /// The real composition.
     static let renderCompose: Compose = { left, right, style, placement, font, side in
         ComparisonRenderer().compose(left: left, right: right, style: style, placement: placement,
-                                     font: font, tileSide: side)
+                                     font: font, maxSide: side)
     }
 
-    /// Which half of the comparison.
+    /// Which half of the comparison: the left or top photo is `left`, the
+    /// right or bottom one `right`.
     enum Side: String, Identifiable {
         case left
         case right
 
         var id: String { rawValue }
+    }
+
+    /// What the preview shows, for the view's `.task(id:)`.
+    struct PreviewKey: Equatable {
+        let leftID: String
+        let rightID: String
+        let profile: CameraProfile
+        let hidesText: Bool
     }
 
     /// How the sheet ended.
@@ -34,21 +44,26 @@ final class ComparisonModel: ObservableObject, Identifiable {
         case exported
     }
 
-    /// Pixel side of each preview tile.
-    static let previewTileSide: CGFloat = 540
-    /// Pixel side of each exported tile.
-    static let exportTileSide: CGFloat = 1080
+    /// Longest side of the preview's row or column, in pixels.
+    static let previewMaxSide: CGFloat = 1080
+    /// Longest side of the exported row or column, in pixels.
+    static let exportMaxSide: CGFloat = ComparisonLayout.exportMaxSide
     /// Long side asked of the library for a preview photo.
     static let previewSourceSide: CGFloat = 1080
 
     let id = UUID()
-    let profile: CameraProfile
+    /// The record as the store has it now; the preview follows it.
+    @Published private(set) var profile: CameraProfile
     /// The left photo, earliest by default.
     @Published private(set) var leftID: String
     /// The right photo, latest by default.
     @Published private(set) var rightID: String
     /// The composed preview; `nil` while it is being made or if it failed.
     @Published private(set) var previewImage: UIImage?
+    /// How the two photos sit in the preview; side by side until it is made.
+    @Published private(set) var arrangement: ComparisonLayout.Arrangement = .sideBySide
+    /// 隱藏文字 was chosen on this sheet: neither tile prints the day count.
+    @Published private(set) var hidesTextChoice = false
     /// 匯出 is running: both buttons are off and the sheet cannot be swiped away.
     @Published private(set) var isExporting = false
     /// The export failed; the sheet shows it as an alert and stays up.
@@ -64,11 +79,13 @@ final class ComparisonModel: ObservableObject, Identifiable {
     private let compose: Compose
     private let save: PhotoExportPipeline.Save
     private let openSettings: (URL) -> Void
+    private var subscription: AnyCancellable?
     private let composeQueue = DispatchQueue(label: "dayscam.comparison-compose", qos: .userInitiated)
 
     /// - Parameters:
     ///   - photos: the wall's photos, oldest first; the picker lists the
     ///     dated ones from the start date on.
+    ///   - profileChanges: the record as the store has it, each time it changes.
     ///   - leftID: the card's earliest photo.
     ///   - rightID: the card's latest photo.
     init(profile: CameraProfile,
@@ -77,6 +94,7 @@ final class ComparisonModel: ObservableObject, Identifiable {
          rightID: String,
          library: any RecordAlbumLibrary,
          calendar: Calendar,
+         profileChanges: AnyPublisher<CameraProfile?, Never> = Empty().eraseToAnyPublisher(),
          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
          compose: @escaping Compose = ComparisonModel.renderCompose,
          save: @escaping PhotoExportPipeline.Save,
@@ -91,6 +109,10 @@ final class ComparisonModel: ObservableObject, Identifiable {
         self.compose = compose
         self.save = save
         self.openSettings = openSettings
+        subscription = profileChanges.sink { [weak self] changed in
+            guard let self, let changed else { return }
+            self.profile = changed
+        }
     }
 
     // MARK: - Photos and texts
@@ -113,14 +135,39 @@ final class ComparisonModel: ObservableObject, Identifiable {
         side == .left ? leftID : rightID
     }
 
+    /// The left (top) photo, the one the style page previews.
+    var leftPhoto: RecordPhoto? { photos.first { $0.id == leftID } }
+
+    /// The text is hidden, by the sheet or by the record (#718).
+    var hidesText: Bool { hidesTextChoice || profile.showOverlay == false }
+
+    /// The record's 疊字 is off: it reads as hidden and cannot be switched here.
+    var recordHidesText: Bool { profile.showOverlay == false }
+
+    /// 隱藏文字／顯示文字; the record's own setting stays as it is.
+    func toggleHidesText() {
+        guard !isExporting, !recordHidesText else { return }
+        hidesTextChoice.toggle()
+    }
+
     /// The day count printed on `side`: the record's full unit text (#722).
     func dayText(on side: Side) -> String {
         dayText(for: photoID(on: side))
     }
 
-    /// "左邊照片，<天數>，點兩下換照片".
+    /// "左邊照片，<天數>，點兩下換照片"; 上面／下面 when stacked.
     func tileAccessibilityLabel(_ side: Side) -> String {
-        "\(side == .left ? "左邊" : "右邊")照片，\(dayText(on: side))，點兩下換照片"
+        "\(name(of: side))照片，\(dayText(on: side))，點兩下換照片"
+    }
+
+    /// 左邊／右邊, or 上面／下面 while the photos are stacked.
+    func name(of side: Side) -> String {
+        switch (arrangement, side) {
+        case (.sideBySide, .left): return "左邊"
+        case (.sideBySide, .right): return "右邊"
+        case (.stacked, .left): return "上面"
+        case (.stacked, .right): return "下面"
+        }
     }
 
     /// Puts `photoID` on `side`; the preview is then made again.
@@ -140,15 +187,17 @@ final class ComparisonModel: ObservableObject, Identifiable {
     private func tile(_ image: UIImage, photoID: String) -> ComparisonRenderer.Tile {
         let date = photos.first { $0.id == photoID }?.creationDate
         let filmDate = date.flatMap { PhotoDetailModel.filmDateStamp(for: profile, creationDate: $0, calendar: calendar) }
-        return ComparisonRenderer.Tile(image: image, text: dayText(for: photoID), filmDate: filmDate)
+        return ComparisonRenderer.Tile(image: image, text: hidesText ? "" : dayText(for: photoID), filmDate: filmDate)
     }
 
     // MARK: - Preview
 
     /// Identifies what the preview shows, for the view's `.task(id:)`.
-    var previewKey: String { "\(leftID)|\(rightID)" }
+    var previewKey: PreviewKey {
+        PreviewKey(leftID: leftID, rightID: rightID, profile: profile, hidesText: hidesText)
+    }
 
-    /// Loads both photos at screen size and composes them at 540pt tiles off
+    /// Loads both photos at screen size and composes them within 1080px off
     /// the main thread. A result for a pair no longer chosen is dropped.
     func makePreview() async {
         let key = previewKey
@@ -160,8 +209,9 @@ final class ComparisonModel: ObservableObject, Identifiable {
               key == previewKey else { return }
         let image = await composeOffMain(left: tile(leftImage, photoID: leftID),
                                          right: tile(rightImage, photoID: rightID),
-                                         side: Self.previewTileSide)
+                                         side: Self.previewMaxSide)
         guard key == previewKey, !Task.isCancelled else { return }
+        arrangement = ComparisonLayout.plan(first: Self.pixelSize(leftImage), second: Self.pixelSize(rightImage)).arrangement
         previewImage = image
     }
 
@@ -176,8 +226,12 @@ final class ComparisonModel: ObservableObject, Identifiable {
         onFinish(.cancelled)
     }
 
-    /// 匯出: fetches both originals one after the other, composes them at
-    /// 1080 off the main thread and saves one new photo to 「最近項目」. Success
+    private static func pixelSize(_ image: UIImage) -> CGSize {
+        CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+    }
+
+    /// 匯出: fetches both originals one after the other, composes them within
+    /// 2160px off the main thread and saves one new photo to 「最近項目」. Success
     /// closes the sheet; a failure keeps it up with `exportError`.
     func export() async {
         guard !isExporting else { return }
@@ -204,7 +258,7 @@ final class ComparisonModel: ObservableObject, Identifiable {
         }
         guard let image = await composeOffMain(left: tile(left, photoID: leftID),
                                                right: tile(right, photoID: rightID),
-                                               side: Self.exportTileSide) else {
+                                               side: Self.exportMaxSide) else {
             return .failure(.bakeFailed)
         }
         let saved: Result<String, PhotoSaveError> = await withCheckedContinuation { continuation in

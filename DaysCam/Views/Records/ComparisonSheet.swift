@@ -1,12 +1,16 @@
 import SwiftUI
 
-/// The comparison sheet (#725, D-11 §3): the side-by-side preview, each half
-/// a button that swaps its photo, the hint line, then 匯出／取消.
+/// The comparison sheet (#725, #740, D-11 §3): the preview with its photos
+/// side by side or stacked, each a button that swaps its photo, the hint line,
+/// the export panel's text options, then 匯出／取消.
 struct ComparisonSheet: View {
     @ObservedObject var model: ComparisonModel
     let library: any RecordAlbumLibrary
+    /// The 文字樣式 page for a photo (FR-19), opened from 調整文字樣式.
+    let makeExportModel: (RecordPhoto) -> ExportModel
 
     @State private var pickingSide: ComparisonModel.Side?
+    @State private var stylingPhoto: RecordPhoto?
 
     var body: some View {
         NavigationStack {
@@ -22,6 +26,9 @@ struct ComparisonSheet: View {
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(!model.canDismiss)
         .preferredColorScheme(.light)
+        .fullScreenCover(item: $stylingPhoto) { photo in
+            ExportView(model: makeExportModel(photo))
+        }
         .alert("無法匯出", isPresented: errorBinding, presenting: model.exportError) { error in
             if error.showsSettingsAction {
                 Button("前往設定") { model.openPhotoSettings() }
@@ -33,7 +40,7 @@ struct ComparisonSheet: View {
     }
 
     private var content: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             Text("對比圖")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(CameraTheme.ink)
@@ -44,9 +51,20 @@ struct ComparisonSheet: View {
                 .foregroundColor(CameraTheme.inkSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            exportButton
-            cancelButton
+            ExportTextOptions(hidesText: model.hidesText, recordHidesText: model.recordHidesText,
+                              hidesTextChoice: model.hidesTextChoice,
+                              hideIdentifier: "comparisonHideTextButton", styleIdentifier: "comparisonStyleLink",
+                              onToggle: { model.toggleHidesText() },
+                              onStyle: { stylingPhoto = model.leftPhoto })
+                .disabled(model.isExporting)
+            ExportPrimaryButton(title: model.isExporting ? "匯出中" : "匯出",
+                                identifier: "comparisonExportButton", isBusy: model.isExporting) {
+                Task { await model.export() }
+            }
+            .disabled(model.isExporting)
+            ExportSecondaryButton(title: "取消", identifier: "comparisonCancelButton") { model.cancel() }
+                .disabled(model.isExporting)
+                .opacity(model.isExporting ? 0.5 : 1)
         }
         .padding(.horizontal, 20)
         .padding(.top, 24)
@@ -60,7 +78,26 @@ struct ComparisonSheet: View {
     // MARK: - Preview
 
     /// The composed image, made off the main thread; each half swaps its photo.
+    /// It takes the room the sheet leaves and keeps the image's own shape.
     private var preview: some View {
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                previewImage
+                    .aspectRatio(previewAspect, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("comparisonPreview")
+            .task(id: model.previewKey) { await model.makePreview() }
+    }
+
+    private var previewAspect: CGFloat {
+        guard let size = model.previewImage?.size, size.height > 0 else { return 2 }
+        return size.width / size.height
+    }
+
+    private var previewImage: some View {
         ZStack {
             CameraTheme.fill
             if let image = model.previewImage {
@@ -71,16 +108,19 @@ struct ComparisonSheet: View {
                 ProgressView()
                     .accessibilityLabel("對比圖產生中")
             }
-            HStack(spacing: 0) {
-                tileButton(.left, identifier: "comparisonLeftTile")
-                tileButton(.right, identifier: "comparisonRightTile")
+            switch model.arrangement {
+            case .sideBySide:
+                HStack(spacing: 0) {
+                    tileButton(.left, identifier: "comparisonLeftTile")
+                    tileButton(.right, identifier: "comparisonRightTile")
+                }
+            case .stacked:
+                VStack(spacing: 0) {
+                    tileButton(.left, identifier: "comparisonLeftTile")
+                    tileButton(.right, identifier: "comparisonRightTile")
+                }
             }
         }
-        .aspectRatio(2, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("comparisonPreview")
-        .task(id: model.previewKey) { await model.makePreview() }
     }
 
     private func tileButton(_ side: ComparisonModel.Side, identifier: String) -> some View {
@@ -93,42 +133,6 @@ struct ComparisonSheet: View {
         .disabled(model.isExporting)
         .accessibilityLabel(model.tileAccessibilityLabel(side))
         .accessibilityIdentifier(identifier)
-    }
-
-    // MARK: - Buttons
-
-    private var exportButton: some View {
-        Button { Task { await model.export() } } label: {
-            HStack(spacing: 8) {
-                if model.isExporting {
-                    ProgressView().tint(CameraTheme.inkOnAccent)
-                }
-                Text(model.isExporting ? "匯出中" : "匯出")
-                    .font(.system(size: 15, weight: .heavy))
-            }
-            .foregroundColor(CameraTheme.inkOnAccent)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Capsule().fill(CameraTheme.accent))
-        }
-        .buttonStyle(.plain)
-        .disabled(model.isExporting)
-        .accessibilityIdentifier("comparisonExportButton")
-    }
-
-    private var cancelButton: some View {
-        Button { model.cancel() } label: {
-            Text("取消")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(CameraTheme.ink)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(CameraTheme.fill))
-        }
-        .buttonStyle(.plain)
-        .disabled(model.isExporting)
-        .opacity(model.isExporting ? 0.5 : 1)
-        .accessibilityIdentifier("comparisonCancelButton")
     }
 
     private var errorBinding: Binding<Bool> {
@@ -177,7 +181,7 @@ struct ComparisonPhotoPicker: View {
             .defaultScrollAnchor(.bottom)
         }
         .background(CameraTheme.background.ignoresSafeArea())
-        .navigationTitle(side == .left ? "換左邊照片" : "換右邊照片")
+        .navigationTitle("換\(model.name(of: side))照片")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("comparisonPicker")

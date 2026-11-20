@@ -69,10 +69,11 @@ enum ComparisonPicker {
     }
 }
 
-/// Lays two photos side by side as one new image.
+/// Lays two photos out as one new image (#740): side by side or stacked, each
+/// cropped to a shared ratio when needed (`ComparisonLayout`).
 ///
 /// This is the first user of the PRD-2.0 §2.4 seam: a canvas is laid out
-/// outside `bake`, and `bake` is called once per tile on that tile's own square.
+/// outside `bake`, and `bake` is called once per tile on that tile's own pixels.
 struct ComparisonRenderer {
     /// One half of the comparison.
     struct Tile {
@@ -87,51 +88,73 @@ struct ComparisonRenderer {
     /// Creates a renderer.
     init() {}
 
-    /// Center-crops each tile to a square on its short side, bakes the overlay
-    /// on it, and joins them into a `2 * side` by `side` opaque image with no
-    /// gap or border. `side` is the smaller of both tiles' sizes, each capped at
-    /// `tileSide`. Returns `nil` if any step fails. Pure; the caller picks the queue.
+    /// Lays `left` (first, earlier) and `right` out by `ComparisonLayout.plan`:
+    /// both landscape stack, anything else sits side by side. The photo that
+    /// needs a crop is cut around `focus` (centered when it finds nothing),
+    /// each tile is scaled to the shared height or width, baked on its own
+    /// pixels and joined with no gap or border. The longer side of the row or
+    /// column is at most `maxSide`. Returns `nil` if any step fails. Pure;
+    /// the caller picks the queue.
     func compose(left: Tile, right: Tile, style: OverlayStyle, placement: OverlayPlacement,
-                 font: ResolvedOverlayFont, tileSide: CGFloat = 1080) -> UIImage? {
-        let sides = [left, right].map { side(of: $0.image, cap: tileSide) }
-        guard let side = sides.min(), side >= 1 else { return nil }
-        guard let leftBaked = bakedSquare(left, side: side, style: style, placement: placement, font: font)
-        else { return nil }
-        // The left tile is released before the right source is touched.
-        guard let rightBaked = bakedSquare(right, side: side, style: style, placement: placement, font: font)
-        else { return nil }
+                 font: ResolvedOverlayFont, maxSide: CGFloat = ComparisonLayout.exportMaxSide,
+                 focus: ComparisonLayout.Focus = ComparisonLayout.saliencyFocus) -> UIImage? {
+        let leftSize = pixelSize(left.image)
+        let rightSize = pixelSize(right.image)
+        guard leftSize.width >= 1, leftSize.height >= 1, rightSize.width >= 1, rightSize.height >= 1 else { return nil }
+        let plan = ComparisonLayout.plan(first: leftSize, second: rightSize)
+        let leftCrop = crop(left.image, size: leftSize, ratio: plan.firstCrop, focus: focus)
+        let rightCrop = crop(right.image, size: rightSize, ratio: plan.secondCrop, focus: focus)
+        let sizes = ComparisonLayout.tileSizes(first: leftCrop.size, second: rightCrop.size,
+                                               arrangement: plan.arrangement, maxSide: maxSide)
+        guard let leftBaked = baked(left, crop: leftCrop, size: sizes.first, style: style,
+                                    placement: placement, font: font) else { return nil }
+        // The first tile is released before the second source is touched.
+        guard let rightBaked = baked(right, crop: rightCrop, size: sizes.second, style: style,
+                                     placement: placement, font: font) else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let size = CGSize(width: side * 2, height: side)
-        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            leftBaked.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
-            rightBaked.draw(in: CGRect(x: side, y: 0, width: side, height: side))
+        switch plan.arrangement {
+        case .sideBySide:
+            let size = CGSize(width: sizes.first.width + sizes.second.width, height: sizes.first.height)
+            return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+                leftBaked.draw(in: CGRect(origin: .zero, size: sizes.first))
+                rightBaked.draw(in: CGRect(origin: CGPoint(x: sizes.first.width, y: 0), size: sizes.second))
+            }
+        case .stacked:
+            let size = CGSize(width: sizes.first.width, height: sizes.first.height + sizes.second.height)
+            return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+                leftBaked.draw(in: CGRect(origin: .zero, size: sizes.first))
+                rightBaked.draw(in: CGRect(origin: CGPoint(x: 0, y: sizes.first.height), size: sizes.second))
+            }
         }
     }
 
-    private func side(of image: UIImage, cap: CGFloat) -> CGFloat {
-        let shortSide = min(image.size.width * image.scale, image.size.height * image.scale)
-        return min(cap, shortSide).rounded(.down)
+    private func pixelSize(_ image: UIImage) -> CGSize {
+        CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
     }
 
-    /// Crops to a centered square and scales to `side` pixels in one draw, then bakes.
-    private func bakedSquare(_ tile: Tile, side: CGFloat, style: OverlayStyle,
-                             placement: OverlayPlacement, font: ResolvedOverlayFont) -> UIImage? {
-        let width = tile.image.size.width * tile.image.scale
-        let height = tile.image.size.height * tile.image.scale
-        guard width >= 1, height >= 1 else { return nil }
-        let shortSide = min(width, height)
-        let factor = side / shortSide
+    /// The pixel rect kept of a photo: all of it, or the focused crop to `ratio`.
+    private func crop(_ image: UIImage, size: CGSize, ratio: CGFloat?, focus: ComparisonLayout.Focus) -> CGRect {
+        guard let ratio else { return CGRect(origin: .zero, size: size) }
+        return ComparisonLayout.cropRect(size: size, ratio: ratio, focus: focus(image))
+    }
+
+    /// Draws the cropped part scaled to `size` in one pass, then bakes.
+    private func baked(_ tile: Tile, crop: CGRect, size: CGSize, style: OverlayStyle,
+                       placement: OverlayPlacement, font: ResolvedOverlayFont) -> UIImage? {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let square = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
-            let drawn = CGSize(width: width * factor, height: height * factor)
-            tile.image.draw(in: CGRect(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2,
-                                       width: drawn.width, height: drawn.height))
+        let scaleX = size.width / crop.width
+        let scaleY = size.height / crop.height
+        let image = tile.image
+        let fullSize = pixelSize(image)
+        let cropped = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(x: -crop.minX * scaleX, y: -crop.minY * scaleY,
+                                  width: fullSize.width * scaleX, height: fullSize.height * scaleY))
         }
-        return OverlayRenderer().bake(image: square, text: tile.text, style: style,
+        return OverlayRenderer().bake(image: cropped, text: tile.text, style: style,
                                       placement: placement, font: font, cropRect: nil,
                                       filmDate: tile.filmDate, tone: .standard)
     }
