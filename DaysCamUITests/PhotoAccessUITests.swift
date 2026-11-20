@@ -173,7 +173,7 @@ final class PhotoAccessUITests: XCTestCase {
         continueButton.tap()
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 5), "13")
         XCTAssertFalse(intro.exists)
-        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」相簿，會自動出現在這裡"].exists, "15 full")
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」，會自動出現在這裡"].exists, "15 full")
         XCTAssertTrue(element("addPhotosButton").exists)
         shot("651_16_\(deviceTag)_empty-full")
     }

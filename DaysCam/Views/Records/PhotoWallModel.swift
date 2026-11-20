@@ -244,7 +244,7 @@ final class PhotoWallModel: ObservableObject {
     /// The line under "還沒有照片", by access (FR-17.10).
     var emptyMessage: String {
         isLimited ? "用相機拍一張，或按左下角加入照片"
-            : "用相機拍一張，或在「照片」App 把照片加入「\(title)」相簿，會自動出現在這裡"
+            : "用相機拍一張，或在「照片」App 把照片加入「\(title)」，會自動出現在這裡"
     }
 
     var content: Content {
@@ -681,7 +681,7 @@ final class PhotoWallModel: ObservableObject {
     var showsAlbumSyncNotice: Bool { status == .authorized && !albumSyncIDs.isEmpty && !isSelecting }
 
     /// "N 張照片還不在「<紀錄名>」相簿".
-    var albumSyncTitle: String { "\(albumSyncIDs.count) 張照片還不在「\(title)」相簿" }
+    var albumSyncTitle: String { "\(albumSyncIDs.count) 張照片還不在「照片」App 裡的「\(title)」" }
 
     /// 加進相簿: adds `albumSyncIDs` to the album through the same queue as
     /// 加入照片 (creating the album if it is missing), and in the same record
@@ -695,7 +695,7 @@ final class PhotoWallModel: ObservableObject {
         defer { isSyncingAlbum = false }
         let name = title
         if await addToAlbum(ids, movingFromFallback: true) {
-            showToast("已加進「\(name)」相簿 \(ids.count) 張")
+            showToast("已將 \(ids.count) 張加進「照片」App 裡的「\(name)」")
         }
     }
 

@@ -146,6 +146,7 @@ final class RecordListUITests: XCTestCase {
         XCTAssertTrue(albumRow.waitForExistence(timeout: 5))
         albumRow.tap()
         XCTAssertTrue(element("albumPicker").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["「照片」App 相簿"].exists, "picker title")
         let options = app.descendants(matching: .any).matching(identifier: "albumOption")
         XCTAssertTrue(options.element(boundBy: 1).waitForExistence(timeout: 5))
         XCTAssertTrue(options.element(boundBy: 1).label.contains("測試相簿"))

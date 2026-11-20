@@ -93,7 +93,7 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 0)
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10), "12")
         XCTAssertTrue(app.staticTexts["還沒有照片"].exists, "12")
-        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」相簿，會自動出現在這裡"].exists,
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」，會自動出現在這裡"].exists,
                       "12, #651-15")
         XCTAssertTrue(element("addPhotosButton").exists, "12")
         XCTAssertTrue(element("wallSelectButton").exists, "#648-12")
@@ -277,7 +277,7 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 5, arguments: ["-UITestFallbackPhotos", "3", "-UITestLongToast"])
         let notice = element("wallAlbumSyncNotice")
         XCTAssertTrue(notice.waitForExistence(timeout: 10), "1")
-        XCTAssertTrue(app.staticTexts["3 張照片還不在「我的相簿」相簿"].exists, "1")
+        XCTAssertTrue(app.staticTexts["3 張照片還不在「照片」App 裡的「我的相簿」"].exists, "1")
         XCTAssertTrue(app.staticTexts["開放完整權限前拍的"].exists, "1")
         let button = element("wallAlbumSyncButton")
         XCTAssertTrue(button.isHittable, "9")
@@ -287,7 +287,7 @@ final class PhotoWallUITests: XCTestCase {
         button.tap()
         let toast = element("wallToast")
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "3")
-        XCTAssertEqual(toast.label, "已加進「我的相簿」相簿 3 張", "3")
+        XCTAssertEqual(toast.label, "已將 3 張加進「照片」App 裡的「我的相簿」", "3")
         shot("album-sync-done")
         XCTAssertTrue(notice.waitForNonExistence(timeout: 5), "3")
         XCTAssertEqual(dayLabels().count, 5, "#680-8")

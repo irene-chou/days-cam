@@ -573,7 +573,7 @@ final class RecordListModel: ObservableObject {
     /// Delete confirmation text for `profile` (FR-16.5).
     func deletionMessage(for profile: CameraProfile) -> String {
         if let bound = library.userAlbums().first(where: { $0.id == profile.albumIdentifier }) {
-            return "只從 DaysCam 移除。「照片」App 裡的「\(bound.title)」相簿和照片都會保留。"
+            return "只從 DaysCam 移除。「照片」App 裡的「\(bound.title)」和裡面的照片都會保留。"
         }
         return Self.deletionMessageWithoutAlbum
     }

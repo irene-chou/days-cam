@@ -268,7 +268,7 @@ final class RecordListModelTests: XCTestCase {
         let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "a1", title: "寶寶", assetIDs: [])])
         let model = makeModel(store: store, library: library)
         record.albumIdentifier = "a1"
-        XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。「照片」App 裡的「寶寶」相簿和照片都會保留。")
+        XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。「照片」App 裡的「寶寶」和裡面的照片都會保留。")
         record.albumIdentifier = nil
         XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。照片會保留在「照片」App。")
         record.albumIdentifier = "gone"
