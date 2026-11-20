@@ -102,14 +102,20 @@ struct DayCountFormatRows: View {
                     .foregroundColor(isApplied ? CameraTheme.active : CameraTheme.inkTertiary)
                     .opacity(isSelected ? 1 : 0)
                     .frame(width: 18)
-                Text(name)
-                    .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                    .foregroundColor(ink)
-                Spacer(minLength: 8)
-                Text(example)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundColor(isApplied ? CameraTheme.inkSecondary : CameraTheme.inkTertiary)
-                    .multilineTextAlignment(.trailing)
+                // At the largest text sizes the name and example no longer
+                // fit side by side: stack them instead of running off screen.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        optionName(name, isSelected: isSelected, ink: ink)
+                        Spacer(minLength: 8)
+                        optionExample(example)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        optionName(name, isSelected: isSelected, ink: ink)
+                        optionExample(example)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .frame(minHeight: RulesTabView.rowMinHeight)
             .contentShape(Rectangle())
@@ -119,5 +125,18 @@ struct DayCountFormatRows: View {
         .accessibilityLabel("\(name)，\(example)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
         .accessibilityIdentifier("dayCountFormat_\(format.rawValue)")
+    }
+
+    private func optionName(_ name: String, isSelected: Bool, ink: Color) -> some View {
+        Text(name)
+            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+            .foregroundColor(ink)
+    }
+
+    private func optionExample(_ example: String) -> some View {
+        Text(example)
+            .font(.subheadline.monospacedDigit())
+            .foregroundColor(isApplied ? CameraTheme.inkSecondary : CameraTheme.inkTertiary)
+            .multilineTextAlignment(.trailing)
     }
 }
