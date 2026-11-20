@@ -195,8 +195,7 @@ final class PhotoWallModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] profiles in
                 guard let self else { return }
-                self.profile = profiles.first { $0.id == self.profileID }
-                self.reload()
+                self.profilesChanged(profiles.first { $0.id == self.profileID })
             }
         reload()
     }
@@ -278,6 +277,26 @@ final class PhotoWallModel: ObservableObject {
         if granted == .authorized { await backfillAlbums() }
         isRequestingAccess = false
         reload()
+    }
+
+    /// A store change reached this record (#739). Other records' changes do
+    /// nothing; a new album or fallback list re-reads the photos; any other
+    /// field only changes how marks read, so the photos already fetched are
+    /// reused and just the marks and the comparison pair are recomputed.
+    private func profilesChanged(_ updated: CameraProfile?) {
+        let previous = profile
+        guard updated != previous else { return }
+        profile = updated
+        guard let updated, let previous,
+              updated.albumIdentifier == previous.albumIdentifier,
+              updated.fallbackAssetIDs == previous.fallbackAssetIDs,
+              RecordReadMode(status: status) != .none
+        else {
+            reload()
+            return
+        }
+        sections = Self.sections(for: photos, profile: updated, calendar: calendar)
+        updateComparison(updated)
     }
 
     /// Re-reads the photos and recomputes every mark.
@@ -798,6 +817,7 @@ final class PhotoWallModel: ObservableObject {
     /// Photos without a date lead under their own heading.
     static func sections(for photos: [RecordPhoto], profile: CameraProfile, calendar: Calendar) -> [Section] {
         var result: [Section] = []
+        var pending: (id: String, title: String, cells: [Cell])?
         for photo in photos {
             let key: String
             let title: String
@@ -811,12 +831,14 @@ final class PhotoWallModel: ObservableObject {
             }
             let mark = dayMarkTexts(creationDate: photo.creationDate, profile: profile, calendar: calendar)
             let cell = Cell(id: photo.id, dayTexts: mark.texts, isBeforeStart: mark.isBeforeStart)
-            if let last = result.last, last.id == key {
-                result[result.count - 1] = Section(id: key, title: title, cells: last.cells + [cell])
+            if pending?.id == key {
+                pending?.cells.append(cell)
             } else {
-                result.append(Section(id: key, title: title, cells: [cell]))
+                if let done = pending { result.append(Section(id: done.id, title: done.title, cells: done.cells)) }
+                pending = (key, title, [cell])
             }
         }
+        if let done = pending { result.append(Section(id: done.id, title: done.title, cells: done.cells)) }
         return result
     }
 }
