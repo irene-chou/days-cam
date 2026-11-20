@@ -326,7 +326,8 @@ final class RecordListModel: ObservableObject {
                           resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont) -> PhotoDetailModel {
         PhotoDetailModel(profileID: id, startingAt: photoID, store: store, library: library,
                          calendar: calendar,
-                         makeExport: exportSheetFactory(for: id, resolveFont: resolveFont))
+                         makeExport: exportSheetFactory(for: id, resolveFont: resolveFont),
+                         renderer: renderer, resolveFont: resolveFont)
     }
 
     /// Builds the export sheet's model over some photos of record `id`: the

@@ -57,6 +57,9 @@ final class PhotoDetailUITests: XCTestCase {
                        "title was \(title)", file: file, line: line)
     }
 
+    /// Frames of 疊字｜匯出｜刪除 and the toggle's value.
+    private func overlayToggle() -> XCUIElement { element("photoDetailOverlayToggle") }
+
     private func shot(_ name: String) {
         let screenshot = app.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
@@ -108,10 +111,13 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertTrue(delete.label.contains("刪除"), delete.label)
         XCTAssertLessThan(export.frame.midX, delete.frame.midX, "匯出 left of 刪除")
         XCTAssertTrue(app.frame.contains(export.frame) && app.frame.contains(delete.frame))
+        // #738: three equal shares now (疊字｜匯出｜刪除), the wall's two are wider.
+        let toggle = element("photoDetailOverlayToggle").frame
+        XCTAssertEqual(export.frame.width, wallFrames.0.width * 2 / 3, accuracy: 1.5, "a third of the bar")
+        XCTAssertEqual(delete.frame.width, export.frame.width, accuracy: 1, "equal shares")
+        XCTAssertEqual(toggle.width, export.frame.width, accuracy: 1, "equal shares")
         for (viewer, wall) in [(export.frame, wallFrames.0), (delete.frame, wallFrames.1)] {
-            XCTAssertEqual(viewer.width, wall.width, accuracy: 1, "same width as the wall's")
             XCTAssertEqual(viewer.height, wall.height, accuracy: 1, "same height as the wall's")
-            XCTAssertEqual(viewer.midX, wall.midX, accuracy: 1, "same place as the wall's")
             XCTAssertEqual(viewer.maxY, wall.maxY, accuracy: 1, "same place as the wall's")
         }
         XCTAssertFalse(element("photoDetailMoreButton").exists, "no ⋯")
@@ -253,5 +259,48 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertTrue(landscape.frame.width > landscape.frame.height, "landscape photo")
         XCTAssertTrue(app.frame.contains(landscape.frame))
         shot("photo-detail-landscape")
+    }
+
+    /// #738-1, 6: the bar reads 疊字｜匯出｜刪除 left to right, and the toggle's
+    /// value flips 關 → 開 → 關 with taps.
+    func testOverlayToggleSitsFirstAndFlips() {
+        launchWall()
+        openViewer(cell: 4)
+        let toggle = overlayToggle()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let export = element("photoDetailExportButton").frame
+        let delete = element("photoDetailDeleteButton").frame
+        XCTAssertTrue(toggle.frame.maxX <= export.minX + 1 && export.maxX <= delete.minX + 1,
+                      "1 toggle \(toggle.frame) export \(export) delete \(delete)")
+        XCTAssertGreaterThan(toggle.frame.width, 0, "1 visible \(toggle.frame)")
+        XCTAssertEqual(toggle.value as? String, "關", "6 starts off")
+        shot("pr738-overlay-off")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "開", "6 on")
+        XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))
+        sleep(1)
+        shot("pr738-overlay-on")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "關", "6 off again")
+    }
+
+    /// #738-5: leaving the viewer and coming back keeps the toggle on.
+    func testOverlayToggleSurvivesLeavingTheViewer() {
+        launchWall()
+        openViewer(cell: 4)
+        overlayToggle().tap()
+        XCTAssertEqual(overlayToggle().value as? String, "開")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(cell(4).waitForExistence(timeout: 5))
+        openViewer(cell: 3)
+        XCTAssertEqual(overlayToggle().value as? String, "開", "5 kept after reopening")
+    }
+
+    /// #738-8: the bar on a small phone, nothing cut.
+    func testOverlayBarOnSmallPhone() {
+        launchWall()
+        openViewer(cell: 4)
+        XCTAssertTrue(overlayToggle().waitForExistence(timeout: 5))
+        shot("pr738-bar")
     }
 }
