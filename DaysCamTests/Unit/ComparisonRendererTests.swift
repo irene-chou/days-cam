@@ -113,11 +113,16 @@ final class ComparisonRendererTests: XCTestCase {
                                                          cropRect: nil, filmDate: stamp, tone: .standard))
         let single = try XCTUnwrap(PixelGrid(alone))
         XCTAssertEqual(single.width, 600)
+        // Same geometry, but glyph rasterization differs by +-1 per channel across Xcode/runner versions
+        // (CI run 44685170944: only text rows, a few bytes, |diff| = 1), so allow 2 per byte.
+        let tolerance = 2
         for row in 0..<800 {
             let from = row * joined.width * 4
             let start = row * single.width * 4
-            XCTAssertEqual(Array(joined.bytes[from..<(from + 600 * 4)]),
-                           Array(single.bytes[start..<(start + 600 * 4)]), "row \(row)")
+            let joinedRow = Array(joined.bytes[from..<(from + 600 * 4)])
+            let singleRow = Array(single.bytes[start..<(start + 600 * 4)])
+            let worst = zip(joinedRow, singleRow).map { abs(Int($0) - Int($1)) }.max() ?? 0
+            XCTAssertLessThanOrEqual(worst, tolerance, "row \(row)")
         }
     }
 
