@@ -511,6 +511,6 @@ final class PhotoDetailModelTests: XCTestCase {
 
     /// 12: removing without the 「照片」 permission says so.
     func testRemovePermissionMessage() {
-        XCTAssertEqual(PhotoDetailModel.message(for: .permissionDenied), "需要「照片」權限才能從紀錄移除。")
+        XCTAssertEqual(PhotoDetailModel.message(for: .permissionDenied), "需要「照片」權限才能從相簿移除。")
     }
 }

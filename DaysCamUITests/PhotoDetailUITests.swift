@@ -203,8 +203,8 @@ final class PhotoDetailUITests: XCTestCase {
         launchWall()
         openViewer(cell: 4)
         openRemoveOrDeleteDialog()
-        XCTAssertTrue(app.staticTexts["要從「我的紀錄」移除這張照片，還是從「照片」App 刪除？"].exists)
-        XCTAssertTrue(app.buttons["從「我的紀錄」移除"].exists)
+        XCTAssertTrue(app.staticTexts["要從「我的相簿」移除這張照片，還是從「照片」App 刪除？"].exists)
+        XCTAssertTrue(app.buttons["從「我的相簿」移除"].exists)
         XCTAssertTrue(app.buttons["刪除照片"].exists)
         shot("photo-detail-remove-or-delete")
         if app.buttons["取消"].exists { app.buttons["取消"].tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }

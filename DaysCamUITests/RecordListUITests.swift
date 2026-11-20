@@ -35,7 +35,7 @@ final class RecordListUITests: XCTestCase {
     /// Leaves the photo wall for the list with the system back button.
     private func backToList() {
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["相簿"].waitForExistence(timeout: 5))
     }
 
     private func shot(_ name: String) {
@@ -54,12 +54,12 @@ final class RecordListUITests: XCTestCase {
     /// 1 and 2: the first screen is the list; without access the count is "—".
     func testColdLaunchShowsTheListWithADash() {
         launch(extra: ["-UITestRecordPhotos", "5", "-UITestPhotoAccess", "denied"])
-        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 10), "1 the list is first")
+        XCTAssertTrue(app.navigationBars["相簿"].waitForExistence(timeout: 10), "1 the list is first")
         XCTAssertFalse(app.buttons["快門"].exists, "1 not the camera")
         let row = element("recordRow")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.label.contains("今天第 10 天 · —"), "2 \(row.label)")
-        XCTAssertTrue(app.buttons["新增紀錄"].exists)
+        XCTAssertTrue(app.buttons["新增相簿"].exists)
         XCTAssertFalse(app.staticTexts["recordListFooter"].exists, "3 denied shows no footer")
         shot("record-list")
     }
@@ -70,7 +70,7 @@ final class RecordListUITests: XCTestCase {
         let row = element("recordRow")
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         XCTAssertTrue(row.label.contains("今天第 10 天 · 5 張"), "3 \(row.label)")
-        XCTAssertEqual(element("recordListFooter").label, "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現", "3")
+        XCTAssertEqual(element("recordListFooter").label, "每本相簿都和「照片」App 裡的同名相簿同步，在那裡加入的照片會自動出現", "3")
         shot("record-list-full")
     }
 
@@ -84,7 +84,7 @@ final class RecordListUITests: XCTestCase {
         XCTAssertTrue(app.buttons["編輯"].waitForExistence(timeout: 3))
         app.tap()
 
-        app.buttons["新增紀錄"].tap()
+        app.buttons["新增相簿"].tap()
         XCTAssertTrue(element("recordEditor").waitForExistence(timeout: 5))
         app.buttons["createRecordButton"].tap()
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10))
@@ -93,15 +93,16 @@ final class RecordListUITests: XCTestCase {
         let first = app.descendants(matching: .any).matching(identifier: "recordRow").element(boundBy: 0)
         first.swipeLeft()
         app.buttons["刪除"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '都會保留' OR label CONTAINS '照片會保留在'")).firstMatch
-            .waitForExistence(timeout: 3), "6 the dialog names what is kept")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '只從 DaysCam 移除。'")).firstMatch
+            .waitForExistence(timeout: 3), "6 the dialog title and what is kept")
+        shot("record-delete-dialog")
     }
 
     /// 6: add a record named 小寶, tick it, land on its photo wall.
     func testAddingARecordCreatesAndOpensIt() {
         launch(extra: ["-UITestRecordPhotos", "0"])
-        XCTAssertTrue(app.buttons["新增紀錄"].waitForExistence(timeout: 10))
-        app.buttons["新增紀錄"].tap()
+        XCTAssertTrue(app.buttons["新增相簿"].waitForExistence(timeout: 10))
+        app.buttons["新增相簿"].tap()
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.typeText("小寶")
@@ -126,6 +127,7 @@ final class RecordListUITests: XCTestCase {
         let albumRow = element("albumRow")
         XCTAssertTrue(albumRow.waitForExistence(timeout: 5))
         XCTAssertTrue(albumRow.label.contains("需要「照片」權限"), "5 \(albumRow.label)")
+        XCTAssertTrue(albumRow.label.contains("同步到「照片」App"), "5a \(albumRow.label)")
         XCTAssertFalse(element("albumPicker").exists)
         shot("record-editor-denied")
     }
@@ -144,6 +146,7 @@ final class RecordListUITests: XCTestCase {
         XCTAssertTrue(albumRow.waitForExistence(timeout: 5))
         albumRow.tap()
         XCTAssertTrue(element("albumPicker").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["「照片」App 相簿"].exists, "picker title")
         let options = app.descendants(matching: .any).matching(identifier: "albumOption")
         XCTAssertTrue(options.element(boundBy: 1).waitForExistence(timeout: 5))
         XCTAssertTrue(options.element(boundBy: 1).label.contains("測試相簿"))

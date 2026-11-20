@@ -18,8 +18,8 @@ struct PhotoPermissionIntroView: View {
 
     static let options = [
         Option(title: "允許完整取用",
-               points: ["每個紀錄在「照片」App 有一本同名相簿",
-                        "在「照片」App 放進相簿的照片，會自動出現在紀錄並標出第幾天",
+               points: ["每本相簿在「照片」App 都有一本同名相簿",
+                        "在「照片」App 放進相簿的照片，會自動出現在 DaysCam 並標出第幾天",
                         "拍的照片直接存進該相簿"],
                isRecommended: true),
         Option(title: "限制取用",
@@ -28,7 +28,7 @@ struct PhotoPermissionIntroView: View {
                         "照片要在 DaysCam 裡用「加入照片」或拍照加入"],
                isRecommended: false),
         Option(title: "不允許",
-               points: ["紀錄看不到任何照片",
+               points: ["相簿看不到任何照片",
                         "之後可隨時到「設定」開啟"],
                isRecommended: false)
     ]
@@ -42,7 +42,7 @@ struct PhotoPermissionIntroView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     VStack(spacing: 8) {
-                        Text("讓紀錄和「照片」App 同步")
+                        Text("讓相簿和「照片」App 同步")
                             .font(.title3.bold())
                             .foregroundColor(CameraTheme.ink)
                             .accessibilityAddTraits(.isHeader)

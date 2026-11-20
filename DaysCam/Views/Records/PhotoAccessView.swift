@@ -14,7 +14,7 @@ struct PhotoAccessView: View {
             Text("需要「照片」權限")
                 .font(.headline)
                 .foregroundColor(CameraTheme.ink)
-            Text("到「設定」允許 DaysCam 取用照片，才能看到這個紀錄的照片和天數。")
+            Text("到「設定」允許 DaysCam 取用照片，才能看到這本相簿的照片和天數。")
                 .font(.subheadline)
                 .foregroundColor(CameraTheme.inkSecondary)
                 .multilineTextAlignment(.center)

@@ -32,7 +32,7 @@ final class ProfileStore: ObservableObject {
     static let fileName = "profiles.json"
 
     /// Name of the profile a fresh install (or a rebuilt, unreadable store) starts with.
-    static let defaultProfileName = "我的紀錄"
+    static let defaultProfileName = "我的相簿"
     /// `UserDefaults` key holding the profile to restore on next launch.
     static let lastUsedProfileIDKey = "lastUsedProfileID"
 

@@ -48,7 +48,7 @@ struct AlbumPickerView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(CameraTheme.background.ignoresSafeArea())
-        .navigationTitle("相簿")
+        .navigationTitle("「照片」App 相簿")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("albumPicker")
         .task { await model.load() }

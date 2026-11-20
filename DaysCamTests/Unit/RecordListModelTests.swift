@@ -250,12 +250,12 @@ final class RecordListModelTests: XCTestCase {
 
     /// #649-3: footer text by access state.
     func testFooterTextByAuthorization() {
-        let same = "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現"
+        let same = "每本相簿都和「照片」App 裡的同名相簿同步，在那裡加入的照片會自動出現"
         for status in [PHAuthorizationStatus.authorized, .notDetermined] {
             XCTAssertEqual(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: status)).footerText, same)
         }
         XCTAssertEqual(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: .limited)).footerText,
-                       "目前沒有開放完整權限，紀錄不會和原生相簿同步")
+                       "目前沒有開放完整權限，相簿不會和「照片」App 同步")
         for status in [PHAuthorizationStatus.denied, .restricted] {
             XCTAssertNil(makeModel(store: makeStore(), library: FakeRecordAlbumLibrary(status: status)).footerText)
         }
@@ -268,11 +268,11 @@ final class RecordListModelTests: XCTestCase {
         let library = FakeRecordAlbumLibrary(status: .authorized, albums: [.init(id: "a1", title: "寶寶", assetIDs: [])])
         let model = makeModel(store: store, library: library)
         record.albumIdentifier = "a1"
-        XCTAssertEqual(model.deletionMessage(for: record), "「照片」App 裡的「寶寶」相簿和照片都會保留。")
+        XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。「照片」App 裡的「寶寶」和裡面的照片都會保留。")
         record.albumIdentifier = nil
-        XCTAssertEqual(model.deletionMessage(for: record), "照片會保留在「照片」App。")
+        XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。照片會保留在「照片」App。")
         record.albumIdentifier = "gone"
-        XCTAssertEqual(model.deletionMessage(for: record), "照片會保留在「照片」App。")
+        XCTAssertEqual(model.deletionMessage(for: record), "只從 DaysCam 移除。照片會保留在「照片」App。")
     }
 
     // MARK: New record

@@ -192,13 +192,13 @@ struct PhotoWallView: View {
             .accessibilityIdentifier("wallCancelSelectionButton")
     }
 
-    /// 編輯紀錄 / 刪除紀錄 and nothing else (FR-17.9).
+    /// 日期設定 / 刪除相簿 and nothing else (FR-17.9).
     private var moreMenu: some View {
         Menu {
             Button {
                 listModel.editFromWall(id: model.profileID)
             } label: {
-                Label("編輯紀錄", systemImage: "pencil")
+                Label("日期設定", systemImage: "calendar")
             }
             if model.isLimited {
                 Button {
@@ -211,7 +211,7 @@ struct PhotoWallView: View {
             Button(role: .destructive) {
                 listModel.requestDeletion(of: model.profileID)
             } label: {
-                Label("刪除紀錄", systemImage: "trash")
+                Label("刪除相簿", systemImage: "trash")
             }
             .disabled(!listModel.canDelete)
         } label: {

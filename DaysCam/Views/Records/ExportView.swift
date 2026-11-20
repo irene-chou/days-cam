@@ -26,7 +26,7 @@ struct ExportView: View {
     static let maxPanelContentHeight: CGFloat = 260
     static let headerHeight: CGFloat = 44
     /// Where the sheet says changes are saved (FR-19.8).
-    static let note = "改動直接存到這個紀錄，回檢視頁再匯出"
+    static let note = "改動直接存到這本相簿，回檢視頁再匯出"
     /// Space above and below the preview (`.pv{padding:4px 0 6px}`).
     static let previewTopPadding: CGFloat = 4
     static let previewBottomPadding: CGFloat = 6

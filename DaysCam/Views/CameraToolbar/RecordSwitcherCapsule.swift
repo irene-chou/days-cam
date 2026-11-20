@@ -27,7 +27,7 @@ struct RecordSwitcherCapsule: View {
         }
         .disabled(model.isRecordSwitcherDisabled)
         .opacity(model.isRecordSwitcherDisabled ? 0.4 : 1)
-        .accessibilityLabel("切換紀錄")
+        .accessibilityLabel("切換相簿")
         .accessibilityValue(model.selectedRecordName)
         .accessibilityIdentifier("cameraRecordSwitcher")
     }

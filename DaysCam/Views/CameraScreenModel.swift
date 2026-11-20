@@ -985,7 +985,7 @@ extension CameraScreenModel {
                 // Nothing is shown on screen for a save, so VoiceOver users
                 // hear it instead (issue #148).
                 if defersAlbum {
-                    let notice = "照片已存到「照片」App，相簿建好後會自動加進紀錄"
+                    let notice = "照片已存到「照片」App，相簿建好後會自動加進相簿"
                     self.showToast(message: notice)
                     self.announce(notice)
                 } else {

@@ -85,7 +85,7 @@ final class ProfileStoreTests: XCTestCase {
         let seeded = try XCTUnwrap(makeStore(at: instant).load().first)
 
         XCTAssertEqual(seeded.name, ProfileStore.defaultProfileName, "3.2")
-        XCTAssertEqual(ProfileStore.defaultProfileName, "我的紀錄", "119.1")
+        XCTAssertEqual(ProfileStore.defaultProfileName, "我的相簿", "119.1")
         XCTAssertEqual(seeded.startDate, DateFixture.components(2026, 1, 10), "3.2")
         XCTAssertEqual(seeded.countingRule, .dayOne, "3.2")
         XCTAssertTrue(seeded.showDayCount, "3.2")
@@ -99,7 +99,7 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(seeded.style, OverlayStyle(legacyTheme: .classicWhite), "3.2")
     }
 
-    /// The seeded profile must print 我的紀錄 第 1 天 on its first day, which is
+    /// The seeded profile must print 我的相簿 第 1 天 on its first day, which is
     /// the whole point of seeding it (PRD G-1, TASK-119).
     func testSeededProfileRendersDayOneOnTheDayItWasSeeded() throws {
         let instant = try XCTUnwrap(DateFixture.date(2026, 1, 10, hour: 10))

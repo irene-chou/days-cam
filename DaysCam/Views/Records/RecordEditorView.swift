@@ -41,7 +41,7 @@ private struct RecordEditorContent: View {
             .padding(.horizontal, 14)
         }
         .background(CameraTheme.background.ignoresSafeArea())
-        .navigationTitle(model.isDraft(profile.id) ? "新增紀錄" : profile.name)
+        .navigationTitle(model.isDraft(profile.id) ? "新增相簿" : profile.name)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("recordEditor")
         .toolbar {
@@ -93,7 +93,7 @@ private struct RecordEditorContent: View {
 
     private func albumRowLabel(title: String, showsChevron: Bool) -> some View {
         HStack(spacing: 10) {
-            Text("相簿")
+            Text("同步到「照片」App")
                 .font(CameraTheme.toolFont(.subheadline))
                 .foregroundColor(CameraTheme.ink)
             Spacer(minLength: 8)

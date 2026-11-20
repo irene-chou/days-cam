@@ -102,14 +102,14 @@ final class PhotoWallModel: ObservableObject {
     @Published private(set) var albumSyncIDs: [String] = []
     /// 加進相簿 is running.
     @Published private(set) var isSyncingAlbum = false
-    /// The "已從紀錄移除 N 張" / "已刪除 N 張" toast while it shows.
+    /// The "已從相簿移除 N 張" / "已刪除 N 張" toast while it shows.
     @Published private(set) var toastState: ToastState?
     /// A slide selection in progress: where it started and what was ticked
     /// before it.
     private var drag: (anchor: Int, original: Set<String>)?
 
     static let addFailedTitle = "無法加入照片"
-    static let removeFailedTitle = "無法從紀錄移除"
+    static let removeFailedTitle = "無法從相簿移除"
     static let deleteFailedTitle = "無法刪除照片"
     /// How long the toast stays.
     static let toastDuration: TimeInterval = 1.6
@@ -244,7 +244,7 @@ final class PhotoWallModel: ObservableObject {
     /// The line under "還沒有照片", by access (FR-17.10).
     var emptyMessage: String {
         isLimited ? "用相機拍一張，或按左下角加入照片"
-            : "用相機拍一張，或在「照片」App 把照片加入「\(title)」相簿，會自動出現在這裡"
+            : "用相機拍一張，或在「照片」App 把照片加入「\(title)」，會自動出現在這裡"
     }
 
     var content: Content {
@@ -549,10 +549,10 @@ final class PhotoWallModel: ObservableObject {
             report(error.displayMessage, title: Self.removeFailedTitle)
             return
         } catch {
-            report("無法從紀錄移除，請再試一次。", title: Self.removeFailedTitle)
+            report("無法從相簿移除，請再試一次。", title: Self.removeFailedTitle)
             return
         }
-        finish(ids, done: "已從紀錄移除", stillShown: { "有 \($0) 張照片無法從紀錄移除。" },
+        finish(ids, done: "已從相簿移除", stillShown: { "有 \($0) 張照片無法從相簿移除。" },
                title: Self.removeFailedTitle)
     }
 
@@ -597,9 +597,9 @@ final class PhotoWallModel: ObservableObject {
     /// The text of the removal failure alert for `error` (FR-17.15).
     static func removalMessage(for error: RecordAlbumError) -> String {
         switch error {
-        case .permissionDenied: return "需要「照片」權限才能從紀錄移除。"
+        case .permissionDenied: return "需要「照片」權限才能從相簿移除。"
         case .notFound: return "找不到選取的照片，它們可能已被刪除。"
-        case let .failed(reason): return reason.isEmpty ? "無法從紀錄移除，請再試一次。" : reason
+        case let .failed(reason): return reason.isEmpty ? "無法從相簿移除，請再試一次。" : reason
         }
     }
 
@@ -681,7 +681,7 @@ final class PhotoWallModel: ObservableObject {
     var showsAlbumSyncNotice: Bool { status == .authorized && !albumSyncIDs.isEmpty && !isSelecting }
 
     /// "N 張照片還不在「<紀錄名>」相簿".
-    var albumSyncTitle: String { "\(albumSyncIDs.count) 張照片還不在「\(title)」相簿" }
+    var albumSyncTitle: String { "\(albumSyncIDs.count) 張照片還不在「照片」App 裡的「\(title)」" }
 
     /// 加進相簿: adds `albumSyncIDs` to the album through the same queue as
     /// 加入照片 (creating the album if it is missing), and in the same record
@@ -695,7 +695,7 @@ final class PhotoWallModel: ObservableObject {
         defer { isSyncingAlbum = false }
         let name = title
         if await addToAlbum(ids, movingFromFallback: true) {
-            showToast("已加進「\(name)」相簿 \(ids.count) 張")
+            showToast("已將 \(ids.count) 張加進「照片」App 裡的「\(name)」")
         }
     }
 
@@ -731,7 +731,7 @@ final class PhotoWallModel: ObservableObject {
                 // Now in the album, they leave the record's own list, but only
                 // while the record is still bound to that album (or about to
                 // be, unchanged since the start): a record rebound meanwhile in
-                // 編輯紀錄 keeps them. A stale body writes nothing (#680).
+                // 日期 keeps them. A stale body writes nothing (#680).
                 let latestBinding = store.profiles.first(where: { $0.id == profileID })?.albumIdentifier
                 let staysBound = latestBinding == albumID || (rebinding && latestBinding == current.albumIdentifier)
                 let moving: Set<String> = movingFromFallback && !ticket.isStale && staysBound ? Set(ids) : []

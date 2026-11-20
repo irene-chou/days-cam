@@ -430,7 +430,7 @@ final class PhotoWallModelTests: XCTestCase {
     func testEmptyMessageFollowsAccess() throws {
         let (store, profile) = try makeStore()
         XCTAssertEqual(makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary()).emptyMessage,
-                       "用相機拍一張，或在「照片」App 把照片加入「小寶」相簿，會自動出現在這裡")
+                       "用相機拍一張，或在「照片」App 把照片加入「小寶」，會自動出現在這裡")
         XCTAssertEqual(makeModel(store: store, profile: profile, library: FakeRecordAlbumLibrary(status: .limited)).emptyMessage,
                        "用相機拍一張，或按左下角加入照片")
     }
@@ -653,8 +653,8 @@ extension PhotoWallModelTests {
         XCTAssertEqual(saved.style, profile.style)
         XCTAssertEqual(model.photoIDs, ["p6", "p7", "p9", "p10"])
         XCTAssertEqual(library.assets.count, 6, "still in 照片")
-        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
-        XCTAssertEqual(announced, ["已從紀錄移除 2 張"])
+        XCTAssertEqual(model.toastState?.message, "已從相簿移除 2 張")
+        XCTAssertEqual(announced, ["已從相簿移除 2 張"])
         XCTAssertFalse(model.isSelecting)
         XCTAssertNil(model.errorMessage)
     }
@@ -679,7 +679,7 @@ extension PhotoWallModelTests {
         XCTAssertEqual(library.albums.first?.assetIDs.count, 5)
         XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.fallbackAssetIDs, ["p7"])
         XCTAssertEqual(model.photoIDs, ["p7"])
-        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
+        XCTAssertEqual(model.toastState?.message, "已從相簿移除 2 張")
     }
 
     /// 9: a permission failure shows the new wording, keeps the selection
@@ -694,7 +694,7 @@ extension PhotoWallModelTests {
 
         await model.removeSelected()
 
-        XCTAssertEqual(model.errorMessage, "需要「照片」權限才能從紀錄移除。")
+        XCTAssertEqual(model.errorMessage, "需要「照片」權限才能從相簿移除。")
         XCTAssertEqual(model.errorTitle, PhotoWallModel.removeFailedTitle)
         XCTAssertEqual(model.selectedIDs, ["p6", "p7"])
         XCTAssertTrue(model.isSelecting)
@@ -791,7 +791,7 @@ extension PhotoWallModelTests {
         let (model, _, _) = try syncingModel(fallbackLibrary())
         XCTAssertEqual(model.albumSyncIDs, ["f1", "f2", "f3"])
         XCTAssertTrue(model.showsAlbumSyncNotice)
-        XCTAssertEqual(model.albumSyncTitle, "3 張照片還不在「小寶」相簿")
+        XCTAssertEqual(model.albumSyncTitle, "3 張照片還不在「照片」App 裡的「小寶」")
     }
 
     /// 2: no notice under limited, undecided or denied access (limited reads
@@ -842,8 +842,8 @@ extension PhotoWallModelTests {
         XCTAssertEqual(library.albums.first?.assetIDs, ["p6", "p7", "p8", "p9", "p10", "f1", "f2", "f3"])
         XCTAssertEqual(storedFallback(store, profile), ["p7", "gone"])
         XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.albumIdentifier, "album")
-        XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 3 張")
-        XCTAssertEqual(announced, ["已加進「小寶」相簿 3 張"])
+        XCTAssertEqual(model.toastState?.message, "已將 3 張加進「照片」App 裡的「小寶」")
+        XCTAssertEqual(announced, ["已將 3 張加進「照片」App 裡的「小寶」"])
         XCTAssertEqual(model.albumSyncIDs, [])
         XCTAssertFalse(model.showsAlbumSyncNotice)
         XCTAssertFalse(model.isSyncingAlbum)
@@ -870,7 +870,7 @@ extension PhotoWallModelTests {
             let stored = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
             XCTAssertEqual(stored.albumIdentifier, made.first?.id)
             XCTAssertEqual(stored.fallbackAssetIDs, ["gone"])
-            XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 4 張")
+            XCTAssertEqual(model.toastState?.message, "已將 4 張加進「照片」App 裡的「小寶」")
             XCTAssertFalse(model.showsAlbumSyncNotice)
             XCTAssertEqual(model.photoIDs, wallBefore)
         }
@@ -916,7 +916,7 @@ extension PhotoWallModelTests {
         XCTAssertEqual(model.albumSyncIDs, ["new"])
     }
 
-    /// 7: rebound to another album in 編輯紀錄 while the add runs, the
+    /// 7: rebound to another album in 日期 while the add runs, the
     /// record keeps the photos on `fallbackAssetIDs` (they went into the old
     /// album, not the new one) and the add still reports success.
     func testRebindingMeanwhileKeepsTheFallback() async throws {
@@ -935,7 +935,7 @@ extension PhotoWallModelTests {
         XCTAssertEqual(stored.albumIdentifier, "other")
         XCTAssertEqual(stored.fallbackAssetIDs, Self.fallbackIDs)
         XCTAssertEqual(library.albums.first { $0.id == "album" }?.assetIDs.suffix(3), ["f1", "f2", "f3"])
-        XCTAssertEqual(model.toastState?.message, "已加進「小寶」相簿 3 張")
+        XCTAssertEqual(model.toastState?.message, "已將 3 張加進「照片」App 裡的「小寶」")
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(Set(model.photoIDs), ["f1", "f2", "f3", "p7"])
     }

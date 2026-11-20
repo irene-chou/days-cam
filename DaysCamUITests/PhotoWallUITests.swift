@@ -82,8 +82,9 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 3)
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        XCTAssertTrue(app.buttons["編輯紀錄"].waitForExistence(timeout: 5), "11")
-        XCTAssertTrue(app.buttons["刪除紀錄"].exists, "11")
+        XCTAssertTrue(app.buttons["日期設定"].waitForExistence(timeout: 5), "11")
+        XCTAssertTrue(app.buttons["刪除相簿"].exists, "11")
+        shot("wall-more-menu")
         XCTAssertFalse(app.buttons["匯出"].exists)
     }
 
@@ -92,7 +93,7 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 0)
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 10), "12")
         XCTAssertTrue(app.staticTexts["還沒有照片"].exists, "12")
-        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的紀錄」相簿，會自動出現在這裡"].exists,
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」，會自動出現在這裡"].exists,
                       "12, #651-15")
         XCTAssertTrue(element("addPhotosButton").exists, "12")
         XCTAssertTrue(element("wallSelectButton").exists, "#648-12")
@@ -221,15 +222,15 @@ final class PhotoWallUITests: XCTestCase {
         waitForTitle(containing: "已選 1 張")
         element("wallDeleteButton").tap()
         XCTAssertTrue(app.buttons["刪除照片"].waitForExistence(timeout: 5), "7 one photo")
-        XCTAssertTrue(app.staticTexts["要從「我的紀錄」移除這張照片，還是從「照片」App 刪除？"].exists, "7")
+        XCTAssertTrue(app.staticTexts["要從「我的相簿」移除這張照片，還是從「照片」App 刪除？"].exists, "7")
         dismissDialog()
 
         cell(1).tap()
         waitForTitle(containing: "已選 2 張")
         element("wallDeleteButton").tap()
         XCTAssertTrue(app.buttons["刪除 2 張照片"].waitForExistence(timeout: 5), "7")
-        XCTAssertTrue(app.staticTexts["要從「我的紀錄」移除這 2 張照片，還是從「照片」App 刪除？"].exists, "7")
-        XCTAssertTrue(app.buttons["從「我的紀錄」移除"].exists, "7")
+        XCTAssertTrue(app.staticTexts["要從「我的相簿」移除這 2 張照片，還是從「照片」App 刪除？"].exists, "7")
+        XCTAssertTrue(app.buttons["從「我的相簿」移除"].exists, "7")
         shot("photo-wall-remove-or-delete")
         dismissDialog()
         waitForTitle(containing: "已選 2 張")
@@ -241,7 +242,7 @@ final class PhotoWallUITests: XCTestCase {
         remove.tap()
         let toast = element("wallToast")
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "8")
-        XCTAssertTrue(app.staticTexts["已從紀錄移除 2 張"].exists, "8")
+        XCTAssertTrue(app.staticTexts["已從相簿移除 2 張"].exists, "8")
         XCTAssertTrue(element("wallSelectButton").waitForExistence(timeout: 5), "8 selection ended")
         XCTAssertFalse(cell(3).exists, "8 two fewer")
         XCTAssertTrue(cell(2).exists)
@@ -255,7 +256,7 @@ final class PhotoWallUITests: XCTestCase {
             // A popover-style dialog has no 取消; a tap outside dismisses it.
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
         }
-        XCTAssertFalse(app.buttons["從「我的紀錄」移除"].waitForExistence(timeout: 1))
+        XCTAssertFalse(app.buttons["從「我的相簿」移除"].waitForExistence(timeout: 1))
         XCTAssertTrue(element("wallCancelSelectionButton").waitForExistence(timeout: 5))
     }
 
@@ -276,7 +277,7 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 5, arguments: ["-UITestFallbackPhotos", "3", "-UITestLongToast"])
         let notice = element("wallAlbumSyncNotice")
         XCTAssertTrue(notice.waitForExistence(timeout: 10), "1")
-        XCTAssertTrue(app.staticTexts["3 張照片還不在「我的紀錄」相簿"].exists, "1")
+        XCTAssertTrue(app.staticTexts["3 張照片還不在「照片」App 裡的「我的相簿」"].exists, "1")
         XCTAssertTrue(app.staticTexts["開放完整權限前拍的"].exists, "1")
         let button = element("wallAlbumSyncButton")
         XCTAssertTrue(button.isHittable, "9")
@@ -286,7 +287,7 @@ final class PhotoWallUITests: XCTestCase {
         button.tap()
         let toast = element("wallToast")
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "3")
-        XCTAssertEqual(toast.label, "已加進「我的紀錄」相簿 3 張", "3")
+        XCTAssertEqual(toast.label, "已將 3 張加進「照片」App 裡的「我的相簿」", "3")
         shot("album-sync-done")
         XCTAssertTrue(notice.waitForNonExistence(timeout: 5), "3")
         XCTAssertEqual(dayLabels().count, 5, "#680-8")

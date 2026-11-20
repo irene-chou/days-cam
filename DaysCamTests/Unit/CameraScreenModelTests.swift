@@ -975,7 +975,7 @@ final class CameraScreenModelTests: XCTestCase {
         try await poll { model.inFlightSaveCount == 0 && model.captureFlights.count == 1 }
         XCTAssertTrue(saves.calls.isEmpty, "no album write, so no second album")
         XCTAssertNil(model.captureError, "the photo is not reported as lost")
-        XCTAssertEqual(model.toastState?.message, "照片已存到「照片」App，相簿建好後會自動加進紀錄")
+        XCTAssertEqual(model.toastState?.message, "照片已存到「照片」App，相簿建好後會自動加進相簿")
         XCTAssertEqual(try storedRecord(record.id, in: store).fallbackAssetIDs, ["recents-asset"])
         XCTAssertEqual(coordinator.takeAwaitingAssets(for: record.id), ["recents-asset"])
 
