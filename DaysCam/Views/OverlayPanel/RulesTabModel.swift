@@ -204,6 +204,13 @@ extension RulesTabModel {
         mutate { $0.useAgeWording = newValue }
     }
 
+    /// Sets how a day-only count is written (#747, was on the 文字內容 card).
+    /// Kept whatever units are checked: it applies once only 天 is checked.
+    func setDayCountFormat(_ newValue: DayCountFormat) {
+        guard newValue != profile.dayCountFormat else { return }
+        mutate { $0.dayCountFormat = newValue }
+    }
+
     /// Clears the refusal hint; called by every unit tap and when the page goes away.
     func dismissHint() {
         guard visibleHint != nil else { return }

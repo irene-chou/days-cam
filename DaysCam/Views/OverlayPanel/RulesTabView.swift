@@ -7,7 +7,7 @@ import SwiftUI
 /// (today the panel's 內容 tab, from TASK-44 the profile edit page) builds a
 /// `RulesTabModel` from the active profile and drops this view in.
 ///
-/// Five rows in an iOS grouped-list block (名稱｜日期｜起算｜單位｜「年」改成「歲」), each with its
+/// Six rows in an iOS grouped-list block (名稱｜日期｜起算｜單位｜寫法｜「年」改成「歲」), each with its
 /// label above its value, then a 天數預覽 block. The counting-rule choice is
 /// a hand-drawn segmented control rather than a native `Picker(.segmented)` —
 /// the native one clipped the longer "當天算第 1 天" label at narrow widths
@@ -48,6 +48,8 @@ struct RulesTabView: View {
                 countingRuleRow
                 rowDivider
                 unitRow
+                rowDivider
+                dayCountFormatRow
                 rowDivider
                 ageWordingRow
             }
@@ -278,6 +280,18 @@ struct RulesTabView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             withAnimation(.easeOut(duration: 0.15)) { bouncingUnit = nil }
         }
+    }
+
+    // MARK: - 寫法 (#747)
+
+    /// Always shown: the wording also decides the wall badges, the viewer
+    /// title and the camera HUD, whatever the overlay switches say.
+    private var dayCountFormatRow: some View {
+        DayCountFormatRows(format: model.profile.dayCountFormat,
+                           isApplied: model.profile.displayUnits == [.day]) {
+            model.setDayCountFormat($0)
+        }
+        .padding(.horizontal, Self.rowHorizontalPadding)
     }
 
     /// Always enabled, whatever is checked: it renames the year checkbox

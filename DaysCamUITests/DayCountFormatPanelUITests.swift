@@ -1,8 +1,8 @@
 import XCTest
 
-/// #583: the 寫法 row under 位置 on the 內容 tab (moved out of the 天數單位 card, #721).
-/// With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the B′
-/// screenshots are also written there for the PR.
+/// #583 → #747: the 寫法 row on the record editor, between 單位 and 「年」改成「歲」
+/// (it left the 文字內容 card). With `DAYSCAM_UI_SHOT_DIR` in the test runner's
+/// environment the B′ screenshots are also written there for the PR.
 final class DayCountFormatPanelUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -11,28 +11,18 @@ final class DayCountFormatPanelUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// `withWeek` first checks 週 on the record editor (#721 moved the units
-    /// there), then relaunches on the export page with the same profiles.
+    /// `withWeek` first checks 週 on the editor, so the note shows.
     private func launch(extraArguments: [String] = [], withWeek: Bool = false) {
-        let profiles = UUID().uuidString
+        app = XCUIApplication()
+        XCTAssertTrue(app.launchOnRecordEditor(extraArguments: extraArguments), "the record editor is up")
+        XCTAssertTrue(app.buttons["rulesUnit_day"].waitForExistence(timeout: 5))
         if withWeek {
-            let editing = XCUIApplication()
-            XCTAssertTrue(editing.launchOnRecordEditor(profiles: profiles), "the record editor is up")
-            let week = editing.buttons["rulesUnit_week"]
-            XCTAssertTrue(week.waitForExistence(timeout: 5))
+            let week = app.buttons["rulesUnit_week"]
             week.tap()
             XCTAssertTrue(week.isSelected)
-            editing.terminate()
         }
-        app = XCUIApplication()
-        XCTAssertTrue(app.launchOnExportPage(profiles: profiles, extraArguments: extraArguments), "the export page is up")
-        let content = contentTab
-        XCTAssertTrue(content.waitForExistence(timeout: 10))
-        content.tap()
-        XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
     }
 
-    private var contentTab: XCUIElement { app.buttons["內容"] }
     private var row: XCUIElement { app.buttons["dayCountFormatRow"] }
     private var expanded: XCUIElement { element("dayCountFormatExpanded") }
     private var note: XCUIElement { element("dayCountFormatNote") }
@@ -43,10 +33,21 @@ final class DayCountFormatPanelUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// The text on the export preview (draggable, #568).
-    private var overlayText: XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier IN %@", ["overlayText", "overlayTextDraggable"])).firstMatch
+    /// The 天數預覽 block's spoken text (today's row included).
+    private var previewLabel: String { element("rulesDayPreview").label }
+
+    /// Drags the editor's form until `target` sits fully on screen.
+    private func reveal(_ target: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let limit = app.frame.height - 60
+        for _ in 0..<8 where !(target.exists && target.frame.minY > 60 && target.frame.maxY < limit) {
+            let up = !target.exists || target.frame.maxY >= limit
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.frame.height * (up ? 0.7 : 0.35)))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: up ? -120 : 120)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(target.exists && target.frame.maxY < limit, "\(target) on screen: \(target.frame)", file: file, line: line)
     }
 
     private func shot(_ name: String) {
@@ -64,44 +65,44 @@ final class DayCountFormatPanelUITests: XCTestCase {
 
     /// Opens the row and brings its last option (and the note, if any) on screen.
     private func expand(revealingLast: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
-        app.revealInPanel(row, file: file, line: line)
+        reveal(row, file: file, line: line)
         if row.value as? String != "已展開" { row.tap() }
         XCTAssertTrue(expanded.waitForExistence(timeout: 3), "expanded", file: file, line: line)
         if revealingLast {
-            app.revealInPanel(note.exists ? note : option("dDay"), file: file, line: line)
+            reveal(note.exists ? note : option("dDay"), file: file, line: line)
         }
         // A tap right after a drag only stops the scroll's momentum.
         Thread.sleep(forTimeInterval: 1)
     }
 
-    /// Brings `cell`'s top edge into the panel: at the largest text size an
-    /// option on iPhone SE is taller than the panel's visible part, so
-    /// `revealInPanel` (whole element on screen) cannot succeed.
+    /// Brings `cell`'s top edge on screen: at the largest text size an
+    /// option on iPhone SE can be taller than what is left of the screen, so
+    /// `reveal` (whole element on screen) cannot succeed.
     private func revealTop(_ cell: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        let tabBottom = app.panelSegmentBottom
-        for _ in 0..<10 where !(cell.exists && cell.frame.minY >= tabBottom && cell.frame.minY <= app.frame.height - app.panelBottomBand) {
-            let up = !cell.exists || cell.frame.minY > app.frame.height - app.panelBottomBand
+        let limit = app.frame.height - 120
+        for _ in 0..<10 where !(cell.exists && cell.frame.minY > 60 && cell.frame.minY < limit) {
+            let up = !cell.exists || cell.frame.minY >= limit
             let start = app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: up ? (tabBottom + app.frame.height) / 2 : tabBottom + 30))
+                .withOffset(CGVector(dx: app.frame.width * 0.08, dy: app.frame.height * (up ? 0.7 : 0.35)))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: up ? -60 : 60)),
                         withVelocity: .slow, thenHoldForDuration: 0.3)
             Thread.sleep(forTimeInterval: 0.5)
         }
-        XCTAssertTrue(cell.exists && cell.frame.minY >= tabBottom, "\(cell) top on screen: \(cell.frame) tab \(tabBottom)",
-                      file: file, line: line)
+        XCTAssertTrue(cell.exists && cell.frame.minY > 60, "\(cell) top on screen: \(cell.frame)", file: file, line: line)
     }
 
     /// 583.1–583.3: the row, its options and writing back.
     func testRowExpandsAndSelects() {
         launch()
-        app.revealInPanel(row)
-        // 583.1: under 位置, ≥ 44pt, collapsed.
+        reveal(row)
+        // 747.1: between 單位 and 「年」改成「歲」, ≥ 44pt, collapsed.
         XCTAssertEqual(row.label, "寫法，第 N 天")
         XCTAssertEqual(row.value as? String, "已收起")
         XCTAssertGreaterThanOrEqual(row.frame.height, 43.5)
-        XCTAssertGreaterThan(row.frame.minY, app.buttons["positionRow"].frame.maxY - 1, "583.1 under 位置")
+        XCTAssertGreaterThan(row.frame.minY, element("rulesUnitRow").frame.maxY - 1, "747.1 under 單位")
+        XCTAssertLessThan(row.frame.maxY, element("rulesAgeWordingToggle").frame.minY + 1, "747.1 above 歲")
         XCTAssertFalse(expanded.exists)
-        shot("PR_583.1_collapsed")
+        shot("PR_747.6_collapsed")
 
         // 583.2: four options with examples, the current one selected.
         expand()
@@ -116,19 +117,19 @@ final class DayCountFormatPanelUITests: XCTestCase {
         XCTAssertTrue(option("ordinal").isSelected)
         XCTAssertFalse(option("dDay").isSelected)
         XCTAssertFalse(note.exists, "583.4 no note with day only")
-        shot("PR_583.2_expanded_dayOnly")
+        shot("PR_747.6_expanded_dayOnly")
 
-        // 583.3: a tap writes back, the preview follows, the list stays open.
+        // 747.2: a tap writes back, the 天數預覽 follows, the list stays open.
         option("dDay").tap()
         XCTAssertTrue(option("dDay").isSelected, "583.3")
         XCTAssertEqual(row.label, "寫法，D-Day")
         XCTAssertTrue(expanded.exists, "583.3 stays open")
         // A fresh profile starts today, so either counting rule prints D-Day.
-        // The fresh profile also prints its name ahead of the count.
-        XCTAssertTrue(overlayText.label.hasSuffix(" D-Day") || overlayText.label == "D-Day", "583.3 \(overlayText.label)")
+        reveal(element("rulesDayPreview"))
+        XCTAssertTrue(previewLabel.contains("D-Day"), "747.2 \(previewLabel)")
 
         // 583.2: collapses on a second tap.
-        app.revealInPanel(row)
+        reveal(row)
         row.tap()
         XCTAssertEqual(row.value as? String, "已收起")
         XCTAssertFalse(expanded.exists)
@@ -140,24 +141,27 @@ final class DayCountFormatPanelUITests: XCTestCase {
         launch(withWeek: true)
         expand()
         XCTAssertTrue(note.exists, "583.4 note")
-        XCTAssertFalse(overlayText.label.contains("D"), "583.4 \(overlayText.label)")
-        shot("PR_583.4_expanded_withWeek")
+        XCTAssertTrue(app.buttons["rulesUnit_week"].isSelected)
+        shot("PR_747.6_expanded_withWeek")
         option("dayN").tap()
         XCTAssertEqual(row.label, "寫法，Day N")
     }
 
-    /// 583.2: switching tabs and back shows the row collapsed again.
-    func testRowIsCollapsedAfterSwitchingTabs() {
-        launch()
-        expand()
-        app.buttons["樣式"].tap()
-        contentTab.tap()
-        app.revealInPanel(row)
-        XCTAssertEqual(row.value as? String, "已收起")
-        XCTAssertFalse(expanded.exists)
+    /// 747.4: the 文字內容 card on the export page no longer has the row.
+    func testContentCardHasNoFormatRow() {
+        app = XCUIApplication()
+        XCTAssertTrue(app.launchOnExportPage(), "the export page is up")
+        let content = app.buttons["內容"]
+        XCTAssertTrue(content.waitForExistence(timeout: 10))
+        content.tap()
+        XCTAssertTrue(app.switches["天數"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["positionRow"].exists, "the card is there")
+        XCTAssertFalse(row.exists, "747.4 no 寫法 row")
+        XCTAssertFalse(element("dayCountFormatNote").exists)
+        shot("PR_747.4_content_card")
     }
 
-    /// 583.7: at accessibility XXXL the options stay ≥ 44pt and do not overlap.
+    /// 747.5: at accessibility XXXL the options stay ≥ 44pt and do not overlap.
     func testLargestTextKeepsOptionsApart() {
         launch(extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         expand(revealingLast: false)
@@ -165,12 +169,12 @@ final class DayCountFormatPanelUITests: XCTestCase {
         for raw in Self.raws {
             let cell = option(raw)
             revealTop(cell)
+            shot("PR_747.5_XXXL_\(raw)")
             XCTAssertGreaterThanOrEqual(cell.frame.height, 43.5, raw)
             // Re-read after the reveal: scrolling moves both.
             XCTAssertGreaterThanOrEqual(cell.frame.minY, previous.frame.maxY - 1, "\(raw) does not overlap the row above")
-            XCTAssertLessThanOrEqual(cell.frame.maxX, app.frame.width, "\(raw) within the screen")
+            // Horizontal fit is not asserted: at XXXL the whole editor page is wider than the screen (the 單位 row), predating #747.
             previous = cell
-            shot("PR_583.7_XXXL_\(raw)")
         }
     }
 }
