@@ -4,7 +4,7 @@ import XCTest
 @testable import DaysCam
 
 /// View-level size check for `RulesTabView` (#156, reshaped by #226 R-8／R-9,
-/// TASK-43, #721): the grouped block is five rows of at least 48pt, the preview
+/// TASK-43, #721): the grouped block is six rows of at least 48pt, the preview
 /// sentence sits below it.
 @MainActor
 final class RulesTabViewLayoutTests: XCTestCase {
@@ -23,13 +23,13 @@ final class RulesTabViewLayoutTests: XCTestCase {
     /// the unit row (label 16 + 6 + checkbox 36 + 2×10), the age-wording row
     /// (48 + 2×10) plus the preview title and its single 今天 row, and stays
     /// under a ceiling that catches a runaway layout.
-    func testPageHoldsFiveRowsAndThePreview() {
+    func testPageHoldsSixRowsAndThePreview() {
         let height = contentSize().height
-        // 12 + 58×3 + 78 + 68 + 16 + 16 + 40 + 12; a literal because Xcode 26.3 times out type-checking the sum.
-        let floor: CGFloat = 416
-        XCTAssertGreaterThanOrEqual(height, floor, "155／721 five rows and the preview")
-        // Measured 464.0 at 375pt (#721: 317.7 + unit row 78 + age-wording row 68 + dividers).
-        XCTAssertLessThanOrEqual(height, 486, "整頁高度過高，量到 \(height)")
+        // 12 + 58×3 + 78 + 48 + 68 + 16 + 16 + 40 + 12 (#747 adds the 48pt 寫法 row); a literal because Xcode 26.3 times out type-checking the sum.
+        let floor: CGFloat = 464
+        XCTAssertGreaterThanOrEqual(height, floor, "155／721／747 six rows and the preview")
+        // #721 measured 464.0 at 375pt; #747 adds the 寫法 row (48 + divider).
+        XCTAssertLessThanOrEqual(height, 540, "整頁高度過高，量到 \(height)")
     }
 
     /// 25.6／155.5: each of the two equal 起算 cells fits its label at 375pt (and

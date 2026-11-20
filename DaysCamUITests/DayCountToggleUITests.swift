@@ -45,8 +45,7 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(isOn(toggle("天數")), "107.1 day count on by default")
         XCTAssertFalse(isOn(toggle("日期")), "107.1 date off by default")
         XCTAssertTrue(isOn(toggle("名稱")), "107.1 name on by default (TASK-119)")
-        app.revealInPanel(formatRow)
-        XCTAssertTrue(formatRow.isEnabled, "寫法 is live while the day count is on")
+        XCTAssertFalse(formatRow.exists, "#747 the 寫法 row is not on the 內容 tab")
         app.revealInPanel(toggle("天數"))
 
         toggle("日期").tap()
@@ -57,16 +56,14 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的相簿$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(overlayText.label)")
-        XCTAssertFalse(formatRow.exists, "107.4 → #721.6 the 寫法 row is hidden")
+        XCTAssertFalse(formatRow.exists, "107.4 → #747 the 寫法 row is not here either way")
 
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的相簿$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
 
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "107.4 back on")
-        Thread.sleep(forTimeInterval: 0.5)
-        app.revealInPanel(formatRow)
-        XCTAssertTrue(formatRow.exists, "107.4 the 寫法 row is back")
+        XCTAssertFalse(formatRow.exists, "#747 still not on the 內容 tab")
     }
 
     /// 107.3, replaced by #713: 天數 and 日期 may both be off, nothing springs

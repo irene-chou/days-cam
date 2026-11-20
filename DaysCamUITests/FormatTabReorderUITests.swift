@@ -128,8 +128,9 @@ final class FormatTabReorderUITests: XCTestCase {
         }
         XCTAssertLessThan(app.staticTexts["文字內容"].frame.maxX, app.frame.width / 2, "#558.2 heading on the left")
         assertTopToBottom(pairs: [app.staticTexts["文字內容"], toggle("天數"), toggle("日期"), toggle("名稱"),
-                                  app.buttons["positionRow"], app.buttons["dayCountFormatRow"]],
-                          "#558.1 #721.6 寫法 under 位置")
+                                  app.buttons["positionRow"]],
+                          "#558.1 #747 位置 is the last row")
+        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "#747.4 no 寫法 row")
         XCTAssertFalse(app.staticTexts["天數單位"].exists, "#721.6 no 天數單位 heading")
         XCTAssertFalse(app.buttons["天"].exists || app.buttons["週"].exists, "#721.6 no unit checkboxes")
         XCTAssertFalse(toggle("「年」改成「歲」").exists, "#721.6 no 歲 switch")
@@ -154,16 +155,16 @@ final class FormatTabReorderUITests: XCTestCase {
         scrollToTop()
         XCTAssertTrue(isOn(toggle("天數")) && isOn(toggle("日期")) && isOn(toggle("名稱")), "all text on")
         shot("558.12a_all_on_1_text")
-        scrollTo(app.buttons["dayCountFormatRow"])
-        XCTAssertTrue(isOnScreen(app.buttons["dayCountFormatRow"]), "寫法 row in the shot")
-        shot("558.12a_all_on_2_format")
+        scrollTo(app.buttons["positionRow"])
+        XCTAssertTrue(isOnScreen(app.buttons["positionRow"]), "位置 row in the shot")
+        shot("558.12a_all_on_2_position")
     }
 
     /// #558.3, #721.6 on a past start date: with the day count off the 寫法
     /// row goes, the switches stay put; B′ shot (b).
     func testOrderAndCollapseOnAPastStartDate() {
         launch(startDay: "2023-08-05")
-        XCTAssertTrue(app.buttons["dayCountFormatRow"].exists, "寫法 row while the day count is on")
+        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "#747 no 寫法 row")
         // Measure from the top, where a collapse below cannot move the switches.
         scrollToTop()
         let framesAfterTap = ["天數", "日期", "名稱"].map { toggle($0).frame }
@@ -171,7 +172,6 @@ final class FormatTabReorderUITests: XCTestCase {
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
-        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "#721.6 寫法 row hidden")
         // Sub-point x jitter from re-layout is not a move; compare to 1pt.
         for (name, before) in zip(["天數", "日期", "名稱"], framesAfterTap) {
             let after = toggle(name).frame
@@ -183,8 +183,8 @@ final class FormatTabReorderUITests: XCTestCase {
 
         toggle("天數").tap()
         Thread.sleep(forTimeInterval: 0.5)
-        scrollTo(app.buttons["dayCountFormatRow"])
-        XCTAssertTrue(app.buttons["dayCountFormatRow"].exists, "#721.6 寫法 row back")
+        scrollTo(app.buttons["positionRow"])
+        XCTAssertTrue(app.buttons["positionRow"].exists, "#558.3 位置 row still there")
     }
 
     /// #713-6 shot: 天數／日期／名稱 all off, the viewfinder prints nothing.

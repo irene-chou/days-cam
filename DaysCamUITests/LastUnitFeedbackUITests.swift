@@ -106,18 +106,15 @@ final class LastUnitFeedbackUITests: XCTestCase {
         XCTAssertTrue(!overlay.exists || overlay.label.isEmpty, "#713-3 nothing drawn")
     }
 
-    /// 721.6: with the day count off the 寫法 row is not there; turning the
-    /// day count on brings it back.
-    func testFormatRowIsHiddenWhileTheDayCountIsOff() {
+    /// 721.6 → #747: the 內容 tab has no 寫法 row, with the day count on or off.
+    func testFormatRowIsNotOnTheContentTab() {
         openContentTab()
-        XCTAssertTrue(app.buttons["dayCountFormatRow"].exists, "寫法 row while the day count is on")
+        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "747.4 not while the day count is on")
         toggle("日期").tap()
         toggle("天數").tap()
         XCTAssertFalse(isOn(toggle("天數")))
-        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "721.6 hidden")
+        XCTAssertFalse(app.buttons["dayCountFormatRow"].exists, "747.4 not while it is off")
         XCTAssertFalse(app.buttons["週"].exists, "no unit checkboxes on the 內容 tab")
-        toggle("天數").tap()
-        XCTAssertTrue(app.buttons["dayCountFormatRow"].waitForExistence(timeout: 3), "back once the day count is on")
     }
 
     /// 721.6: the editor's unit row is there whatever the content tab says.

@@ -265,6 +265,38 @@ final class RulesTabModelTests: XCTestCase {
         XCTAssertEqual(spy.updated.last?.useAgeWording, true)
     }
 
+    // MARK: - #747 寫法
+
+    /// 747.2: a wording change is saved and the 天數預覽 follows at once.
+    func testSetDayCountFormatSavesAndUpdatesThePreview() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setDayCountFormat(.dDay)
+        XCTAssertEqual(model.profile.dayCountFormat, .dDay)
+        XCTAssertEqual(spy.updated.last?.dayCountFormat, .dDay, "written to the profile the wall and camera read")
+        XCTAssertEqual(model.todayShortText, "D+9")
+        XCTAssertEqual(model.dayPreviewRows.first?.text.hasSuffix("D+9"), true)
+    }
+
+    func testSetDayCountFormatToTheSameValueIsNotSaved() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(), now: try fixedNow(), spy: spy)
+        model.setDayCountFormat(.ordinal)
+        XCTAssertTrue(spy.updated.isEmpty)
+    }
+
+    /// 747.3: changeable whatever is checked, even if not applied yet.
+    func testSetDayCountFormatIsKeptWithOtherUnitsChecked() throws {
+        let spy = Spy()
+        let model = makeModel(profile: baselineProfile(startDate: DateFixture.components(2025, 12, 29),
+                                                       displayUnits: [.week, .day]),
+                              now: try fixedNow(), spy: spy)
+        let before = model.todayShortText
+        model.setDayCountFormat(.dayN)
+        XCTAssertEqual(spy.updated.last?.dayCountFormat, .dayN)
+        XCTAssertEqual(model.todayShortText, before, "not applied while 週 is checked")
+    }
+
     // MARK: - #721 單位與「歲」
 
     /// 721.2: 起始日 2026-08-05, today 2026-11-11, 月＋天.
