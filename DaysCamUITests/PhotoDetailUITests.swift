@@ -57,8 +57,8 @@ final class PhotoDetailUITests: XCTestCase {
                        "title was \(title)", file: file, line: line)
     }
 
-    /// Frames of 疊字｜匯出｜刪除 and the toggle's value.
-    private func overlayToggle() -> XCUIElement { element("photoDetailOverlayToggle") }
+    /// The 文字樣式 button, first of 文字樣式｜匯出｜刪除.
+    private func styleButton() -> XCUIElement { element("photoDetailStyleButton") }
 
     private func shot(_ name: String) {
         let screenshot = app.screenshot()
@@ -111,8 +111,8 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertTrue(delete.label.contains("刪除"), delete.label)
         XCTAssertLessThan(export.frame.midX, delete.frame.midX, "匯出 left of 刪除")
         XCTAssertTrue(app.frame.contains(export.frame) && app.frame.contains(delete.frame))
-        // #738: three equal shares now (疊字｜匯出｜刪除), the wall's two are wider.
-        let toggle = element("photoDetailOverlayToggle").frame
+        // #745: three equal shares (文字樣式｜匯出｜刪除), the wall's two are wider.
+        let toggle = element("photoDetailStyleButton").frame
         XCTAssertEqual(export.frame.width, wallFrames.0.width * 2 / 3, accuracy: 1.5, "a third of the bar")
         XCTAssertEqual(delete.frame.width, export.frame.width, accuracy: 1, "equal shares")
         XCTAssertEqual(toggle.width, export.frame.width, accuracy: 1, "equal shares")
@@ -121,8 +121,7 @@ final class PhotoDetailUITests: XCTestCase {
             XCTAssertEqual(viewer.maxY, wall.maxY, accuracy: 1, "same place as the wall's")
         }
         XCTAssertFalse(element("photoDetailMoreButton").exists, "no ⋯")
-        XCTAssertFalse(element("styleButton").exists, "no 文字樣式")
-        XCTAssertFalse(element("exportButton").exists)
+                XCTAssertFalse(element("exportButton").exists)
         shot("photo-detail-buttons")
     }
 
@@ -261,46 +260,64 @@ final class PhotoDetailUITests: XCTestCase {
         shot("photo-detail-landscape")
     }
 
-    /// #738-1, 6: the bar reads 疊字｜匯出｜刪除 left to right, and the toggle's
-    /// value flips 關 → 開 → 關 with taps.
-    func testOverlayToggleSitsFirstAndFlips() {
+    /// #745-1: the bar reads 文字樣式｜匯出｜刪除 left to right, equal widths,
+    /// the title uncut, and the page shows the overlay with no switch.
+    func testStyleButtonSitsFirst() {
         launchWall()
         openViewer(cell: 4)
-        let toggle = overlayToggle()
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let style = styleButton()
+        XCTAssertTrue(style.waitForExistence(timeout: 5))
         let export = element("photoDetailExportButton").frame
         let delete = element("photoDetailDeleteButton").frame
-        XCTAssertTrue(toggle.frame.maxX <= export.minX + 1 && export.maxX <= delete.minX + 1,
-                      "1 toggle \(toggle.frame) export \(export) delete \(delete)")
-        XCTAssertGreaterThan(toggle.frame.width, 0, "1 visible \(toggle.frame)")
-        XCTAssertEqual(toggle.value as? String, "關", "6 starts off")
-        shot("pr738-overlay-off")
+        XCTAssertTrue(style.frame.maxX <= export.minX + 1 && export.maxX <= delete.minX + 1,
+                      "1 style \(style.frame) export \(export) delete \(delete)")
+        XCTAssertTrue(style.label.contains("文字樣式"), "1 \(style.label)")
+        XCTAssertTrue((style.value as? String ?? "").isEmpty, "no on/off state")
+        XCTAssertTrue(app.frame.contains(style.frame))
+        // The UI-test harness turns 疊字 on for the seeded record, so the page
+        // shows the overlay with no switch of its own.
+        XCTAssertTrue(element("photoDetailImage").exists)
+        sleep(2)
+        shot("pr745-overlay-on")
+    }
+
+    /// #745-2: 文字樣式 opens the style page; its layer list holds the 疊字
+    /// switch; the checkmark returns to the same photo.
+    func testStyleButtonOpensTheStylePage() {
+        launchWall()
+        openViewer(cell: 4)
+        waitForTitle(containing: "第 10 天")
+        styleButton().tap()
+        XCTAssertTrue(element("exportView").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["layerToggleOverlay"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["layerToggleFilmDate"].exists)
+        shot("pr745-style-page")
+        element("stylePanelDoneButton").tap()
+        XCTAssertTrue(element("photoDetail").waitForExistence(timeout: 5))
+        waitForTitle(containing: "第 10 天")
+    }
+
+    /// #745-4: 疊字 off on the style page, back on the viewer.
+    func testStyleSwitchOffThenBack() {
+        launchWall()
+        openViewer(cell: 4)
+        styleButton().tap()
+        let toggle = app.switches["layerToggleOverlay"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "1", "the harness turned 疊字 on")
         toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "開", "6 on")
+        XCTAssertEqual(toggle.value as? String, "0")
+        element("stylePanelDoneButton").tap()
         XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))
-        sleep(1)
-        shot("pr738-overlay-on")
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "關", "6 off again")
+        waitForTitle(containing: "第 10 天")
     }
 
-    /// #738-5: leaving the viewer and coming back keeps the toggle on.
-    func testOverlayToggleSurvivesLeavingTheViewer() {
+    /// #745-7: the bar on a small phone, nothing cut.
+    func testStyleBarOnSmallPhone() {
         launchWall()
         openViewer(cell: 4)
-        overlayToggle().tap()
-        XCTAssertEqual(overlayToggle().value as? String, "開")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(cell(4).waitForExistence(timeout: 5))
-        openViewer(cell: 3)
-        XCTAssertEqual(overlayToggle().value as? String, "開", "5 kept after reopening")
-    }
-
-    /// #738-8: the bar on a small phone, nothing cut.
-    func testOverlayBarOnSmallPhone() {
-        launchWall()
-        openViewer(cell: 4)
-        XCTAssertTrue(overlayToggle().waitForExistence(timeout: 5))
-        shot("pr738-bar")
+        XCTAssertTrue(styleButton().waitForExistence(timeout: 5))
+        XCTAssertTrue(app.frame.contains(styleButton().frame))
+        shot("pr745-bar")
     }
 }

@@ -28,15 +28,6 @@ final class PhotoDetailModel: ObservableObject {
     @Published private(set) var export: BatchExportModel?
     /// The "已匯出" toast while it shows.
     @Published private(set) var toastState: ToastState?
-    /// 疊字: every page shows the record's overlay, the same as the export
-    /// preview. App-wide, remembered, off on a fresh install (#738).
-    @Published var showsOverlay: Bool {
-        didSet { defaults.set(showsOverlay, forKey: Self.showsOverlayKey) }
-    }
-
-    /// The `UserDefaults` key of `showsOverlay`.
-    static let showsOverlayKey = "photoDetailShowsOverlay"
-
     /// What VoiceOver hears, and the toast shows, after a successful export.
     static let exportedMessage = "已匯出"
     /// How long the toast stays.
@@ -52,7 +43,6 @@ final class PhotoDetailModel: ObservableObject {
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
     private let makeExport: (([RecordPhoto]) -> BatchExportModel)?
-    private let defaults: UserDefaults
     private let renderer: TemplateRenderer
     private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
     private let bake: Bake
@@ -66,7 +56,6 @@ final class PhotoDetailModel: ObservableObject {
          library: any RecordAlbumLibrary,
          calendar: Calendar = .autoupdatingCurrent,
          makeExport: (([RecordPhoto]) -> BatchExportModel)? = nil,
-         defaults: UserDefaults = .standard,
          renderer: TemplateRenderer = TemplateRenderer(),
          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont = { _ in .pingFang },
          bake: @escaping Bake = { image, text, style, placement, font, cropRect, filmDate, tone in
@@ -77,11 +66,9 @@ final class PhotoDetailModel: ObservableObject {
              DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
          }) {
         self.makeExport = makeExport
-        self.defaults = defaults
         self.renderer = renderer
         self.resolveFont = resolveFont
         self.bake = bake
-        self.showsOverlay = defaults.bool(forKey: Self.showsOverlayKey)
         self.scheduleAfter = scheduleAfter
         self.profileID = profileID
         self.selectedID = photoID
@@ -186,18 +173,15 @@ final class PhotoDetailModel: ObservableObject {
         await library.displayImage(id: photo.id, targetSize: targetSize)
     }
 
-    /// What the page shows: the original, or with 疊字 on the original marked
-    /// with the record's overlay for the photo's own moment (#738), which a
-    /// photo without a date keeps unmarked.
+    /// What the page shows: the original marked with the record's overlay for
+    /// the photo's own moment (#745), which a photo without a date keeps
+    /// unmarked.
     func pageImage(for photo: RecordPhoto, targetSize: CGSize) async -> UIImage? {
         guard let source = await plainImage(for: photo, targetSize: targetSize) else { return nil }
-        guard showsOverlay, let profile else { return source }
+        guard let profile else { return source }
         return await Self.markedImage(source, photo: photo, profile: profile, calendar: calendar,
                                       renderer: renderer, font: resolveFont(profile.style), bake: bake)
     }
-
-    /// 疊字: flips `showsOverlay`.
-    func toggleOverlay() { showsOverlay.toggle() }
 
     /// `source` with `profile`'s overlay for `photo`'s own moment baked in,
     /// the way the batch preview shows it; `source` itself when the photo
