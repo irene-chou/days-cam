@@ -84,13 +84,13 @@ final class PhotoAccessUITests: XCTestCase {
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
         XCTAssertTrue(app.buttons["設定照片權限"].waitForExistence(timeout: 5), "3")
-        XCTAssertTrue(app.buttons["編輯紀錄"].exists)
+        XCTAssertTrue(app.buttons["日期"].exists)
         shot("limited-more-menu")
         app.terminate()
         launchWall(access: "authorized")
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        XCTAssertTrue(app.buttons["編輯紀錄"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["日期"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["設定照片權限"].exists, "3")
     }
 
@@ -100,7 +100,7 @@ final class PhotoAccessUITests: XCTestCase {
         XCTAssertTrue(element("photoAccessDenied").waitForExistence(timeout: 10), "3")
         XCTAssertTrue(element("photoAccessSettingsButton").exists, "3")
         XCTAssertTrue(app.buttons["前往設定"].exists, "3")
-        XCTAssertTrue(app.staticTexts["到「設定」允許 DaysCam 取用照片，才能看到這個紀錄的照片和天數。"].exists, "3")
+        XCTAssertTrue(app.staticTexts["到「設定」允許 DaysCam 取用照片，才能看到這本相簿的照片和天數。"].exists, "3")
         XCTAssertFalse(element("photoWall").exists, "3 the wall is gone")
         XCTAssertFalse(element("limitedAccessBanner").exists)
         XCTAssertTrue(app.frame.contains(element("photoAccessSettingsButton").frame), "6 in frame")
@@ -112,7 +112,7 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "denied")
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        app.buttons["編輯紀錄"].tap()
+        app.buttons["日期"].tap()
         XCTAssertTrue(element("recordEditor").waitForExistence(timeout: 5), "4")
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5), "4 the name is editable")
@@ -130,15 +130,15 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "notDetermined", photos: 0)
         let intro = element("photoPermissionIntro")
         XCTAssertTrue(intro.waitForExistence(timeout: 10), "11")
-        XCTAssertTrue(app.staticTexts["讓紀錄和「照片」App 同步"].exists, "12 title")
+        XCTAssertTrue(app.staticTexts["讓相簿和「照片」App 同步"].exists, "12 title")
         XCTAssertTrue(app.staticTexts["接下來 iOS 會詢問照片權限。三個選項在 DaysCam 的差別："].exists, "12 subtitle")
         let options = app.descendants(matching: .any).matching(identifier: "permissionIntroOption")
         XCTAssertEqual(options.count, 3, "12 three options")
-        let expected = [["允許完整取用", "建議", "每個紀錄在「照片」App 有一本同名相簿",
-                         "在「照片」App 放進相簿的照片，會自動出現在紀錄並標出第幾天", "拍的照片直接存進該相簿"],
+        let expected = [["允許完整取用", "建議", "每本相簿在「照片」App 都有一本同名相簿",
+                         "在「照片」App 放進相簿的照片，會自動出現在 DaysCam 並標出第幾天", "拍的照片直接存進該相簿"],
                         ["限制取用", "只看得到你挑選的照片", "不建相簿、不和「照片」App 同步",
                          "照片要在 DaysCam 裡用「加入照片」或拍照加入"],
-                        ["不允許", "紀錄看不到任何照片", "之後可隨時到「設定」開啟"]]
+                        ["不允許", "相簿看不到任何照片", "之後可隨時到「設定」開啟"]]
         for (index, parts) in expected.enumerated() {
             let label = options.element(boundBy: index).label
             for part in parts { XCTAssertTrue(label.contains(part), "12 option \(index + 1): \(part) in \(label)") }
@@ -166,14 +166,14 @@ final class PhotoAccessUITests: XCTestCase {
         shot("651_16_\(deviceTag)_permission-intro-scrolled")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["相簿"].waitForExistence(timeout: 5))
         element("recordRow").tap()
         XCTAssertTrue(intro.waitForExistence(timeout: 5), "11 the intro again")
 
         continueButton.tap()
         XCTAssertTrue(element("wallEmptyState").waitForExistence(timeout: 5), "13")
         XCTAssertFalse(intro.exists)
-        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的紀錄」相簿，會自動出現在這裡"].exists, "15 full")
+        XCTAssertTrue(app.staticTexts["用相機拍一張，或在「照片」App 把照片加入「我的相簿」相簿，會自動出現在這裡"].exists, "15 full")
         XCTAssertTrue(element("addPhotosButton").exists)
         shot("651_16_\(deviceTag)_empty-full")
     }

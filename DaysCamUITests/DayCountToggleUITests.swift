@@ -54,13 +54,13 @@ final class DayCountToggleUITests: XCTestCase {
         XCTAssertFalse(isOn(toggle("天數")), "107.2 day count off")
         let text = overlayText
         XCTAssertTrue(text.waitForExistence(timeout: 3))
-        XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
+        XCTAssertTrue(text.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的相簿$"#, options: .regularExpression) != nil, "107.2 date then the default name: \(text.label)")
         toggle("名稱").tap()
         XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil, "107.2 date only: \(overlayText.label)")
         XCTAssertFalse(formatRow.exists, "107.4 → #721.6 the 寫法 row is hidden")
 
         toggle("名稱").tap()
-        XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的紀錄$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
+        XCTAssertTrue(overlayText.label.range(of: #"^\d{4}\.\d{2}\.\d{2} 我的相簿$"#, options: .regularExpression) != nil, "107.2 date then name: \(overlayText.label)")
 
         toggle("天數").tap()
         XCTAssertTrue(isOn(toggle("天數")), "107.4 back on")

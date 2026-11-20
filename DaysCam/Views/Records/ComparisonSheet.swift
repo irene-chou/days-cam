@@ -46,7 +46,7 @@ struct ComparisonSheet: View {
                 .foregroundColor(CameraTheme.ink)
                 .accessibilityAddTraits(.isHeader)
             preview
-            Text("點任一張可換成牆上別的照片 · 天數字樣用這個紀錄的文字樣式")
+            Text("點任一張可換成牆上別的照片 · 天數字樣用這本相簿的文字樣式")
                 .font(.system(size: 11.5))
                 .foregroundColor(CameraTheme.inkSecondary)
                 .multilineTextAlignment(.center)

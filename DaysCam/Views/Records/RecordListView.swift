@@ -32,7 +32,7 @@ struct RecordListView: View {
                 }
             }
             .background(CameraTheme.background.ignoresSafeArea())
-            .navigationTitle("紀錄")
+            .navigationTitle("相簿")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -41,7 +41,7 @@ struct RecordListView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("新增紀錄")
+                    .accessibilityLabel("新增相簿")
                     .accessibilityIdentifier("addRecordButton")
                 }
             }
@@ -61,7 +61,7 @@ struct RecordListView: View {
         }
         .tint(CameraTheme.active)
         .preferredColorScheme(.light)
-        .confirmationDialog(model.deletionCandidate.map { "刪除這個紀錄？\(model.deletionMessage(for: $0))" } ?? "刪除這個紀錄？",
+        .confirmationDialog(model.deletionCandidate.map { "刪除這本相簿？\(model.deletionMessage(for: $0))" } ?? "刪除這本相簿？",
                             isPresented: deletionBinding,
                             titleVisibility: .visible,
                             presenting: model.deletionCandidate) { candidate in

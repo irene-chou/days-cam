@@ -279,10 +279,10 @@ final class PhotoDetailModel: ObservableObject {
             errorMessage = error.displayMessage
             return
         } catch {
-            errorMessage = "無法從紀錄移除，請再試一次。"
+            errorMessage = "無法從相簿移除，請再試一次。"
             return
         }
-        advance(from: photo.id, to: next, stillShown: "這張照片無法從紀錄移除。")
+        advance(from: photo.id, to: next, stillShown: "這張照片無法從相簿移除。")
     }
 
     /// Deletes the photo through the system confirmation. A cancel changes
@@ -316,9 +316,9 @@ final class PhotoDetailModel: ObservableObject {
     /// The text of the failure alert for `error`.
     static func message(for error: RecordAlbumError) -> String {
         switch error {
-        case .permissionDenied: return "需要「照片」權限才能從紀錄移除。"
+        case .permissionDenied: return "需要「照片」權限才能從相簿移除。"
         case .notFound: return "找不到這張照片，它可能已被刪除。"
-        case let .failed(reason): return reason.isEmpty ? "無法從紀錄移除，請再試一次。" : reason
+        case let .failed(reason): return reason.isEmpty ? "無法從相簿移除，請再試一次。" : reason
         }
     }
 }

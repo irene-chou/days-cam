@@ -71,7 +71,7 @@ final class LayerListUITests: XCTestCase {
         XCTAssertTrue(summary.contains("天數、名稱") && summary.contains("右下"), summary)
         XCTAssertEqual(app.buttons["layerRowFilmDate"].label, "底片日期，左下角")
         XCTAssertTrue(drawsText(), "text on the preview")
-        XCTAssertTrue(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists)
+        XCTAssertTrue(app.staticTexts["改動直接存到這本相簿，回檢視頁再匯出"].exists)
 
         filmToggle.tap()
         XCTAssertEqual(filmToggle.value as? String, "1")

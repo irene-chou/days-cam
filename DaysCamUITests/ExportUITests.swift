@@ -81,7 +81,7 @@ final class ExportUITests: XCTestCase {
         XCTAssertTrue(preview.frame.contains(draggableText.frame), "the overlay sits on the preview")
         XCTAssertEqual(preview.frame.width / app.frame.width, 0.52, accuracy: 0.02, "about 52% of the width")
         XCTAssertEqual(preview.frame.height / preview.frame.width, 4.0 / 3.0, accuracy: 0.03, "the photo's 3:4")
-        XCTAssertTrue(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists)
+        XCTAssertTrue(app.staticTexts["改動直接存到這本相簿，回檢視頁再匯出"].exists)
         XCTAssertTrue(element("stylePanelDoneButton").isEnabled)
         XCTAssertFalse(app.buttons["panelCollapseButton"].exists, "the panel stays open here")
 
@@ -102,7 +102,7 @@ final class ExportUITests: XCTestCase {
         XCTAssertTrue(app.buttons["內容"].isSelected)
         Thread.sleep(forTimeInterval: 1)
         assertOnScreen(preview, "preview in view")
-        XCTAssertFalse(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists, "the note is the layer list's foot only")
+        XCTAssertFalse(app.staticTexts["改動直接存到這本相簿，回檢視頁再匯出"].exists, "the note is the layer list's foot only")
         shot("content")
     }
 
@@ -271,7 +271,7 @@ final class ExportUITests: XCTestCase {
         app.buttons["樣式"].tap()
         let last = app.sliders["字級"]
         XCTAssertTrue(last.waitForExistence(timeout: 3), "116.8 the page has the size slider")
-        XCTAssertFalse(app.staticTexts["改動直接存到這個紀錄，回檢視頁再匯出"].exists)
+        XCTAssertFalse(app.staticTexts["改動直接存到這本相簿，回檢視頁再匯出"].exists)
         let bottom = element("stylePanel").frame.maxY
         let top = app.buttons["樣式"].frame.maxY + 70
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)

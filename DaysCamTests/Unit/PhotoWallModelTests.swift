@@ -653,8 +653,8 @@ extension PhotoWallModelTests {
         XCTAssertEqual(saved.style, profile.style)
         XCTAssertEqual(model.photoIDs, ["p6", "p7", "p9", "p10"])
         XCTAssertEqual(library.assets.count, 6, "still in 照片")
-        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
-        XCTAssertEqual(announced, ["已從紀錄移除 2 張"])
+        XCTAssertEqual(model.toastState?.message, "已從相簿移除 2 張")
+        XCTAssertEqual(announced, ["已從相簿移除 2 張"])
         XCTAssertFalse(model.isSelecting)
         XCTAssertNil(model.errorMessage)
     }
@@ -679,7 +679,7 @@ extension PhotoWallModelTests {
         XCTAssertEqual(library.albums.first?.assetIDs.count, 5)
         XCTAssertEqual(store.profiles.first { $0.id == profile.id }?.fallbackAssetIDs, ["p7"])
         XCTAssertEqual(model.photoIDs, ["p7"])
-        XCTAssertEqual(model.toastState?.message, "已從紀錄移除 2 張")
+        XCTAssertEqual(model.toastState?.message, "已從相簿移除 2 張")
     }
 
     /// 9: a permission failure shows the new wording, keeps the selection
@@ -694,7 +694,7 @@ extension PhotoWallModelTests {
 
         await model.removeSelected()
 
-        XCTAssertEqual(model.errorMessage, "需要「照片」權限才能從紀錄移除。")
+        XCTAssertEqual(model.errorMessage, "需要「照片」權限才能從相簿移除。")
         XCTAssertEqual(model.errorTitle, PhotoWallModel.removeFailedTitle)
         XCTAssertEqual(model.selectedIDs, ["p6", "p7"])
         XCTAssertTrue(model.isSelecting)
@@ -916,7 +916,7 @@ extension PhotoWallModelTests {
         XCTAssertEqual(model.albumSyncIDs, ["new"])
     }
 
-    /// 7: rebound to another album in 編輯紀錄 while the add runs, the
+    /// 7: rebound to another album in 日期 while the add runs, the
     /// record keeps the photos on `fallbackAssetIDs` (they went into the old
     /// album, not the new one) and the add still reports success.
     func testRebindingMeanwhileKeepsTheFallback() async throws {

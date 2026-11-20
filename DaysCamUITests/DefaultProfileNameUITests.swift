@@ -1,6 +1,6 @@
 import XCTest
 
-/// TASK-119: a fresh install starts with the profile 我的紀錄 and the name on
+/// TASK-119: a fresh install starts with the profile 我的相簿 and the name on
 /// the photo. With `DAYSCAM_UI_SHOT_DIR` in the test runner's environment the
 /// B′ screenshots are also written there for the PR.
 final class DefaultProfileNameUITests: XCTestCase {
@@ -37,7 +37,7 @@ final class DefaultProfileNameUITests: XCTestCase {
     /// top bar chip and the profile edit page (119.2) left in #621.
     func testFreshInstallShowsTheDefaultNameAndCanTurnItOff() {
         XCTAssertTrue(overlayText.waitForExistence(timeout: 5))
-        XCTAssertTrue(overlayText.label.hasPrefix("我的紀錄 第 "), "119.1 preview: \(overlayText.label)")
+        XCTAssertTrue(overlayText.label.hasPrefix("我的相簿 第 "), "119.1 preview: \(overlayText.label)")
         shot("PR_119.1_iPhone16_preview")
 
         // 155.1／119.2: the 內容 tab's 名稱 switch is on by default and turns off.

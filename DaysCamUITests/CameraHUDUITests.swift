@@ -13,7 +13,7 @@ final class CameraHUDUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Seeds one record 「我的紀錄」 starting 2026-01-01, then launches on
+    /// Seeds one record 「我的相簿」 starting 2026-01-01, then launches on
     /// 2026-01-10 with the overlay and film date on, and opens its camera.
     private func launchCamera(extra: [String] = []) {
         let profiles = UUID().uuidString

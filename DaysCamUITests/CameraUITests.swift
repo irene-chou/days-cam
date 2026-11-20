@@ -149,7 +149,7 @@ final class CameraUITests: XCTestCase {
         for item in [switcher, tools, ratio, flip, thumbnail, shutter] {
             XCTAssertTrue(item.waitForExistence(timeout: 5), "\(item)")
         }
-        XCTAssertEqual(switcher.label, "切換紀錄")
+        XCTAssertEqual(switcher.label, "切換相簿")
         XCTAssertFalse(element("cameraCloseButton").exists, "655-1 no xmark")
         XCTAssertFalse(element("overlayPreviewToggle").exists, "712-6 no 疊字預覽 switch")
 
@@ -279,7 +279,7 @@ final class CameraUITests: XCTestCase {
         thumbnail.tap()
         assertWall(of: name)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.navigationBars["紀錄"].waitForExistence(timeout: 5), "655-8 back leads to the list")
+        XCTAssertTrue(app.navigationBars["相簿"].waitForExistence(timeout: 5), "655-8 back leads to the list")
     }
 
     /// 655-9: taps and a pinch on the viewfinder leave the camera up; a

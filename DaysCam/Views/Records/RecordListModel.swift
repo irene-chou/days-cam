@@ -44,9 +44,9 @@ final class RecordListModel: ObservableObject {
     }
 
     /// Placeholder shown while a new record's name is still empty.
-    static let newRecordPlaceholder = "新紀錄"
+    static let newRecordPlaceholder = "新相簿"
     /// Delete confirmation when no bound album can be looked up (FR-16.5).
-    static let deletionMessageWithoutAlbum = "照片會保留在「照片」App。"
+    static let deletionMessageWithoutAlbum = "只從 DaysCam 移除。照片會保留在「照片」App。"
     /// Shown when the library cannot report a count.
     static let unknownCountText = "—"
     /// Shown when an album could not be created in the Photos app (FR-21.6).
@@ -573,7 +573,7 @@ final class RecordListModel: ObservableObject {
     /// Delete confirmation text for `profile` (FR-16.5).
     func deletionMessage(for profile: CameraProfile) -> String {
         if let bound = library.userAlbums().first(where: { $0.id == profile.albumIdentifier }) {
-            return "「照片」App 裡的「\(bound.title)」相簿和照片都會保留。"
+            return "只從 DaysCam 移除。「照片」App 裡的「\(bound.title)」相簿和照片都會保留。"
         }
         return Self.deletionMessageWithoutAlbum
     }
@@ -584,9 +584,9 @@ final class RecordListModel: ObservableObject {
         _ = libraryRevision
         switch library.authorizationStatus() {
         case .authorized, .notDetermined:
-            return "每個紀錄是「照片」App 裡的一本相簿，在那裡加入的照片會自動出現"
+            return "每本相簿都和「照片」App 裡的同名相簿同步，在那裡加入的照片會自動出現"
         case .limited:
-            return "目前沒有開放完整權限，紀錄不會和原生相簿同步"
+            return "目前沒有開放完整權限，相簿不會和「照片」App 同步"
         default:
             return nil
         }

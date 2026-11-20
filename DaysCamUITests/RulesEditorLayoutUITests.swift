@@ -80,7 +80,7 @@ final class RulesEditorLayoutUITests: XCTestCase {
 
         XCTAssertTrue(preview.exists)
         XCTAssertTrue(preview.label.hasPrefix("天數預覽，今天"), "155.10 \(preview.label)")
-        XCTAssertTrue(preview.label.contains("我的紀錄 第 1 天"), "155.7 \(preview.label)")
+        XCTAssertTrue(preview.label.contains("我的相簿 第 1 天"), "155.7 \(preview.label)")
         XCTAssertFalse(preview.label.contains("當天"), "155.7 a past date has only the 今天 row")
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "rulesDayPreview").count, 1, "155.10")
 
@@ -129,17 +129,17 @@ final class RulesEditorLayoutUITests: XCTestCase {
 
         XCTAssertTrue(shortText.waitForExistence(timeout: 3))
         XCTAssertTrue(shortText.label.hasPrefix("還有 "), "155.2 \(shortText.label)")
-        XCTAssertFalse(shortText.label.contains("我的紀錄"), "155.2")
-        XCTAssertTrue(preview.label.hasPrefix("天數預覽，今天 我的紀錄 還有 "), "155.7 \(preview.label)")
+        XCTAssertFalse(shortText.label.contains("我的相簿"), "155.2")
+        XCTAssertTrue(preview.label.hasPrefix("天數預覽，今天 我的相簿 還有 "), "155.7 \(preview.label)")
         XCTAssertTrue(preview.label.contains("當天"), "155.7 \(preview.label)")
         XCTAssertEqual(preview.label.components(separatedBy: "，").count, 5, "155.7 title + 今天 + three rows: \(preview.label)")
         attach("155.12_edit-future-date")
 
         app.buttons["第 0 天"].tap()
-        let updated = NSPredicate(format: "label CONTAINS '我的紀錄 第 0 天'")
+        let updated = NSPredicate(format: "label CONTAINS '我的相簿 第 0 天'")
         let deadline = Date().addingTimeInterval(5)
         while !updated.evaluate(with: preview), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.3)) }
-        XCTAssertTrue(preview.label.contains("我的紀錄 第 0 天"), "155.9 \(preview.label)")
+        XCTAssertTrue(preview.label.contains("我的相簿 第 0 天"), "155.9 \(preview.label)")
     }
 
     /// 155.5: both 起算 cells show in full on one line (run on iPhone SE).
