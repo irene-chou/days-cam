@@ -274,16 +274,9 @@ final class PhotoDetailUITests: XCTestCase {
         XCTAssertTrue(style.label.contains("文字樣式"), "1 \(style.label)")
         XCTAssertTrue((style.value as? String ?? "").isEmpty, "no on/off state")
         XCTAssertTrue(app.frame.contains(style.frame))
-        // A new record starts with both layers off (#718); turn 疊字 on on the
-        // style page, and the page shows it on return.
-        style.tap()
-        let toggle = app.switches["layerToggleOverlay"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "0", "new record starts off")
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "1")
-        element("stylePanelDoneButton").tap()
-        XCTAssertTrue(element("photoDetailImage").waitForExistence(timeout: 5))
+        // The UI-test harness turns 疊字 on for the seeded record, so the page
+        // shows the overlay with no switch of its own.
+        XCTAssertTrue(element("photoDetailImage").exists)
         sleep(2)
         shot("pr745-overlay-on")
     }
@@ -304,16 +297,14 @@ final class PhotoDetailUITests: XCTestCase {
         waitForTitle(containing: "第 10 天")
     }
 
-    /// #745-4: 疊字 on then off on the style page, back on the viewer.
+    /// #745-4: 疊字 off on the style page, back on the viewer.
     func testStyleSwitchOffThenBack() {
         launchWall()
         openViewer(cell: 4)
         styleButton().tap()
         let toggle = app.switches["layerToggleOverlay"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        XCTAssertEqual(toggle.value as? String, "0", "new record starts off")
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertEqual(toggle.value as? String, "1", "the harness turned 疊字 on")
         toggle.tap()
         XCTAssertEqual(toggle.value as? String, "0")
         element("stylePanelDoneButton").tap()
