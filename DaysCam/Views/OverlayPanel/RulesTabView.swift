@@ -144,20 +144,18 @@ struct RulesTabView: View {
     private var startDateRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             rowLabel("日期")
-            HStack {
-                DatePicker("日期", selection: Binding(
-                    get: { model.startDateAsDate },
-                    set: { model.setStartDate($0) }
-                ), displayedComponents: .date)
-                .labelsHidden()
-                .accessibilityIdentifier("startDatePicker")
-                .datePickerStyle(.compact)
-                Spacer(minLength: 10)
-                Text(model.todayShortText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(CameraTheme.active)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("rulesDateShortText")
+            // The picker and the short text sit on one line; when the text
+            // size leaves no room for both, the short text drops below (#751).
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    startDatePicker
+                    Spacer(minLength: 10)
+                    todayShortLabel
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    startDatePicker
+                    todayShortLabel
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,19 +163,52 @@ struct RulesTabView: View {
         .padding(.vertical, Self.rowVerticalPadding)
     }
 
+    private var startDatePicker: some View {
+        DatePicker("日期", selection: Binding(
+            get: { model.startDateAsDate },
+            set: { model.setStartDate($0) }
+        ), displayedComponents: .date)
+        .labelsHidden()
+        .accessibilityIdentifier("startDatePicker")
+        .datePickerStyle(.compact)
+        // The system's compact picker cannot shrink: past this size it alone
+        // would be wider than the screen (#751).
+        .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+    }
+
+    private var todayShortLabel: some View {
+        Text(model.todayShortText)
+            .font(.subheadline.weight(.semibold))
+            .foregroundColor(CameraTheme.active)
+            .lineLimit(1)
+            .accessibilityIdentifier("rulesDateShortText")
+    }
+
     // MARK: - 起算 (FR-13.4)
 
     private var countingRuleRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             rowLabel("起算")
-            HStack(spacing: 0) {
-                countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
-                countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
+            // Side by side while both labels fit on one line, stacked when
+            // the text size leaves no room (#751).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
+                    countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
+                }
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CameraTheme.fill)
+                )
+                VStack(spacing: 0) {
+                    countingRuleButton(.dayOne, label: RulesTabModel.countingRuleDayOneLabel)
+                    countingRuleButton(.dayZero, label: RulesTabModel.countingRuleDayZeroLabel)
+                }
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CameraTheme.fill)
+                )
             }
-            .padding(2)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(CameraTheme.fill)
-            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Self.rowHorizontalPadding)
@@ -227,10 +258,17 @@ struct RulesTabView: View {
                     .accessibilityHidden(model.visibleHint == nil)
                     .accessibilityIdentifier("rulesUnitHint")
             }
-            // Four equal columns, each checkbox centered in its own.
-            HStack(spacing: 0) {
-                ForEach(DisplayUnit.allCases, id: \.self) { unit in
-                    unitCheckbox(unit).frame(maxWidth: .infinity)
+            // Four equal columns, each checkbox centered in its own; 2×2 when
+            // the text size leaves no room for four on one line (#751).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    ForEach(DisplayUnit.allCases, id: \.self) { unit in
+                        unitCheckbox(unit).frame(maxWidth: .infinity)
+                    }
+                }
+                VStack(spacing: 0) {
+                    unitPair(.year, .month)
+                    unitPair(.week, .day)
                 }
             }
         }
@@ -239,6 +277,13 @@ struct RulesTabView: View {
         .padding(.vertical, Self.rowVerticalPadding)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("rulesUnitRow")
+    }
+
+    private func unitPair(_ first: DisplayUnit, _ second: DisplayUnit) -> some View {
+        HStack(spacing: 0) {
+            unitCheckbox(first).frame(maxWidth: .infinity)
+            unitCheckbox(second).frame(maxWidth: .infinity)
+        }
     }
 
     private func unitCheckbox(_ unit: DisplayUnit) -> some View {
