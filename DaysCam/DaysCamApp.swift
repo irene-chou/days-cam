@@ -14,7 +14,6 @@ struct DaysCamApp: App {
 
     init() {
         Self.applyUITestCaptureRatio()
-        Self.applyUITestDetailOverlay()
         let profileStore = Self.makeProfileStore()
         let library = Self.makeRecordAlbumLibrary(for: profileStore)
         styleCenter = StyleEditingCenter(profileStore: profileStore,
@@ -350,18 +349,6 @@ struct DaysCamApp: App {
             ratio = requested
         }
         CaptureSettingsStore().setAspectRatio(ratio)
-        #endif
-    }
-
-    /// Debug UI tests start the viewer's 疊字 off, as a fresh install does
-    /// (#738); `-UITestDetailOverlay on` starts it on.
-    private static func applyUITestDetailOverlay() {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains(where: { $0.hasPrefix("-UITest") }) else { return }
-        let flag = arguments.firstIndex(of: "-UITestDetailOverlay")
-        let isOn = flag.map { arguments.indices.contains($0 + 1) && arguments[$0 + 1] == "on" } ?? false
-        UserDefaults.standard.set(isOn, forKey: PhotoDetailModel.showsOverlayKey)
         #endif
     }
 

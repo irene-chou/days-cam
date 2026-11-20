@@ -90,19 +90,16 @@ struct PhotoDetailView: View {
 
     // MARK: - Bottom bar (#679)
 
-    /// 疊字｜匯出｜刪除, the wall's selection bar. 疊字 is always pressable;
-    /// a photo without a date just stays plain. 匯出 is off for a photo without
+    /// 文字樣式｜匯出｜刪除, the wall's selection bar. 文字樣式 opens the record's
+    /// style page and is pressable for a photo without a date too. 匯出 is off for a photo without
     /// a date (§6.1.3); 刪除 asks remove-or-delete, its popover pointing at it.
     private var actionBar: some View {
         SelectionActionBar {
-            SelectionActionButton(title: "疊字",
-                                  systemImage: model.showsOverlay ? "text.below.photo.fill" : "text.below.photo",
-                                  color: model.showsOverlay ? CameraTheme.active : CameraTheme.ink) {
-                model.toggleOverlay()
+            SelectionActionButton(title: "文字樣式", systemImage: "text.below.photo", color: CameraTheme.ink) {
+                stylingPhoto = model.currentPhoto
             }
-            .accessibilityIdentifier("photoDetailOverlayToggle")
-            .accessibilityValue(model.showsOverlay ? "開" : "關")
-            .accessibilityAddTraits(model.showsOverlay ? .isSelected : [])
+            .disabled(model.currentPhoto == nil)
+            .accessibilityIdentifier("photoDetailStyleButton")
             SelectionActionButton(title: "匯出", systemImage: "square.and.arrow.up", color: CameraTheme.ink) {
                 model.beginExport()
             }
@@ -153,7 +150,7 @@ struct PhotoDetailView: View {
     }
 }
 
-/// One page: the photo, marked while 疊字 is on (FR-18.2).
+/// One page: the photo, marked with the record's overlay (FR-18.2, #745).
 private struct PhotoDetailPage: View {
     @ObservedObject var model: PhotoDetailModel
     let photo: RecordPhoto
@@ -166,7 +163,6 @@ private struct PhotoDetailPage: View {
         let photoID: String
         let profile: CameraProfile?
         let size: CGSize
-        let showsOverlay: Bool
     }
 
     var body: some View {
@@ -181,13 +177,12 @@ private struct PhotoDetailPage: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
-            .task(id: Key(photoID: photo.id, profile: model.profile, size: proxy.size,
-                                  showsOverlay: model.showsOverlay)) {
+            .task(id: Key(photoID: photo.id, profile: model.profile, size: proxy.size)) {
                 let pixels = CGSize(width: proxy.size.width * displayScale,
                                     height: proxy.size.height * displayScale)
                 guard pixels.width > 0, pixels.height > 0 else { return }
                 // The original shows until the baked one is ready.
-                if model.showsOverlay, image == nil,
+                if image == nil,
                    let plain = await model.plainImage(for: photo, targetSize: pixels) {
                     image = plain
                 }

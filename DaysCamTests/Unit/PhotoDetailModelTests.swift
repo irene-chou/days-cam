@@ -52,31 +52,19 @@ final class PhotoDetailModelTests: XCTestCase {
                            startingAt id: String = "p5",
                            bake: ExportBakeRecorder = ExportBakeRecorder()) -> PhotoDetailModel {
         PhotoDetailModel(profileID: profile.id, startingAt: id, store: store, library: library, calendar: calendar,
-                         defaults: defaults, bake: { bake.bake($0, $1, $2, $3, $4, $5, $6, $7) })
+                         bake: { bake.bake($0, $1, $2, $3, $4, $5, $6, $7) })
     }
 
-    // MARK: 疊字 toggle (#738)
+    // MARK: Always-on overlay (#745)
 
     private let size = CGSize(width: 200, height: 300)
 
-    /// #738-2: off by default; the page is the original and nothing is baked.
-    func testOverlayIsOffByDefaultAndBakesNothing() async throws {
-        let (store, profile) = try makeStore()
-        let recorder = ExportBakeRecorder()
-        let model = makeModel(store: store, profile: profile, library: library(), bake: recorder)
-        XCTAssertFalse(model.showsOverlay)
-        let photo = try XCTUnwrap(model.currentPhoto)
-        _ = await model.pageImage(for: photo, targetSize: size)
-        XCTAssertTrue(recorder.calls.isEmpty, "2 \(recorder.calls.count) bakes")
-    }
-
-    /// #738-3: on, the page on screen and the next one are each baked with
-    /// their own day.
-    func testOverlayOnBakesEachPageWithItsOwnDay() async throws {
+    /// #745-3: with the layer on, the page on screen and the next one are
+    /// each baked with their own photo's `creationDate`.
+    func testPagesAreBakedWithTheirOwnDay() async throws {
         let (store, profile) = try makeStore()
         let recorder = ExportBakeRecorder()
         let model = makeModel(store: store, profile: profile, library: library(), startingAt: "p4", bake: recorder)
-        model.toggleOverlay()
         let first = try XCTUnwrap(model.currentPhoto)
         _ = await model.pageImage(for: first, targetSize: size)
         model.selectedID = "p5"
@@ -88,28 +76,35 @@ final class PhotoDetailModelTests: XCTestCase {
         XCTAssertTrue(texts[1].contains("第 10 天"), "3 \(texts)")
     }
 
-    /// #738-4: a photo without a date stays plain with the toggle on.
-    func testOverlayOnLeavesAnUndatedPhotoPlain() async throws {
+    /// #745-4: with the 疊字 layer off in the record (what the style page's
+    /// switches do) the bake gets empty text; a style change reaches the next
+    /// bake.
+    func testStyleChangeReachesTheNextBake() async throws {
+        let (store, profile) = try makeStore()
+        let recorder = ExportBakeRecorder()
+        let model = makeModel(store: store, profile: profile, library: library(), bake: recorder)
+        let photo = try XCTUnwrap(model.currentPhoto)
+        _ = await model.pageImage(for: photo, targetSize: size)
+        var changed = try XCTUnwrap(store.profiles.first { $0.id == profile.id })
+        changed.showOverlay = false
+        _ = try store.update(changed)
+        _ = await model.pageImage(for: photo, targetSize: size)
+        let texts = recorder.calls.map(\.text)
+        XCTAssertEqual(texts.count, 2, "4 \(texts)")
+        XCTAssertTrue(texts[0].contains("第 10 天"), "4 \(texts)")
+        XCTAssertEqual(texts[1], "", "4 \(texts)")
+    }
+
+    /// #745-5: a photo without a date stays plain.
+    func testUndatedPhotoStaysPlain() async throws {
         let (store, profile) = try makeStore()
         let recorder = ExportBakeRecorder()
         let model = makeModel(store: store, profile: profile, library: library(dates: [nil, 7]),
                               startingAt: "p1", bake: recorder)
-        model.toggleOverlay()
         let photo = try XCTUnwrap(model.currentPhoto)
         let image = await model.pageImage(for: photo, targetSize: size)
         XCTAssertNotNil(image)
-        XCTAssertTrue(recorder.calls.isEmpty, "4 \(recorder.calls.count) bakes")
-    }
-
-    /// #738-5: the state is kept for the next viewer; a fresh store is off.
-    func testOverlayStateIsRemembered() throws {
-        let (store, profile) = try makeStore()
-        let model = makeModel(store: store, profile: profile, library: library())
-        model.toggleOverlay()
-        let reopened = makeModel(store: store, profile: profile, library: library())
-        XCTAssertTrue(reopened.showsOverlay, "5 kept")
-        reopened.toggleOverlay()
-        XCTAssertFalse(makeModel(store: store, profile: profile, library: library()).showsOverlay, "5 off again")
+        XCTAssertTrue(recorder.calls.isEmpty, "5 \(recorder.calls.count) bakes")
     }
 
     // MARK: Header and overlay (1, 2, 3, 4)
