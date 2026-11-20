@@ -84,13 +84,13 @@ final class PhotoAccessUITests: XCTestCase {
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
         XCTAssertTrue(app.buttons["設定照片權限"].waitForExistence(timeout: 5), "3")
-        XCTAssertTrue(app.buttons["日期"].exists)
+        XCTAssertTrue(app.buttons["日期設定"].exists)
         shot("limited-more-menu")
         app.terminate()
         launchWall(access: "authorized")
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        XCTAssertTrue(app.buttons["日期"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["日期設定"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["設定照片權限"].exists, "3")
     }
 
@@ -112,7 +112,7 @@ final class PhotoAccessUITests: XCTestCase {
         launchWall(access: "denied")
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        app.buttons["日期"].tap()
+        app.buttons["日期設定"].tap()
         XCTAssertTrue(element("recordEditor").waitForExistence(timeout: 5), "4")
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5), "4 the name is editable")

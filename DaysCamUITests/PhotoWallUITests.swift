@@ -82,7 +82,7 @@ final class PhotoWallUITests: XCTestCase {
         launchWall(photos: 3)
         XCTAssertTrue(element("wallMoreButton").waitForExistence(timeout: 10))
         element("wallMoreButton").tap()
-        XCTAssertTrue(app.buttons["日期"].waitForExistence(timeout: 5), "11")
+        XCTAssertTrue(app.buttons["日期設定"].waitForExistence(timeout: 5), "11")
         XCTAssertTrue(app.buttons["刪除相簿"].exists, "11")
         shot("wall-more-menu")
         XCTAssertFalse(app.buttons["匯出"].exists)
