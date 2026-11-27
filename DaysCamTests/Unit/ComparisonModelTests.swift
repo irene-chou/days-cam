@@ -37,6 +37,7 @@ final class ComparisonModelTests: XCTestCase {
     private func profile(showFilmDate: Bool = false) -> CameraProfile {
         var profile = CameraProfile(name: "小寶", startDate: DateFixture.components(2026, 1, 1))
         profile.showFilmDate = showFilmDate
+        profile.showOverlay = true
         return profile
     }
 
@@ -71,6 +72,32 @@ final class ComparisonModelTests: XCTestCase {
 
     /// 5: the preview puts the earliest on the left and the latest on the
     /// right, each with its own day count, composed within 1080 off the main thread.
+    /// Each tile prints what the viewer and the export print: with the
+    /// name and date ticked, both appear next to the day count.
+    func testTilesPrintTheRecordsOverlayText() async {
+        var profile = profile()
+        profile.showName = true
+        profile.showDate = true
+        let log = ComposeLog()
+        let model = makeModel(library: makeLibrary(), profile: profile, log: log)
+        await model.makePreview()
+        guard let capturedAt = DateFixture.date(2026, 1, 1, hour: 15) else { return XCTFail("fixture date") }
+        let expected = TemplateRenderer().overlayText(profile: profile, capturedAt: capturedAt,
+                                                      calendar: calendar, moment: .photo)
+        XCTAssertEqual(log.all.first?.left, expected)
+        XCTAssertTrue(expected.contains("小寶") && expected.contains("第 1 天"), expected)
+    }
+
+    /// 疊字 off for the record: the tiles print nothing.
+    func testTilesPrintNothingWithTheOverlayOff() async {
+        var profile = profile()
+        profile.showOverlay = false
+        let log = ComposeLog()
+        let model = makeModel(library: makeLibrary(), profile: profile, log: log)
+        await model.makePreview()
+        XCTAssertEqual(log.all.first?.left, "")
+    }
+
     func testPreviewHasEarliestLeftAndLatestRight() async {
         let log = ComposeLog()
         let model = makeModel(library: makeLibrary(), log: log)
