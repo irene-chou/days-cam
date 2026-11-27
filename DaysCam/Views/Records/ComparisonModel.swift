@@ -76,6 +76,7 @@ final class ComparisonModel: ObservableObject, Identifiable {
     private let library: any RecordAlbumLibrary
     private let calendar: Calendar
     private let resolveFont: @MainActor (OverlayStyle) -> ResolvedOverlayFont
+    private let renderer: TemplateRenderer
     private let compose: Compose
     private let save: PhotoExportPipeline.Save
     private let openSettings: (URL) -> Void
@@ -96,6 +97,7 @@ final class ComparisonModel: ObservableObject, Identifiable {
          calendar: Calendar,
          profileChanges: AnyPublisher<CameraProfile?, Never> = Empty().eraseToAnyPublisher(),
          resolveFont: @escaping @MainActor (OverlayStyle) -> ResolvedOverlayFont,
+         renderer: TemplateRenderer = TemplateRenderer(),
          compose: @escaping Compose = ComparisonModel.renderCompose,
          save: @escaping PhotoExportPipeline.Save,
          openSettings: @escaping (URL) -> Void = { UIApplication.shared.open($0) }) {
@@ -106,6 +108,7 @@ final class ComparisonModel: ObservableObject, Identifiable {
         self.library = library
         self.calendar = calendar
         self.resolveFont = resolveFont
+        self.renderer = renderer
         self.compose = compose
         self.save = save
         self.openSettings = openSettings
@@ -184,10 +187,16 @@ final class ComparisonModel: ObservableObject, Identifiable {
         return PhotoWallModel.dayMarkTexts(creationDate: date, profile: profile, calendar: calendar).texts[0]
     }
 
+    /// Each tile prints the record's overlay text, the same text the viewer,
+    /// the export and the 文字樣式 panel's preview print (name, date and day
+    /// count as ticked).
     private func tile(_ image: UIImage, photoID: String) -> ComparisonRenderer.Tile {
         let date = photos.first { $0.id == photoID }?.creationDate
         let filmDate = date.flatMap { PhotoDetailModel.filmDateStamp(for: profile, creationDate: $0, calendar: calendar) }
-        return ComparisonRenderer.Tile(image: image, text: hidesText ? "" : dayText(for: photoID), filmDate: filmDate)
+        let text = hidesText ? "" : date.map {
+            renderer.overlayText(profile: profile, capturedAt: $0, calendar: calendar, moment: .photo)
+        } ?? ""
+        return ComparisonRenderer.Tile(image: image, text: text, filmDate: filmDate)
     }
 
     // MARK: - Preview
